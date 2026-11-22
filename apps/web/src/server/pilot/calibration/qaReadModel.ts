@@ -2,8 +2,10 @@ import type { AdjudicationRow } from './adjudication';
 import type { AnnotationEventRow, AnnotationSetRow } from './annotations';
 import {
   DISAGREEMENT_CATEGORIES,
+  PILOT_MATCHING_POLICY_IN_USE,
   type AnnotationSetComparison,
   type DisagreementCategory,
+  type EventMatchingPolicy,
 } from './comparison';
 
 // The calibration QA read-out: how the ANNOTATION SYSTEM is behaving.
@@ -106,6 +108,10 @@ export interface CalibrationQaReport {
   organizationId: string;
   calibrationProjectId: string;
   ontologyVersion: string;
+  /** The rule every comparison in this report was made under, so the screen
+   * can say what window counted as "the same punch" (OD-2026-10-08-005
+   * ruling 3: the lane "shows it on screen"). */
+  matchingPolicy: EventMatchingPolicy;
   minimumComparisons: number;
   status: QaStatus;
   comparisonCount: number;
@@ -121,6 +127,12 @@ export interface CalibrationQaReport {
   hedgedCertaintyRate: RateWithDenominator;
   adjudicationRate: RateWithDenominator;
   unresolvableRate: RateWithDenominator;
+  /** Current adjudications on compared clips that name no pairing which
+   *  raises a disagreement under this report's matching rule -- recorded
+   *  under an earlier rule (v0 reported marks a few ms apart, or labels that
+   *  differ only in case or spacing, as disagreements). Counted here, not in
+   *  either rate, so "reviewed" never exceeds "disagreed". */
+  adjudicationsUnderEarlierRule: number;
   strata: {
     bySamplingReason: Record<string, Record<DisagreementCategory, number>>;
     byVisibility: Record<string, Record<DisagreementCategory, number>>;
@@ -237,6 +249,9 @@ export interface BuildQaReportInput {
    *  to the current revision of each disagreement itself. */
   adjudications: readonly AdjudicationRow[];
   minimumComparisons?: number;
+  /** The rule the comparisons were made under. The loader passes the one it
+   *  used; omitted, it is the rule compareAnnotationSets uses by default. */
+  matchingPolicy?: EventMatchingPolicy;
 }
 
 /**
@@ -351,6 +366,9 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
   let matchedPairCount = 0;
   let totalComparedEvents = 0;
   let pairingsRaisingDisagreement = 0;
+  // The pairings that raise a disagreement, keyed the way an adjudication
+  // names one: the two readings and the two marks ("no mark" kept distinct).
+  const disagreeingPairings = new Set<string>();
 
   for (const comparison of input.comparisons) {
     const samplingReason =
@@ -359,7 +377,15 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     for (const pairing of comparison.pairings) {
       totalComparedEvents += 1;
       if (pairing.outcome === 'MATCHED') matchedPairCount += 1;
-      if (pairing.disagreements.length > 0) pairingsRaisingDisagreement += 1;
+      if (pairing.disagreements.length > 0) {
+        pairingsRaisingDisagreement += 1;
+        disagreeingPairings.add(JSON.stringify([
+          comparison.annotationSetIdA,
+          comparison.annotationSetIdB,
+          pairing.eventA?.event_id ?? null,
+          pairing.eventB?.event_id ?? null,
+        ]));
+      }
 
       // Stratify by what the pairing is ABOUT. Where the two readings differ
       // on visibility, both are recorded -- the disagreement belongs to both
@@ -391,11 +417,17 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
           byEventClass[eventClass][disagreement.category] += 1;
         }
 
-        if (disagreement.category === 'BOUNDARY' && typeof disagreement.deltaMs === 'number') {
-          if (disagreement.field === 'start_ms') startDeltas.push(disagreement.deltaMs);
-          if (disagreement.field === 'contact_ms') contactDeltas.push(disagreement.deltaMs);
-          if (disagreement.field === 'end_ms') endDeltas.push(disagreement.deltaMs);
-        }
+      }
+
+      // TIMING FIGURES FROM EVERY DIFFERENCE, NOT ONLY THE DISAGREEMENTS. A
+      // difference inside the matching window is not a disagreement (A-Q10c),
+      // but it is still how far apart two coaches marked the same moment;
+      // reading only BOUNDARY disagreements would drop the small ones and make
+      // the median look worse than the marking is.
+      for (const delta of pairing.boundaryDeltas) {
+        if (delta.field === 'start_ms') startDeltas.push(delta.deltaMs);
+        if (delta.field === 'contact_ms') contactDeltas.push(delta.deltaMs);
+        if (delta.field === 'end_ms') endDeltas.push(delta.deltaMs);
       }
     }
   }
@@ -423,7 +455,27 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     (event) => event.certainty === 'probable' || event.certainty === 'uncertain',
   ).length;
 
-  const unresolvable = input.adjudications.filter(
+  /*
+   * ONLY ADJUDICATIONS OF A DISAGREEMENT THAT STILL EXISTS. An adjudication
+   * names the pair of marks it settled, not the rule that raised it. Under
+   * the window (A-Q10c) a pair whose only difference was a few ms is no longer
+   * a disagreement, and a v0 near miss -- once two missed events, each
+   * adjudicated on its own -- is now one matched punch. Counting those
+   * answers against today's disagreements would let "reviewed" pass
+   * "disagreed". They are counted apart instead. Either orientation of the
+   * pair is accepted, so a pair named B-then-A is not lost.
+   */
+  const namesCurrentDisagreement = (row: AdjudicationRow) =>
+    disagreeingPairings.has(JSON.stringify([
+      row.annotation_set_id_a, row.annotation_set_id_b, row.source_event_id_a, row.source_event_id_b,
+    ]))
+    || disagreeingPairings.has(JSON.stringify([
+      row.annotation_set_id_b, row.annotation_set_id_a, row.source_event_id_b, row.source_event_id_a,
+    ]));
+  const adjudicationsOfCurrent = input.adjudications.filter(namesCurrentDisagreement);
+  const adjudicationsUnderEarlierRule = input.adjudications.length - adjudicationsOfCurrent.length;
+
+  const unresolvable = adjudicationsOfCurrent.filter(
     (adjudicationRow) => adjudicationRow.resolution_type === 'unresolvable',
   ).length;
 
@@ -431,6 +483,7 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     organizationId: input.organizationId,
     calibrationProjectId: input.calibrationProjectId,
     ontologyVersion: input.ontologyVersion,
+    matchingPolicy: input.matchingPolicy ?? PILOT_MATCHING_POLICY_IN_USE,
     minimumComparisons,
     status: belowFloor ? 'insufficient_data' : 'available',
     comparisonCount,
@@ -455,17 +508,18 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
       belowFloor,
     ),
     adjudicationRate: makeRate(
-      input.adjudications.length,
+      adjudicationsOfCurrent.length,
       pairingsRaisingDisagreement,
       'pairings that raised a disagreement',
       belowFloor,
     ),
     unresolvableRate: makeRate(
       unresolvable,
-      input.adjudications.length,
+      adjudicationsOfCurrent.length,
       'adjudications recorded',
       belowFloor,
     ),
+    adjudicationsUnderEarlierRule,
     strata: {
       bySamplingReason,
       byVisibility,

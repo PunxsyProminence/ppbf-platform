@@ -150,8 +150,8 @@ describe('GET the workspace', () => {
 
     const body = await (await GET(get())).json();
 
-    expect(body.supported_ontology_version).toBe('boxing-ontology-0.1');
-    expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1']);
+    expect(body.supported_ontology_version).toBe('boxing-ontology-0.4');
+    expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1', 'boxing-ontology-0.4']);
   });
 
   test('the other annotator leaves no trace anywhere in the response', async () => {
@@ -328,6 +328,31 @@ describe('POST to open a set', () => {
     expect(body.created).toBe(true);
     expect(body.set.annotation_set_id).toBe('set-mine');
     expect(JSON.stringify(body)).not.toContain('set-theirs');
+  });
+
+  test('a body-point study (0.4) has a set opened under 0.4 (TEACH-T T-1; OD-2026-10-04-024)', async () => {
+    ready();
+    mockGetProject.mockResolvedValue({ ...PROJECT, ontology_version: 'boxing-ontology-0.4' });
+    mockOpen.mockResolvedValueOnce({ ...MY_SET, ontology_version: 'boxing-ontology-0.4' });
+
+    const response = await POST(post({ calibration_clip_id: 'clip-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockOpen).toHaveBeenCalledWith(expect.objectContaining({
+      ontologyVersion: 'boxing-ontology-0.4',
+    }));
+  });
+
+  test('a 0.3 study is still refused: 0.2 and 0.3 are never opened (OD-2026-10-04-024 2A)', async () => {
+    ready();
+    mockGetProject.mockResolvedValue({ ...PROJECT, ontology_version: 'boxing-ontology-0.3' });
+
+    const response = await POST(post({ calibration_clip_id: 'clip-1' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toContain('boxing-ontology-0.3');
+    expect(mockOpen).not.toHaveBeenCalled();
   });
 
   test('a project stamped with a vocabulary this build cannot validate is refused', async () => {

@@ -292,6 +292,8 @@ describe('loadCalibrationQaReport', () => {
       stage({
         c1: {
           sets: three('c1'),
+          // a and c disagree on the punch, so the adjudication settled one.
+          events: { c: { punch_type: 'rear_hook' } },
           adjudications: [makeAdjudication('c1', ['a', 'c'], '2026-08-29T00:00:00.000Z')],
         },
       });

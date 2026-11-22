@@ -17,6 +17,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+
 import AthleteVideoAnalysisPage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -227,5 +229,68 @@ describe("what SHADOW noticed, on the athlete's film screen (F-005)", () => {
 
     expect(screen.getByText('Nothing noticed yet.')).toBeTruthy();
     expect(screen.queryByText('SHADOW_AUDIT_LOGIN_ACCOUNT')).toBeNull();
+  });
+});
+
+/*
+ * LANE AS-8, ATH-25 (Overwatch Q8 A on #2020). The way back is at the top, as
+ * My Progression and the Sparring Log have it, and the foot link stays.
+ * Opening a round brings the player into view -- it is drawn above the list,
+ * so on a phone a round opened from further down started out of sight -- and
+ * a reduced-motion reader gets no animated scroll.
+ */
+describe('My Film: the way back at the top, and the player brought into view', () => {
+  afterEach(() => {
+    clearRoleSession();
+    delete (window as { matchMedia?: unknown }).matchMedia;
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  test('BackHome sits in the header, above the rounds, and the foot link is still there', async () => {
+    createPersistentRoleSession('athlete');
+    global.fetch = mockFetch() as unknown as typeof fetch;
+    render(<AthleteVideoAnalysisPage />);
+    await screen.findByRole('button', { name: 'Play' });
+
+    const back = screen.getByRole('link', { name: 'Back to Athlete Workspace' });
+    const title = screen.getByRole('heading', { level: 1, name: 'My Film' });
+    expect(title.closest('header')?.contains(back)).toBe(true);
+    const rounds = screen.getByRole('heading', { name: 'Your rounds' });
+    expect(back.compareDocumentPosition(rounds) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Back to your dashboard' }).getAttribute('href')).toBe('/athlete/dashboard');
+  });
+
+  async function openRound(reduced: boolean) {
+    window.matchMedia = jest.fn((query: string) => ({
+      matches: reduced && query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    const calls: Array<{ text: string; options: unknown }> = [];
+    // jsdom has no scrollIntoView; record each call instead.
+    (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView = function (this: HTMLElement, options?: unknown) {
+      calls.push({ text: this.textContent ?? '', options });
+    };
+    global.fetch = mockFetch() as unknown as typeof fetch;
+    render(<AthleteVideoAnalysisPage />);
+    expect(calls).toEqual([]);
+    const play = await screen.findByRole('button', { name: 'Play' });
+    await act(async () => {
+      fireEvent.click(play);
+    });
+    const title = await screen.findByRole('heading', { level: 2, name: 'Sparring round 3' });
+    return { calls, title };
+  }
+
+  test('opening a round scrolls its player into view and puts the keyboard on its title', async () => {
+    const { calls, title } = await openRound(false);
+    expect(calls).toEqual([{ text: 'Sparring round 3', options: { behavior: 'smooth', block: 'start' } }]);
+    expect(document.activeElement).toBe(title);
+  });
+
+  test('with reduced motion asked for, the jump is not animated', async () => {
+    const { calls } = await openRound(true);
+    expect(calls).toEqual([{ text: 'Sparring round 3', options: { behavior: 'auto', block: 'start' } }]);
   });
 });

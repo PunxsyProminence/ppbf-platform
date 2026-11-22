@@ -317,8 +317,10 @@ function CalibrationReviewTable() {
               <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
                 Pairing rule: {comparison.matchingPolicy.policyVersion}, tolerance{' '}
                 {comparison.matchingPolicy.overlapToleranceMs}ms —{' '}
-                {comparison.matchingPolicy.calibrationState}. Two marks are the same moment only
-                when the spans the coaches actually drew overlap.
+                {comparison.matchingPolicy.calibrationState}.{' '}
+                {comparison.matchingPolicy.overlapToleranceMs > 0
+                  ? `Marks whose spans overlap pair first; a mark that overlaps nothing pairs with one within ${comparison.matchingPolicy.overlapToleranceMs}ms, and time differences of ${comparison.matchingPolicy.overlapToleranceMs}ms or less are not disagreements.`
+                  : 'Two marks are the same moment only when the spans the coaches actually drew overlap.'}
               </p>
               <p className="t-data mt-[var(--s3)]" style={{ fontSize: 'var(--t-xs)' }}>
                 A: {comparison.annotatorAccountIdA} · B: {comparison.annotatorAccountIdB}

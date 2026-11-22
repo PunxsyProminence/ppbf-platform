@@ -14,6 +14,7 @@ import { act, render, screen } from '@testing-library/react';
 
 import ClusterNav, { COACH_CLUSTERS, type CoachCluster } from './ClusterNav';
 import { BUILDING, OPEN } from './buildingMap';
+import { jobBarFor } from './jobBars';
 import { clearRoleSession, createPersistentRoleSession } from './roleSession';
 
 let mockPath = '/coach/intelligence';
@@ -130,22 +131,27 @@ describe('the cluster lines', () => {
 
 describe('the coach home', () => {
   const workspace = fs.readFileSync(path.join(__dirname, 'CoachWorkspace.tsx'), 'utf8');
-  const floor = fs.readFileSync(path.join(__dirname, 'CoachFloorFocus.tsx'), 'utf8');
 
-  test('links the four clinic pages by their doors', () => {
-    const clinic = workspace.match(/const CLINIC_DOORS = \[([^\]]*)\]/);
-    expect(clinic).not.toBeNull();
-    const hrefs = [...clinic![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    expect(hrefs).toEqual(['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']);
-    for (const href of hrefs) {
+  /* The four clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
+     Dashboard; since lane 6C7's 7a-2 they are in the home's Safety job, which
+     draws the coach job bar's Safety section (stage 2 section 3.4 row 22).
+     coachHomeLayout.test.tsx pins the rendered links. */
+  test('links the four clinic pages by their doors, through the Safety job', () => {
+    const safety = jobBarFor('coach')?.sections.find((section) => section.label === 'Safety');
+    const hrefs = (safety?.items ?? []).map((item) => item.href);
+    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']) {
+      expect(hrefs).toContain(href);
       const door = BUILDING.find((d) => d.href === href);
       expect(door && door.roles !== OPEN && door.roles.includes('coach')).toBe(true);
     }
-    expect(workspace).toContain('{CLINIC_DOORS.map((door) => (');
+    expect(workspace).toMatch(/\{ section: 'Safety', title: 'Safety'/);
+    expect(workspace).toContain("{activeTab === 'dashboard' && <CoachHomeJobs />}");
   });
 
+  // "Needs you now" is the home's strip since lane 6C7's 7b (it was the floor board's card).
   test('"Needs you now" links The Morning Read, not as the full list (CS-04)', () => {
-    expect(floor).toMatch(/<Link href="\/coach\/intelligence"[^>]*>More reads: The Morning Read<\/Link>/);
+    const strip = fs.readFileSync(path.join(__dirname, 'CoachNeedsYouStrip.tsx'), 'utf8');
+    expect(strip).toMatch(/<Link href="\/coach\/intelligence"[^>]*>More reads: The Morning Read<\/Link>/);
   });
 
   test('renders one h1: the tab masthead is an h2 under "Coach Workspace"', () => {

@@ -1,157 +1,59 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ChromeLink from './ChromeLink';
+import { useMemo, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
-import { useSyncExternalStore } from 'react';
 
+import { openSearchAt, searchGroupLabel } from './CardCatalog';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
-import {
-  ROOM_BLURB,
-  ROOM_LABEL,
-  doorForPath,
-  doorsByRoom,
-  type Room,
-} from './buildingMap';
+import { doorForPath } from './buildingMap';
+import { searchGroupOf } from './roomPlaces';
 
 /**
- * THE CORRIDOR — how you walk the building.
+ * THE CORRIDOR: WHERE YOU ARE STANDING.
  *
- * Law 6 made every screen a room. Nothing, until now, let you get between them:
- * 63 routes and two links in the header. The corridor is the hallway those
- * rooms open onto, and it does two jobs at once — it moves you, and it tells
- * you where you are standing, which is the part a breadcrumb usually does badly.
+ * It was two things: a hallway menu of every room and the doors in it, and the
+ * plate on the session bar saying which room you were in. AS-4 (U2-4c) keeps
+ * the plate and moves the menu. Jason's S2-2 "A: Job bar + search" replaced the
+ * ruling that both header menus stay (OD-2026-11-19-008): "the Rooms list
+ * becomes 'All pages' inside Search". So the rooms are now Search's groups
+ * (searchGroups, roomPlaces.ts: Home, the Room Map's rooms, then Lab for the
+ * admin and the platform owner), and this plate names the one you are in, in
+ * the same words. Pressing it opens Search at All pages, at that room.
  *
- * Only rooms the session can enter are listed. That is a courtesy so the
- * corridor does not offer a door that bounces you; the page guard remains the
- * authority. See the note at the top of buildingMap.ts.
+ * It holds no link. Every page is reached through Search or the job bar, each
+ * of which offers only pages the person can open; cameraDocumentNavigation.test
+ * keeps it that way.
  */
 export default function Corridor() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const role = session?.role ?? null;
 
-  const [open, setOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  const groups = useMemo(() => doorsByRoom(role), [role]);
   const here = useMemo(() => doorForPath(pathname), [pathname]);
-  const hereRoom: Room | null = here?.room ?? null;
+  const group = here ? searchGroupOf(here.href, role) : null;
 
-  const close = useCallback(() => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  }, []);
+  // Signed out there is no Search to open, so there is no plate.
+  if (!role) return null;
 
-  /* Close on Escape, and on a click outside the panel. */
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.preventDefault(); close(); }
-    }
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (panelRef.current && !panelRef.current.contains(t) && !triggerRef.current?.contains(t)) {
-        close();
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-    };
-  }, [open, close]);
-
-  /* Walking through a door closes the corridor behind you. Done by the parent
-     keying this component on the pathname rather than by an effect: setState in
-     an effect cascades a render, and a remount gives exactly the semantics
-     wanted — the corridor is shut on every new surface. */
-
-  // Signed out there is nothing to walk between, so the corridor stays shut
-  // rather than showing a hallway of doors that all lead to /login.
-  if (!role && groups.length === 0) return null;
+  const room = group ? searchGroupLabel(group) : 'All pages';
+  const where = here ? `${room}, ${here.label}` : room;
 
   return (
     <div className="corridor-root">
       <button
-        ref={triggerRef}
         type="button"
-        className={`corridor-trigger${open ? ' is-open' : ''}`}
-        aria-expanded={open}
-        aria-controls="corridor-panel"
-        onClick={() => setOpen((v) => !v)}
+        className="corridor-trigger"
+        // A page the map does not know is not a place: say only what it opens.
+        aria-label={here ? `Where you are: ${where}. Opens All pages in Search.` : 'Open All pages in Search.'}
+        onClick={() => openSearchAt(group)}
       >
         <span className="corridor-trigger-glyph" aria-hidden="true">▤</span>
-        <span className="corridor-trigger-lbl">
-          {hereRoom ? ROOM_LABEL[hereRoom] : 'Rooms'}
-        </span>
-        {/* The current surface's name steps off the phone: the page's own title
-            says it, the panel marks it (aria-current), and keeping it made the
-            room name above it the part that was cut ("FRONT OF…"). */}
+        <span className="corridor-trigger-lbl">{room}</span>
+        {/* The page's name steps off the phone: the page's own title says it,
+            and keeping it made the room name beside it the part that was cut
+            ("FRONT OF…"). */}
         {here && <span className="corridor-trigger-here hidden sm:inline">{here.label}</span>}
       </button>
-
-      {open && (
-        <div
-          id="corridor-panel"
-          ref={panelRef}
-          className="corridor-panel"
-          role="navigation"
-          aria-label="The building — rooms and the surfaces in them"
-        >
-          <div className="corridor-head">
-            <b>The building</b>
-            <span>
-              {groups.reduce((n, g) => n + g.doors.length, 0)} surfaces
-              {role ? ` open to ${role.replace(/_/g, ' ')}` : ' open without a session'}
-            </span>
-          </div>
-
-          <div className="corridor-rooms">
-            {groups.map((group) => (
-              <section
-                key={group.room}
-                className={`corridor-room room--${group.room}${group.room === hereRoom ? ' is-here' : ''}`}
-              >
-                <header className="corridor-room-hd">
-                  <b>{ROOM_LABEL[group.room]}</b>
-                  {group.room === hereRoom && <span className="corridor-youarehere">you are here</span>}
-                  <span className="corridor-room-blurb">{ROOM_BLURB[group.room]}</span>
-                </header>
-                <ul className="corridor-doors">
-                  {group.doors.map((door) => {
-                    const current = door.href === pathname;
-                    /*
-                     * ChromeLink, not Link. The corridor is mounted on the
-                     * recorders as well as on every other surface, and a soft
-                     * navigation in either direction breaks the document-
-                     * scoped camera policy -- shut on the way in, still open
-                     * on the way out. See components/cameraDocuments.ts.
-                     */
-                    return (
-                      <li key={door.href}>
-                        <ChromeLink
-                          href={door.href}
-                          className={`corridor-door${current ? ' is-current' : ''}`}
-                          aria-current={current ? 'page' : undefined}
-                        >
-                          {door.label}
-                        </ChromeLink>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ))}
-          </div>
-
-          <div className="corridor-foot">
-            Press <kbd>⌘K</kbd> or <kbd>/</kbd> to search every surface instead.
-          </div>
-        </div>
-      )}
     </div>
   );
 }

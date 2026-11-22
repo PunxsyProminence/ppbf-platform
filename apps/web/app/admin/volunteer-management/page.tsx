@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import Link from 'next/link';
 import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 interface VolunteerRecord {
   volunteer_id: string;
@@ -218,11 +220,19 @@ export default function VolunteerManagementPage() {
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
+            <p className="t-eyebrow">Members &amp; staff</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Volunteers</h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Who volunteers here, what they help with, when they are free, and where their checks stand.
               Everything on this page is kept on file — nothing here is a sample.
+            </p>
+            {/* Lane AS-10, OFF-19: a volunteer's sign-in and their volunteer record are kept on two
+                pages, and neither said which. Staff Credentials lists volunteers' credentials
+                (STAFF_CREDENTIAL_ROLES includes volunteer). */}
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              This page keeps the volunteer record. A volunteer&rsquo;s sign-in is given on{' '}
+              <Link href="/admin/people" className="underline">Gym Office</Link>. The certification status typed
+              here is a note: the certificates of a volunteer with a sign-in are checked on Staff Credentials.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--warning">
@@ -342,7 +352,9 @@ export default function VolunteerManagementPage() {
 
           {message ? <p className="t-body mt-[var(--s5)] font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
 
-          <div className="mt-[var(--s6)]">
+          <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            {/* Staff Credentials is admin-only; this page also admits the platform owner. */}
+            <RoleLink href="/admin/credentials" roles={['admin']} className="btn btn--ghost">Staff Credentials</RoleLink>
             <BackHome />
           </div>
         </div>

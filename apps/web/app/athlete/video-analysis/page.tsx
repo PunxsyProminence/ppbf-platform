@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import BackHome from '@/components/BackHome';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { observationsForAthlete, reviewStateLine } from '@/components/shadowObservationsForAthlete';
 import { apiBase } from '@/lib/apiBase';
@@ -86,6 +87,22 @@ export default function AthleteVideoAnalysisPage() {
   const [observationError, setObservationError] = useState('');
   const [activeVideo, setActiveVideo] = useState<ActiveVideo | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
+  /* The player is drawn above the list, so on a phone a round opened from
+     further down started out of sight (lane AS-8, ATH-25; Overwatch Q8 A on
+     #2020). Opening one brings the player into view and puts the keyboard on
+     its title. A JS scroll with an explicit behavior ignores the CSS
+     reduced-motion rule, so the check is made here, as the athlete workspace
+     does for its own jumps. */
+  const playerTitleRef = useRef<HTMLHeadingElement>(null);
+  const openedUrl = activeVideo?.url ?? null;
+  useEffect(() => {
+    if (!openedUrl) return;
+    const title = playerTitleRef.current;
+    if (!title) return;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    title.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+    title.focus({ preventScroll: true });
+  }, [openedUrl]);
 
   useEffect(() => {
     void (async () => {
@@ -142,6 +159,9 @@ export default function AthleteVideoAnalysisPage() {
         <header className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Film</p>
           <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>My Film</h1>
+          {/* The way back at the top, as My Progression and the Sparring Log
+              have it (ATH-25); the link at the foot stays. */}
+          <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Rounds your coach has put up for you to watch back.
           </p>
@@ -150,7 +170,7 @@ export default function AthleteVideoAnalysisPage() {
         {activeVideo ? (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
             <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-              <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>{activeVideo.title}</h2>
+              <h2 ref={playerTitleRef} tabIndex={-1} className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>{activeVideo.title}</h2>
               <button onClick={() => setActiveVideo(null)} className="btn btn--ghost min-h-[var(--tap)]">
                 Close
               </button>

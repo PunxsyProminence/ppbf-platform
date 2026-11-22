@@ -188,6 +188,23 @@ test('the uncalibrated pairing rule is stated on the screen, not assumed', async
 
   expect(await screen.findByText(/pilot-temporal-overlap-v0/)).toBeInTheDocument();
   expect(screen.getByText(/UNCALIBRATED/)).toBeInTheDocument();
+  expect(screen.getByText(/only when the spans the coaches actually drew overlap/)).toBeInTheDocument();
+});
+
+test('under a window the screen says what the window does, not v0\'s overlap-only sentence (HF6, A-Q10c)', async () => {
+  const windowed = {
+    ...COMPARISON,
+    comparison: {
+      ...COMPARISON.comparison,
+      matchingPolicy: { policyVersion: 'pilot-temporal-overlap-v1', calibrationState: 'UNCALIBRATED', overlapToleranceMs: 100 },
+    },
+  };
+  global.fetch = jest.fn().mockResolvedValue(respond(windowed)) as unknown as typeof fetch;
+
+  render(<CalibrationReviewPage />);
+
+  expect(await screen.findByText(/a mark that overlaps nothing pairs with one within 100ms/)).toBeInTheDocument();
+  expect(screen.queryByText(/only when the spans the coaches actually drew overlap/)).not.toBeInTheDocument();
 });
 
 test('every disagreement category is listed, so a zero is a measured zero', async () => {

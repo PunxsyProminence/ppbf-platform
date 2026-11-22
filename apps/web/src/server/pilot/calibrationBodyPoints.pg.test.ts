@@ -221,8 +221,8 @@ async function punch(set: SetRef, overrides: Record<string, unknown> = {}): Prom
     eventId: crypto.randomUUID(),
     annotationSetId: set.setId,
     eventClass: 'punch',
-    actorTrack: 'red',
-    opponentTrack: 'blue',
+    actorTrack: 'fighter_1',
+    opponentTrack: 'fighter_2',
     startMs: EV_START,
     endMs: EV_END,
     contactMs: EV_CONTACT,
@@ -244,8 +244,8 @@ async function defense(set: SetRef, overrides: Record<string, unknown> = {}): Pr
     eventId: crypto.randomUUID(),
     annotationSetId: set.setId,
     eventClass: 'defense',
-    actorTrack: 'blue',
-    opponentTrack: 'red',
+    actorTrack: 'fighter_2',
+    opponentTrack: 'fighter_1',
     startMs: EV_START,
     endMs: EV_END,
     defenseType: 'slip',
@@ -377,7 +377,7 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Body points study',
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR,
   });
 });
@@ -1266,7 +1266,7 @@ describe('deleting a whole organization', () => {
       organizationId: orgId,
       calibrationProjectId: projectId,
       name: 'Doomed study',
-      ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       createdByAccountId: accountId,
     });
     const clipId = crypto.randomUUID();
@@ -1294,7 +1294,7 @@ describe('deleting a whole organization', () => {
       eventId: crypto.randomUUID(),
       annotationSetId: setId,
       eventClass: 'punch',
-      actorTrack: 'red',
+      actorTrack: 'fighter_1',
       startMs: EV_START,
       endMs: EV_END,
       contactMs: EV_CONTACT,

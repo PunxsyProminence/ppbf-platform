@@ -25,6 +25,46 @@ import {
   normalizeStaffDisplayName,
 } from '@/src/shared/staffDisplayName';
 import GymOfficeSafetyStrip from '@/components/GymOfficeSafetyStrip';
+import { BUILDING } from '@/components/buildingMap';
+import { JOB_BARS } from '@/components/jobBars';
+
+/**
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A). The office pages that the
+ * Capabilities header used to launch, grouped by the admin's job sections (AS-4,
+ * components/jobBars.ts) in the bar's order, then the four that sit in no admin section in
+ * one row with no heading, in Capabilities' old order. Each link says its door's label in
+ * BUILDING, which is the title of the page it opens. Only an organization admin reaches the
+ * console that draws this, and each of these pages admits one.
+ *
+ * Gym Setup is not repeated: the header links it already (AS10-1). Two of the four were linked
+ * on Capabilities on purpose: Video Analysis so an organization admin, whom the video upload
+ * API admits, can find where to upload a video; Waivers & Consent when it was built, because
+ * its backend had sat months with no caller. Keep them linked.
+ */
+const MOVED_FROM_CAPABILITIES: ReadonlySet<string> = new Set([
+  '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
+  '/admin/compliance-center',
+]);
+
+const OFFICE_PAGES = (JOB_BARS.admin?.sections ?? [])
+  .map((section) => ({
+    label: section.label,
+    links: section.items.flatMap((item) => {
+      if (!MOVED_FROM_CAPABILITIES.has(item.href)) return [];
+      const door = BUILDING.find((candidate) => candidate.href === item.href);
+      // A page with no door has no title to show, so it is left out rather than shown as a bare address.
+      return door ? [{ href: door.href, label: door.label }] : [];
+    }),
+  }))
+  .filter((section) => section.links.length > 0);
+
+/** In no admin job section (Q19 A): after the groups, in the order Capabilities had them. */
+const UNSECTIONED_FROM_CAPABILITIES = ['/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system'];
+
+const OFFICE_PAGES_UNSECTIONED = UNSECTIONED_FROM_CAPABILITIES.flatMap((href) => {
+  const door = BUILDING.find((candidate) => candidate.href === href);
+  return door ? [{ href: door.href, label: door.label }] : [];
+});
 
 interface Member {
   account_id: string;
@@ -1411,7 +1451,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <p className="t-eyebrow">People</p>
               <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Office</h1>
               <p className="t-body mt-[var(--s3)]">
-                Add coaches and staff, and create athlete sign-ins.
+                Add coaches and staff, and create athlete sign-ins. A volunteer&rsquo;s sign-in is given here;
+                their volunteer record is kept on <Link href="/admin/volunteer-management" className="underline">Volunteers</Link>.
                 {organizationName && (
                   <>
                     {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationName}</span>
@@ -1436,6 +1477,31 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               </Link>
             </div>
           </div>
+          <nav aria-label="Office pages" className="mt-[var(--s5)] flex flex-wrap gap-x-[var(--s6)] gap-y-[var(--s4)]">
+            {OFFICE_PAGES.map((section, index) => (
+              <div key={section.label} role="group" aria-labelledby={`office-pages-${index}`}>
+                <h2 id={`office-pages-${index}`} className="t-eyebrow">{section.label}</h2>
+                <ul className="mt-[var(--s2)] flex flex-wrap gap-[var(--s3)]">
+                  {section.links.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="btn btn--ghost">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            <ul className="flex basis-full flex-wrap gap-[var(--s3)]">
+              {OFFICE_PAGES_UNSECTIONED.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="btn btn--ghost">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </header>
 
         {/* The admin's morning safety check, from home (lane U2, audit UX-A A-2). */}

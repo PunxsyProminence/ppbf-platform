@@ -84,16 +84,21 @@ export const SUPPORTED_BOXING_ONTOLOGY_VERSIONS = [
 ] as const;
 export type BoxingOntologyVersion = (typeof SUPPORTED_BOXING_ONTOLOGY_VERSIONS)[number];
 
-/** The versions a coach can open and label in this build, and that a project
- * may be created under.
+/** The versions a coach can open and label in this build.
  *
- * 0.1 only, for now. The labelling page's forms and recordAnnotationEvent's
- * checks are 0.1's; opening a 0.2 project would put 0.1's dropdowns in front
- * of a coach and store the answers under a 0.2 stamp. 0.2 joins this list when
- * its rules are enforced and its screen exists -- a code change, never a
- * migration. */
+ * 0.1 and 0.4. 0.1 stays so the studies already running on it finish on the
+ * labels they started with (OD-2026-10-02-008 4A: old studies finish on old
+ * labels; never mixed). 0.4 joins because its event rules are enforced
+ * (annotations.ts, assertVersionEventRules; the body-point rules migration)
+ * and the labelling page marks its body points (OD-2026-10-04-024: 0.4 stays
+ * closed "until the body-point marking screen exists"; lane TEACH-T, T-1).
+ *
+ * 0.2 and 0.3 are NOT here: they were never opened, and any marks made under
+ * them are kept exactly as made under their own version (OD-2026-10-04-024
+ * 2A). Adding a version is a code change, never a migration. */
 export const ANNOTATABLE_ONTOLOGY_VERSIONS: readonly BoxingOntologyVersion[] = [
   BOXING_ONTOLOGY_VERSION_0_1,
+  BOXING_ONTOLOGY_VERSION_0_4,
 ];
 
 /** The versions whose annotation sets may hold body points, lead sides,
@@ -106,11 +111,13 @@ export const BODY_POINT_ONTOLOGY_VERSIONS = [
 ] as const satisfies readonly BoxingOntologyVersion[];
 export type BodyPointOntologyVersion = (typeof BODY_POINT_ONTOLOGY_VERSIONS)[number];
 
-/** What a new study is stamped with by the routes and the bootstrap. Stays 0.1
- * until a body-point version (0.2, 0.3 or 0.4) can be labelled end to end, so no
- * study is created that the current screen cannot label. ontology.test.ts
- * holds it inside ANNOTATABLE_ONTOLOGY_VERSIONS. */
-export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_1;
+/** What a new study is stamped with by the routes and the bootstrap: 0.4, the
+ * newest body-point list (23 points; OD-2026-10-04-021), so every new study
+ * marks body points at three moments on every punch and every defence
+ * (OD-2026-10-02-011 3a). ontology.test.ts holds it inside
+ * ANNOTATABLE_ONTOLOGY_VERSIONS, so no study is created that the page cannot
+ * label. */
+export const PROJECT_CREATION_ONTOLOGY_VERSION: BoxingOntologyVersion = BOXING_ONTOLOGY_VERSION_0_4;
 
 /* ------------------------------------------------------------------ *
  * EVENT CLASSES
@@ -180,6 +187,24 @@ export type HandRole = (typeof HAND_ROLES)[number];
  * being able to filter by. */
 export const STANCES = ['orthodox', 'southpaw', 'transition', 'unknown'] as const;
 export type Stance = (typeof STANCES)[number];
+
+/** Who an event is about, on a body-point set (0.2 and later): the two
+ * fighters, by their ruled labels -- OD-2026-10-08-005 A-Q10a, Jason:
+ * "Fighter 1 / Fighter 2 (Recommended)"; ruling 1: "Teach labels the two
+ * fighters "Fighter 1" and "Fighter 2"". Each person's punches, defences and
+ * body points go on that person's own events (OD-2026-10-03-006); a solo take
+ * is Fighter 1. A 0.1 set keeps the typed actor it started with
+ * (OD-2026-10-02-008 4A), so this list binds body-point sets only. */
+export const FIGHTER_TRACKS = ['fighter_1', 'fighter_2'] as const;
+export type FighterTrack = (typeof FIGHTER_TRACKS)[number];
+
+/** An actor as a coach reads it: "Fighter 1" / "Fighter 2" for the ruled
+ * labels; a 0.1 set's typed actor is shown as typed. Display only. */
+export function fighterLabel(track: string): string {
+  if (track === 'fighter_1') return 'Fighter 1';
+  if (track === 'fighter_2') return 'Fighter 2';
+  return track;
+}
 
 /** Where the punch was AIMED. Distinct from CONTACT_ZONES, which is what it
  * actually reached -- a punch aimed at the head that lands on a glove is one

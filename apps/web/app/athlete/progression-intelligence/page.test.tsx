@@ -303,6 +303,36 @@ describe('gap-free Coach Cards on the assignments list', () => {
     expect(screen.getAllByText(/Assigned by:/)).toHaveLength(1);
     expect(screen.getByText('Coach J Rivera')).toBeTruthy();
   });
+
+  /* Lane AS-8, ATH-19: "Identified Gaps" is a heading over the gaps, so it is
+     shown only when there is one, as the parent page does. An athlete whose
+     only work is a Coach Card has no gap, and a heading over nothing reads as
+     a list that failed to load. */
+  test('"Identified Gaps" is shown over a gap, and not at all when the work has no gap', async () => {
+    global.fetch = mockWithAssignments() as unknown as typeof fetch;
+    const { unmount } = render(<AthleteProgressionIntelligencePage />);
+    await screen.findByText('Pivot drill');
+    expect(screen.getByRole('heading', { name: 'Identified Gaps' })).toBeTruthy();
+    expect(screen.getByText('Rear foot stays flat through the cross.')).toBeTruthy();
+    unmount();
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(SESSION_PATH)) {
+        return { ok: true, json: async () => ({ authenticated: true, athlete_id: 'athlete-001' }) } as Response;
+      }
+      if (url.includes('/progression/assignments')) {
+        return { ok: true, json: async () => ({ items: [COACH_CARD_ASSIGNMENT] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    render(<AthleteProgressionIntelligencePage />);
+    await screen.findByText('Shadowbox');
+    expect(screen.queryByRole('heading', { name: 'Identified Gaps' })).toBeNull();
+    // The assignments keep their own heading and list; the page is not the empty state.
+    expect(screen.getByRole('heading', { name: 'Drill Assignments' })).toBeTruthy();
+    expect(screen.queryByText('No progression gaps assigned')).toBeNull();
+  });
 });
 
 // An issued workout template keeps its shape on the athlete's screen (lane

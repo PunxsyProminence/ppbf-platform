@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AnnouncementBanner from './AnnouncementBanner';
 import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import CoachNeedsYouStrip, { type NeedsYouCount } from './CoachNeedsYouStrip';
 import PainReportsPanel, {
   PAIN_PROVENANCE,
   painDetailAbsent,
@@ -76,11 +77,136 @@ import AthleteAttendancePanel from './AthleteAttendancePanel';
 import AthleteGrowthPanel from './AthleteGrowthPanel';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import { BUILDING } from './buildingMap';
+import { jobBarFor, type JobItem } from './jobBars';
 
-/** The clinic doors the coach home links (lane U2, audit UX-A A-3), in the map's own words. */
-const CLINIC_DOORS = ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']
-  .map((href) => BUILDING.find((door) => door.href === href))
-  .filter((door): door is NonNullable<typeof door> => door !== undefined);
+/* THE COACH'S FOUR JOBS (lane 6C7, AS-7 step 7a-2). The approved stage 2 coach
+   home (section 3.9 sketch, quoted by Overwatch on #2043) puts four buttons in
+   a 2 by 2 grid -- RUN TONIGHT'S CLASS, ATHLETES, PLAN, SAFETY -- and a More
+   line under them. Their pages are the coach job bar's (components/jobBars.ts,
+   #2029), so the home and the bar cannot disagree about what a job holds, and
+   a page the coach cannot open is not offered (jobBarFor keeps only doors
+   visibleDoors gives the coach).
+   Quick Actions (row 21) and the Clinic row (row 22) moved into these jobs.
+   Today's Floor (/coach/floor-groups) was a Quick Action and is not in the
+   bar (jobBars.ts: "Groups and pathways" has no page yet), so the Class job
+   keeps it as one extra page rather than drop a link a coach used. */
+/* `shown`: pages kept in view under the job's button, not behind its "more"
+   list. The Safety job keeps the old Clinic row's three other pages in view, so
+   placing a limit, a sparring cap or reading a safety record stays one tap from
+   home, as the Clinic row made it (lane U2, audit UX-A A-3); the Clearance Board
+   is the job's own button. */
+const HOME_JOBS: ReadonlyArray<{ section: string; title: string; extra?: readonly string[]; shown?: readonly string[] }> = [
+  { section: 'Class', title: "Run tonight's class", extra: ['/coach/floor-groups'] },
+  { section: 'Athletes', title: 'Athletes' },
+  { section: 'Plan', title: 'Plan' },
+  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps'] },
+];
+
+const doorLabel = (href: string): string | null => BUILDING.find((door) => door.href === href)?.label ?? null;
+
+/** A page with a door label; one with none is left out rather than shown as a bare address. */
+function labelled(items: readonly JobItem[]): Array<{ href: string; label: string }> {
+  return items.flatMap((item) => {
+    const label = doorLabel(item.href);
+    return label ? [{ href: item.href, label }] : [];
+  });
+}
+
+/**
+ * The four jobs and More on the coach home. Display only, like every menu: it
+ * decides no gate, and each page keeps its own.
+ */
+function CoachHomeJobs() {
+  const bar = jobBarFor('coach');
+  if (!bar) return null;
+  const sections = new Map(bar.sections.map((section) => [section.label, section.items]));
+  const more = labelled(bar.more);
+  return (
+    <section aria-labelledby="coach-home-jobs" className="space-y-[var(--s3)]">
+      <h2 id="coach-home-jobs" className="sr-only">Your jobs</h2>
+      <div className="grid grid-cols-1 gap-[var(--s3)] sm:grid-cols-2">
+        {HOME_JOBS.map((job) => {
+          const extra = (job.extra ?? []).filter((href) => BUILDING.some((door) => door.href === href));
+          const pages = labelled([...(sections.get(job.section) ?? []), ...extra.map((href) => ({ href }))]);
+          if (pages.length === 0) return null;
+          const [first, ...others] = pages;
+          const inView = others.filter((page) => job.shown?.includes(page.href));
+          const rest = others.filter((page) => !job.shown?.includes(page.href));
+          return (
+            <div
+              key={job.section}
+              role="group"
+              aria-label={job.section}
+              className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s2)]"
+            >
+              <Link
+                href={first.href}
+                data-job={job.section}
+                aria-describedby={`coach-home-job-${job.section}`}
+                className="btn w-full justify-center"
+              >
+                {job.title}
+              </Link>
+              <p id={`coach-home-job-${job.section}`} className="t-data text-[color:var(--bone-400)]">Opens {first.label}</p>
+              {inView.length > 0 && (
+                <ul className="grid gap-[var(--s2)]">
+                  {inView.map((page) => (
+                    <li key={page.href}>
+                      <Link href={page.href} className="btn btn--ghost w-full justify-start">
+                        {page.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {rest.length > 0 && (
+                <details className="group">
+                  {/* .btn is inline-flex, which hides the native marker, so the
+                      open state is drawn as a glyph (closed ▸, open ▾); screen
+                      readers get it from <summary> itself. */}
+                  <summary className="btn btn--ghost w-full justify-center cursor-pointer">
+                    <span aria-hidden="true" className="group-open:hidden">▸</span>
+                    <span aria-hidden="true" className="hidden group-open:inline">▾</span>
+                    {rest.length} more in {job.section}
+                  </summary>
+                  <ul className="mt-[var(--s2)] grid gap-[var(--s2)]">
+                    {rest.map((page) => (
+                      <li key={page.href}>
+                        <Link href={page.href} className="btn btn--ghost w-full justify-start">
+                          {page.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {more.length > 0 && (
+        <div role="group" aria-label="More" className="mat-leather rounded-[var(--r-lg)] p-[var(--s3)]">
+          <details className="group">
+            <summary className="btn btn--ghost cursor-pointer">
+              <span aria-hidden="true" className="group-open:hidden">▸</span>
+              <span aria-hidden="true" className="hidden group-open:inline">▾</span>
+              More: {more.length} pages
+            </summary>
+            <ul className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+              {more.map((page) => (
+                <li key={page.href}>
+                  <Link href={page.href} className="btn btn--ghost">
+                    {page.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+    </section>
+  );
+}
 
 type TabID = 'dashboard' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -1016,6 +1142,15 @@ export default function CoachWorkspace() {
   const [escalationAckErrors, setEscalationAckErrors] = useState<Record<string, string>>({});
   const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
+  /* CARDS TO VERIFY (app scrub CF-12; lane 6C7 7b): completions an athlete
+     logged on a card this coach issued, waiting for the coach to verify them on
+     Cards. One read of the route Cards itself uses (GET /api/pilot/coach/cards:
+     a coach gets the cards they issued, inside their own gym). A failed or
+     refused read is "error", shown as "?" and "not checked", never as 0. */
+  const [cardsToVerify, setCardsToVerify] = useState<{ state: 'loading' | 'error' | 'loaded'; count: number }>({
+    state: 'loading',
+    count: 0,
+  });
   const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
   const [barrierReportsError, setBarrierReportsError] = useState('');
 
@@ -1305,6 +1440,30 @@ export default function CoachWorkspace() {
   // Guardian barrier reports. The parent form's copy is "Sent to your
   // child's coach" -- this panel is what makes that true. The server filters
   // to the athletes this coach is authorized for.
+  const loadCardsToVerify = useCallback(async () => {
+    setCardsToVerify({ state: 'loading', count: 0 });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/cards`, { method: 'GET', credentials: 'include' });
+      if (!response.ok) throw new Error('cards');
+      const payload = (await response.json()) as {
+        items?: Array<{ cards?: Array<{ completions?: Array<{ verification_status?: unknown }> }> }>;
+      };
+      // A body without the list is not "nothing to verify".
+      if (!Array.isArray(payload.items)) throw new Error('cards');
+      let count = 0;
+      for (const group of payload.items) {
+        for (const card of group.cards ?? []) {
+          for (const completion of card.completions ?? []) {
+            if (completion.verification_status === 'pending') count += 1;
+          }
+        }
+      }
+      setCardsToVerify({ state: 'loaded', count });
+    } catch {
+      setCardsToVerify({ state: 'error', count: 0 });
+    }
+  }, []);
+
   const loadBarrierReports = useCallback(async () => {
     setBarrierReportsLoading(true);
     try {
@@ -1578,11 +1737,12 @@ export default function CoachWorkspace() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadBarrierReports();
+    void loadCardsToVerify();
     void loadLiveRun();
     void loadTodayClasses();
     void loadCredentials();
     void loadDevelopment();
-  }, [loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
+  }, [loadBarrierReports, loadCardsToVerify, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
 
   useEffect(() => {
     void (async () => {
@@ -2524,16 +2684,65 @@ export default function CoachWorkspace() {
     },
   ];
 
+  /* THE STRIP'S COUNTS (lane 6C7 7b). Each is a count this page already holds,
+     in the order the pager takes them, and each opens the list that holds those
+     items today: the three lists below on this page, and Cards for the
+     completions waiting to be verified (CF-12). */
+  const needsYouCounts: NeedsYouCount[] = [
+    {
+      key: 'escalations',
+      label: 'Safety escalations',
+      state: escalationsLoading ? 'loading' : escalationsError ? 'error' : 'loaded',
+      count: escalations.filter((escalation) => escalation.status === 'open').length,
+      href: '#coach-safety-escalations',
+      safety: true,
+      inPager: true,
+    },
+    {
+      key: 'pain',
+      label: 'Pain reports',
+      // The same rule as the pager's feed: rows that could not all be drawn make the read failed.
+      state: painRead.loading ? 'loading' : painRead.error || painRead.unreadRows > 0 ? 'error' : 'loaded',
+      count: painReports.length,
+      floor: painRead.truncated,
+      href: '#coach-dashboard-details',
+      safety: true,
+      inPager: true,
+    },
+    {
+      key: 'barrier',
+      label: 'Family barrier reports',
+      state: barrierReportsLoading ? 'loading' : barrierReportsError ? 'error' : 'loaded',
+      count: barrierReports.length,
+      floor: barrierReportsTruncated,
+      href: '#coach-barrier-reports',
+      safety: false,
+      inPager: true,
+    },
+    {
+      key: 'cards',
+      label: 'Cards to verify',
+      state: cardsToVerify.state,
+      count: cardsToVerify.count,
+      href: '/coach/cards',
+      safety: false,
+      inPager: false,
+    },
+  ];
+
   /* A medallion on the floor view takes the coach to that athlete's row on
      the roster below and puts focus on it. It opens nothing and reads nothing:
      the row is where a coach deliberately chooses to open a child's
      self-report, and that stays the coach's own tap. */
   /* ONE PLACE PER ACTION (Jason 2026-10-03, option A). On the Dashboard the
-     floor board carries every report action -- it pages through every open
-     escalation, pain report and barrier report -- so the full lists below it
-     stay complete but read-only there, and the old panels that repeated the
-     board (summary, mode toggle, session-scripts shortcuts) leave this tab.
-     On every other tab the board is absent and the lists keep their buttons. */
+     Needs You Now strip at the top of the page carries every report action --
+     it pages through every open escalation, pain report and barrier report --
+     so the full lists below it stay complete but read-only there, and the old
+     panels that repeated the board (summary, mode toggle, session-scripts
+     shortcuts) leave this tab. The strip was the floor board's card until lane
+     6C7's 7b; the name stays `boardShown` because it still means "the Dashboard,
+     where that pager is". On every other tab the pager is absent and the lists
+     keep their buttons. */
   const boardShown = activeTab === 'dashboard';
 
   const showAthleteOnRoster = (athleteId: string) => {
@@ -2587,6 +2796,50 @@ export default function CoachWorkspace() {
               3 exists to hold. */}
         </div>
 
+        {/* TAB NAVIGATION -- directly under the masthead (app scrub CF-03,
+            lane 6C7 7a-2). It sat below the safety lists, the notices and the
+            Coach Standard, so the tabs were the last thing on the first screen
+            of a gym tablet. The pain, escalation and barrier lists stay outside
+            the tab switch and still show on every tab, under this row. */}
+        <div className={ui.tabContainer}>
+          <div className={ui.tabRow}>
+            {COACH_TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                /* Which tab is open was carried by colour alone. A coach using
+                   a screen reader, or a colour-blind coach on a bright gym
+                   floor, got no answer at all -- Law 3, and the athlete
+                   workspace's own tab row has said aria-current since it was
+                   built. */
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className={cx(
+                  ui.tabButtonBase,
+                  'gap-2',
+                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
+                )}
+              >
+                {tab.label}
+                {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
+                  <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* NEEDS YOU NOW, THE HOME'S STRIP (stage 2 section 3.4 row 11; Q6 = A;
+            lane 6C7 7b): the board's card, moved to the top of the home and
+            widened with a count per list. On the home only, like the card. */}
+        {activeTab === 'dashboard' && (
+          <CoachNeedsYouStrip
+            counts={needsYouCounts}
+            items={floorFocusItems}
+            feeds={floorFocusFeeds}
+            painWindowDays={painRead.windowDays}
+          />
+        )}
+
         {activeTab === 'dashboard' && (
           <CoachFloorFocus
             athletes={athletes.map((athlete) => ({
@@ -2602,12 +2855,9 @@ export default function CoachWorkspace() {
               isInactive: athlete.inactive === true,
             }))}
             readinessState={readinessFeedState}
-            painWindowDays={painRead.windowDays}
             athletesState={athletesLoading ? 'loading' : athletesError ? 'error' : 'loaded'}
             athletesError={athletesError}
             onSelectAthlete={showAthleteOnRoster}
-            items={floorFocusItems}
-            feeds={floorFocusFeeds}
             sessionState={liveRunState === 'unavailable' ? 'error' : liveRunState}
             sessionLive={liveRunState === 'loaded' && liveRun !== null}
             sessionPaused={liveRun?.is_paused ?? false}
@@ -2616,7 +2866,10 @@ export default function CoachWorkspace() {
         )}
 
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
-            everything else on the page. A child reporting pain has to reach the
+            everything else on the page but the tab row and, on the Dashboard,
+            the Needs You Now strip and the floor board (the strip pages
+            through every pain report; lane 6C7 7a-2 moved the tab row up, 7b
+            moved the pager into the strip). A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. The panel (PainReportsPanel, lane U2-6b-2)
             is drawn --restricted, not --locked: "A pain report is not a medical
@@ -2633,7 +2886,7 @@ export default function CoachWorkspace() {
             OW25-48 A: "Medical-stop mark only for a medical stop"). --locked is
             the medical stop, and no escalation source is one; each card's badge
             still names its severity. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section id="coach-safety-escalations" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
               Safety Escalations
@@ -2695,7 +2948,7 @@ export default function CoachWorkspace() {
 
                     {escalation.status === 'open' && boardShown ? (
                       <p className="t-data text-[color:var(--bone-300)]">
-                        Open. Acknowledge it from Needs You Now on the floor board above.
+                        Open. Acknowledge it from Needs You Now at the top of the page.
                       </p>
                     ) : escalation.status === 'open' ? (
                       // The armed second press, as on the board (#1678, F-129).
@@ -2734,7 +2987,7 @@ export default function CoachWorkspace() {
             was sent to their child's coach; this panel is where that promise
             is kept. Lower urgency than pain, so brass trim rather than the
             restricted band the pain and escalation panels wear. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section id="coach-barrier-reports" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
               Family Barrier Reports
@@ -2808,6 +3061,12 @@ export default function CoachWorkspace() {
           )}
         </section>
 
+        {/* THE FOUR JOBS AND MORE (stage 2 3.9; lane 6C7 7a-2). On the home
+            only, below the safety lists, which keep their place above
+            everything but the floor board until 7b's needs-you strip; the
+            notices and the Coach Standard follow them. */}
+        {activeTab === 'dashboard' && <CoachHomeJobs />}
+
         {/* Announcements are pinned notes from the office: paper, not another
             leather panel. .mat-paper sets its own dark ink so the text does not
             inherit bone-on-bone (the old bg-[--bone-200] wrapper did exactly
@@ -2855,101 +3114,14 @@ export default function CoachWorkspace() {
         />
         )}
 
-        {/* TAB NAVIGATION */}
-        <div className={ui.tabContainer}>
-          <div className={ui.tabRow}>
-            {COACH_TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                /* Which tab is open was carried by colour alone. A coach using
-                   a screen reader, or a colour-blind coach on a bright gym
-                   floor, got no answer at all -- Law 3, and the athlete
-                   workspace's own tab row has said aria-current since it was
-                   built. */
-                aria-current={activeTab === tab.id ? 'page' : undefined}
-                className={cx(
-                  ui.tabButtonBase,
-                  'gap-2',
-                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
-                )}
-              >
-                {tab.label}
-                {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
-                  <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* TAB CONTENT */}
         <div className="space-y-6">
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-                <h3 className="t-eyebrow">Quick Actions</h3>
-                {/* The SHADOW Chat launcher and the Write a Rabbit Hole link
-                    used to open this grid. Operations V1 (2026-08-21) keeps
-                    Quick Actions operational: the SHADOW Intel tab below is
-                    the coach's own intelligence surface and stays, and
-                    /rabbit-holes keeps its corridor door -- neither surface
-                    lost any access, only this shortcut row.
-                    Session Scripts, Open Live Floor, Process Tasks and Open
-                    SHADOW Intel left too (2026-10-03): the floor board's Run
-                    the Room opens Session Scripts and the tab row opens the
-                    other three, so each was a second door to the same room.
-                    (The Floor tab that Open Live Floor opened is gone since
-                    lane 6C7's 7a-1; see the comment where it used to render.) */}
-                <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <Link
-                    href="/schedule"
-                    className="btn"
-                  >
-                    Open Scheduler
-                  </Link>
-                  <Link
-                    href="/coach/floor-groups"
-                    className="btn btn--ghost"
-                  >
-                    Today&apos;s Floor Groups
-                  </Link>
-                  <Link
-                    href="/coach/drills"
-                    className="btn btn--ghost"
-                  >
-                    Open Drill Library
-                  </Link>
-                  <Link
-                    href="/coach/cue-library"
-                    className="btn btn--ghost"
-                  >
-                    Open Cue Library
-                  </Link>
-                  <Link
-                    href="/coach/workout-templates"
-                    className="btn btn--ghost"
-                  >
-                    Browse Workout Templates
-                  </Link>
-                </div>
-              </section>
-
-              {/* The clinic, one tap from home (lane U2, audit UX-A A-3):
-                  placing a hold, an injury, a limit or a sparring cap used to
-                  need the corridor and the room name "Clinic". Labels are the
-                  building map's own door labels. */}
-              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="coach-home-clinic">
-                <h3 id="coach-home-clinic" className="t-eyebrow">Clinic</h3>
-                <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  {CLINIC_DOORS.map((door) => (
-                    <Link key={door.href} href={door.href} className="btn btn--ghost">
-                      {door.label}
-                    </Link>
-                  ))}
-                </div>
-              </section>
+              {/* Quick Actions and the Clinic row left the Dashboard for the
+                  four jobs above (stage 2 section 3.4 rows 21 and 22; lane 6C7
+                  7a-2): each of their pages is in Class, Plan or Safety. */}
 
               <section className="grid gap-[var(--s3)] md:grid-cols-3">
                 <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
@@ -3196,6 +3368,18 @@ export default function CoachWorkspace() {
                             {item.status === 'cancelled' && (
                               <p className="mt-[var(--s2)]"><StatusBadge tone="restricted" label="Cancelled" /></p>
                             )}
+                            {/* The class screen, opened on this class (app scrub
+                                CF-07; Q8, lane 6C7 7a-2), the same address
+                                /schedule's "Open class screen" uses. Not on a
+                                cancelled class: there is nothing to run. */}
+                            {item.status !== 'cancelled' && (
+                              <p className="mt-[var(--s2)]">
+                                <Link href={`/coach/class?class=${encodeURIComponent(item.class_id)}`} className="btn btn--ghost">
+                                  Open class screen
+                                  <span className="sr-only">: {item.title}</span>
+                                </Link>
+                              </p>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -3387,6 +3571,22 @@ export default function CoachWorkspace() {
                           <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
                         )}
                       </button>
+
+                      {/* PASSBOOK, on the athlete the coach chose (AS-11's ask,
+                          #2017 Q7 = A; lane 6C7 7a-2). The athlete's book,
+                          opened on them (Passbook reads ?athlete_id=, #2031).
+                          Only on a deliberate pick, like the takedown below: a
+                          seeded selection nobody made opens nothing. The
+                          per-athlete panels stay on this page (Q4). */}
+                      {athleteChosenByCoach && selectedAthleteId === athlete.id && (
+                        <Link
+                          href={`/coach/passbook?athlete_id=${encodeURIComponent(athlete.id)}`}
+                          className="btn btn--ghost mt-[var(--s2)]"
+                        >
+                          Open Passbook
+                          <span className="sr-only">: {athlete.name}</span>
+                        </Link>
+                      )}
 
                       {/* THE TAKEDOWN, shown only on the athlete the coach
                           deliberately selected.

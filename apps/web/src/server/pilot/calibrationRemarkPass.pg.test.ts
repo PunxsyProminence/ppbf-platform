@@ -219,7 +219,7 @@ async function newProject(orgId: string = ORG_ID, creator: string = A): Promise<
     organizationId: orgId,
     calibrationProjectId: projectId,
     name: `Remark pass study ${projectId.slice(0, 8)}`,
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: creator,
   });
   return projectId;
@@ -294,8 +294,8 @@ async function punch(set: SetRef, overrides: Record<string, unknown> = {}): Prom
     eventId: crypto.randomUUID(),
     annotationSetId: set.setId,
     eventClass: 'punch',
-    actorTrack: 'red',
-    opponentTrack: 'blue',
+    actorTrack: 'fighter_1',
+    opponentTrack: 'fighter_2',
     startMs: EV_START,
     endMs: EV_END,
     contactMs: EV_CONTACT,
@@ -1058,8 +1058,33 @@ describe('readers that compare people read first passes only', () => {
     await punch(other);
     await submit(other);
     const after = await coverage.readTeachShadowCoverage(ORG_ID);
-    expect(after.labelling.submitted_sets).toBe(before.labelling.submitted_sets + 1);
-    expect(after.labelling.clips_with_two_submitted_sets).toBe(before.labelling.clips_with_two_submitted_sets + 1);
+    // These passes are 0.1's (firstPass defaults to V01); coverage counts each
+    // labellable version on its own (TEACH-T T-1b).
+    const v01 = (report: typeof before) => coverage.coverageForVersion(report, V01)!;
+    expect(v01(after).submitted_sets).toBe(v01(before).submitted_sets + 1);
+    expect(v01(after).clips_with_two_submitted_sets).toBe(v01(before).clips_with_two_submitted_sets + 1);
+  });
+
+  test('a submitted 0.4 first pass moves 0.4\'s counts and leaves 0.1\'s alone (TEACH-T T-1b)', async () => {
+    // Two vocabularies are two measurements: coverage counts each on its own
+    // and never adds one into the other.
+    const clipId = await newClip();
+    const before = await coverage.readTeachShadowCoverage(ORG_ID);
+    const set = await firstPass(A, clipId, V04);
+    const eventId = await punch(set);
+    await completeEvent(set, eventId);
+    await submit(set);
+    const after = await coverage.readTeachShadowCoverage(ORG_ID);
+
+    const of = (report: typeof before, version: string) => coverage.coverageForVersion(report, version)!;
+    expect(of(after, V04).submitted_sets).toBe(of(before, V04).submitted_sets + 1);
+    expect(of(after, V01).submitted_sets).toBe(of(before, V01).submitted_sets);
+    // 0.4's grid is one row per punch, and the punch landed in it.
+    expect(of(after, V04).punch_evidence.every((cell) => cell.stance === null)).toBe(true);
+    const total = (report: typeof before, version: string) =>
+      of(report, version).punch_evidence.reduce((sum, cell) => sum + cell.events, 0);
+    expect(total(after, V04)).toBe(total(before, V04) + 1);
+    expect(total(after, V01)).toBe(total(before, V01));
   });
 });
 

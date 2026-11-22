@@ -96,7 +96,50 @@ export default function GuardianMediaConsentPage() {
     void load();
   }, [load]);
 
-  async function decide(athleteId: string, decision: 'grant' | 'withdraw', childName: string) {
+  /* "Change to photos only" (app scrub FAM-19; Jason's ruling on card
+     OW27-14, "B: Build it, with a confirm", OD-2026-11-20-001). Before it, a
+     guardian who wanted video out had to withdraw everything and grant again.
+     It is the grant the route already takes, with covers_video false: the
+     route records a new signed row and takes published video down in the same
+     transaction (OD-2026-10-05-021). The confirm is worded like the withdraw
+     one and says what follows from a photos-only consent: the child's
+     published videos are retracted, and the child's videos are not published
+     while it is in place. "In place" ends in two ways this page does not
+     drive: at 18 the child's own consent governs and the guardian's row stops
+     counting (OD-2026-10-08-015; adults leave this page's list), and a staff
+     unlink of this guardian drops their row from the check (a photos-only
+     row does not block an unlink; only a withdrawn one does,
+     staffProvisioning.ts). Like the withdraw confirm it promises nothing
+     about playback: for a minor the server refuses every NEW playback link
+     while any linked guardian's signed consent leaves video out
+     (videoPlaybackConsent.ts), but a link issued before the change is a
+     60-minute credential that can still start or keep playing until it
+     expires (the same file says so of withdrawal; the compliance queue issues
+     such links when it loads), so "will not be played" would be false for up
+     to an hour.
+     "The child's videos" and not "any video of the child": the takedown
+     covers publications filed under this child, and a clip filed under
+     another athlete stays up (OD-2026-10-12-003). "While … in place" and not
+     "until you grant video again": the refusal lasts while this consent
+     counts, and a grant from this guardian alone does not lift another
+     guardian's. A grant from this page never carries public use (A-Q14), so
+     when the consent on file allows it, the confirm says that it ends.
+     Wording PROPOSED. */
+  function confirmPhotosOnly(childName: string, publicUseOnFile: boolean): boolean {
+    return window.confirm(
+      `Change consent for ${childName} to photos only? If you do, ${childName}’s published videos will be retracted from distribution immediately, and ${childName}’s videos will not be published while your photos-only consent is in place.${
+        publicUseOnFile ? ' Public use, which is allowed now, will end too.' : ''
+      }`,
+    );
+  }
+
+  async function decide(
+    athleteId: string,
+    decision: 'grant' | 'withdraw' | 'photos_only',
+    childName: string,
+    publicUseOnFile = false,
+  ) {
+    if (decision === 'photos_only' && !confirmPhotosOnly(childName, publicUseOnFile)) return;
     if (decision === 'withdraw') {
       // Named, not generic: the confirmation is the last moment to catch a
       // wrong-child mistake, and withdrawal now immediately retracts this
@@ -115,20 +158,24 @@ export default function GuardianMediaConsentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           athlete_id: athleteId,
-          decision,
-          covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : undefined,
+          // Photos only is a grant that leaves video out.
+          decision: decision === 'withdraw' ? 'withdraw' : 'grant',
+          covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : decision === 'photos_only' ? false : undefined,
           /* A-Q14 (OD-2026-10-08-005, "Hide until used"): the "Allow public
              use" box is not shown. The API field stays and a grant always
              sends false. Public use is recorded only from a guardian's own
              signed paper form (admin/athlete-consent), never from here. */
-          public_use_allowed: decision === 'grant' ? false : undefined,
+          public_use_allowed: decision === 'withdraw' ? undefined : false,
         }),
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(payload.error || 'Unable to record your decision.');
       }
-      setActionMessage({ text: decision === 'grant' ? 'Consent granted.' : 'Consent withdrawn.', tone: 'done' });
+      setActionMessage({
+        text: decision === 'grant' ? 'Consent granted.' : decision === 'withdraw' ? 'Consent withdrawn.' : 'Consent changed to photos only.',
+        tone: 'done',
+      });
       await load();
     } catch (error) {
       setActionMessage({
@@ -149,11 +196,24 @@ export default function GuardianMediaConsentPage() {
   return (
     <RoleSessionGate allowedRoles={['parent']}>
       {/* T7 (Plate Set v1): family surfaces take the warm ground or none.
-          Gated to `parent`; see the note on parent/safety for why the room is
-          dropped rather than swapped to .on-canvas. */}
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+          This page stands on the family ground, as the hub, film and progress
+          pages do (app scrub FAM-28; AS-9 Q9 = A): the canvas, with paper
+          panels on it. Its type goes through the design system's voices
+          (.t-body, .t-eyebrow, .badge, .alert), which the sheet restates in
+          ink for this ground. .ge-family is the hub's family dress: its focus
+          ring is what makes keyboard focus visible here, because on canvas
+          `.on-canvas .btn--ghost` replaces the box-shadow ring `.btn` draws
+          and the brass ring is about 1.2:1 on cream (golden-era.css, "FOCUS
+          THAT SHOWS"); it also floors every .btn at --tap and makes the h1
+          the brass nameplate. The loading, failed and nobody-linked panels
+          are .pap as well: .empty's inks are bone, written for leather, and
+          the sheet restates them in ink only under .pap ("The empty state on
+          paper"); measured on a local render, 2026-11-21, the title read
+          1.36:1 down to 1.12:1 on this paper without it. The one colour set
+          here is the checkbox's accent (below). */}
+      <main className="ge-family on-canvas min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Photo &amp; Video Consent</h1>
             <p className="t-body mt-[var(--s3)] max-w-3xl">
@@ -175,31 +235,37 @@ export default function GuardianMediaConsentPage() {
                 <span className="alert-msg">{actionMessage.text}</span>
               </p>
             ) : actionMessage ? (
-              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage.text}</p>
+              <p role="status" className="t-body mt-[var(--s3)] font-semibold">{actionMessage.text}</p>
             ) : null}
           </header>
 
           {isLoading ? (
             /* Names what is loading and says it can take a few seconds (parent
                walk 2026-10-19 item 13). A status region. Wording PROPOSED. */
-            <div className="empty mt-[var(--s5)]" role="status">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">Loading consent status…</div>
-              <div className="empty-msg">This can take a few seconds.</div>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty" role="status">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">Loading consent status…</div>
+                <div className="empty-msg">This can take a few seconds.</div>
+              </div>
             </div>
           ) : errorMessage ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">✕</div>
-              <div className="empty-title">Consent status could not be loaded</div>
-              <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
-                Check again
-              </button>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">✕</div>
+                <div className="empty-title">Consent status could not be loaded</div>
+                <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
+                  Check again
+                </button>
+              </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">No linked children found</div>
-              <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">No linked children found</div>
+                <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+              </div>
             </div>
           ) : (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
@@ -214,7 +280,7 @@ export default function GuardianMediaConsentPage() {
                 return (
                   <article
                     key={item.athlete_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
+                    className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]"
                   >
                     <div className="flex items-center justify-between gap-[var(--s3)]">
                       <p className="t-eyebrow">{childLabel(item)}</p>
@@ -252,12 +318,18 @@ export default function GuardianMediaConsentPage() {
                             win: nothing unlayered sets min-height on a <label> or
                             width/height on a checkbox, so there is no ppbf.css rule
                             for them to lose to. The same pattern is already on
-                            /athlete/dashboard/sparring. */}
+                            /athlete/dashboard/sparring.
+
+                            The box's accent is --brass-700 on this paper: a
+                            checked box is a non-text mark (3:1), and
+                            --brass-600 computes to 3.16:1 at the panel's top
+                            and 2.61:1 at its foot; --brass-700 is 4.36:1 to
+                            3.6:1. */}
                         <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
                           <input
                             type="checkbox"
                             defaultChecked
-                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-700)]"
                             onChange={(event) => setVideoByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
                           />
                           Include video (unchecked = photos only)
@@ -304,9 +376,13 @@ export default function GuardianMediaConsentPage() {
                         Full width comes with .btn--kiosk, and it is the point of
                         defect 3: "Back to Parent Hub" was 230x44 while this button
                         was 156x38, so the control that leaves without deciding was a
-                        bigger target than the control that decides. It cannot be
-                        again at any viewport -- this one spans the child's card, the
-                        escape hatch keeps its intrinsic width. */}
+                        bigger target than the control that decides. This one spans
+                        the child's card and the escape hatch keeps its intrinsic
+                        width. Under the family dress (.ge-family) both are at
+                        least 55px tall, so on a phone 360px wide or more the decision is the
+                        larger target (276x55 against 251x55 at 360); at 320 the
+                        two are about the same size (236x57 against 251x55).
+                        Measured on a local render, 2026-11-21. */}
                     <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s2)]">
                       {!currentlySigned ? (
                         <button
@@ -318,14 +394,31 @@ export default function GuardianMediaConsentPage() {
                           Grant Consent
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'withdraw', childInSentence(item))}
-                          className="btn btn--kiosk disabled:opacity-50"
-                        >
-                          Withdraw Consent
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            disabled={pendingIds.has(item.athlete_id)}
+                            onClick={() => void decide(item.athlete_id, 'withdraw', childInSentence(item))}
+                            className="btn btn--kiosk disabled:opacity-50"
+                          >
+                            Withdraw Consent
+                          </button>
+                          {/* Only on the guardian's own signed row that
+                              includes video: a photos-only row has nothing to
+                              change, and a row whose scope did not arrive
+                              (null) is not guessed at. Second, and ghost, so
+                              Withdraw keeps its place and weight. */}
+                          {myRow?.covers_video === true ? (
+                            <button
+                              type="button"
+                              disabled={pendingIds.has(item.athlete_id)}
+                              onClick={() => void decide(item.athlete_id, 'photos_only', childInSentence(item), myRow.public_use_allowed === true)}
+                              className="btn btn--ghost btn--kiosk disabled:opacity-50"
+                            >
+                              Change to photos only
+                            </button>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   </article>

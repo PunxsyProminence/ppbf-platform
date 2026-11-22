@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 
@@ -276,7 +277,9 @@ export default function SafetyFlagsBoardPage() {
             </ul>
           )}
 
-          <div className="mt-[var(--s5)]">
+          <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+            {/* Safety Review is admin-only; this queue also admits a coach (lane AS-10, OFF-11). */}
+            <RoleLink href="/admin/safety-review" roles={['admin']} className="btn btn--ghost">Safety Review</RoleLink>
             <BackHome />
           </div>
         </div>
