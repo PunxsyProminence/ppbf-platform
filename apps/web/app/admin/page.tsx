@@ -1446,10 +1446,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
             </section>
           )}
 
-          {/* Kept mounted, and only hidden, on the other tabs: its unsaved
-              track changes live in its own state, and a walk to the Library
-              and back must not throw them away without a word. */}
-
           {activeTab === 'library' && (
             <section className="space-y-5">
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
