@@ -489,13 +489,13 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
  * the whole non-home population).
  *
  * The cases above render the escalation surfaces. The rest reads the source:
- *   1. every non-test .ts/.tsx under app/, components/ and src/, comments
+ *   1. every non-test source file under app/, components/, lib/ and src/, comments
  *      removed by the TypeScript parser (not a hand-written lexer: a JSX
  *      apostrophe or a nested template literal holding a URL used to flip the
  *      lexer's quote state and hide the mark), for the token family:
  *      alert--critical, badge--locked and every other spelling of --locked
  *      (var(--locked), border-(--locked), --locked-ink, --locked-deep,
- *      --locked-rgb), the --safety-locked / --status-critical /
+ *      --locked-rgb; not an unlisted --locked-<word>), the --safety-locked / --status-critical /
  *      --status-danger aliases, the string 'locked' (how a tone map reaches
  *      `badge--${tone}`), and every class the CSS paints with the family;
  *   2. the CSS the app loads (app/globals.css and the design system, imports
@@ -506,9 +506,10 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
  *      resolve to string literals is on UNRESOLVED_TONE_SITES with its reason.
  *
  * What this does NOT see: a mark applied by an inline style built at run time,
- * a class string that comes from an API response, `.concat()`, `.join()` or any
- * other way of building a tone class than `${}` or `+` (a `+` chain is read
- * by the string it ends in before the variable), a Tailwind utility
+ * a class string that comes from an API response, `.concat()`, `.join()`, a
+ * name split across `+` pieces (`'badge-' + '-' + t`) or written with escapes,
+ * or any other way of building a tone class than `${}` or `+` (a `+` chain is
+ * read by the string it ends in before the variable), a Tailwind utility
  * that names the colour without the token, and nothing is rendered here.
  *
  * A file may carry the mark only if it is
@@ -547,7 +548,7 @@ const MARK_PENDING_SC2_4 = new Map<string, number>([]);
  * only shrinks: an entry whose rule is gone, or that paints fewer declarations,
  * fails until it is edited down.
  */
-const CSS_ALLOWED = new Map<string, { readonly count: number; readonly mark: boolean; readonly why: string }>([
+const CSS_ALLOWED = new Map<string, { readonly count: number; readonly mark: boolean; readonly why: string; readonly selectors?: string }>([
   [':root', { count: 3, mark: false, why: 'the aliases --safety-locked, --status-critical and --status-danger, each var(--locked) (app/globals.css); a use of an alias is counted as the mark in source' }],
   ['.tactical-chip-critical', { count: 1, mark: true, why: 'unused today (no component names it); a component that does is the mark and fails here. app/globals.css belongs to lane U2' }],
   ['.tactical-btn-critical', { count: 1, mark: true, why: 'unused today, as .tactical-chip-critical' }],
@@ -560,6 +561,8 @@ const CSS_ALLOWED = new Map<string, { readonly count: number; readonly mark: boo
     {
       count: 1,
       mark: false,
+      // The whole selector list, pinned: a class added to this rule would borrow the ink with no count change, and a component using it would not be counted.
+      selectors: '.mat-leather .stamp, .mat-leather--raised .stamp, .mat-leather--worn .stamp, .mat-brass--dark .stamp, .mat-slate .stamp, .mat-wood .stamp, .mat-wood--dark .stamp',
       why: "a bare .stamp on the seven dark materials takes the pale --locked-ink because the stamp red is unreadable on dark hides (ppbf-leather-brass.css, its own comment; Overwatch's Q2 = A on #2046; OD-2026-09-29-001: red is free to use). It is not a mark class: a bare 'stamp' in a component is not counted",
     },
   ],
@@ -572,9 +575,9 @@ const UNRESOLVED_TONE_SITES = new Map<string, string>([
 
 const WEB_ROOT = path.resolve(__dirname, '..');
 const SCANNED_DIRS = ['app', 'components', 'lib', 'src'];
-const SCANNED_FILE = /\.(?:tsx?|jsx?|mjs|cjs)$/;
+const SCANNED_FILE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/;
 
-/** Every non-test .ts/.tsx/.js/.jsx/.mjs/.cjs under app/, components/, lib/ and src/, as paths relative to apps/web. */
+/** Every non-test .ts/.tsx/.mts/.cts/.js/.jsx/.mjs/.cjs under app/, components/, lib/ and src/, as paths relative to apps/web. */
 function sourceFiles(): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {
@@ -612,7 +615,7 @@ function withoutComments(source: string, fileName = 'file.tsx', record?: string)
 // --- the CSS the app loads -------------------------------------------------
 
 /** A declaration's value uses one of the family's custom properties. */
-const FAMILY_VALUE = /var\(\s*--(?:locked(?:-ink|-deep|-rgb)?|safety-locked|status-critical|status-danger)\s*[,)]/;
+const FAMILY_VALUE = /var\(\s*--(?:locked(?:-ink|-deep|-rgb)?|safety-locked|status-critical|status-danger)\s*[,)]/i;
 
 interface CssRule {
   readonly selector: string;
@@ -630,7 +633,7 @@ interface CssRule {
  * rule is listed as its own key).
  */
 function cssRules(css: string): CssRule[] {
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const text = css.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\/\*[\s\S]*?\*\//g, (_all, quoted?: string) => quoted ?? ' ');
   const rules: CssRule[] = [];
   const atRules: string[] = [];
   let prelude = '';
@@ -745,14 +748,14 @@ function declarations(body: string): string[] {
 }
 
 /** The rules that paint the family: key, how many declarations do, and the class names in the selector. */
-function paintingRules(css: string): Array<{ key: string; count: number; classes: string[] }> {
-  const found: Array<{ key: string; count: number; classes: string[] }> = [];
+function paintingRules(css: string): Array<{ key: string; count: number; classes: string[]; selectors: string }> {
+  const found: Array<{ key: string; count: number; classes: string[]; selectors: string }> = [];
   for (const rule of cssRules(css)) {
     const count = declarations(rule.body).filter((declaration) => FAMILY_VALUE.test(declaration.slice(declaration.indexOf(':') + 1))).length;
     if (count === 0) continue;
     const parts = selectorParts(rule.selector);
     const key = `${rule.atRules.startsWith('@media print') ? '@media print | ' : ''}${parts[0]}`;
-    found.push({ key, count, classes: [...rule.selector.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((match) => match[1]) });
+    found.push({ key, count, selectors: rule.selector, classes: [...rule.selector.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((match) => match[1]) });
   }
   return found;
 }
@@ -790,7 +793,11 @@ function markCountsInSource(): Map<string, number> {
 function clearanceBadgeUsers(): string[] {
   return sourceFiles()
     .filter((relative) => relative !== 'components/clearanceReading.ts')
-    .filter((relative) => /\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8'), relative)))
+    .filter((relative) => {
+      const raw = fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8');
+      // Parse only a file that names it at all (the parse of every file took 2.5 s of a 5 s limit).
+      return /\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(raw) && /\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(raw, relative));
+    })
     .sort();
 }
 
@@ -989,13 +996,13 @@ describe('the CSS the app loads paints the medical-stop family only where it is 
     .multi, .other .child { background: var(--status-critical); color: var(--locked-deep); }
   `;
 
-  test('the scanner reads the rules a postcss listing shows, in a fixture', () => {
+  test('the scanner reads the rules, strings, comments and at-rules of a fixture as expected', () => {
     expect(paintingRules(FIXTURE)).toEqual([
-      { key: ':root', count: 2, classes: [] },
-      { key: '@theme', count: 1, classes: [] },
-      { key: '@media print | .p', count: 1, classes: ['p', 'q'] },
-      { key: '.wide .y', count: 1, classes: ['wide', 'y'] },
-      { key: '.multi', count: 2, classes: ['multi', 'other', 'child'] },
+      { key: ':root', count: 2, classes: [], selectors: ':root' },
+      { key: '@theme', count: 1, classes: [], selectors: '@theme' },
+      { key: '@media print | .p', count: 1, classes: ['p', 'q'], selectors: '.p, .q' },
+      { key: '.wide .y', count: 1, classes: ['wide', 'y'], selectors: '.wide .y' },
+      { key: '.multi', count: 2, classes: ['multi', 'other', 'child'], selectors: '.multi, .other .child' },
     ]);
   });
 
@@ -1020,6 +1027,16 @@ describe('the CSS the app loads paints the medical-stop family only where it is 
     // A rule that paints fewer declarations than its entry says leaves slack a later use could hide in.
     const shrunk = [...CSS_ALLOWED].filter(([key, { count }]) => (painted.get(key) ?? 0) < count).map(([key]) => key);
     expect({ grown, shrunk }).toEqual({ grown: [], shrunk: [] });
+  });
+
+  test('a rule that only borrows the ink is pinned to its whole selector list, so no new class joins it unseen (Q2 = A)', () => {
+    const drifted = CSS_PAINTING.filter(({ key, selectors }) => {
+      const entry = CSS_ALLOWED.get(key);
+      return entry?.mark === false && entry.selectors !== undefined && entry.selectors !== selectors;
+    }).map(({ key, selectors }) => `${key} -> ${selectors}`);
+    expect(drifted).toEqual([]);
+    // Every mark:false entry that can carry a class must say which classes.
+    expect([...CSS_ALLOWED].filter(([key, entry]) => !entry.mark && entry.selectors === undefined && key !== ':root')).toEqual([]);
   });
 });
 
