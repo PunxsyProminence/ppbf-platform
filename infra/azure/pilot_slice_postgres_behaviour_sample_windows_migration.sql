@@ -3,11 +3,13 @@
 -- picks one athlete, one behaviour, the drill or context, the task constraint
 -- and a number of chances, then taps shown / not shown per chance. The taps
 -- are behaviour reports, written by the existing writer into
--- pilot.behaviour_observations; each chance's episode is fixed by window and
--- chance number (the writer's windowEpisodeId, PATTERN-1d-2), so a second coach
--- who joins the window codes the same attempts. This table holds the window
--- alone: no free text, and no tap. Named under pilot.behaviour_observations so
--- the public-surface denylist (privacyTiers.ts) covers it by prefix.
+-- pilot.behaviour_observations, and the writer will fix each chance's episode
+-- by window and chance number (PATTERN-1d-2), so a second coach who joins the
+-- window codes the same attempts. This table holds the window alone, and no
+-- tap. No free text: the drill or block is an id of this gym's, a context is
+-- one of the writer's fixed nine, and the times are the database's. Named
+-- under pilot.behaviour_observations, so the public-surface denylist
+-- (privacyTiers.ts), which the wall tests match as a substring, covers it.
 --
 -- Applied only by Overwatch (Q2 A): `npm run pilot:apply-behaviour-sample-windows`.
 -- Idempotent: every object is created if absent or replaced.
@@ -34,8 +36,12 @@ create table if not exists pilot.behaviour_observations_windows (
     references pilot.behaviour_keys(organization_id, behaviour_key),
   constraint pilot_behaviour_windows_run_fk foreign key (organization_id, run_id)
     references pilot.session_script_runs(organization_id, run_id),
+  -- The writer's ATTEMPT_CONTEXTS (behaviourObservations.ts) for a context; a drill or block is checked by the guard.
   constraint pilot_behaviour_windows_context_check
-    check (context_kind in ('drill', 'block', 'context') and context_id ~ '^[^[:space:]]{1,200}$'),
+    check (context_kind in ('drill', 'block', 'context') and context_id ~ '^[^[:space:]]{1,200}$'
+           and (context_kind <> 'context' or context_id in (
+             'session', 'drill_assignment', 'assessment', 'film_study', 'open_floor',
+             'technical_sparring', 'sparring_games', 'sparring_drills', 'open_sparring'))),
   constraint pilot_behaviour_windows_constraint_check
     check (task_constraint in ('controlled', 'constrained_live', 'live')),
   constraint pilot_behaviour_windows_chances_check check (chances between 1 and 50),
@@ -70,9 +76,10 @@ begin
        and to_jsonb(new) - 'opened_by_account_id' = to_jsonb(old) - 'opened_by_account_id' then
       return new;
     end if;
-    -- (2) Closing, once; nothing else moves.
+    -- (2) Closing, once, at the database's time; nothing else moves.
     if old.closed_at is null and new.closed_at is not null
        and to_jsonb(new) - 'closed_at' = to_jsonb(old) - 'closed_at' then
+      new.closed_at := greatest(now(), old.opened_at);
       return new;
     end if;
     -- (3) The purge's de-identification of a DELETED athlete's window
@@ -91,14 +98,32 @@ begin
     raise exception 'BEHAVIOUR_WINDOW_IS_NOT_CHANGED'
       using errcode = '23514', constraint = 'pilot_behaviour_windows_append_only';
   end if;
-  -- INSERT: an open window, for a live athlete of this gym, opened by active
-  -- staff of this gym in the role it records, on an active behaviour name.
+  -- INSERT: an open window, opened now, for a live athlete of this gym marked
+  -- present on the run (Q5 A, as the writer requires of each report), in a
+  -- drill or block of this gym, opened by active staff of this gym in the role
+  -- it records, on an active behaviour name.
+  new.opened_at := now();
   if new.deidentified_at is not null or new.closed_at is not null or new.athlete_id like 'anon\_%'
      or not exists (
        select 1 from pilot.athletes a
         where a.organization_id = new.organization_id and a.athlete_id = new.athlete_id and a.deleted_at is null) then
     raise exception 'BEHAVIOUR_WINDOW_ATHLETE_OF_THIS_GYM'
       using errcode = '23514', constraint = 'pilot_behaviour_windows_live_athlete';
+  end if;
+  if not exists (
+    select 1 from pilot.session_run_athletes p
+     where p.organization_id = new.organization_id and p.run_id = new.run_id
+       and p.athlete_id = new.athlete_id and p.removed_at is null
+  ) then
+    raise exception 'BEHAVIOUR_WINDOW_ATHLETE_NOT_PRESENT'
+      using errcode = '23514', constraint = 'pilot_behaviour_windows_present_on_run';
+  end if;
+  if (new.context_kind = 'drill' and not exists (
+        select 1 from pilot.drill_library d where d.organization_id = new.organization_id and d.drill_id = new.context_id))
+     or (new.context_kind = 'block' and not exists (
+        select 1 from pilot.session_script_blocks b where b.organization_id = new.organization_id and b.block_id = new.context_id)) then
+    raise exception 'BEHAVIOUR_WINDOW_CONTEXT_NOT_OF_THIS_GYM'
+      using errcode = '23514', constraint = 'pilot_behaviour_windows_context_of_this_gym';
   end if;
   if new.opened_by_account_id is null or not exists (
     select 1 from pilot.organization_memberships om

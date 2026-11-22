@@ -49,6 +49,10 @@ const OTHER_GYM_COACH = 'acct-bsw-other';
 const ATHLETE = 'ath-bsw-1';
 const OTHER_ATHLETE = 'ath-bsw-2';
 const LEAVING = 'ath-bsw-3';
+const SOFT = 'ath-bsw-4';
+const COACH_LAPSED = 'acct-bsw-lapsed';
+const COACH_GONE = 'acct-bsw-gone';
+const RETIRED_KEY = 'bk_fixture_bsw_retired';
 const RUN = 'run-bsw-1';
 const DRILL = 'drill-bsw-1';
 // A fixture key written straight to the table; keys the app makes are minted (bk_<hex>).
@@ -118,6 +122,21 @@ async function refusalOf(sql: string, params: unknown[]): Promise<{ code?: strin
   return {};
 }
 
+/** An insert attempt with every column named; the database's refusal, or {} when it was taken. */
+function tryInsert(o: {
+  athlete?: string; opener?: string; role?: string; key?: string; run?: string; kind?: string; id?: string;
+  closedAt?: string | null; deidentifiedAt?: string | null;
+} = {}) {
+  return refusalOf(
+    `insert into pilot.behaviour_observations_windows
+       (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+        opened_by_account_id, opened_by_role, closed_at, deidentified_at)
+     values ($1, $2, $3, $4, $5, $6, 'controlled', $7, $8, $9, $10)`,
+    [ORG, o.athlete ?? ATHLETE, o.key ?? KEY, o.run ?? RUN, o.kind ?? 'drill', o.id ?? DRILL, o.opener ?? COACH_A,
+      o.role ?? 'coach', o.closedAt ?? null, o.deidentifiedAt ?? null],
+  );
+}
+
 /** One window, written straight to the table as the window functions will. */
 async function insertWindow(input: { athlete?: string; opener?: string; chances?: number } = {}): Promise<{ window_id: string; chances: number; closed_at: Date | null }> {
   const result = await db.query<{ window_id: string; chances: number; closed_at: Date | null }>(
@@ -181,6 +200,7 @@ beforeAll(async () => {
   );
   for (const [accountId, role, organizationId] of [
     [COACH_A, 'coach', ORG], [COACH_B, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
+    [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG],
   ]) {
     await db.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
@@ -191,7 +211,7 @@ beforeAll(async () => {
       [accountId, organizationId, role],
     );
   }
-  for (const athleteId of [ATHLETE, OTHER_ATHLETE, LEAVING]) {
+  for (const athleteId of [ATHLETE, OTHER_ATHLETE, LEAVING, SOFT]) {
     await db.query(
       `insert into pilot.athletes
          (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -221,14 +241,24 @@ beforeAll(async () => {
   );
   await db.query(
     `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
-     values ($1, $2, $3, $5, 'coach'), ($1, $2, $4, $5, 'coach')`,
-    [ORG, RUN, ATHLETE, LEAVING, COACH_A],
+     values ($1, $2, $3, $6, 'coach'), ($1, $2, $4, $6, 'coach'), ($1, $2, $5, $6, 'coach')`,
+    [ORG, RUN, ATHLETE, LEAVING, SOFT, COACH_A],
+  );
+  await db.query(
+    'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+    [COACH_LAPSED, ORG],
   );
   await db.query(
     `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
      values ($1, $2, 'Fixture behaviour', 'SK-JAB-01', $3)`,
     [ORG, KEY, COACH_A],
   );
+  await db.query(
+    `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+     values ($1, $2, 'Fixture retired behaviour', 'SK-JAB-01', $3)`,
+    [ORG, RETIRED_KEY, COACH_A],
+  );
+  await db.query(`update pilot.behaviour_keys set status = 'retired' where organization_id = $1 and behaviour_key = $2`, [ORG, RETIRED_KEY]);
 
 });
 
@@ -272,14 +302,34 @@ describe('a window row', () => {
     )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_chances_check' });
   });
 
-  test('a window under a run that is not this gym\'s is refused', async () => {
-    expect(await refusalOf(
+  test('a window is for a child marked present on that run of this gym (Q5 A)', async () => {
+    expect(await tryInsert({ run: 'run-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_present_on_run' });
+    expect(await tryInsert({ athlete: OTHER_ATHLETE })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_present_on_run' });
+  });
+
+  test('the drill or block is this gym\'s, and a context is one of the fixed nine: no free text', async () => {
+    expect(await tryInsert({ kind: 'context', id: 'open_floor' })).toEqual({});
+    expect(await tryInsert({ kind: 'context', id: 'Fixture_free_text' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_check' });
+    expect(await tryInsert({ id: 'drill-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_of_this_gym' });
+    expect(await tryInsert({ kind: 'block', id: 'block-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_of_this_gym' });
+  });
+
+  test('the open and close times are the database\'s, not the caller\'s', async () => {
+    const row = await db.query<{ window_id: string; opened_at: Date }>(
       `insert into pilot.behaviour_observations_windows
          (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
-          opened_by_account_id, opened_by_role)
-       values ($1, $2, $3, 'run-nowhere', 'drill', $4, 'controlled', $5, 'coach')`,
-      [ORG, ATHLETE, KEY, DRILL, COACH_A],
-    )).toEqual({ code: '23503', constraint: 'pilot_behaviour_windows_run_fk' });
+          opened_by_account_id, opened_by_role, opened_at)
+       values ($1, $2, $3, $4, 'drill', $5, 'controlled', $6, 'coach', '2099-01-01T00:00:00Z')
+       returning window_id, opened_at`,
+      [ORG, ATHLETE, KEY, RUN, DRILL, COACH_A],
+    );
+    expect(Math.abs(row.rows[0].opened_at.getTime() - Date.now())).toBeLessThan(60_000);
+    const closed = await db.query<{ closed_at: Date }>(
+      `update pilot.behaviour_observations_windows set closed_at = '9999-01-01T00:00:00Z'
+        where organization_id = $1 and window_id = $2 returning closed_at`,
+      [ORG, row.rows[0].window_id],
+    );
+    expect(Math.abs(closed.rows[0].closed_at.getTime() - Date.now())).toBeLessThan(60_000);
   });
 });
 
@@ -310,15 +360,47 @@ describe('the table\'s guard', () => {
     ['an opener from another gym', { opener: OTHER_GYM_COACH }, 'pilot_behaviour_windows_opener_of_this_gym'],
     ['an athlete not on the roster', { athlete: 'ath-nowhere' }, 'pilot_behaviour_windows_live_athlete'],
     ['an anon token', { athlete: 'anon_00000000-0000-4000-8000-000000000000' }, 'pilot_behaviour_windows_live_athlete'],
+    ['an athlete marked deleted', { athlete: SOFT, soft: true }, 'pilot_behaviour_windows_live_athlete'],
+    ['an opener whose membership lapsed', { opener: COACH_LAPSED }, 'pilot_behaviour_windows_opener_of_this_gym'],
+    ['a role the opener does not hold', { role: 'organization_admin' }, 'pilot_behaviour_windows_opener_of_this_gym'],
+    ['a retired behaviour name', { key: RETIRED_KEY }, 'pilot_behaviour_windows_active_key'],
+    ['a row already closed', { closedAt: '2026-01-01T00:00:00Z' }, 'pilot_behaviour_windows_live_athlete'],
+    ['a row already de-identified', { deidentifiedAt: '2026-01-01T00:00:00Z' }, 'pilot_behaviour_windows_live_athlete'],
   ])('refuses a window from %s', async (_label, given, constraint) => {
-    const input = { opener: COACH_A, athlete: ATHLETE, ...given };
+    const { soft, ...overrides } = given as typeof given & { soft?: boolean };
+    if (soft) await db.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+    expect(await tryInsert(overrides)).toEqual({ code: '23514', constraint });
+    if (soft) await db.query('update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+  });
+
+  test('closing moves nothing else', async () => {
+    const { window_id: other } = await insertWindow();
     expect(await refusalOf(
-      `insert into pilot.behaviour_observations_windows
-         (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
-          opened_by_account_id, opened_by_role)
-       values ($1, $2, $3, $4, 'drill', $5, 'controlled', $6, 'coach')`,
-      [ORG, input.athlete, KEY, RUN, DRILL, input.opener],
-    )).toEqual({ code: '23514', constraint });
+      'update pilot.behaviour_observations_windows set closed_at = now(), chances = 5 where organization_id = $1 and window_id = $2',
+      [ORG, other],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+
+  test('the opener\'s account going clears the opener and nothing else', async () => {
+    const { window_id: theirs } = await insertWindow({ opener: COACH_GONE });
+    await db.query('delete from pilot.organization_memberships where account_id = $1', [COACH_GONE]);
+    await db.query('delete from pilot.accounts where account_id = $1', [COACH_GONE]);
+    const row = await db.query<{ opened_by_account_id: string | null; athlete_id: string }>(
+      'select opened_by_account_id, athlete_id from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2',
+      [ORG, theirs],
+    );
+    expect(row.rows).toEqual([{ opened_by_account_id: null, athlete_id: ATHLETE }]);
+  });
+
+  test('refuses de-identification to anything but a token', async () => {
+    const { window_id: softWindow } = await insertWindow({ athlete: SOFT });
+    await db.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+    expect(await refusalOf(
+      `update pilot.behaviour_observations_windows set athlete_id = 'anon_bad', deidentified_at = now()
+        where organization_id = $1 and window_id = $2`,
+      [ORG, softWindow],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+    await db.query('update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
   });
 
   test('refuses de-identification while the athlete is on the roster', async () => {
@@ -356,22 +438,33 @@ describe('when the athlete goes', () => {
         where organization_id = $1 and athlete_id = $2`,
       [ORG, ATHLETE],
     );
-    const before = await db.query<{ n: number }>(
-      'select count(*)::int as n from pilot.behaviour_observations_windows where organization_id = $1 and athlete_id = $2', [ORG, ATHLETE],
+    const before = await db.query<{ n: number; ids: string[] }>(
+      `select count(*)::int as n, array_agg(window_id::text) as ids from pilot.behaviour_observations_windows
+        where organization_id = $1 and athlete_id = $2`, [ORG, ATHLETE],
     );
+    const dry = await runCleanupScript({ PPBF_RETENTION_APPLY: 'false' });
+    expect(dry.event).toBe('retention.cleanup.dry-run');
+    expect(dry.would_deidentify_behaviour_observations_windows).toBe(before.rows[0].n);
     const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
     expect(event.event).toBe('retention.cleanup.completed');
     expect(event.behaviour_observations_windows_deidentified).toBe(before.rows[0].n);
     const tokens = await db.query<{ athlete_id: string; stamped: boolean }>(
       `select distinct athlete_id, deidentified_at is not null as stamped from pilot.behaviour_observations_windows
-        where organization_id = $1 and athlete_id <> $2
+        where organization_id = $1 and window_id::text = any($2::text[])
        union
        select distinct athlete_id, deidentified_at is not null as stamped from pilot.behaviour_observations
         where organization_id = $1 and behaviour_key = $3`,
-      [ORG, ATHLETE, KEY],
+      [ORG, before.rows[0].ids, KEY],
     );
     expect(tokens.rows).toHaveLength(1);
     expect(tokens.rows[0].athlete_id).toMatch(/^anon_[0-9a-f-]{36}$/);
     expect(tokens.rows[0].stamped).toBe(true);
+    // Once only.
+    expect(await refusalOf(
+      `update pilot.behaviour_observations_windows
+          set athlete_id = 'anon_00000000-0000-4000-8000-000000000002', deidentified_at = now()
+        where organization_id = $1 and athlete_id = $2`,
+      [ORG, tokens.rows[0].athlete_id],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
   });
 });

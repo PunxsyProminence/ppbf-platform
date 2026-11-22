@@ -358,7 +358,8 @@ guards admit only that exact scrub, checked against the cleanup's own name patte
 Sampled windows (`pilot.behaviour_observations_windows`, PATTERN-1d) go with their reports: the
 cleanup gives a window the same token as the child's reports, and the trigger
 `pilot_behaviour_observations_windows_follow_athlete` deletes any window still naming the athlete
-when the athlete row goes. A window holds no free text.
+when the athlete row goes. A window holds no free text: its drill or block is an id of the gym's
+own, its context one of a fixed list, and its times are the database's.
 
 **Marked deleted -- no screen shows them after the deletion:**
 - Videos: the video lists (coach and admin), any read of one video (publishing, clipping,

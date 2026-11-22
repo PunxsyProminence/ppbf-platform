@@ -1350,8 +1350,9 @@ async function deidentifyBehaviourObservations(client, tables, athlete, token, n
 }
 
 /* THE CHILD'S SAMPLED WINDOWS (pilot.behaviour_observations_windows, PATTERN-1d)
-   go the way of their reports: the athlete key becomes the same token, so a
-   window still finds its taps. A window holds no free text. Runs before the
+   go the way of their reports: the athlete key becomes the same token as the
+   child's reports. A window holds no free text (its drill or block is an id of
+   this gym's, its context one of a fixed list). Runs before the
    athlete row goes, whose follow trigger deletes any window still naming the
    child; the table's guard admits only this update, and only once. */
 async function deidentifyBehaviourObservationsWindows(client, tables, athlete, token) {

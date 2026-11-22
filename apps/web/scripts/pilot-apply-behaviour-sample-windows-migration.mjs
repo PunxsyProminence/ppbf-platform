@@ -33,8 +33,9 @@ const constraintReady = (table, name, type) => `exists (
 
 const WINDOWS = 'pilot.behaviour_observations_windows';
 
-// Readiness asserts the result, not the attempt: the table, its keys, the token-shaped
-// de-identify check, the guard on every event, and the athlete follow trigger.
+// Readiness asserts the result, not the attempt: the table, its keys and checks (the
+// token-shaped de-identify check by its definition), its two indexes, the guard on every
+// event, and the athlete follow trigger.
 const READINESS_QUERY = `
   select
     to_regclass('${WINDOWS}') is not null as windows_table_ready,
@@ -42,6 +43,12 @@ const READINESS_QUERY = `
     ${constraintReady(WINDOWS, 'pilot_behaviour_windows_key_fk', 'f')} as key_fk_ready,
     ${constraintReady(WINDOWS, 'pilot_behaviour_windows_run_fk', 'f')} as run_fk_ready,
     ${constraintReady(WINDOWS, 'pilot_behaviour_windows_chances_check', 'c')} as chances_check_ready,
+    ${constraintReady(WINDOWS, 'pilot_behaviour_windows_context_check', 'c')} as context_check_ready,
+    ${constraintReady(WINDOWS, 'pilot_behaviour_windows_constraint_check', 'c')} as task_constraint_check_ready,
+    ${constraintReady(WINDOWS, 'pilot_behaviour_windows_role_check', 'c')} as role_check_ready,
+    ${constraintReady(WINDOWS, 'pilot_behaviour_windows_closed_check', 'c')} as closed_check_ready,
+    to_regclass('pilot.idx_behaviour_windows_athlete') is not null as athlete_index_ready,
+    to_regclass('pilot.idx_behaviour_windows_open_in_run') is not null as open_index_ready,
     exists (
       select 1 from pg_constraint c
        where c.conrelid = to_regclass('${WINDOWS}')
