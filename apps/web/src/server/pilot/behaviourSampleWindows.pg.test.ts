@@ -820,10 +820,49 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     );
   };
 
+  let otherGymWindow: string;
+
   beforeAll(async () => {
     await liveRun(LIVE_RUN, COACH_A);
     await liveRun(IDLE_RUN, COACH_B);
+    // Another gym with a run of the same id, and an open window on it: a settle here must not touch it.
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, 'ath-bsw-elsewhere', 'Fixture Athlete', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $2, now(), now(), null)`,
+      [OTHER_ORG, OTHER_GYM_COACH],
+    );
+    await db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, $2, 'Fixture behaviour', 'SK-JAB-01', $3)`,
+      [OTHER_ORG, KEY, OTHER_GYM_COACH],
+    );
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+       values ($1, $2, null, null, $3, current_date, 'in_progress', now() - interval '1 minute')`,
+      [OTHER_ORG, LIVE_RUN, OTHER_GYM_COACH],
+    );
+    await db.query(
+      `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+       values ($1, $2, 'ath-bsw-elsewhere', $3, 'coach')`,
+      [OTHER_ORG, LIVE_RUN, OTHER_GYM_COACH],
+    );
+    otherGymWindow = (await db.query<{ window_id: string }>(
+      `insert into pilot.behaviour_observations_windows
+         (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+          opened_by_account_id, opened_by_role)
+       values ($1, 'ath-bsw-elsewhere', $2, $3, 'context', 'session', 'controlled', $4, 'coach')
+       returning window_id`,
+      [OTHER_ORG, KEY, LIVE_RUN, OTHER_GYM_COACH],
+    )).rows[0].window_id;
   });
+
+  const otherGymWindowOpen = async () => (await db.query<{ closed_at: Date | null }>(
+    'select closed_at from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2',
+    [OTHER_ORG, otherGymWindow],
+  )).rows[0].closed_at === null;
 
   test('a coach finishing the run closes its open windows, and only its own; a tap is then refused and the taps show', async () => {
     const windowId = (await open({ runId: LIVE_RUN })).window_id;
@@ -836,6 +875,7 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     expect(await closedAtOf(windowId)).not.toBeNull();
     expect((await closedAtOf(closedFirst))?.toISOString()).toBe(firstClose?.toISOString());
     expect(await closedAtOf(elsewhere)).toBeNull();
+    expect(await otherGymWindowOpen()).toBe(true);
     await expect(tap(windowId, 2, COACH_A, 'occurrence')).rejects.toThrow('That window is closed.');
     expect((await writer.listBehaviourObservations(ORG, ATHLETE, 500)).map((row) => row.episode_id))
       .toContain(writer.windowEpisodeId(ORG, windowId, 1));
@@ -847,13 +887,15 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     await tap(windowId, 1, COACH_B, 'occurrence');
     expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toContain(IDLE_RUN);
     expect(await closedAtOf(windowId)).not.toBeNull();
+    expect(await otherGymWindowOpen()).toBe(true);
   });
 
   test('the tier engine reads no tap of a window still open, and every tap once it closes', async () => {
-    const windowId = (await open()).window_id;
+    const windowId = (await open({ chances: 50 })).window_id;
     await tap(windowId, 2, COACH_A, 'occurrence');
     await tap(windowId, 7, COACH_B, 'counterexample');
-    const tapped = [2, 7].map((chance) => writer.windowEpisodeId(ORG, windowId, chance));
+    await tap(windowId, 50, COACH_A, 'occurrence');
+    const tapped = [2, 7, 50].map((chance) => writer.windowEpisodeId(ORG, windowId, chance));
     const read = async () => (await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).map((row) => row.episode_id);
     const before = await read();
     expect(before.length).toBeGreaterThan(0);
@@ -865,14 +907,43 @@ describe('a settling run closes its windows; the tier engine reads no open windo
 
   test('settling a run and the tier engine still work where the window table is not yet applied', async () => {
     await liveRun('run-bsw-away', COACH_A);
+    await liveRun('run-bsw-away-idle', COACH_B);
     await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
     try {
       expect((await runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-away', { runState: 'abandoned' })).run_state).toBe('abandoned');
-      await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) });
+      expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toEqual(['run-bsw-away-idle']);
       expect((await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).length).toBeGreaterThan(0);
     } finally {
       await db.query('alter table pilot.behaviour_observations_windows_away rename to behaviour_observations_windows');
     }
+  });
+
+  test('the run settles and its windows close together, or neither happens', async () => {
+    await liveRun('run-bsw-atomic', COACH_A);
+    const windowId = (await open({ runId: 'run-bsw-atomic' })).window_id;
+    const runState = async () => (await db.query<{ run_state: string }>(
+      'select run_state from pilot.session_script_runs where organization_id = $1 and run_id = $2', [ORG, 'run-bsw-atomic'],
+    )).rows[0].run_state;
+    // A window close that fails: the settle around it must roll back with it.
+    await db.query(`create function pilot.test_refuse_window_close() returns trigger language plpgsql as $f$
+      begin raise exception 'TEST_REFUSES_WINDOW_CLOSE'; end $f$`);
+    await db.query(`create trigger test_refuse_window_close before update on pilot.behaviour_observations_windows
+      for each row execute function pilot.test_refuse_window_close()`);
+    try {
+      await expect(runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-atomic', { runState: 'completed' }))
+        .rejects.toThrow('TEST_REFUSES_WINDOW_CLOSE');
+      expect(await runState()).toBe('in_progress');
+      await expect(runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) }))
+        .rejects.toThrow('TEST_REFUSES_WINDOW_CLOSE');
+      expect(await runState()).toBe('in_progress');
+      expect(await closedAtOf(windowId)).toBeNull();
+    } finally {
+      await db.query('drop trigger test_refuse_window_close on pilot.behaviour_observations_windows');
+      await db.query('drop function pilot.test_refuse_window_close()');
+    }
+    await runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-atomic', { runState: 'completed' });
+    expect(await runState()).toBe('completed');
+    expect(await closedAtOf(windowId)).not.toBeNull();
   });
 });
 

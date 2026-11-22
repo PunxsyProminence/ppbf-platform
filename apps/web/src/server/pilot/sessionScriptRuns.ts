@@ -147,8 +147,9 @@ function toLiveRun(row: SessionScriptRunRow, now: Date = new Date()): LiveSessio
 // a start (so a forgotten run does not hold the one-live-per-coach slot), the two history reads,
 // and in gymTvs.ts the paired TV's read, the Paired TVs list and a send to a TV. Dropping it from
 // the TV needs nothing more: the TV only honours a run that is in_progress and shown
-// (LIVE_SHOWN_RUN), so a settled run reads as "nothing on this TV". One statement per
-// organization; it never touches a settled run.
+// (LIVE_SHOWN_RUN), so a settled run reads as "nothing on this TV". One transaction per
+// organization: the settling statement, and only when it settled a run, that run's open sampled
+// windows closed (closeRunWindows, PATTERN-1e-2). It never touches a run already settled.
 export const SESSION_RUN_IDLE_LIMIT_SECONDS = 3 * 60 * 60;
 // PROPOSED copy (new words; Jason has not seen them).
 export const SESSION_RUN_IDLE_CLOSE_NOTE = 'Closed automatically after 3 hours with no recorded activity.';
