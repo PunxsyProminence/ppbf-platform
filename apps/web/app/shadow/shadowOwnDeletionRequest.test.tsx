@@ -23,6 +23,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import ShadowChatPage from './page';
 import {
+  deleteOwnedShadowSession,
   fetchOwnShadowDeletionRequest,
   listOwnedShadowSessions,
   requestOwnShadowDeletion,
@@ -58,6 +59,7 @@ jest.mock('@/client/shadowSessions', () => {
     listOwnedShadowSessions: jest.fn(),
     fetchOwnShadowDeletionRequest: jest.fn(),
     requestOwnShadowDeletion: jest.fn(),
+    deleteOwnedShadowSession: jest.fn(),
   };
 });
 
@@ -66,6 +68,7 @@ const mockFetchRequest = fetchOwnShadowDeletionRequest as jest.MockedFunction<
   typeof fetchOwnShadowDeletionRequest
 >;
 const mockFileRequest = requestOwnShadowDeletion as jest.MockedFunction<typeof requestOwnShadowDeletion>;
+const mockDeleteSession = deleteOwnedShadowSession as jest.MockedFunction<typeof deleteOwnedShadowSession>;
 
 const originalFetch = global.fetch;
 
@@ -264,7 +267,40 @@ describe('a completed request', () => {
     }));
     await renderPage();
 
-    expect(screen.getByText(/Your SHADOW conversation history was cleared/)).not.toBeNull();
-    expect(screen.getByText(/Anything you have said since is still here/)).not.toBeNull();
+    // A chat flagged for review is kept for two years
+    // (OD-2026-10-06-023, -027), so the sentence says so -- in general words,
+    // the same for everyone, so it never tells a member one of theirs was
+    // flagged (lane HF7; Jason on Q1, 2026-11-21: "A for both").
+    expect(screen.getByText(
+      'Your SHADOW conversation history was cleared, except anything the gym must keep for safety, '
+      + 'which is kept for two years. Anything you have said since is still here, and you can ask again.',
+    )).not.toBeNull();
+    expect(screen.queryByText(/review/i)).toBeNull();
+  });
+});
+
+describe('deleting one chat', () => {
+  it('says the chat was deleted and that anything kept for safety is kept for two years', async () => {
+    mockListSessions.mockResolvedValue([{
+      conversationId: '8d697e85-dde4-47ac-b03f-e6c74595a3bc',
+      title: 'Wrist after sparring',
+      athleteId: null,
+      sessionType: 'quick_round',
+      createdAt: '2026-08-20T10:00:00.000Z',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+    }]);
+    mockDeleteSession.mockResolvedValue(undefined as never);
+    await renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }));
+    });
+
+    await waitFor(() => expect(mockDeleteSession).toHaveBeenCalledTimes(1));
+    const notice = await screen.findByText(/^Deleted "Wrist after sparring"\./);
+    expect(notice.textContent).toBe(
+      'Deleted "Wrist after sparring". Anything the gym must keep for safety is kept for two years.',
+    );
   });
 });

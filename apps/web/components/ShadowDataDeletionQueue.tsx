@@ -29,6 +29,8 @@ export interface ShadowDeletionRequestRow {
   completedAt: string | null;
   processedBy: string | null;
   conversationsPending: number;
+  /** Flagged for review (a review entry or a safety escalation points at it): kept, not cleared. */
+  conversationsHeld?: number;
 }
 
 /* Law 3: state carries a glyph and an uppercase word, never colour alone --
@@ -105,6 +107,7 @@ export default function ShadowDataDeletionQueue() {
         ok?: boolean;
         error?: string;
         conversationsCleared?: number;
+        conversationsHeld?: number;
       };
       if (!response.ok || payload.ok !== true) {
         setRowErrors((prev) => ({
@@ -119,11 +122,13 @@ export default function ShadowDataDeletionQueue() {
          conversations themselves since -- reporting it would tell an admin
          eleven were cleared when three were. */
       const cleared = payload.conversationsCleared;
+      const held = payload.conversationsHeld ?? 0;
       setNotice(
         action === 'deny'
           ? 'Request denied. Nothing was deleted, and the denial is on the record with your name against it.'
           : typeof cleared === 'number'
             ? `Cleared ${cleared} ${cleared === 1 ? 'conversation' : 'conversations'}. `
+              + (held > 0 ? `Kept ${held} flagged for review for two years. ` : '')
               + 'SHADOW chat history only — memory corrections are kept.'
             : 'Request completed. SHADOW chat history only — memory corrections are kept.',
       );
@@ -144,10 +149,15 @@ export default function ShadowDataDeletionQueue() {
   return (
     <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
       <h3 className="t-eyebrow">SHADOW history deletion requests</h3>
+      {/* "Flagged for review", not "under a safeguarding review": the review
+          entry the Library-empty notice writes cannot be told apart from a
+          safety entry and holds a chat the same way (Overwatch, Q3 = A + C on
+          #2062). The member's words are Jason's (Q1, "A for both"). */}
       <p className="t-muted mt-[var(--s2)]">
         A member asked for their SHADOW conversation history to be cleared. Completing a request
-        clears it now — chat history only; memory corrections are kept, and nothing here touches
-        their account, sessions or records.
+        clears it now, except a conversation flagged for review, which is kept for two years. Chat
+        history only; memory corrections are kept, and nothing here touches their account,
+        sessions or records.
       </p>
 
       {state === 'loading' && <p className="t-muted mt-[var(--s3)]">Loading requests...</p>}
@@ -194,14 +204,19 @@ export default function ShadowDataDeletionQueue() {
                     {row.conversationsPending}{' '}
                     {row.conversationsPending === 1 ? 'conversation' : 'conversations'} would be
                     cleared.
+                    {(row.conversationsHeld ?? 0) > 0
+                      ? ` ${row.conversationsHeld} flagged for review would be kept for two years.`
+                      : ''}
                   </p>
                 )}
 
                 {actionable && (armed ? (
                   <>
                     <p className="t-body mt-[var(--s2)]">
-                      This clears their SHADOW conversation history now. It cannot be undone from
-                      here.
+                      This clears their SHADOW conversation history now: what they typed is
+                      deleted, and SHADOW&apos;s replies are kept with their account and the names on
+                      record for them taken off. A conversation flagged for review is kept as it is
+                      for two years, then cleared the same way. It cannot be undone from here.
                     </p>
                     <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
                       <button
