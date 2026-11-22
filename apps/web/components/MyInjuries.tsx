@@ -76,12 +76,20 @@ export default function MyInjuries({ athleteId }: { readonly athleteId?: string 
       ) : (
         <ul className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
           {injuries.map((i) => (
-            <li key={i.injury_id} className="text-[length:var(--t-sm)]">
+            /* The rows speak in the design system's voices, not raw sizes
+               and colours: body for what happened, muted for who reported it
+               and when the athlete is expected back. The raw --bone-400 this
+               line carried was written for leather and read 2.11:1 to 1.74:1
+               on the parent Safety page's paper (AS9-5, Overwatch Q-D = A);
+               .t-muted is restated in ink for paper and canvas and stays bone
+               on the athlete's dark floor. Both pages that draw this list are
+               kiosk surfaces, where the floor lifts both voices to --t-md. */
+            <li key={i.injury_id} className="t-body">
               <p>
                 {day(i.injury_date)} · {words(i.body_area)} · {TYPES[i.injury_type] ?? words(i.injury_type)} ·{' '}
                 {i.context === 'competition' ? 'Competition' : 'Training'}
               </p>
-              <p className="text-[color:var(--bone-400)]">
+              <p className="t-muted">
                 {REPORTED_BY[i.reported_by] ?? words(i.reported_by)}
                 {i.returned_on
                   ? ` · Back ${day(i.returned_on)}`
