@@ -36,6 +36,17 @@ function rules(): Array<{ selectors: string[]; body: string; at: number }> {
   return found;
 }
 
+/** Brace depth at a position: 0 is the top level, anything else is inside an
+    at-rule such as @media, where a rule can be present and inert. */
+function depthAt(at: number): number {
+  let depth = 0;
+  for (const ch of SHEET.slice(0, at)) {
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+  }
+  return depth;
+}
+
 function colourFor(selector: string): { value: string; at: number } | null {
   let last: { value: string; at: number } | null = null;
   for (const rule of rules()) {
@@ -55,11 +66,35 @@ describe('.stamp--brass on the light grounds', () => {
     expect(colourFor('.mat-leather .stamp--brass')?.value).toBe('var(--brass-300)');
   });
 
-  it('the light-ground rule is stated before the dark-mat restatement, so leather on canvas stays light brass', () => {
-    const light = colourFor('.on-canvas .stamp--brass');
-    const leather = colourFor('.mat-leather .stamp--brass');
+  it.each(['.mat-paper .stamp--brass', '.on-canvas .stamp--brass'])(
+    '%s is stated before the dark-mat restatement, so a leather card on a light ground stays light brass',
+    (selector) => {
+      const light = colourFor(selector);
+      const leather = colourFor('.mat-leather .stamp--brass');
+      expect(light).not.toBeNull();
+      expect(leather).not.toBeNull();
+      expect((light as { at: number }).at).toBeLessThan((leather as { at: number }).at);
+    },
+  );
+
+  it.each(['.mat-paper .stamp--brass', '.on-canvas .stamp--brass'])('%s is a top-level rule, not inside an at-rule', (selector) => {
+    const light = colourFor(selector);
     expect(light).not.toBeNull();
-    expect(leather).not.toBeNull();
-    expect((light as { at: number }).at).toBeLessThan((leather as { at: number }).at);
+    expect(depthAt((light as { at: number }).at)).toBe(0);
+  });
+});
+
+/* THE INJURY LINE'S VOICE ON THE LIGHT GROUNDS (the same Q-D = A change).
+   MyInjuries' "who reported / expected back" line is .t-muted. On the parent
+   Safety page two restatements match it at the same specificity, and the later
+   one, `.on-canvas .t-muted`, is the one that paints it; the paper one answers a
+   paper panel off the canvas. Each must stay an ink, not a bone rung written
+   for leather, or the line goes back to about 2:1 on paper. */
+describe('.t-muted on the light grounds', () => {
+  it.each(['.mat-paper .t-muted', '.on-canvas .t-muted'])('%s is an ink, not a bone rung', (selector) => {
+    const muted = colourFor(selector);
+    expect(muted).not.toBeNull();
+    expect((muted as { value: string }).value).not.toMatch(/--bone-/);
+    expect(depthAt((muted as { at: number }).at)).toBe(0);
   });
 });

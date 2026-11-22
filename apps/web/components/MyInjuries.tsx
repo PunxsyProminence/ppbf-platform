@@ -72,7 +72,7 @@ export default function MyInjuries({ athleteId }: { readonly athleteId?: string 
       ) : injuries === null ? (
         <p className="working mt-[var(--s2)]">Loading...</p>
       ) : injuries.length === 0 ? (
-        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-400)]">No injuries on record.</p>
+        <p className="t-body mt-[var(--s2)]">No injuries on record.</p>
       ) : (
         <ul className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
           {injuries.map((i) => (

@@ -265,10 +265,9 @@ export default function GuardianSafetyPage() {
           to defer is done here: the page's text goes through the design
           system's voices (.t-body, .t-label, .t-eyebrow, .badge), which the
           sheet restates in ink for this ground, and the raw bone colours this
-          file carried for the dark ground are gone. One raw bone line is left
-          inside the shared MyInjuries component (who reported an injury, and
-          when the child is expected back), which this change does not edit;
-          the pull request names it.
+          file carried for the dark ground are gone, and so is the one the
+          shared MyInjuries component carried on its "who reported / expected
+          back" line (now .t-muted; Overwatch Q-D = A on AS9-5).
           .ge-family is the hub's family dress: its focus ring is what makes
           keyboard focus visible here, because on canvas `.on-canvas
           .btn--ghost` replaces the box-shadow ring `.btn` draws and the brass

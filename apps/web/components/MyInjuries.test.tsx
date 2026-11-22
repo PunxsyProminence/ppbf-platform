@@ -75,5 +75,15 @@ test('each row is the body voice and its second line the muted voice, with no ra
   const row = second.closest('li') as HTMLElement;
   expect(row).toHaveClass('t-body');
   const list = container.querySelector('ul') as HTMLElement;
-  expect(list.innerHTML).not.toMatch(/--bone-|text-\[length:/);
+  // No raw ink or size of any kind, so the voices are the only answer: not a
+  // bone or brass token, not an arbitrary colour or size, not an inline style.
+  expect(list.innerHTML).not.toMatch(/--bone-|--brass-|text-\[length:|text-\[color:|text-\[#|style="/);
+});
+
+test('"No injuries on record." is the body voice with no raw colour', async () => {
+  mockFetch({ ok: true, body: { ok: true, injuries: [] } });
+  render(<MyInjuries athleteId="ath-1" />);
+  const line = await screen.findByText('No injuries on record.');
+  expect(line).toHaveClass('t-body');
+  expect(line.className).not.toMatch(/text-\[color:|--bone-/);
 });
