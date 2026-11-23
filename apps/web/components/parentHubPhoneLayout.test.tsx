@@ -47,7 +47,10 @@ function before(a: Element, b: Element): boolean {
 }
 
 function tile(label: string): Element {
-  const found = screen.getAllByText(label).find((element) => element.tagName === 'P');
+  // A tile that counts the selected child alone names the child after its label (FAM-12).
+  const found = screen
+    .getAllByText((_, element) => element?.tagName === 'P' && (element.textContent === label || (element.textContent ?? '').startsWith(`${label} · `)))
+    .find((element) => element.tagName === 'P');
   if (!found) throw new Error(`no ${label} tile`);
   return found;
 }
@@ -109,4 +112,11 @@ test('the tiles are still on the page on a tab other than Overview', async () =>
 
   expect(tile('Class attendance')).toBeInTheDocument();
   expect(tile('New messages')).toBeInTheDocument();
+});
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
 });

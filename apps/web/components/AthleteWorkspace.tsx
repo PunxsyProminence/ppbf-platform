@@ -57,6 +57,7 @@ import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
 import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SAFESPORT_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
+import { useTabParam } from './useTabParam';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -161,6 +162,11 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     ],
   },
 ];
+
+/* The tabs the address may open (`?tab=`; lane AS4-4D4E, AS-4 part 4e): the
+   ones the group rail draws, and only those. Assessments is a TabID but is
+   not drawn (see above), so the address cannot open it either. */
+const ADDRESSABLE_TABS: readonly TabID[] = TAB_GROUPS.flatMap((group) => group.tabs.map((tab) => tab.id));
 
 /** Which group owns a surface. Derived, never stored -- the tab stays the truth. */
 function groupForTab(tab: TabID): GroupID {
@@ -1124,7 +1130,12 @@ export default function AthleteWorkspace() {
      Overwatch Q1 A on #2020; the plan in OD-2026-11-19-007 ruling 1: "opens on
      I'm here and How I feel today"). My Corner is drawn on that tab too, so
      Report pain, Start training and End training are on the opening screen. */
-  const [activeTab, setActiveTabRaw] = useState<TabID>('bio-checkin');
+  /* The open tab is kept in the address (`?tab=`), so coming back to the
+     workspace opens the tab the athlete left (app scrub ATH-16; lane
+     AS4-4D4E). No value, or one the rail does not draw, opens How I feel
+     today as before. A Floor in the address before today's check-in still
+     draws the Floor's lock below; the address does not get past it. */
+  const [activeTab, setActiveTabRaw] = useTabParam<TabID>(ADDRESSABLE_TABS, 'bio-checkin');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
   const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   /* The last word from the backend about what just saved. A goal's message
@@ -1141,7 +1152,7 @@ export default function AthleteWorkspace() {
   // save that lands after they have left Goals has nobody to tell, and storing
   // its message would only bring it back on the next visit. Kept in step by
   // setActiveTab below, which is the only thing that changes the tab.
-  const currentTabRef = useRef<TabID>('bio-checkin');
+  const currentTabRef = useRef<TabID>(activeTab);
   const setGoalSyncMessage = useCallback((text: string) => {
     if (currentTabRef.current !== 'smart-goals') return;
     setSyncMessage({ text, tab: 'smart-goals' });
@@ -1150,7 +1161,8 @@ export default function AthleteWorkspace() {
     currentTabRef.current = tab;
     setActiveTabRaw(tab);
     setSyncMessage((current) => (current.tab !== null && current.tab !== tab ? { text: '', tab: null } : current));
-  }, []);
+    // useTabParam's setter is stable (its own useCallback on a constant default).
+  }, [setActiveTabRaw]);
 
   // Check-In State.
   //

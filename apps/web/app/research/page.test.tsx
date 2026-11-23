@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ResearchIntakePage from './page';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEARCH_CLASSIFICATION_DOMAINS } from '@/src/shared/researchClassification';
 
 // Passthrough by default, so the content tests below exercise the page rather
@@ -629,6 +630,62 @@ test('a projection that answered empty prints real zeros', async () => {
   await screen.findByText('Empty State');
   expect(screen.getByText('ITEMS: 0')).toBeTruthy();
   expect(summaryTileValues()).toEqual(['0', '0', '0', '0']);
+});
+
+// Lane AS4-4D4E (app scrub BOA-09): /evidence admits administrators and the
+// platform owner only, and this page admits coaches, staff, volunteers,
+// athletes and parents too. Both links to it are offered by its door. Display
+// only: /evidence keeps its own gate.
+describe('the Evidence Review links are offered by the /evidence door', () => {
+  const CARD = {
+    event_id: 41,
+    requirement: 'Is RPE reliable at age 12?',
+    knowledge_gap: null,
+    evidence_label: null,
+    source_status: 'active',
+    review_state: 'pending_review',
+    source_event_name: 'question',
+    created_at: '2026-08-10T12:00:00.000Z',
+  };
+
+  function withCard() {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/research-projection')) {
+        return { ok: true, json: async () => ({ items: [CARD] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  afterEach(() => {
+    act(() => clearRoleSession());
+  });
+
+  test.each(['coach', 'staff', 'volunteer', 'athlete', 'parent'] as const)('a %s is offered neither link', async (role) => {
+    createPersistentRoleSession(role);
+    withCard();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    openTab('Intake Cards');
+    await screen.findByText('Next: Evidence Review');
+
+    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Move to Evidence' })).toBeNull();
+  });
+
+  test.each(['admin', 'platform_owner'] as const)('a %s is offered both', async (role) => {
+    createPersistentRoleSession(role);
+    withCard();
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    openTab('Intake Cards');
+    await screen.findByText('Next: Evidence Review');
+
+    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
+    expect(screen.getByRole('link', { name: 'Move to Evidence' }).getAttribute('href')).toBe('/evidence');
+  });
 });
 
 // CL-A3 / CL-C14 (Jason 2026-10-06: "Staff only"; "Family reads, staff

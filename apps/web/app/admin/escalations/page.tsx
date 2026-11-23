@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import ArmedButton from '@/components/ArmedButton';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { useDialogFocusTrap } from '@/src/lib/useDialogFocusTrap';
@@ -99,6 +100,8 @@ export default function EscalationsPage() {
   const [namesState, setNamesState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [namesAttempt, setNamesAttempt] = useState(0);
   const [actionMessage, setActionMessage] = useState('');
+  // The escalation whose Acknowledge is being sent; every Acknowledge waits for it.
+  const [ackBusyId, setAckBusyId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   // The resolution note used to be collected in window.prompt(): a decision
   // about a minor, taken in unstyled browser chrome with no room, no material,
@@ -218,6 +221,7 @@ export default function EscalationsPage() {
   }, [items]);
 
   async function handleAcknowledge(escalationId: string) {
+    setAckBusyId(escalationId);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
         method: 'POST',
@@ -233,6 +237,8 @@ export default function EscalationsPage() {
       await load(statusFilter);
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Unable to acknowledge.');
+    } finally {
+      setAckBusyId(null);
     }
   }
 
@@ -485,9 +491,20 @@ export default function EscalationsPage() {
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           {item.status === 'open' ? (
                             <div className="flex flex-col gap-[var(--s2)]">
-                              <button type="button" onClick={() => void handleAcknowledge(item.escalation_id)} className="btn--lever min-h-[44px]">
+                              {/* The armed second press, as on the coach home and the
+                                  floor board (#1678, F-129; Jason's "Small fixes bundle",
+                                  OWNER_DECISIONS:6629; #2131 QR6 = A), in its words. */}
+                              <ArmedButton
+                                className="btn--lever min-h-[44px] disabled:cursor-not-allowed disabled:opacity-60"
+                                armKey={item.escalation_id}
+                                disabled={ackBusyId !== null && ackBusyId !== item.escalation_id}
+                                busy={ackBusyId === item.escalation_id}
+                                busyLabel="Acknowledging..."
+                                armedLabel={`Press again: acknowledge ${athleteCell(item.athlete_id)}`}
+                                onConfirm={() => void handleAcknowledge(item.escalation_id)}
+                              >
                                 Acknowledge
-                              </button>
+                              </ArmedButton>
                               {isAdmin ? (
                                 <button type="button" onClick={() => setResolving(item)} className="btn--lever min-h-[44px]">
                                   Resolve

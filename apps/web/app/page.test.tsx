@@ -310,3 +310,11 @@ describe('a visitor can reach the form from where they are reading', () => {
     expect(privacy.map((a) => a.textContent)).toEqual(['Privacy: interest form']);
   });
 });
+
+// Lane AS4-4D4E (app scrub FAM-16): a visitor had no way to find the store.
+// The footer links it by the store page's title.
+test('the footer links the Equipment Store', async () => {
+  const { container } = await renderPage();
+  const link = [...container.querySelectorAll('footer a')].find((a) => a.textContent === 'Equipment Store');
+  expect(link?.getAttribute('href')).toBe('/store');
+});

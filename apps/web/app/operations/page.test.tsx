@@ -137,6 +137,49 @@ describe('the lab desks are offered to the admin desks only', () => {
      widening again; there is nothing left for a test to vary. */
 });
 
+// Lane AS4-4D4E (app scrub OFF-22, BOA-09): every link on the hub is drawn
+// only when its door admits the reader. The platform owner reads this hub, and
+// it was offered pages whose gates refuse it. A register row stays, without
+// its link. Visibility only: every page keeps its own gate.
+describe('every link is drawn only when its door admits the reader', () => {
+  test('the platform owner is offered no desk, register link or utility link its gate refuses', async () => {
+    await renderPage('platform_owner');
+
+    for (const name of ['Audit Trace', 'Video Analysis', 'Revenue Center']) {
+      expect(screen.queryByRole('link', { name })).toBeNull();
+    }
+    // This file's next/link mock keeps only href and children, so the
+    // register's "Open" levers are told apart by where they go.
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    expect(hrefs).not.toContain('/admin/coach-coverage');
+    // The row is the record, and it stays.
+    expect(screen.getByRole('heading', { name: 'Coach Coverage' })).toBeTruthy();
+    // Doors that admit it stay links.
+    expect(screen.getByRole('link', { name: 'Evidence Review Queue' }).getAttribute('href')).toBe('/evidence');
+    expect(screen.getByRole('link', { name: 'Notices & Motivation' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open the after-hours room' })).toBeTruthy();
+  });
+
+  test('every link offered to the platform owner opens a page its door admits', async () => {
+    const { visibleDoors } = jest.requireActual('@/components/buildingMap') as typeof import('@/components/buildingMap');
+    await renderPage('platform_owner');
+
+    const admitted = new Set(visibleDoors('platform_owner').map((door) => door.href));
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href')!.split('?')[0]);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect([href, admitted.has(href)]).toEqual([href, true]);
+  });
+
+  test('an admin is still offered every desk and every register link', async () => {
+    await renderPage('admin');
+
+    for (const name of ['Audit Trace', 'Video Analysis', 'Revenue Center', 'Evidence Review Queue']) {
+      expect(screen.getByRole('link', { name })).toBeTruthy();
+    }
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toContain('/admin/coach-coverage');
+  });
+});
+
 test('no invented safety or governance alert is presented as live data', async () => {
   await renderPage();
 

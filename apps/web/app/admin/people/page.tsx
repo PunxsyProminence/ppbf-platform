@@ -633,7 +633,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   }, [load]);
 
   const pendingAthletes = useMemo(
-    () => members.filter((member) => member.auth_provider === 'ppbf_local' && !member.has_pin),
+    // Athletes only: the banner says "athletes cannot sign in yet", and an
+    // athlete with no PIN is inactive by design until the code is redeemed
+    // (activation.ts), which is why signInStatus reads it "Awaiting activation".
+    () => members.filter((member) => member.role === 'athlete' && member.auth_provider === 'ppbf_local' && !member.has_pin),
     [members],
   );
 

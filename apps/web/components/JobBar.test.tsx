@@ -187,22 +187,25 @@ describe.each(['rail', 'phone'] as const)('the %s bar', (variant) => {
     expect(screen.getByRole('link', { name: 'Safety Status' }).getAttribute('href')).toBe('/parent/safety');
   });
 
-  it('draws no Parent Hub tab item until Parent Hub opens a tab from the address (4e)', () => {
-    // A tab link would open the hub on Overview, and on the hub do nothing
-    // (layout review round 1, BLOCKER). Home is Parent Hub, which has every tab.
-    expect(PARENT_HUB_OPENS_TAB).toBe(false);
+  it('draws the Parent Hub tab items, each opening its tab, since Parent Hub reads the address (4e)', () => {
+    // Lane AS4-4D4E: ParentHub keeps its tab in ?tab= (useTabParam), so a tab
+    // item opens that tab. Messages, a section of tabs only, is drawn again.
+    expect(PARENT_HUB_OPENS_TAB).toBe(true);
     signIn('parent');
     const { container } = render(<JobBar variant={variant} />);
-    const hrefs = everyHref(container);
-    expect(hrefs.some((href) => href.includes('?tab='))).toBe(false);
-    expect(hrefs.filter((href) => href === '/parent/dashboard')).toHaveLength(1);
-    // Messages is all tabs, so it waits for 4e; This week keeps Schedule as one link.
     const nav = screen.getByRole('navigation', { name: 'Your jobs' });
-    expect(within(nav).queryByText('Messages')).toBeNull();
-    expect(screen.getByRole('link', { name: 'This week' }).getAttribute('href')).toBe('/schedule');
+    expect(within(nav).getByText('Messages')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Progress/ }));
     expect(screen.getByRole('link', { name: 'Progress Visibility' })).toBeTruthy();
-    expect(screen.queryByText(/Parent Hub tab/)).toBeNull();
+    expect(screen.getAllByText(/Parent Hub tab/).length).toBeGreaterThan(0);
+    const hrefs = everyHref(container);
+    for (const tab of ['progress', 'home-assignments', 'family-goals', 'observations']) {
+      expect(hrefs).toContain(`/parent/dashboard?tab=${tab}`);
+    }
+    // Every tab a link names is one Parent Hub's rail draws.
+    for (const href of hrefs.filter((h) => h.includes('?tab='))) {
+      expect(Object.keys(PARENT_HUB_TAB_LABEL)).toContain(new URL(href, 'http://x').searchParams.get('tab'));
+    }
   });
 
   it('makes a one-page section a plain link and a longer one a sheet', () => {
@@ -293,3 +296,111 @@ describe('the phone bar keeps the page clear of itself', () => {
     expect(container.querySelector('nav.job-bar--phone')).toBeTruthy();
   });
 });
+
+// Review on #2130 (BLOCKER): on Parent Hub, a tab item opens the tab in place
+// (Next would keep the page and change only the address); elsewhere it is an
+// ordinary link.
+describe('a Parent Hub tab item', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('on Parent Hub, writes the tab to the address in place and closes the sheet', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard');
+    render(<JobBar variant="rail" />);
+    const section = screen.getByRole('button', { name: /^Messages/ });
+    fireEvent.click(section);
+
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      link.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('messages');
+    expect(section.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('on another page, is left to navigate as a link', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/schedule');
+    window.history.replaceState(null, '', '/schedule');
+    render(<JobBar variant="rail" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Messages/ }));
+
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.addEventListener('click', (e) => e.preventDefault()); // keep jsdom from navigating
+    act(() => {
+      link.dispatchEvent(event);
+    });
+
+    expect(window.location.pathname).toBe('/schedule');
+    expect(window.location.search).toBe('');
+  });
+});
+
+// Round 2 reviews on #2130: a modified click is left to the browser, and the
+// bar's Home, while on Parent Hub with a tab open, returns to the first tab.
+describe('a same-page job-bar link', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('leaves a Ctrl or Cmd click on a tab item to the browser', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard');
+    render(<JobBar variant="rail" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Messages/ }));
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }]) {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...modifier });
+      link.addEventListener('click', (e) => e.preventDefault(), { once: true }); // keep jsdom from navigating
+      act(() => {
+        link.dispatchEvent(event);
+      });
+      expect(window.location.search).toBe('');
+    }
+  });
+
+  it('Home on Parent Hub with a tab open returns to the first tab, in place', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard?tab=attendance');
+    render(<JobBar variant="rail" />);
+    const home = screen.getByRole('link', { name: 'Home' });
+    expect(home.getAttribute('href')).toBe('/parent/dashboard');
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      home.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.location.search).toBe('');
+  });
+
+  it('leaves a same-page link alone when the address names no tab', () => {
+    signIn('coach');
+    mockPathname.mockReturnValue('/coach/environment/intake-router');
+    window.history.replaceState(null, '', '/coach/environment/intake-router');
+    render(<JobBar variant="rail" />);
+    const home = screen.getByRole('link', { name: 'Home' });
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    let preventedBeforeLink = true;
+    home.addEventListener('click', (e) => {
+      preventedBeforeLink = e.defaultPrevented;
+      e.preventDefault();
+    });
+    act(() => {
+      home.dispatchEvent(event);
+    });
+    expect(preventedBeforeLink).toBe(false);
+  });
+});
+

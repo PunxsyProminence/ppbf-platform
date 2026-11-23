@@ -6,6 +6,8 @@ import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { isOrganizationAdminSessionRole, usePilotSession, type PilotSessionRole } from '@/components/usePilotSession';
+import { visibleDoors } from '@/components/buildingMap';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { newIntakeRequestId } from '@/src/client/libraryTextIntake';
 import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
@@ -218,6 +220,14 @@ export default function ResearchIntakePage() {
   // and sends exactly what it sent before.
   const session = usePilotSession();
   const sessionReady = !session.loading;
+  /* Evidence Review Queue is offered only when its door admits the reader:
+     /evidence admits administrators and the platform owner, and this page
+     admits coaches, staff, volunteers, athletes and parents too, whom both
+     links bounced home (app scrub BOA-09; lane AS4-4D4E). Read from the
+     building map's role, which RoleSessionGate persists, as the corridor
+     reads it. This hides a link; /evidence keeps its own gate. */
+  const doorRole = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null)?.role ?? null;
+  const opensEvidence = visibleDoors(doorRole).some((door) => door.href === '/evidence');
   const onPlatformShelf = session.role === 'platform_owner';
   const shelfBody = onPlatformShelf ? { shelf: 'platform' as const } : {};
   const shelfQuery = onPlatformShelf ? '&shelf=platform' : '';
@@ -1002,9 +1012,11 @@ export default function ResearchIntakePage() {
             <Link href="/research/chat" className="btn btn--ghost">
               Q&amp;A Research Chat
             </Link>
-            <Link href="/evidence" className="btn btn--ghost">
-              Evidence Review
-            </Link>
+            {opensEvidence ? (
+              <Link href="/evidence" className="btn btn--ghost">
+                Evidence Review
+              </Link>
+            ) : null}
             {/* The applicability verdicts are given there; same door and
                 label as the building map's. */}
             {mayCurateLibrary(session.role) ? (
@@ -1158,9 +1170,11 @@ export default function ResearchIntakePage() {
                   </dl>
                   <div className="mt-[var(--s4)] flex flex-wrap items-center justify-between gap-[var(--s3)] border-t border-[color:rgba(51,41,27,.26)] pt-[var(--s4)]">
                     <p className={PAPER_LABEL}>Next: Evidence Review</p>
-                    <Link href="/evidence" className="btn">
-                      Move to Evidence
-                    </Link>
+                    {opensEvidence ? (
+                      <Link href="/evidence" className="btn">
+                        Move to Evidence
+                      </Link>
+                    ) : null}
                   </div>
                 </article>
               );

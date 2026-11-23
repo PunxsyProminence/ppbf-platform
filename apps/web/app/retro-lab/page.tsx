@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import RoleSessionGate from '@/components/RoleSessionGate';
-import Link from "next/link";
+import BackHome from '@/components/BackHome';
 import { ThemeToggle, useThemeOptional } from "@/components/ThemeProvider";
 import { formatGymClock24 } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
@@ -76,14 +76,6 @@ function RetroLabPageContent() {
             </div>
             <div className="flex flex-wrap gap-2">
               <ThemeToggle />
-              {/* .brass-plate--label sets pointer-events: none -- it is the
-                  variant for a plate that NAMES something rather than one you
-                  press. On a navigation Link that makes the control literally
-                  unclickable: the only way to /login from this page was the
-                  keyboard. It is a link, so it wears the pressable plate. */}
-              <Link href="/login" className="brass-plate no-underline">
-                Login
-              </Link>
               <OperationsLink className="leather-tag no-underline">
                 Operations
               </OperationsLink>
@@ -299,9 +291,11 @@ function RetroLabPageContent() {
               <br />3. Press stamps here — ledger appends
               <br />4. Phone: stamps grow to 56px for floor use
             </p>
-            <Link href="/" className="leather-tag inline-flex no-underline">
-              Home
-            </Link>
+            {/* The reader's own home, not the public front page (app scrub
+                BOA-10; lane AS4-4D4E). The "Login" plate that stood beside
+                the theme toggle is gone: the gate admits only signed-in admins
+                and the platform owner (BOA-22; Q1 = A on #2128). */}
+            <BackHome className="leather-tag inline-flex no-underline" />
           </aside>
         </div>
       </div>

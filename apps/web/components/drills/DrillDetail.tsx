@@ -13,6 +13,7 @@ import {
 import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import type { DrillMarkedField } from '@/src/server/pilot/drillLibraryV3';
 import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
+import { requiresFloorValidation } from '@/src/lib/drillFloorValidation';
 
 import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 
@@ -401,11 +402,29 @@ function StopRuleList({ heading, rules, mark = null, itemMark }: {
 }
 
 /**
+ * The two floor-validation drafts in plain words (DR-06); every other value as
+ * stored. The raw value stays under "Source and version". This card does not
+ * know this gym's floor-tested mark (a per-gym record; field_provenance does not
+ * change), so the words state the rule ("They stay drafts until a coach marks
+ * them floor-tested", OD-2026-10-06-026 ruling 3), true whether or not this gym
+ * has marked it (Overwatch Q4 = A).
+ */
+function plainProvenance(fieldProvenance: string | null | undefined): string {
+  if (requiresFloorValidation(fieldProvenance)) {
+    const from = fieldProvenance?.startsWith('LITERATURE-GROUNDED')
+      ? 'a draft written from published research'
+      : 'a draft from coaching experience; no matching research was found';
+    return `${from}. The gym adopts it only after a coach marks it floor-tested`;
+  }
+  return fieldProvenance?.trim() || 'Content status not recorded';
+}
+
+/**
  * One line a coach reads before adopting: whether the content is the gym's
  * source manual or an unvalidated draft, and whether this version is current.
  */
 function referenceStatus(coach: NonNullable<DrillDetailView['coach']>): string {
-  const provenance = coach.fieldProvenance?.trim() || 'Content status not recorded';
+  const provenance = plainProvenance(coach.fieldProvenance);
   const lifecycle = coach.supersededAt
     ? 'Superseded by a newer version.'
     : coach.active
