@@ -792,12 +792,23 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
   /* The login itself succeeded, so the remaining question is only whether the
      page guard can resolve the cookie it set. */
   const deadline = Date.now() + 25000;
+  let leftLogin = false;
   for (;;) {
     const path = new URL(page.url()).pathname;
     if (path === '/athlete/dashboard') return true;
-    // requirePageRole could not resolve the session it was just handed, which
-    // is the documented no-database behaviour of a SERVER_GUARDED_ROUTE.
-    if (path === '/login') return false;
+    if (path !== '/login') leftLogin = true;
+    /* requirePageRole could not resolve the session it was just handed, which
+       is the documented no-database behaviour of a SERVER_GUARDED_ROUTE, and
+       the guard sends the browser to /login.
+
+       Since ATH-15 (Jason 2026-11-23, Q5 "A") the athlete signs in ON /login,
+       so being there right after the click is where the athlete starts, not
+       a bounce: the client's router.replace to /athlete/dashboard has not run
+       yet. Reading it as a bounce failed every A-FIN-10 proof in about 0.7 s
+       (#2149, job 137948488095). /login is a bounce only once the browser has
+       left it and come back, or is still there at the deadline (a soft move
+       to a guarded route can be redirected without the URL ever changing). */
+    if (path === '/login' && (leftLogin || Date.now() > deadline)) return false;
     if (Date.now() > deadline) {
       const body = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
       throw new Error(
