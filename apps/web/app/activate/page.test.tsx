@@ -87,12 +87,13 @@ test('sends the athlete back to the code step when the code is the problem', asy
   expect(screen.queryByLabelText(/^Choose your PIN$/i)).toBeNull();
 });
 
-/* Lane AS-8, scrub ATH-15 (Q14 A and Q14b A on #2020; Q-BACK A and Q-EYEBROW A
-   on #2051). Activation codes are athlete-only, so once a code is redeemed the
-   way on is the athlete PIN page, /athlete/sign-in. Before that, "Already
-   activated? Sign in" stays on /login: it is the one way back to every sign-in
-   door for someone here by mistake (/athlete/sign-in links only back here). A
-   lost code is the gym office's to replace (OW25-46 A, OD-2026-11-19-003). */
+/* Lane AS-8, scrub ATH-15 (Q14b A on #2020; Q-BACK A and Q-EYEBROW A on #2051),
+   and Jason's Q5 "A" (2026-11-23, lane SIGNIN-FIX #2143): one athlete PIN form,
+   on /login. Activation codes are athlete-only, so once a code is redeemed the
+   way on is that form, opened at its heading. Before that, "Already activated?
+   Sign in" stays on /login: it is the one way back to every sign-in door for
+   someone here by mistake. A lost code is the gym office's to replace
+   (OW25-46 A, OD-2026-11-19-003). */
 describe('/activate and the ways on from it', () => {
   test('before activating: the gym office replaces a lost code, and "Already activated? Sign in" keeps the way back to /login', () => {
     const { container } = render(<ActivatePage />);
@@ -111,7 +112,7 @@ describe('/activate and the ways on from it', () => {
     expect(container.textContent ?? '').not.toContain('Set up your account');
   });
 
-  test('activated but not signed in: "Go to sign in" opens /athlete/sign-in', async () => {
+  test('activated but not signed in: "Go to sign in" opens the PIN form on /login', async () => {
     global.fetch = jest.fn(async () => ({
       ok: true,
       json: async () => ({ ok: true, account_id: 'ath-login', signed_in: false }),
@@ -125,7 +126,8 @@ describe('/activate and the ways on from it', () => {
     fireEvent.click(screen.getByRole('button', { name: /Activate/i }));
 
     const onward = await screen.findByRole('link', { name: 'Go to sign in' });
-    expect(onward.getAttribute('href')).toBe('/athlete/sign-in');
+    expect(onward.getAttribute('href')).toBe('/login#signin-pin-heading');
+    expect(document.querySelector('a[href="/athlete/sign-in"]')).toBeNull();
     expect(document.querySelector('a[href="/login"]')).toBeNull();
   });
 });

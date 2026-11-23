@@ -269,10 +269,13 @@ export async function signInAtTheAthleteDoor(
     },
   });
 
-  await page.goto('/athlete/sign-in');
-  await page.getByLabel(/Athlete Account ID/i).fill(options.accountId);
-  await page.getByLabel(/^PIN/i).fill(options.pin);
-  await page.getByRole('button', { name: /Sign In/i }).click();
+  // One athlete PIN form, on /login (scrub ATH-15; Jason 2026-11-23, Q5 "A").
+  // Scoped to that form: /login also has the parents' "Sign In With Password".
+  await page.goto('/login');
+  const pinForm = page.getByRole('form', { name: 'Account ID & PIN' });
+  await pinForm.getByLabel('Account ID', { exact: true }).fill(options.accountId);
+  await pinForm.getByLabel(/^PIN/i).fill(options.pin);
+  await pinForm.getByRole('button', { name: 'Sign In', exact: true }).click();
 }
 
 /** Navigate to a client-gated surface with the session already installed.

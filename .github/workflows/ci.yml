@@ -257,6 +257,10 @@ jobs:
           // nowhere to go. A change dropping it must run the suite that checks
           // it is there.
           assert.equal(classifyPaths(['apps/web/app/athlete/sign-in/page.tsx']).activationE2e, true);
+          // Since ATH-15 (Jason's Q5 "A") the one athlete PIN form, and its
+          // link to /activate, are /login's; /athlete/sign-in redirects there.
+          assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).activationE2e, true);
+          assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).activationE2e, true);
 
           // ...and no wider. This journey never signs in, so the session gate,
           // the server auth module and the role routing table are not on its
@@ -299,8 +303,9 @@ jobs:
 
           // And the board suite, which was the remaining spec that could not
           // fire its own flag. Its three tests are unauthenticated redirect
-          // checks that each assert on the 'The Bell' heading, so the sign-in
-          // door is one of its surfaces too.
+          // checks that each assert on the sign-in page's h1 ('Sign In' since
+          // FAM-15, Jason's Q3 "A: Sign In"; it read 'The Bell'), so the
+          // sign-in door is one of its surfaces too.
           assert.equal(classifyPaths(['apps/web/e2e/board-governance.spec.ts']).boardE2e, true);
           assert.equal(classifyPaths(['apps/web/components/SignInPanel.tsx']).boardE2e, true);
           assert.equal(classifyPaths(['apps/web/app/login/page.tsx']).boardE2e, true);

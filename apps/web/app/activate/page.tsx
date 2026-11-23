@@ -354,8 +354,10 @@ function ActivatePageContent() {
             ) : (
               <>
                 <p className={LEDE}>Your PIN is set. Sign in with your ID and your new PIN.</p>
-                {/* The athlete PIN page, not /login (lane AS-8, scrub ATH-15, Q14 A on #2020). */}
-                <Link href="/athlete/sign-in" className="btn btn--kiosk">
+                {/* The one athlete PIN form, on /login, opened at its heading
+                    (scrub ATH-15; Jason 2026-11-23, Q5 "A", lane SIGNIN-FIX
+                    #2143; /athlete/sign-in redirects to the same place). */}
+                <Link href="/login#signin-pin-heading" className="btn btn--kiosk">
                   Go to sign in
                 </Link>
               </>
@@ -367,8 +369,7 @@ function ActivatePageContent() {
           <p className="text-center text-[length:var(--t-md)] leading-[1.6] text-[color:var(--hide-800)]">
             {/* "the gym office": OW25-46 A (OD-2026-11-19-003), Q14b A on #2020.
                 This link stays on /login (Q-BACK A on #2051): it is the one way
-                back to every sign-in door for someone here by mistake, and
-                /athlete/sign-in links only back to this page. */}
+                back to every sign-in door for someone here by mistake. */}
             Lost your code or it stopped working? Ask the gym office for a new one.{' '}
             <Link
               href="/login"

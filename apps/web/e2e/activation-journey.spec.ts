@@ -78,13 +78,18 @@ async function stubActivation(page: import('@playwright/test').Page) {
 test.describe('an athlete activating their account', () => {
   test('can reach /activate from the sign-in page they land on', async ({ page }) => {
     await stubActivation(page);
+    // The old athlete address, as a bookmark or a printed card has it. It now
+    // lands on the one athlete PIN form, on /login, at its heading (scrub
+    // ATH-15; Jason 2026-11-23, Q5 "A").
     await page.goto('/athlete/sign-in');
+    await expect(page).toHaveURL(/\/login#signin-pin-heading$/);
 
-    // The PIN form stays first -- a returning athlete is the common case and
-    // must not have to read past the activation offer to reach it.
-    await expect(page.getByLabel('Athlete Account ID')).toBeVisible();
+    // The PIN fields lead the PIN form -- a returning athlete is the common
+    // case and must not have to read past the activation offer to reach them.
+    const pinForm = page.getByRole('form', { name: 'Account ID & PIN' });
+    await expect(pinForm.getByLabel('Account ID', { exact: true })).toBeVisible();
 
-    await page.getByRole('link', { name: /set up your sign-in/i }).click();
+    await pinForm.getByRole('link', { name: /set up your sign-in/i }).click();
 
     await expect(page).toHaveURL(/\/activate$/);
     await expect(page.getByLabel('Activation code')).toBeVisible();

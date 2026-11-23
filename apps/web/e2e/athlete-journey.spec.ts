@@ -13,7 +13,8 @@ import { installPilotApi, signInAtTheAthleteDoor, LOGIN_ROUTE } from './support/
    the genuine article.
 
    THE ATHLETE'S DOOR IS ITS OWN DOOR, AND THAT IS A SAFETY BOUNDARY.
-   /athlete/sign-in takes an Account ID and a six-digit PIN, and PIN sessions
+   /login's PIN form takes an Account ID and a six-digit PIN (the one athlete
+   PIN form since ATH-15, Q5 "A"; /athlete/sign-in redirects to it), and PIN sessions
    are athlete-only by design (credentialPolicy.usesPin, and
    resolveAuthoritativeRoleSession's `privileged_auth_required`). No identity
    provider is involved, so unlike the coach and guardian journeys this one is
@@ -723,9 +724,10 @@ interface LoginAttempt {
  * positively identified. Everything else raises.
  */
 async function openAthleteWorkspace(page: Page): Promise<boolean> {
-  await page.goto('/athlete/sign-in');
-  await page.getByLabel(/Athlete Account ID/i).fill(OFFLINE_ATHLETE_ACCOUNT);
-  await page.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
+  await page.goto('/login');
+  const pinForm = page.getByRole('form', { name: 'Account ID & PIN' });
+  await pinForm.getByLabel('Account ID', { exact: true }).fill(OFFLINE_ATHLETE_ACCOUNT);
+  await pinForm.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
 
   /* Armed BEFORE the click, because a response cannot be waited for after it
      has already arrived. A transport failure is recorded separately: it
@@ -740,7 +742,7 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
     .waitForResponse((response) => new URL(response.url()).pathname === LOGIN_ROUTE, { timeout: 25000 })
     .catch(() => null);
 
-  await page.getByRole('button', { name: /Sign In/i }).click();
+  await pinForm.getByRole('button', { name: 'Sign In', exact: true }).click();
   const response = await pendingLogin;
   const login: LoginAttempt = {
     transportFailed: attempt.transportFailed,
