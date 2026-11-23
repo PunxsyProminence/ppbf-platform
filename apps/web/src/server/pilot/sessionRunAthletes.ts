@@ -150,8 +150,10 @@ export async function setRunAthletePresent(input: {
       outcome = removed.rowCount === 1 ? 'unmarked' : 'unchanged';
       // A child marked not there can no longer be tapped in a window on this run, so the athlete's
       // open windows here close now, in this transaction (W3-WINDOWS; Overwatch 7091097843): none is
-      // left open to block a window elsewhere (STALE_WINDOW). The lock order holds: mark, then window,
-      // as a tap takes them. Closing is once (the window guard), so a re-mark starts a new window.
+      // left open to block a window elsewhere (STALE_WINDOW). The close MUST stay after the mark's lock
+      // above: a tap takes the mark, then the window (behaviourObservations.ts sessionFor, episodeFor),
+      // so closing first would deadlock against a tap in flight. Closing is once (the window guard),
+      // so a re-mark starts a new window.
       if (outcome === 'unmarked') {
         closedWindowIds = await closeRunWindows(client, actor.organizationId, [runId], athleteId);
       }

@@ -896,6 +896,10 @@ describe('a presence mark taken back closes that athlete\'s open windows on that
     [ORG, `${TB_RUN}:${athleteId}`],
   )).rows[0]?.details;
   /** ATHLETE marked on TB_RUN, with no open window of theirs on KEY anywhere, then a new one on TB_RUN. */
+  // The race tests count queued lock requests database-wide (waiters): none may be queued before they start.
+  const nothingQueued = async () => (await db.query<{ n: number }>(
+    'select count(*)::int as n from pg_locks where not granted',
+  )).rows[0].n === 0;
   const freshWindow = async (behaviourKey = KEY) => {
     await mark(ATHLETE, true);
     return (await open({ runId: TB_RUN, behaviourKey, openedByAccountId: COACH_E })).window_id;
@@ -982,6 +986,7 @@ describe('a presence mark taken back closes that athlete\'s open windows on that
 
   test('the close is in the take-back\'s transaction: while it waits on the window, the mark still stands', async () => {
     const windowId = await freshWindow();
+    expect(await nothingQueued()).toBe(true);
     const holder = await holding(
       'select 1 from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2 for update',
       [ORG, windowId],
@@ -1005,6 +1010,9 @@ describe('a presence mark taken back closes that athlete\'s open windows on that
 
   test('a tap in flight and a take-back: no deadlock; the tap lands, then the window closes', async () => {
     const windowId = await freshWindow();
+    expect(await nothingQueued()).toBe(true);
+    // This interleaving only: the tap already holds the mark and the window when the take-back starts.
+    // The take-back's own order (mark before window) is held by its comment in sessionRunAthletes.ts.
     // Pause the tap once it holds the mark and the window (for share): hold its chance's episode lock.
     const holder = await holdEpisode(windowId, 1);
     const tapping = tap(windowId, 1, COACH_E, 'occurrence');
@@ -1029,6 +1037,7 @@ describe('a presence mark taken back closes that athlete\'s open windows on that
 
   test('a join from another run behind a take-back in flight looks once more, and opens a new window (Q3 A)', async () => {
     const stale = await freshWindow();
+    expect(await nothingQueued()).toBe(true);
     // Pause the take-back after its mark update, at the window close: hold the window row.
     const holder = await holding(
       'select 1 from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2 for update',
