@@ -151,11 +151,11 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
     }
   });
 
-  test('the Clinic row moved into Safety: its four pages are there (row 22)', async () => {
+  test('the Clinic row moved into Safety: its pages are there (row 22; three since lane AS-5 made Sparring and Limits one page)', async () => {
     await renderWorkspace();
 
     const safety = within(screen.getByRole('group', { name: 'Safety' }));
-    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']) {
+    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure']) {
       const link = safety.getAllByRole('link').find((candidate) => candidate.getAttribute('href') === href);
       expect(link).toBeTruthy();
       // Still one tap from home, as the Clinic row made them: in view, not

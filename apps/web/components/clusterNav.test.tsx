@@ -69,14 +69,13 @@ describe('the cluster lines', () => {
     ]);
   });
 
-  test('an athlete on the sparring log sees no line: one page is nowhere to go', async () => {
-    createPersistentRoleSession('athlete');
-    mockPath = '/athlete/dashboard/sparring';
-    let container: HTMLElement | undefined;
-    await act(async () => {
-      ({ container } = render(<ClusterNav cluster="sparring" />));
-    });
-    expect(container!.innerHTML).toBe('');
+  // Lane AS-5 (#2131 QR4 = A): Sparring Caps and Athlete Limits are sections
+  // of Sparring and Limits, so the Sparring line had one page left and is
+  // gone, and the athlete's Sparring Log no longer draws a line.
+  test('there is no Sparring line, and the Sparring Log draws none', () => {
+    expect(Object.keys(COACH_CLUSTERS)).not.toContain('sparring');
+    const log = fs.readFileSync(path.join(__dirname, '..', 'app', 'athlete', 'dashboard', 'sparring', 'page.tsx'), 'utf8');
+    expect(log).not.toContain('<ClusterNav');
   });
 
   // Lane AS-5 (app scrub CS-02): the clinic's records of one athlete.
@@ -91,21 +90,6 @@ describe('the cluster lines', () => {
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       '/coach/athlete-safety',
       '/coach/sparring-exposure',
-    ]);
-  });
-
-  // Lane AS-5 (app scrub CS-06, Q9 = A): the athlete's own log is not on the
-  // coach's line.
-  test('a coach\'s Sparring line names the coach pages, not the athlete\'s Sparring Log', async () => {
-    expect(COACH_CLUSTERS.sparring).not.toContain('/athlete/dashboard/sparring');
-    createPersistentRoleSession('coach');
-    mockPath = '/coach/sparring-caps';
-    await act(async () => {
-      render(<ClusterNav cluster="sparring" />);
-    });
-    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
-      '/coach/sparring-exposure',
-      '/coach/athlete-limits',
     ]);
   });
 
@@ -132,14 +116,14 @@ describe('the cluster lines', () => {
 describe('the coach home', () => {
   const workspace = fs.readFileSync(path.join(__dirname, 'CoachWorkspace.tsx'), 'utf8');
 
-  /* The four clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
+  /* The clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
      Dashboard; since lane 6C7's 7a-2 they are in the home's Safety job, which
      draws the coach job bar's Safety section (stage 2 section 3.4 row 22).
      coachHomeLayout.test.tsx pins the rendered links. */
-  test('links the four clinic pages by their doors, through the Safety job', () => {
+  test('links the clinic pages by their doors, through the Safety job', () => {
     const safety = jobBarFor('coach')?.sections.find((section) => section.label === 'Safety');
     const hrefs = (safety?.items ?? []).map((item) => item.href);
-    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']) {
+    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure']) {
       expect(hrefs).toContain(href);
       const door = BUILDING.find((d) => d.href === href);
       expect(door && door.roles !== OPEN && door.roles.includes('coach')).toBe(true);

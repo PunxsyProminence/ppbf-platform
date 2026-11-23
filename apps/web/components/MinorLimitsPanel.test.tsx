@@ -181,7 +181,7 @@ test('the contact cap is shown read-only with a link to its own page, and is nev
   openPanel();
   await screen.findByText(/Cap in force: highest stage/);
   expect(screen.getByText(/at most 1 hard or open sessions in any 7 days/)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('/coach/sparring-caps');
+  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('#sparring-caps');
   expect(screen.queryByRole('combobox')).toBeNull();
   expect(screen.getAllByRole('button').map((b) => b.textContent)).not.toContain('Save cap');
 });

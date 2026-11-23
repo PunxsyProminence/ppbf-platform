@@ -95,7 +95,7 @@ export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = 
     '/wall', '/names', '/schedule', '/athlete/dashboard', '/athlete/dashboard/sparring',
     '/coach/environment/intake-router', '/coach/session-scripts', '/coach/workout-templates',
     '/coach/behavior-standards', '/coach/one-percent-club', '/chalkboard', '/coach/class', '/coach/class-plans',
-    '/coach/test-day', '/coach/floor-groups', '/coach/sparring-exposure',
+    '/coach/test-day', '/coach/floor-groups',
   ],
   'drill-cabinet': ['/coach/drills', '/coach/cue-library', '/coach/library'],
   'film-room': [
@@ -116,7 +116,7 @@ export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = 
   clinic: [
     '/admin/feedback', '/admin/safety-flags', '/admin/escalations', '/admin/athlete-consent', '/admin/waiver-status',
     '/admin/safety-review', '/admin/video-compliance', '/coach/sports-medicine', '/coach/athlete-safety',
-    '/coach/sparring-caps', '/coach/athlete-limits', '/admin/compliance-center',
+    '/coach/sparring-exposure', '/admin/compliance-center',
   ],
   'file-room': [
     '/simulator', '/research', '/research/chat', '/research/review', '/evidence', '/knowledge-graph', '/audit',

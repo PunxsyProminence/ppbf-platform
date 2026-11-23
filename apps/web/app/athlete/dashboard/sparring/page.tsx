@@ -7,7 +7,6 @@ import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
 import { SESSION_TOTAL_DIMENSIONS, SPARRING_LOG_FIELD_KEYS } from '@/src/server/pilot/formulas/types';
-import ClusterNav from '@/components/ClusterNav';
 import MedicalRestrictionNotice from '@/components/MedicalRestrictionNotice';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
@@ -770,7 +769,6 @@ export default function SparringTelemetryPage() {
               messages. */}
           <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your entry'}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
-          <ClusterNav cluster="sparring" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
         </div>
         <span className="plaque">{actor === 'staff' ? 'Athlete training record' : 'Your training record'}</span>

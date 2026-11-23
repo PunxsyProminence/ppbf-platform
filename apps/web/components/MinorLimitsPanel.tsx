@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
@@ -11,8 +10,8 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // limits for minors, stored as data): heat exposure in minutes per session,
 // the most weight cut as a percentage of body weight, and the supervision the
 // coach requires in their own words (OD-2026-10-08-007: Q2 free text, Q3
-// per session). Rendered closed inside each athlete row of
-// /coach/athlete-limits; it reads nothing until a coach opens it.
+// per session). Rendered closed inside each athlete row of the Athlete
+// Limits section of Sparring and Limits; it reads nothing until a coach opens it.
 //
 // COACH-SET, NEVER APP-MADE. With no limit set the field is empty and the app
 // offers no suggested number; "No limit set" is said as exactly that. Each
@@ -27,7 +26,7 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 //
 // CONTACT LEVEL is not set here: it already lives in the sparring cap
 // (pilot.athlete_contact_caps), so this panel shows the cap in force read-only
-// and links to /coach/sparring-caps, one home per limit.
+// and links to the Sparring Caps section on the same page, one home per limit.
 //
 // Authorization is the route's: this panel sends the form and shows what the
 // server answers. Staff only (OD-2026-10-08-007 Q5): nothing here is reachable
@@ -132,7 +131,9 @@ const EMPTY: Record<LimitType, string> = {
   supervision: '',
 };
 
-export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
+export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart = false }: {
+  athleteId: string; athleteName: string; openAtStart?: boolean;
+}) {
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [capReading, setCapReading] = useState<CapReading>({ state: 'loading' });
   const [values, setValues] = useState<Record<LimitType, string>>(EMPTY);
@@ -220,6 +221,14 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
       if (landed()) setReading({ state: 'unavailable' });
     }
   }, [athleteId, fillForm, readCap]);
+
+  // A panel for the athlete a coach picked on Sparring and Limits opens at
+  // once (lane AS-5, #2131 QR3 = A); every other panel waits for its button.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the read is the point; once, on mount
+    if (openAtStart) void read();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, []);
 
   const toggle = useCallback(() => {
     setRefusal(null);
@@ -336,9 +345,9 @@ export default function MinorLimitsPanel({ athleteId, athleteName }: { athleteId
                     {capReading.cap ? `Cap in force: ${describeCap(capReading.cap)}.` : 'No sparring cap set.'}
                   </p>
                 ) : null}
-                <p className="t-body mt-[var(--s1)]">Contact level is set on the Sparring Caps page, not here.</p>
+                <p className="t-body mt-[var(--s1)]">Contact level is set in the Sparring Caps section, not here.</p>
                 {/* An anchor is outside the kiosk attribute's selector list, so the 55px floor is asked for by class. */}
-                <Link href="/coach/sparring-caps" className="btn btn--ghost min-h-[var(--tap)] mt-[var(--s2)]">Sparring Caps</Link>
+                <a href="#sparring-caps" className="btn btn--ghost min-h-[var(--tap)] mt-[var(--s2)]">Sparring Caps</a>
               </div>
 
               {LIMIT_TYPES.map((type) => {

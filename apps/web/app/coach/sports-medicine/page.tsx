@@ -730,8 +730,8 @@ export default function SportsMedicinePage() {
             <Link href={`${ATHLETE_SAFETY_PAGE}#injury-record`} className="btn btn--ghost">
               Injury Record
             </Link>
-            <Link href="/coach/sparring-caps" className="btn btn--ghost">
-              Sparring Caps
+            <Link href="/coach/sparring-exposure#sparring-caps" className="btn btn--ghost">
+              Sparring and Limits
             </Link>
             {/* USA Boxing medical restrictions (Backbone P22) are not on this
                 board: its 2026-08-15 rule is clearance and holds only, never

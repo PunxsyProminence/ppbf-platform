@@ -1,8 +1,6 @@
 'use client';
 
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
-
-import Link from 'next/link';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/src/lib/apiBase';
@@ -10,6 +8,8 @@ import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
+import ContactCapPanel from '@/components/ContactCapPanel';
+import MinorLimitsPanel from '@/components/MinorLimitsPanel';
 import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 
 /*
@@ -32,14 +32,85 @@ import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
  *
  * THE COACH-SET CAP (map item 15). Each segment may carry its contact-ladder
  * stage (optional; left out = not recorded). The athlete's cap -- a number
- * a COACH set on /coach/sparring-caps, never the app's -- is shown in its own
+ * a COACH set in the Sparring Caps section below, never the app's -- is shown in its own
  * section, beside the raw count of gym days with hard or open sparring in
  * the last 7 (sessions = gym days). After a save, the route's warnings are
  * shown under "Saved.": the entry is already saved, nothing is blocked, and
  * the coach decides (OD-2026-10-04-004). A cap that could not be read is
  * said as such -- never as "no cap". The "Recent sparring" section stays
  * counts only.
+ *
+ * SPARRING AND LIMITS (lane AS-5, S2-3 "A: One job page"; #2010 Q4-Q6, Q13;
+ * #2131 QR1-QR4). This page is also where the Sparring Caps and Athlete Limits
+ * pages went: their old addresses open those sections. With no athlete picked
+ * each section lists every athlete it may show, as those pages did, narrowed
+ * by "Find an athlete"; a pick narrows both to that athlete and opens their
+ * panels. Each section keeps its own roster, the one its own route admits
+ * (athletes/list cut to that route's accessible_athletes), so it never offers
+ * an athlete its route would refuse.
  */
+
+interface RosterAthlete { athlete_id: string; full_name?: string }
+type SectionRoster = RosterAthlete[] | 'loading' | 'failed';
+
+/** Every athlete in the gym, cut to those the given limits route will open for this person. */
+async function accessibleRoster(all: RosterAthlete[], route: string): Promise<RosterAthlete[]> {
+  const response = await fetch(`${apiBase()}/api/pilot/coach/${route}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'accessible_athletes', athlete_ids: all.map((a) => a.athlete_id) }),
+  });
+  const allowed = response.ok ? ((await response.json()) as { athlete_ids?: unknown } | null) : null;
+  if (!allowed || !Array.isArray(allowed.athlete_ids)) throw new Error('roster');
+  const ids = new Set(allowed.athlete_ids as string[]);
+  return all.filter((a) => ids.has(a.athlete_id));
+}
+
+/**
+ * One limits section: Sparring Caps or Athlete Limits, in the words its own
+ * page had. A roster that could not be read is never "no athletes".
+ */
+function LimitsSection({ id, title, intro, roster, pickedId, findQuery, empty, panel }: {
+  id: string; title: string; intro: string; roster: SectionRoster; pickedId: string; findQuery: string; empty: string;
+  panel: (athlete: RosterAthlete, name: string) => ReactNode;
+}) {
+  const shown = Array.isArray(roster)
+    ? roster.filter((a) => (pickedId ? a.athlete_id === pickedId : (a.full_name ?? '').toLowerCase().includes(findQuery)))
+    : [];
+  return (
+    <section id={id} className="space-y-[var(--s3)]">
+      <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+        <h2 className="t-command text-[length:var(--t-lg)]">{title}</h2>
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{intro}</p>
+      </div>
+      {roster === 'failed' ? (
+        <div className="alert alert--warning" role="alert">
+          <span className="alert-icon" aria-hidden="true">▲</span>
+          <div className="alert-body">
+            <p className="alert-title" style={KIOSK_TITLE}>Not loaded</p>
+            <p className="alert-msg" style={KIOSK_TEXT}>Your roster could not be loaded. Reload to try again.</p>
+          </div>
+        </div>
+      ) : roster === 'loading' ? (
+        <p className="t-body" role="status">Loading your roster…</p>
+      ) : roster.length === 0 || (pickedId && shown.length === 0) ? (
+        <p className="t-body">{empty}</p>
+      ) : shown.length === 0 ? (
+        <p className="t-body">No athlete matches &ldquo;{findQuery}&rdquo;. Clear the box to see them all.</p>
+      ) : (
+        <ul className="space-y-[var(--s3)]">
+          {shown.map((athlete) => (
+            <li key={athlete.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+              <span className="t-body font-semibold text-[color:var(--bone-100)]">{athlete.full_name || athlete.athlete_id}</span>
+              {panel(athlete, athlete.full_name || athlete.athlete_id)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 /** 19.1 px for text the kiosk type floor does not reach (bare text, unlayered .alert-* sizes). */
 const KIOSK_TEXT = { fontSize: 'var(--t-md)' } as const;
@@ -169,6 +240,47 @@ export default function CoachSparringExposurePage() {
   const [savedCheck, setSavedCheck] = useState<CapCheck | 'unreadable' | null>(null);
   /** USA Boxing medical restriction note the route returned with the last save (P22b, Q8). */
   const [restrictionNote, setRestrictionNote] = useState<string | null>(null);
+  // "Find an athlete" narrows the pick and both limits sections (#2010 Q8 = A; app scrub CS-05).
+  const [findText, setFindText] = useState('');
+  const [capsRoster, setCapsRoster] = useState<SectionRoster>('loading');
+  const [limitsRoster, setLimitsRoster] = useState<SectionRoster>('loading');
+  // The section an old address asked for (#sparring-caps, #athlete-limits), opened once its roster is read.
+  const scrollToRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      let all: RosterAthlete[];
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' });
+        const payload = res.ok ? ((await res.json()) as { items?: unknown } | null) : null;
+        if (!payload || !Array.isArray(payload.items)) throw new Error('roster');
+        all = payload.items as RosterAthlete[];
+      } catch {
+        if (live) { setCapsRoster('failed'); setLimitsRoster('failed'); }
+        return;
+      }
+      await Promise.all([
+        accessibleRoster(all, 'athlete-contact-caps').catch(() => 'failed' as const)
+          .then((r) => { if (live) setCapsRoster(r); }),
+        accessibleRoster(all, 'athlete-minor-limits').catch(() => 'failed' as const)
+          .then((r) => { if (live) setLimitsRoster(r); }),
+      ]);
+    })();
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (scrollToRef.current === undefined) {
+      const wanted = window.location.hash.slice(1);
+      scrollToRef.current = wanted === 'sparring-caps' || wanted === 'athlete-limits' ? wanted : null;
+    }
+    const wanted = scrollToRef.current;
+    const roster = wanted === 'sparring-caps' ? capsRoster : limitsRoster;
+    if (!wanted || roster === 'loading') return;
+    scrollToRef.current = null;
+    document.getElementById(wanted)?.scrollIntoView?.({ block: 'start' });
+  }, [capsRoster, limitsRoster]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -309,19 +421,26 @@ export default function CoachSparringExposurePage() {
     </div>
   );
 
+  // The Find box keeps the picked athlete offered, so a pick never vanishes from its own list.
+  const findQuery = findText.trim().toLowerCase();
+  const offered = athletes.filter(
+    (a) => !findQuery || a.athlete_id === athleteId || a.full_name.toLowerCase().includes(findQuery),
+  );
+  const matching = athletes.filter((a) => a.full_name.toLowerCase().includes(findQuery)).length;
+  const pickedName = athletes.find((a) => a.athlete_id === athleteId)?.full_name ?? '';
+
   return (
     <RoleStandaloneView
       roleLabel="Coach Workspace"
       routeLabel="/coach/sparring-exposure"
       allowedRoles={['coach', 'admin']}
-      room="floor"
+      room="clinic"
       showShellHeader={false}
     >
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Sparring</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Sparring Record</h1>
-          <ClusterNav cluster="sparring" />
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Sparring and Limits</h1>
           <ClusterNav cluster="clinic" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
@@ -331,6 +450,19 @@ export default function CoachSparringExposurePage() {
         </header>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+          {rosterState === 'loaded' && athletes.length > 0 && (
+            <div className="field">
+              {/* The Clearance Board's Find box and count, in the same words. */}
+              <label className="t-label" htmlFor="sparFind">Find an athlete</label>
+              <input id="sparFind" type="search" className="input input--kiosk" value={findText}
+                onChange={(event) => setFindText(event.target.value)} autoComplete="off" />
+              <p aria-live="polite" className="t-label text-[color:var(--bone-400)]">
+                {findQuery
+                  ? `${matching} of ${athletes.length} ${athletes.length === 1 ? 'athlete matches' : 'athletes match'}.`
+                  : `${athletes.length} ${athletes.length === 1 ? 'athlete' : 'athletes'}.`}
+              </p>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="sparAthlete" className="t-label">Which athlete</label>
             <select
@@ -356,7 +488,7 @@ export default function CoachSparringExposurePage() {
               className="select"
             >
               <option value="">{rosterState === 'loading' ? 'Loading your athletes...' : 'Choose an athlete'}</option>
-              {athletes.map((item) => <option key={item.athlete_id} value={item.athlete_id}>{item.full_name}</option>)}
+              {offered.map((item) => <option key={item.athlete_id} value={item.athlete_id}>{item.full_name}</option>)}
             </select>
           </div>
           {rosterState === 'unavailable' && (
@@ -364,6 +496,13 @@ export default function CoachSparringExposurePage() {
           )}
           {rosterState === 'loaded' && athletes.length === 0 && <p>No athletes are available to you.</p>}
         </section>
+
+        {athleteId && (
+          <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+            <h2 className="t-command text-[length:var(--t-lg)]">Sparring Record</h2>
+            <p className="t-label mt-[var(--s1)]">{pickedName}</p>
+          </div>
+        )}
 
         {athleteId && recentState === 'loaded' && recent && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-cap">
@@ -395,7 +534,7 @@ export default function CoachSparringExposurePage() {
               </p>
             )}
             <p className="text-[color:var(--bone-300)]">
-              A cap never blocks a segment; you decide. <Link href="/coach/sparring-caps" className="underline">Sparring Caps</Link>
+              A cap never blocks a segment; you decide. <a href="#sparring-caps" className="underline">Sparring Caps</a>
             </p>
           </section>
         )}
@@ -591,6 +730,24 @@ export default function CoachSparringExposurePage() {
             )}
           </section>
         )}
+
+        {/* The two pages this one absorbed, in their own words (#2010 Q6 = A). A
+            pick opens that athlete's panel at once (#2131 QR3 = A); a re-pick
+            remounts it, so one athlete's limits never show under another. */}
+        <LimitsSection id="sparring-caps" title="Sparring Caps" roster={capsRoster} pickedId={athleteId} findQuery={findQuery}
+          intro="The limits you set for each athlete's sparring: the highest contact stage, and the most hard or open sparring sessions in any 7 days. The app never picks a limit, and a cap never blocks sparring — the coach decides."
+          empty="No athletes you can set caps for."
+          panel={(athlete, name) => (
+            <ContactCapPanel key={`${athlete.athlete_id}:${athleteId}`} athleteId={athlete.athlete_id} athleteName={name}
+              openAtStart={athleteId === athlete.athlete_id} />
+          )} />
+        <LimitsSection id="athlete-limits" title="Athlete Limits" roster={limitsRoster} pickedId={athleteId} findQuery={findQuery}
+          intro="The limits you set for each athlete: heat exposure in minutes per session, the most weight cut as a percent of body weight, and the supervision you require. The app never picks a limit, and nothing here blocks training — the coach decides."
+          empty="No athletes you can set limits for."
+          panel={(athlete, name) => (
+            <MinorLimitsPanel key={`${athlete.athlete_id}:${athleteId}`} athleteId={athlete.athlete_id} athleteName={name}
+              openAtStart={athleteId === athlete.athlete_id} />
+          )} />
       </div>
     </RoleStandaloneView>
   );

@@ -99,7 +99,7 @@ const HOME_JOBS: ReadonlyArray<{ section: string; title: string; extra?: readonl
   { section: 'Class', title: "Run tonight's class", extra: ['/coach/floor-groups'] },
   { section: 'Athletes', title: 'Athletes' },
   { section: 'Plan', title: 'Plan' },
-  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps'] },
+  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/sparring-exposure'] },
 ];
 
 const doorLabel = (href: string): string | null => BUILDING.find((door) => door.href === href)?.label ?? null;

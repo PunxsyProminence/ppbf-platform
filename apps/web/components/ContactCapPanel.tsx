@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
@@ -8,7 +8,7 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // A coach's sparring caps for one athlete (map item 15): the highest contact
 // stage they may spar at, and the most hard or open sparring sessions in any
-// 7 days. Rendered closed inside each athlete row of /coach/sparring-caps; it
+// 7 days. Rendered closed inside each athlete row of Sparring and Limits' Sparring Caps section; it
 // reads nothing until a coach opens it.
 //
 // COACH-SET, NEVER APP-MADE. With no cap set the form is empty and the app
@@ -80,7 +80,9 @@ function isSetCap(value: unknown): value is CapRow {
     && (value.highest_allowed_stage !== null || value.max_hard_open_sessions_per_7_days !== null);
 }
 
-export default function ContactCapPanel({ athleteId, athleteName }: { athleteId: string; athleteName: string }) {
+export default function ContactCapPanel({ athleteId, athleteName, openAtStart = false }: {
+  athleteId: string; athleteName: string; openAtStart?: boolean;
+}) {
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [stage, setStage] = useState('');
   const [sessions, setSessions] = useState('');
@@ -133,6 +135,14 @@ export default function ContactCapPanel({ athleteId, athleteName }: { athleteId:
       if (landed()) setReading({ state: 'unavailable' });
     }
   }, [athleteId, fillForm]);
+
+  // A panel for the athlete a coach picked on Sparring and Limits opens at
+  // once (lane AS-5, #2131 QR3 = A); every other panel waits for its button.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the read is the point; once, on mount
+    if (openAtStart) void read();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, []);
 
   const toggle = useCallback(() => {
     setRefusal(null);
