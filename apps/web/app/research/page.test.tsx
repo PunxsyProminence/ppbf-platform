@@ -670,8 +670,7 @@ describe('the Evidence Review links are offered by the /evidence door', () => {
     openTab('Intake Cards');
     await screen.findByText('Next: Evidence Review');
 
-    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Move to Evidence' })).toBeNull();
+    expect(screen.queryAllByRole('link', { name: 'Evidence Review Queue' })).toHaveLength(0);
   });
 
   test.each(['admin', 'platform_owner'] as const)('a %s is offered both', async (role) => {
@@ -683,8 +682,11 @@ describe('the Evidence Review links are offered by the /evidence door', () => {
     openTab('Intake Cards');
     await screen.findByText('Next: Evidence Review');
 
-    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
-    expect(screen.getByRole('link', { name: 'Move to Evidence' }).getAttribute('href')).toBe('/evidence');
+    // Both links are named for the page they open (BOA-11).
+    const links = screen.getAllByRole('link', { name: 'Evidence Review Queue' });
+    expect(links.length).toBeGreaterThanOrEqual(2); // header, the intake panel, each card
+    for (const link of links) expect(link.getAttribute('href')).toBe('/evidence');
+    expect(screen.queryByRole('link', { name: 'Move to Evidence' })).toBeNull();
   });
 });
 

@@ -340,7 +340,7 @@ function WrongRoleNotice() {
           This console issues activation codes for individual athletes, which belongs to that gym&apos;s administrator. As platform owner you create organizations and appoint their admins.
         </p>
         <Link href="/admin/platform" className="btn btn--ghost">
-          Platform console
+          Omega
         </Link>
       </div>
     </main>

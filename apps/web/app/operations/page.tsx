@@ -37,7 +37,7 @@ import { visibleDoors } from '@/components/buildingMap';
    authorization one (buildingMap.ts's own rule). The data behind every one
    of these surfaces is guarded by its own API checks. */
 const developmentLab = [
-  { label: 'Research Intake', href: '/research' },
+  { label: 'Research Inbox', href: '/research' },
   { label: 'Evidence Review Queue', href: '/evidence' },
   { label: 'Concept Relationship Map', href: '/knowledge-graph' },
   { label: 'Validation Sandbox', href: '/simulator' },
@@ -392,7 +392,7 @@ export default function OperationsHubPage() {
                 </p>
                 {opens('/admin/shadow') ? (
                   <Link href="/admin/shadow" className="btn btn--ghost">
-                    Open the after-hours room
+                    SHADOW Admin Console
                   </Link>
                 ) : null}
               </section>

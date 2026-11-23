@@ -39,7 +39,7 @@ const WORKSPACE_SURFACES: WorkspaceSurface[] = [
   },
   {
     href: '/research',
-    label: 'Research Intake',
+    label: 'Research Inbox',
     description: 'See open research requirements and log a knowledge gap when the Library has no answer.',
   },
   // Lane U2 (audit UX-A A-16): both admit staff and volunteers

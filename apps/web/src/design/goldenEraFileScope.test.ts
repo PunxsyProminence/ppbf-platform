@@ -401,10 +401,9 @@ describe('the 010 mockup did not delete or invent research controls', () => {
   test('every real control still exists, in both wordings where it has two', () => {
     for (const label of [
       'Q&amp;A Research Chat',
-      'Evidence Review',
+      'Evidence Review Queue',
       // 'Publish Stage' linked to the mock /source-control page, deleted by
       // lane N4-04; the button went with it.
-      'Move to Evidence',
       'Save Requirement',
       'Cancel',
       'Answer this gap',

@@ -303,19 +303,19 @@ export default function ResearchQAChatPage() {
             <h2 className="t-label">Navigate</h2>
             <div className="mt-[var(--s3)] grid gap-[var(--s3)]">
               <Link href="/research" className="btn btn--ghost justify-start">
-                Research Intake
+                Research Inbox
               </Link>
               {mayOpenEvidence(session?.role ?? null) && (
                 <Link href="/evidence" className="btn btn--ghost justify-start">
-                  Evidence Review
+                  Evidence Review Queue
                 </Link>
               )}
               <OperationsLink className="btn btn--ghost justify-start">
-                Operations Hub
+                Operations
               </OperationsLink>
               {mayOpenShadowAdmin(session?.role ?? null) && (
                 <Link href="/admin/shadow" className="btn btn--ghost justify-start">
-                  SHADOW (Admin)
+                  SHADOW Admin Console
                 </Link>
               )}
             </div>

@@ -47,7 +47,7 @@ describe('ActivationCodesManagementPage', () => {
     render(<ActivationCodesManagementPage />);
 
     expect(screen.getByText('Activation codes are managed per gym')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Platform console' })).toHaveAttribute('href', '/admin/platform');
+    expect(screen.getByRole('link', { name: 'Omega' })).toHaveAttribute('href', '/admin/platform');
   });
 
   it('renders activation console and loads outstanding codes for organization admin', async () => {
