@@ -645,10 +645,22 @@ added); a scheduled class cannot carry its plan, they meet only at start." Its
 FUTURE list names "a class that carries its session plan ahead of time
 (CF-11)".
 
+**Answered since (OD-2026-11-21-006; re-sized by lane W4S-REFRESH at `main`
+`a4b420c41a9d10c2e991df9b6290914aed41b126`, 2026-11-23).**
+
+- **Q5.1:** OW27-28 got a question back, not an option: Jason's free text,
+  *"which is the most veritile"*. OW27-36 answered it and he chose *"A: All
+  three: drill, copied block, text block (Recommended)"*. The entry: "Settles
+  W4 Q5.1: library drill, copied block and text block. Item 5 needs re-sizing
+  (the add-ons were not sized)." This is that re-size.
+- **Q5.2, OW27-29:** *"A: Class keeps the plan; Start runs it (Recommended)"*.
+  One migration, and the class screen's Start opens that plan. The card's con:
+  "waits on U2's class-screen PRs".
+
 **What exists (OBSERVED):**
 
 - **The screen.** "Session Plans" is the screen name for session scripts
-  (`apps/web/app/coach/session-scripts/page.tsx:477`).
+  (`apps/web/app/coach/session-scripts/page.tsx:506`).
 - **Making a plan.** A plan is made only from a workout template
   (`apps/web/app/api/pilot/session-scripts/route.ts:125-132`;
   `apps/web/app/coach/workout-templates/MakeSessionScript.tsx:78-82`), or by an
@@ -667,71 +679,94 @@ FUTURE list names "a class that carries its session plan ahead of time
     the step's facts into `what_to_explain` (`sessionScriptAuthoring.ts:140-142`).
 - **Scheduling.** A coach schedules their own classes
   (`apps/web/app/api/pilot/scheduler/route.ts:804-806`, `:831-832`) from
-  `/schedule` (`apps/web/app/schedule/page.tsx:1044`). A class row has no plan
+  `/schedule` (`apps/web/app/schedule/page.tsx:1112`). A class row has no plan
   column (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:11-26`).
 - **Class and plan.** They meet only when a session starts
   (`apps/web/src/client/startClassSession.ts:45-52`). The class screen starts
-  with no plan (`apps/web/app/coach/class/page.tsx:147`); its comment at `:19`
+  with no plan (`apps/web/app/coach/class/page.tsx:159`, `scriptId: null`); its comment at `:22`
   says "Plans are still started from Session Plans".
 
 **What is missing:**
 
-- **The block edits.** Adding a block (a drill from the library), and removing
-  and reordering blocks.
+- **The block edits.** Adding a block (a drill from the library, a copy of a
+  block from another plan, or a text block), and removing and reordering
+  blocks.
   - INFERRED: these need no migration. Order can be renumbered in one
     transaction.
   - A new drill block can carry "From the drill" facts in `what_to_explain`,
     the way template steps do.
+  - **A text block** uses the kinds that already exist: `reset_minute`,
+    `teaching_minute` and `transition` among ten
+    (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:84-86`).
+    The table's own check says a block must hold some text unless it is a
+    `transition`, `arrival` or `close` (`:99-100`), so a text block with no text
+    is allowed only for those three kinds. A block with no drill has
+    `drill_id` null (`:87`).
+  - **A copied block** carries its source's `contact_level`
+    (`:89`, default `'none'`). INFERRED: it can come from any plan the coach can
+    read. Every coach and organization admin reads any plan's stored rows
+    (`apps/web/app/api/pilot/session-scripts/route.ts:20-48`, the coaching-content
+    read policy), so a copy gives no read the coach lacks.
 - **The class link.** A class that carries a plan, which needs a migration, and
   the class screen starting that plan.
 
-**PR split (INFERRED):**
+**PR split (INFERRED), re-sized under Q5.1 A and Q5.2 A.** The earlier
+SP-1 and SP-2 (drill blocks only, 350 and 300) are kept as SP-1a and SP-2a. The
+copied and text blocks (Q5.1) are two new PRs, SP-1b and SP-2b, each its own
+rate by judgement: the server side adds two accepted shapes to the same route,
+the editor adds one form and one picker.
 
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
-| SP-1 | Server and edit route: add a drill block, remove a block, move a block; the versioning as today | about 350 | judgement (`sessionScriptAuthoring.ts` is 724 lines) |
-| SP-2 | The editor: a drill picker, remove, move up and down | about 300 | judgement (`apps/web/app/coach/session-scripts/SessionScriptEditor.tsx` is 259 lines) |
+| SP-1a | Server and edit route: add a drill block, remove a block, move a block; the versioning as today | about 350 | judgement (`sessionScriptAuthoring.ts` is 724 lines) |
+| SP-1b | Server: add a text block (kind, title, minutes and text; the content rule above) and add a block copied from another plan (same gym; its fields and `contact_level` carried; a new block id; the plan's contact label recomputed) | about 190 | judgement |
+| SP-2a | The editor: a drill picker, remove, move up and down | about 300 | judgement (`apps/web/app/coach/session-scripts/SessionScriptEditor.tsx` is 259 lines) |
+| SP-2b | The editor: a text-block form (kind, title, minutes, text) and a "copy a block from another plan" picker | about 200 | judgement |
 | SP-3 | Migration: a plan link on a scheduled class; the scheduler accepts it | about 250 | judgement |
 | SP-4 | "Schedule a class" from Session Plans; the class screen starts the class's plan | about 250 | judgement |
 
-- **Total:** about 1,150 lines in 4 PRs.
-- **Migrations:** 1 (SP-3), only if Q5.2 is A.
+- **Total:** about 1,540 lines in 6 PRs (was about 1,150 in 4: drill blocks,
+  Q5.1 D). The two new PRs add about 390. Judgement.
+- **Migrations:** 1 (SP-3), Q5.2 being A.
 - **Route:**
-  - **Opus for SP-1**, because a sparring-contact drill could be added to a
-    plan.
+  - **Opus for SP-1a and SP-1b**, because a sparring-contact drill could be
+    added to a plan, and a copied block carries its source's contact level.
     - The plan's contact label is computed from its steps (`contactStructure`,
       `sessionScriptAuthoring.ts:113-121`) and shown on Session Plans
       (`page.tsx:607`).
     - Block minutes are checked (`pilot_ssb_window`, migration `:97`).
-    - SP-1 must keep both right when blocks are added, removed or moved.
+    - SP-1a and SP-1b must keep both right when blocks are added, copied,
+      removed or moved. A text block has `contact_level` `none` (the column's
+      default); INFERRED.
     - UNVERIFIED whether any gate reads a block's contact level when a session
       runs.
-  - **Sonnet for SP-2.** The picker sends only what SP-1's route accepts, so
-    any contact rule lives and is reviewed in SP-1. If SP-1 finds a contact
-    gate, SP-2 moves to Opus.
+  - **Sonnet for SP-2a and SP-2b.** The pickers and the form send only what
+    SP-1a's and SP-1b's route accepts, so any contact rule lives and is reviewed
+    there. If SP-1a or SP-1b finds a contact gate, SP-2a and SP-2b move to Opus.
   - **Opus for SP-3 and SP-4** (the scheduler's role gate).
 - **G3:** INFERRED not to apply (no sign-in, minors' data or safety screen),
-  unless SP-1 finds a contact gate.
+  unless SP-1a or SP-1b finds a contact gate.
 - **Dependencies:** OD-2026-10-21-002 D4 ("A: Tie them") already ties a session
-  to its class at start. SP-4 changes the class screen, which lane U2 owns
-  (6b to 6d not started).
-- **File overlap:** U2's later class-screen PRs (`apps/web/app/coach/class/page.tsx`);
-  SP-3 shares the registration files with #2013.
+  to its class at start. SP-4 changes the class screen
+  (`apps/web/app/coach/class/page.tsx`, 288 lines at `a4b420c`). Lane U2's PRs
+  to it that are on `main`: 6a (#2001), 6b-1 (#2005, `48bc2ae1`), 6b-2 (#2023,
+  `244c13d2`) and 6d (#2026, `cebf54dd`). The file's last change on `main` is
+  `244c13d2`. The U2 row of `docs/current/ACTIVE_WORK.md` (at `a4b420c`) still
+  says "6c, AS-4 (4a to 4e) and AS-7 not started", which does not match `main`,
+  where U2-4a, 4b and 4c (#2029, #2068, #2073) and the coach home PRs of lane 6C7
+  are merged (git log of `main`). Whether a 6c PR will change the class screen
+  is UNKNOWN here.
+- **File overlap (open PRs listed 2026-11-23: #2039, #2082, #2124, #2126):** none
+  of those read changes the class screen, the scheduler, or the session-script
+  files (#2124 changes only `BehaviourSampleWindow.tsx` and its test; #2126's
+  files unknown; #2039 and #2082 not read). SP-3 shares the registration files
+  with whatever migration lands first; no open PR read changes them.
 
-**Owner questions:**
-
-- **Q5.1 What can a coach add?**
-  - **A (recommended):** a drill from the library, as a new block.
-  - **B:** A, plus a block copied from another plan.
-  - **C:** A, plus a block with its own text and no drill: a teaching minute, a reset
-    minute or a transition, from the existing block kinds
-    (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:84-86`).
-- **Q5.2 What does "schedules a class from it" keep?**
-  - **A (recommended):** the class keeps the plan, and Start on the class
-    screen starts that plan. This is the scrub's FUTURE wording, "a class that
-    carries its session plan ahead of time".
-  - **B:** the plan only fills in the schedule form (title, length), and
-    nothing is kept.
+**Owner questions.** None open. Q5.1 is answered A (OW27-36) and Q5.2 is
+answered A (OW27-29). Their options, as asked, are in OD-2026-11-21-006: Q5.1
+(OW27-28, then OW27-36): A all three, B drill plus text block, C drill plus
+copied block, D drill only; Q5.2: A the class keeps the plan, B the plan only
+fills the form.
 
 ## 6. A "who has stopped coming" page (scrub CF-14)
 
@@ -925,8 +960,9 @@ drills"* (against the recommendation).
 - **The card's own cost line:** "New content to write and check, not sized".
 
 **The list (OBSERVED):** `TYPED_IN_MIXED` in
-`apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts:315`, on #2008's
-head, lists 11 templates. The step numbers match the committed
+`apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts:315`, on `main`
+`a4b420c` (#2008 merged as `9ef38ecb`; the line is the same as on its head),
+lists 11 templates. The step numbers match the committed
 `apps/web/seed-data/workout-templates/seed_workout_template_items.csv`, where a
 typed step is a row with no `drill_id` (checked by script, no mismatch).
 
@@ -1003,15 +1039,19 @@ per PR):
   contact.
 - **G3:** no screen changes; INFERRED not to apply. The load's dry run on
   staging is the check, as for HW.
-- **Dependencies:** #2008 merges first. It adds `TYPED_IN_MIXED`, and each PR
+- **Dependencies:** #2008 has merged. It added `TYPED_IN_MIXED`, and each PR
   that rewrites steps removes its templates' entries.
 - **Load:** after each merge, staging then production, by Overwatch.
-- **File overlap with #2008, which changes all of these:**
-  - `seed_drill_library.csv` and `seed_drill_cues.csv`;
-  - test files that the TL PRs will also edit:
-    `apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts`,
-    `apps/web/src/server/pilot/ft1ContentPackage.pg.test.ts`,
-    `apps/web/scripts/backbone-export-ft1-track.test.ts`.
+- **File overlap:** #2008 has merged, so it no longer overlaps. The files the
+  TL PRs will edit are `seed_drill_library.csv` and `seed_drill_cues.csv`, and
+  these test files:
+  `apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts`,
+  `apps/web/src/server/pilot/ft1ContentPackage.pg.test.ts`,
+  `apps/web/scripts/backbone-export-ft1-track.test.ts`. No open PR listed on
+  2026-11-23 is known to change them (#2126's files unknown; #2039 and #2082
+  not read). The template seed CSVs (`apps/web/seed-data/workout-templates/`) and `aiPrompt.ts`
+  show no change between `7a1736d9` and `a4b420c` (`git diff --stat`), so the
+  counts above stand; they were not re-run.
 
 **Owner questions:**
 
