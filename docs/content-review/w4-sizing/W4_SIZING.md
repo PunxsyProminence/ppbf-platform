@@ -1419,3 +1419,15 @@ questions; lane W4R's were 39 PRs, about 11,080 lines.
 - **When it matters.** It becomes real once a second sender path exists. With
   one mailbox (OD-2026-11-20-001, OW27-05 A), item 1 adds no second sender, so
   EM-3 does not need the fix. It is listed here so it is not lost.
+
+## Adjacent findings from lane W4S-REFRESH (reported, not fixed; outside this file)
+
+- **ACTIVE_WORK's U2 row is behind `main`.** At `a4b420c`, `docs/current/ACTIVE_WORK.md`
+  (the lane U2 row, line 138) says "6c, AS-4 (4a to 4e) and AS-7 not started",
+  while `main` carries U2-4a (#2029, `b555d5b8`), 4b (#2068, `5b28948a`) and 4c
+  (#2073, `3580389a`) and the coach home PRs of lane 6C7 (git log of `main`).
+- **The `/profile` door and page differ.** The door's label is "Your Corner"
+  (`apps/web/components/buildingMap.ts:382`); the page's title is "Your Profile"
+  (`apps/web/app/profile/page.tsx:25`). The title test lists `/profile` in
+  `TITLE_NOT_LITERAL` (`doorLabelsMatchTitles.test.ts:35`), so it does not see
+  the difference (see item 9).
