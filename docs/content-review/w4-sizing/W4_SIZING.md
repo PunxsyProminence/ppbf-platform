@@ -438,6 +438,22 @@ line" as "A: on every home; parents see only their own child", affecting
 "Navigation map; FUTURE lane with a privacy review". That entry says "Ruling:
 none by this entry". The brief says the privacy review comes first.
 
+**Answered since (OD-2026-11-21-006; re-sized by lane W4S-REFRESH at `main`
+`a4b420c41a9d10c2e991df9b6290914aed41b126`, 2026-11-23).** Each is Jason's
+answer on the card named:
+
+| Q | Answer | Effect |
+|---|---|---|
+| Q3.1 (OW27-19) | *"C: Either one"*, against the recommendation. Either a "here" mark in a running session or a present mark on today's register shows a person on the floor | The read has two sources. The entry's note: "a register mark has no end time (INFERRED)", so the card's con stands for the build to handle |
+| Q3.2 (OW27-20) | *"A: Own child's line only (Recommended)"* | A parent sees a line for each of their own children on the floor, and nothing else |
+| Q3.3 (OW27-21) | *"A: Names of everyone on the floor (Recommended)"* | Staff see the names; "adds no new access" |
+| Q3.4 (OW27-22) | *"A: A line about themselves only (Recommended)"* | An athlete sees only their own status, no count |
+| Q3.5 (OW27-23) | *"B: Overwatch, after two reviewers pass it"*, against the recommendation | Overwatch signs off FN-0 once two adversarial reviewers pass it, as content drafts are handled (OD-2026-11-15-011); Jason does not read it first |
+
+Already ruled and kept: the line "is not an attendance figure" and a
+run-presence mark is not attendance (CT-13, `ATTENDANCE_PRECEDENCE.md`), as
+OW27-19 states.
+
 **What exists (OBSERVED):**
 
 - **What is live now.** A session run has `run_state`, `started_at` and
@@ -445,7 +461,7 @@ none by this entry". The brief says the privacy review comes first.
   (`infra/azure/pilot_slice_postgres_session_run_state_migration.sql:38-40`),
   in progress or not (`:61`), one live run per coach (`:128-130`), and it may
   be tied to a class (`pilot_slice_postgres_session_run_class_migration.sql:105`).
-  A run idle 3 hours is closed (`apps/web/src/server/pilot/sessionScriptRuns.ts:152`).
+  A run idle 3 hours is closed (`apps/web/src/server/pilot/sessionScriptRuns.ts:153`).
 - **Who is marked here.** `pilot.session_run_athletes`
   (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:80`).
   The migration calls it "SESSION DETAIL, NOT ATTENDANCE" (`:26`). Only the
@@ -457,23 +473,38 @@ none by this entry". The brief says the privacy review comes first.
 - **Today's attendance.** `apps/web/app/api/pilot/coach/attendance-today/route.ts:13`
   says "Who is marked on the floor today". The public wall counts today's
   present marks without a sign-in (`apps/web/src/server/pilot/wallDisplayDb.ts:106`,
-  `apps/web/app/api/pilot/wall/route.ts:22`).
+  `apps/web/app/api/pilot/wall/route.ts:22`). The count is `distinct athlete_id`
+  from `pilot.scheduler_attendance` with `status = 'present'` and `checked_in_at`
+  inside the gym day (`wallDisplayDb.ts:105-110`), leaving out a cancelled
+  class's marks. A register row has a check-in time and no end time (Q3.1 C's
+  con). The wall serves "a shape with no person in it" (`wall/route.ts:20-24`;
+  OD-2026-10-07-008).
 - **The homes.** The coach home shows only the coach's own run: "Session in
-  progress" and "Athletes Present" (`apps/web/components/CoachWorkspace.tsx:1391`,
-  `:3482`). A search of `apps/web/components/ParentHub.tsx` and
-  `apps/web/components/AthleteWorkspace.tsx` for live-presence words found no
-  match. The parent home loads only linked children whose guardian link has not
+  progress" and "Athletes Present" (`apps/web/components/CoachWorkspace.tsx:1326`,
+  `:3295`). A search of `apps/web/components/ParentHub.tsx` and
+  `apps/web/components/AthleteWorkspace.tsx` for live-presence words ("on the
+  floor", "on floor") found nothing that is a live line, re-run at `a4b420c`.
+  Both files, and the coach home, have been rearranged since the earlier read
+  (coach home: the Floor tab and tab row, lane 6C7 and the Needs You Now
+  strip; athlete home: AS8-1 opens on "How I feel today"; Parent Hub: AS9-1 and
+  AS9-3 tabs). Where the line sits on each is not decided here. The parent home loads only linked children whose guardian link has not
   ended (`apps/web/app/api/pilot/athletes/list/route.ts:53`, `:64`).
-- **Minors.** Unknown age is a minor (`apps/web/src/server/pilot/wallDisplay.ts:216-223`).
-  A guardian's access ends at 18 (`apps/web/src/server/pilot/guardianAccess.ts:46`,
-  `:70`, `:111`).
+- **Minors.** Unknown age is a minor: `isMinor` is now in
+  `apps/web/src/lib/minorAge.ts:51` (18 at `:12`), and `wallDisplay.ts:5-7`
+  re-exports it. A guardian's access ends at 18
+  (`apps/web/src/server/pilot/guardianAccess.ts:47`, `:100`, `:141`). Since
+  #2012 (`48d9bd46`, merged) the server also refuses a new guardian link to an
+  athlete 18 or over (lane GA).
 
 **What is missing:**
 
 - **A gym-wide read.** The live-run read returns only the caller's own run
-  (`sessionScriptRuns.ts:315`). Needed is a "who is here now" read, cut by role:
+  (`sessionScriptRuns.ts:337`). Needed is a "who is here now" read, cut by role:
   staff see the gym, a parent sees only their own children, an athlete sees only
-  themselves.
+  themselves. Under Q3.1 C it unions the two sources: athletes marked on a run
+  that is in progress, and athletes with a present register mark today.
+- **Not ruled:** the words of the line, and what it says for a person who has
+  only a register mark (no end time). Left to FN-0.
 - **The line** on four homes.
 - **The privacy review.**
 
@@ -481,50 +512,33 @@ none by this entry". The brief says the privacy review comes first.
 
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
-| FN-0 | Privacy review, docs only: what each role sees, what the public wall already shows, the minors rules | about 120 | judgement |
-| FN-1 | One read and route, cut by role (staff; parent via `guardianAthleteIds`; athlete self) | about 250 | judgement |
+| FN-0 | Privacy review, docs only: what each role sees (Q3.2 to Q3.4), what the public wall already shows, the minors rules, the register mark with no end time (Q3.1 C) | about 120 | judgement |
+| FN-1 | One read and route, cut by role (staff names; parent via `guardianAthleteIds`, own children; athlete self), over two sources: live-run marks and today's present register marks (Q3.1 C) | about 310 | judgement; the earlier 250 plus about 60 for the second source |
 | FN-2 | The line on the Parent Hub and the athlete home | about 150 | matched, SH-3 90, two homes |
 | FN-3 | The line on the coach home and the admin home | about 120 | matched, SH-3 90 |
 
-- **Total:** about 640 lines in 4 PRs.
+- **Total:** about 700 lines in 4 PRs (was about 640; Q3.1 C adds about 60 to
+  FN-1). Judgement.
 - **Migrations:** none (INFERRED: built on the tables above).
 - **Route:** Opus for FN-0 to FN-3 (minors' data).
 - **G3:** applies.
-- **Dependencies:** FN-0 before FN-1, signed off as Q3.5 says; #2012 before
-  FN-1.
-- **File overlap:**
-  - FN-1 uses the guardian checks in `guardianAccess.ts`, which #2012 (lane
-    GA) changes (+30 lines at `5efdc9b6`). FN-1 goes after #2012 merges.
-  - FN-1 shares the registration files with #2013 (above).
-  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) changes (+256
-    lines at `c5c39034`), and U2 item 4e later.
-  - FN-3 changes `CoachWorkspace.tsx`, lane U2's file (AS-7, coach home). #2010
-    (lane AS-5) would also edit it if Overwatch picks its Q11 B.
+- **Dependencies:** FN-0 before FN-1, signed off by Overwatch after two
+  adversarial reviewers pass it (Q3.5 B). #2012 has merged.
+- **File overlap (open PRs listed 2026-11-23: #2039, #2082, #2124, #2126):**
+  - FN-1 uses the guardian checks in `guardianAccess.ts`; #2012's change is on
+    `main`. It shares the registration files with nothing open that this lane
+    read.
+  - FN-2 changes `AthleteWorkspace.tsx` and the Parent Hub; FN-3 changes
+    `CoachWorkspace.tsx`. The U2, AS-7, AS-8 and AS-9 PRs that changed them
+    since the earlier read have merged (git log of those files on `main`).
+    #2126 is part B of the kiosk text-size sweep; part A (#2123) edited
+    `CoachWorkspace.tsx`. #2126 listed no files when read, so any overlap is
+    UNKNOWN. #2124 changes only `BehaviourSampleWindow.tsx` and its test.
 
-**Owner questions:**
-
-- **Q3.1 What counts as "on the floor now"?**
-  - **A (recommended):** marked here in a session that is running now. That
-    record is the only one that is live.
-  - **B:** marked present on today's class register.
-  - **C:** either one.
-- **Q3.2 What does a parent see?**
-  - **A (recommended):** a line for each of their own children who is on the
-    floor now, and nothing about anyone else.
-  - **B:** A, plus the class and the time it started.
-- **Q3.3 What do coaches and admins see?**
-  - **A (recommended):** the names of everyone on the floor now. Coaches can
-    already read every athlete in their gym
-    (`apps/web/src/server/pilot/access.ts:398-401`).
-  - **B:** a count only.
-- **Q3.4 What does an athlete see?**
-  - **A (recommended):** a line about themselves only.
-  - **B:** A, plus the number of people on the floor (the public wall already
-    shows today's head count).
-- **Q3.5 Who signs off the privacy review (FN-0) before FN-1 starts?**
-  - **A (recommended):** Jason. It decides what minors' data each home shows.
-  - **B:** Overwatch, after two adversarial reviewers pass it, the way content
-    drafts are handled (OD-2026-11-15-011).
+**Owner questions.** None open. Q3.1 to Q3.5 are answered (the table above);
+their options, as asked, are in OD-2026-11-21-006: Q3.1 A, B or C (C chosen);
+Q3.2 A or B (A); Q3.3 A or B (A); Q3.4 A or B (A); Q3.5 A (Jason) or B
+(Overwatch after two reviewers; B chosen).
 
 ## 4. A parent starts a message to the coach (scrub FAM-09)
 
