@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-23-001 | 2026-11-23 | The "Skip this chance" control, #2117, finished lanes, the three live readability fixes, Overwatch's order of work and the staging test coaches | PRIMARY |  |  |
 | OD-2026-11-22-004 | 2026-11-22 | Release 0a9b2972 without the signed-in staging check; App Overwatch approves the production gates | PRIMARY |  | yes |
 | OD-2026-11-22-003 | 2026-11-22 | Overwatch's recommendations on HF9-1, the coach home word, the release, #2059 and staging test accounts | PRIMARY |  |  |
 | OD-2026-11-22-002 | 2026-11-22 | Close the finished lanes' plan PRs; the Claude Science thread stays the research lane | PRIMARY |  |  |
@@ -647,6 +648,39 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-23-001 -- The "Skip this chance" control, #2117, finished lanes, the three live readability fixes, Overwatch's order of work and the staging test coaches
+
+**Provenance: PRIMARY**, except where marked REPORTED. Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on the evening of 2026-11-22 and early on 2026-11-23, US Eastern. New; edits no earlier entry's text.
+
+**Jason (PRIMARY), asked what the proposed "Skip this chance" button would do:** *"yes add it"* (quoted by Overwatch on #2082, comment 7088785576, 2026-11-23T00:59Z)
+
+**Jason (PRIMARY):** *"merge 2117"* and *"ok archive the lanes in there that are finished"*
+
+**Jason (PRIMARY, 2026-11-23):** *"build the 3 live fixes here"*
+
+**Jason (PRIMARY, 2026-11-23), on Overwatch's order (the kiosk text-size sweep, the staging test coach accounts, Codex's two findings on #2120 to lane PATTERN-2, a records PR, then lane briefs):** *"Go in that order ill hit the play buttons"*
+
+**Jason (REPORTED, Backbone Overwatch 32's card file CARDS_OW32.md, not typed to App Overwatch):** card OW32-04, *"App Overwatch makes a staging test coach account (Recommended)"*; card OW32-03, *"A"* (research stays on the Claude Science side, build lanes go through App Overwatch).
+
+**Ruling:**
+1. The coach window screen gets a "Skip this chance" control. It moves that coach's own count on by one with no answer saved. Lane PATTERN-2 builds it (2b), together with one open window per athlete and behaviour (2a).
+2. #2117 is merged.
+3. Finished lane sessions are archived.
+4. The three readability faults found live after release `0a9b2972` are fixed: the parent Consent pill, the coach home "(open)" word and the training-hold note heading.
+5. Overwatch works in the order above.
+6. App Overwatch makes the staging test coach accounts.
+
+**Applied (Overwatch, not his words):**
+- #2117 merged as `533eabe2` (2026-11-23T00:42Z).
+- PATTERN-2a merged as #2121 (`53a5300d`); 2b is building. Codex's P1 and P2 on #2120 went to that lane as an add-on, since they are in 2b's file (comment 7093230266).
+- The live fixes merged as #2122 (`c786341a`), not released yet.
+- The kiosk text-size sweep part A is #2123.
+- Staging coaches: `admin+coachtest@` already existed and is active (OBSERVED 2026-11-23). `admin+coachtest2@` was added through Gym Office and signed in once through an emailed link (OBSERVED: Coach Workspace), for the two-coach checks.
+
+**Status:** recorded 2026-11-23 by PR.
 
 ---
 
