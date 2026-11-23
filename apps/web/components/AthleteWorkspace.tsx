@@ -4735,7 +4735,7 @@ export default function AthleteWorkspace() {
                     // A NUL cannot be stored (the server refuses it); it never enters the box.
                     onChange={(event) => setCurrentPainNote(event.target.value.split('\u0000').join(''))}
                     disabled={isSavingPain}
-                    aria-describedby="pain-note-help pain-note-count"
+                    aria-describedby={painNoteTooLong ? 'pain-note-help pain-note-count pain-note-too-long' : 'pain-note-help pain-note-count'}
                     className="textarea input--kiosk h-[89px]"
                   />
                   <p id="pain-note-help" className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
@@ -4745,7 +4745,7 @@ export default function AthleteWorkspace() {
                     {painNoteLength} of {PAIN_NOTE_MAX}
                   </p>
                   {painNoteTooLong ? (
-                    <p className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
+                    <p id="pain-note-too-long" role="status" className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
                       Your note is too long. Shorten it to {PAIN_NOTE_MAX} characters or fewer to save.
                     </p>
                   ) : null}
