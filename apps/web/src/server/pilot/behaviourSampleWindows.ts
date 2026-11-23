@@ -80,6 +80,10 @@ export function contextOf(row: Pick<BehaviourWindowRow, 'context_kind' | 'contex
   return { attemptContext: row.context_id };
 }
 
+/**
+ * Opens a window, or, when this athlete already has one open on this behaviour in the gym, returns
+ * that one to join (its own task, context and chances, whatever was asked), so no second count starts.
+ */
 export async function openBehaviourWindow(input: {
   organizationId: string;
   athleteId: string;
@@ -115,9 +119,28 @@ export async function openBehaviourWindow(input: {
       if (run.rows[0].run_state !== 'in_progress') throw new ValidationError('That session run has ended.');
       // The writer's own checks: the run is this gym's, the athlete is marked
       // present on it, and the drill or block was part of it (Q5 A).
+      // One open window per athlete and behaviour in the gym (Overwatch 7088669068; 7090923249 A):
+      // paired judgments need one shared count. Two opens share the run row (for share), so it does
+      // not order them, and the athlete may be on another live run; this key's lock does, always
+      // taken after the run row. The presence check comes first, so a caller refused for an athlete
+      // not present learns nothing of another window.
+      await client.query(
+        `select pg_advisory_xact_lock(hashtextextended('pilot.behaviour_windows|' || $1 || '|' || $2 || '|' || $3, 0))`,
+        [input.organizationId, input.athleteId, input.behaviourKey],
+      );
       await reportPlaceFor(client, {
         organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: input.runId }, context: input.context,
       });
+      // Its own statement after the lock, under READ COMMITTED (withTransaction's default): it sees a
+      // window the other open committed while this one waited. Found, the caller joins it.
+      const already = await client.query<BehaviourWindowRow>(
+        `select ${FIELDS} from pilot.behaviour_observations_windows
+          where organization_id = $1 and athlete_id = $2 and behaviour_key = $3 and closed_at is null
+          order by opened_at, window_id
+          limit 1`,
+        [input.organizationId, input.athleteId, input.behaviourKey],
+      );
+      if (already.rows.length > 0) return already.rows[0];
       const inserted = await client.query<BehaviourWindowRow>(
         `insert into pilot.behaviour_observations_windows
            (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, chances,

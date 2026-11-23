@@ -483,7 +483,27 @@ describe('the table\'s guard', () => {
   });
 });
 
-const open = (overrides: Partial<Parameters<typeof windows.openBehaviourWindow>[0]> = {}) => windows.openBehaviourWindow({
+type OpenInput = Parameters<typeof windows.openBehaviourWindow>[0];
+
+/** Closes whatever window an earlier test left open on this athlete and behaviour, straight in the table. */
+async function closeOpenWindowsOf(athleteId = ATHLETE, behaviourKey = KEY): Promise<void> {
+  await db.query(
+    `update pilot.behaviour_observations_windows set closed_at = now()
+      where organization_id = $1 and athlete_id = $2 and behaviour_key = $3 and closed_at is null`,
+    [ORG, athleteId, behaviourKey],
+  );
+}
+
+/**
+ * A new window: one open window per athlete and behaviour (PATTERN-2a), so a test that means to
+ * open one first closes any an earlier test left open. joinOrOpen calls the function as it stands.
+ */
+const open = async (overrides: Partial<OpenInput> = {}) => {
+  await closeOpenWindowsOf(overrides.athleteId, overrides.behaviourKey);
+  return joinOrOpen(overrides);
+};
+
+const joinOrOpen = (overrides: Partial<OpenInput> = {}) => windows.openBehaviourWindow({
   organizationId: ORG,
   athleteId: ATHLETE,
   behaviourKey: KEY,
@@ -625,6 +645,85 @@ describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
   test('a drill that was not part of the run\'s plan is refused (the writer\'s check, which the table cannot make)', async () => {
     await expect(open({ runId: PLANNED_RUN })).rejects.toThrow('That drill was not part of that session run.');
     expect(await open({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' } })).toEqual(expect.objectContaining({ context_kind: 'block' }));
+  });
+});
+
+describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Overwatch 7088669068, 7090923249 A)', () => {
+  const openCount = async () => (await db.query<{ n: number }>(
+    `select count(*)::int as n from pilot.behaviour_observations_windows
+      where organization_id = $1 and athlete_id = $2 and behaviour_key = $3 and closed_at is null`,
+    [ORG, ATHLETE, KEY],
+  )).rows[0].n;
+
+  /** Fires two opens at once, both paused at the window insert until both are queued; their windows. */
+  async function twoAtOnce(first: Partial<OpenInput>, second: Partial<OpenInput>) {
+    await closeOpenWindowsOf();
+    // Hold the behaviour name the window insert checks: an open that gets as far as inserting waits there.
+    const holder = await holding(
+      'select 1 from pilot.behaviour_keys where organization_id = $1 and behaviour_key = $2 for update', [ORG, KEY],
+    );
+    const opens = [joinOrOpen(first), joinOrOpen(second)];
+    for (const opening of opens) opening.catch(() => undefined);
+    let queued = false;
+    try {
+      // One waits at the insert, the other behind it on the athlete-and-behaviour lock.
+      queued = await waiters(2);
+    } finally {
+      await holder.query('commit');
+      await holder.end();
+    }
+    expect(queued).toBe(true);
+    return Promise.all(opens);
+  }
+
+  test('two opens at once on one run make one window, and the second caller gets it to join', async () => {
+    const [a, b] = await twoAtOnce({ openedByAccountId: COACH_A }, { openedByAccountId: COACH_B });
+    expect(b.window_id).toBe(a.window_id);
+    expect(await openCount()).toBe(1);
+  });
+
+  test('two opens at once from two live runs make one window too: the rule is gym-wide', async () => {
+    const [a, b] = await twoAtOnce({}, { runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' }, openedByAccountId: COACH_B });
+    expect(b.window_id).toBe(a.window_id);
+    expect(await openCount()).toBe(1);
+  });
+
+  test('a later open joins the open window as it stands, whatever task, context and chances were asked', async () => {
+    const first = await open();
+    const joined = await joinOrOpen({
+      runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' }, taskConstraint: 'live', chances: 3, openedByAccountId: COACH_B,
+    });
+    expect(joined).toEqual(first);
+    // Another behaviour, or another athlete, is another window.
+    expect((await open({ behaviourKey: OTHER_KEY })).window_id).not.toBe(first.window_id);
+    expect(await openCount()).toBe(1);
+  });
+
+  test('a closed window does not hold the place: the next open is a new window', async () => {
+    const first = await open();
+    await windows.closeBehaviourWindow({ organizationId: ORG, windowId: first.window_id, closedByAccountId: COACH_A });
+    const next = await joinOrOpen();
+    expect(next.window_id).not.toBe(first.window_id);
+    expect(next.closed_at).toBeNull();
+  });
+
+  test('a caller refused by the run or presence checks learns nothing of the open window', async () => {
+    await open();
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+       values ($1, 'run-bsw-2a-absent', null, null, $2, current_date, 'in_progress', now() - interval '1 minute')`,
+      [ORG, COACH_D],
+    );
+    try {
+      await expect(joinOrOpen({ runId: 'run-bsw-2a-absent', openedByAccountId: COACH_D })).rejects.toThrow('not marked present');
+      await expect(joinOrOpen({ runId: OTHER_RUN })).rejects.toThrow('That session run has ended.');
+    } finally {
+      await db.query(
+        `update pilot.session_script_runs set run_state = 'completed', ended_at = now() where organization_id = $1 and run_id = 'run-bsw-2a-absent'`,
+        [ORG],
+      );
+    }
   });
 });
 
@@ -811,6 +910,8 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
   });
 
   test('a closed window takes no tap; only staff of this gym close it, and only once', async () => {
+    // Its own window: an open in an earlier test of this block closed the shared one (one per athlete and behaviour).
+    const windowId = (await open()).window_id;
     await expect(windows.closeBehaviourWindow({ organizationId: OTHER_ORG, windowId, closedByAccountId: OTHER_GYM_COACH }))
       .rejects.toThrow('That window is not in this gym.');
     for (const outsider of [COACH_LAPSED, BOARD_MEMBER]) {
@@ -829,9 +930,10 @@ describe('joining a window, and the reports route (PATTERN-1e; Overwatch 7084899
 
   test('the open windows of a run, for a second coach to join: that run\'s open ones only; staff of this gym only', async () => {
     const joinable = (await open()).window_id;
-    const closedOne = (await open()).window_id;
+    // Another behaviour: one window per athlete and behaviour is open at a time (PATTERN-2a).
+    const closedOne = (await open({ behaviourKey: OTHER_KEY })).window_id;
     await close(closedOne);
-    const elsewhere = (await open({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' } })).window_id;
+    const elsewhere = (await open({ behaviourKey: OTHER_KEY, runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' } })).window_id;
     const listed = (await windows.listOpenBehaviourWindows({ organizationId: ORG, runId: RUN, readerAccountId: COACH_B }))
       .map((row) => row.window_id);
     expect(listed).toContain(joinable);
@@ -977,11 +1079,12 @@ describe('a settling run closes its windows; the tier engine reads no open windo
 
   test('a coach finishing the run closes its open windows, and only its own; a tap is then refused and the taps show', async () => {
     const windowId = (await open({ runId: LIVE_RUN })).window_id;
-    const closedFirst = (await open({ runId: LIVE_RUN })).window_id;
-    const elsewhere = (await open()).window_id;
-    await tap(windowId, 1, COACH_A, 'occurrence');
+    // Another behaviour, closed before the third opens on it: one open window per athlete and behaviour (PATTERN-2a).
+    const closedFirst = (await open({ runId: LIVE_RUN, behaviourKey: OTHER_KEY })).window_id;
     await close(closedFirst);
     const firstClose = await closedAtOf(closedFirst);
+    const elsewhere = (await open({ behaviourKey: OTHER_KEY })).window_id;
+    await tap(windowId, 1, COACH_A, 'occurrence');
     await runs.finishSessionScriptRun(ORG, COACH_C, LIVE_RUN, { runState: 'completed' });
     expect(await closedAtOf(windowId)).not.toBeNull();
     expect((await closedAtOf(closedFirst))?.toISOString()).toBe(firstClose?.toISOString());
