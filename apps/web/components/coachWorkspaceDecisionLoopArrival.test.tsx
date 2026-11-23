@@ -76,3 +76,34 @@ test('following a pain report\'s "Record what you did" hands that report\'s athl
   fireEvent.click(link);
   expect(takeArrivalAthlete()).toBe('ath_7');
 });
+
+// CS-03 (part): a family barrier report's link hands its athlete over the same way.
+test("following a family barrier report's Decision Loop link hands that report's athlete over", async () => {
+  global.fetch = jest.fn(async (input: unknown) => {
+    const url = String(input);
+    if (url.includes('/api/pilot/athletes/list')) {
+      return jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }, { athlete_id: 'ath_9', full_name: 'Riley M.' }] });
+    }
+    if (url.includes('/api/pilot/coach/barrier-reports')) {
+      return jsonResponse({
+        ok: true, truncated: false,
+        barrierReports: [{
+          note_id: 'note_1', athlete_id: 'ath_9', athlete_name: 'Riley M.', reporter_role: 'parent',
+          note_type: 'transportation_barrier', note_text: 'No ride on Tuesdays.', created_at: '2026-10-11T18:00:00.000Z',
+        }],
+      });
+    }
+    return jsonResponse(HEALTHY_EMPTY);
+  }) as unknown as typeof fetch;
+  await act(async () => {
+    render(<CoachWorkspace />);
+  });
+
+  const needs = within(await screen.findByRole('region', { name: /^Needs you now/ }));
+  fireEvent.click(await needs.findByRole('button', { name: 'Open' }));
+  const link = needs.getByRole('link', { name: "Open Decision Loop to Post to the Family's Page" });
+  expect(link.getAttribute('href')).toBe('/coach/decision-loop');
+
+  fireEvent.click(link);
+  expect(takeArrivalAthlete()).toBe('ath_9');
+});

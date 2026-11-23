@@ -47,7 +47,10 @@ function before(a: Element, b: Element): boolean {
 }
 
 function tile(label: string): Element {
-  const found = screen.getAllByText(label).find((element) => element.tagName === 'P');
+  // A tile that counts the selected child alone names the child after its label (FAM-12).
+  const found = screen
+    .getAllByText((_, element) => element?.tagName === 'P' && (element.textContent === label || (element.textContent ?? '').startsWith(`${label} · `)))
+    .find((element) => element.tagName === 'P');
   if (!found) throw new Error(`no ${label} tile`);
   return found;
 }
