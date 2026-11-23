@@ -63,6 +63,9 @@ const BOARD_MEMBER = 'acct-bsw-board';
 // Coaches delivering the settle tests' live runs: one live run per coach (pilot_ssrun_one_live_per_coach).
 const COACH_C = 'acct-bsw-coach-c';
 const COACH_D = 'acct-bsw-coach-d';
+// Coaches delivering W3-WINDOWS's take-back and settle runs.
+const COACH_E = 'acct-bsw-coach-e';
+const COACH_F = 'acct-bsw-coach-f';
 const RETIRED_KEY = 'bk_fixture_bsw_retired';
 const RUN = 'run-bsw-1';
 const PLANNED_RUN = 'run-bsw-2';
@@ -219,7 +222,7 @@ beforeAll(async () => {
   for (const [accountId, role, organizationId] of [
     [COACH_A, 'coach', ORG], [COACH_B, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
     [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG], [BOARD_MEMBER, 'board', ORG],
-    [COACH_C, 'coach', ORG], [COACH_D, 'coach', ORG],
+    [COACH_C, 'coach', ORG], [COACH_D, 'coach', ORG], [COACH_E, 'coach', ORG], [COACH_F, 'coach', ORG],
   ]) {
     await db.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
@@ -718,7 +721,13 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     const actor = { accountId: COACH_B, role: 'coach' as const, organizationId: ORG, athleteId: null };
     await closeOpenWindowsOf();
     const stale = await joinOrOpen({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' }, openedByAccountId: COACH_B });
-    await presence.setRunAthletePresent({ actor, runId: PLANNED_RUN, athleteId: ATHLETE, present: false });
+    // Old data: since W3-WINDOWS a take-back closes the athlete's windows on its run, so the window this
+    // refusal is for is one whose mark was taken back before that shipped. Stamped straight in the table.
+    await db.query(
+      `update pilot.session_run_athletes set removed_at = clock_timestamp(), removed_by_account_id = $4
+        where organization_id = $1 and run_id = $2 and athlete_id = $3`,
+      [ORG, PLANNED_RUN, ATHLETE, COACH_B],
+    );
     try {
       // The whole message, as a ValidationError (the routes answer it as a 400).
       const refusal = await joinOrOpen().then(() => null, (error: unknown) => error);
@@ -736,7 +745,8 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     } finally {
       await presence.setRunAthletePresent({ actor, runId: PLANNED_RUN, athleteId: ATHLETE, present: true });
     }
-    // Marked present there again, the window is joinable again.
+    // Marked present there again, that old window is joinable again (it was never closed). After a real
+    // take-back the window is closed and a re-mark starts a new one: pinned in the W3-WINDOWS block.
     expect((await joinOrOpen()).window_id).toBe(stale.window_id);
   });
 
@@ -864,6 +874,196 @@ const direct = (windowId: string, chance: number, overrides: Partial<Parameters<
     session: { runId: RUN }, context: { drillId: DRILL }, windowChance: { windowId, chance }, taskConstraint: 'controlled',
     polarity: 'occurrence', attributionTarget: 'unresolved', attributionCertainty: 'uncertain', ...overrides,
   });
+
+describe('a presence mark taken back closes that athlete\'s open windows on that run (W3-WINDOWS; Overwatch 7091097843, 7111507024)', () => {
+  const TB_RUN = 'run-bsw-w3-takeback';
+  const SETTLE_RUN = 'run-bsw-w3-settle';
+  const THIRD_KEY = 'bk_fixture_bsw_third';
+  const actorOf = (accountId: string) => ({ accountId, role: 'coach' as const, organizationId: ORG, athleteId: null });
+  const mark = (athleteId: string, present: boolean, runId = TB_RUN, coach = COACH_E) =>
+    presence.setRunAthletePresent({ actor: actorOf(coach), runId, athleteId, present });
+  const closedAtOf = async (windowId: string) => (await db.query<{ closed_at: Date | null }>(
+    'select closed_at from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2', [ORG, windowId],
+  )).rows[0].closed_at;
+  const markRemovedAt = async (athleteId: string, runId = TB_RUN) => (await db.query<{ removed_at: Date | null }>(
+    'select removed_at from pilot.session_run_athletes where organization_id = $1 and run_id = $2 and athlete_id = $3',
+    [ORG, runId, athleteId],
+  )).rows[0].removed_at;
+  const lastAudit = async (athleteId: string) => (await db.query<{ details: Record<string, unknown> }>(
+    `select details from pilot.audit_events
+      where organization_id = $1 and entity_type = 'session_run_athlete' and entity_id = $2
+      order by audit_id desc limit 1`,
+    [ORG, `${TB_RUN}:${athleteId}`],
+  )).rows[0]?.details;
+  /** ATHLETE marked on TB_RUN, with no open window of theirs on KEY anywhere, then a new one on TB_RUN. */
+  const freshWindow = async (behaviourKey = KEY) => {
+    await mark(ATHLETE, true);
+    return (await open({ runId: TB_RUN, behaviourKey, openedByAccountId: COACH_E })).window_id;
+  };
+
+  beforeAll(async () => {
+    for (const runId of [TB_RUN, SETTLE_RUN]) {
+      await db.query(
+        `insert into pilot.session_script_runs
+           (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+         values ($1, $2, null, null, $3, current_date, 'in_progress', now() - interval '1 minute')`,
+        [ORG, runId, runId === TB_RUN ? COACH_E : COACH_F],
+      );
+      await db.query(
+        `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+         values ($1, $2, $3, $5, 'coach'), ($1, $2, $4, $5, 'coach')`,
+        [ORG, runId, ATHLETE, OTHER_ATHLETE, runId === TB_RUN ? COACH_E : COACH_F],
+      );
+    }
+    await db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, $2, 'Fixture third behaviour', 'SK-JAB-01', $3)`,
+      [ORG, THIRD_KEY, COACH_A],
+    );
+  });
+
+  afterAll(async () => {
+    await closeOpenWindowsOf(ATHLETE, THIRD_KEY);
+    await closeOpenWindowsOf(OTHER_ATHLETE, KEY);
+    await runs.finishSessionScriptRun(ORG, COACH_E, TB_RUN, { runState: 'completed' });
+  });
+
+  test('closes every open window of that athlete on that run, and nothing else; the audit names them', async () => {
+    // Closed before the take-back: its close time must not move.
+    const closedBefore = await freshWindow();
+    await close(closedBefore);
+    const closedBeforeAt = (await closedAtOf(closedBefore))?.toISOString();
+    const mine = await freshWindow();
+    const mineOther = await freshWindow(OTHER_KEY);
+    const theirs = (await open({ runId: TB_RUN, athleteId: OTHER_ATHLETE, openedByAccountId: COACH_E })).window_id;
+    // The same athlete on another live run, on a third behaviour (one open window per athlete and behaviour).
+    const elsewhere = (await open({ behaviourKey: THIRD_KEY })).window_id;
+
+    expect((await mark(ATHLETE, false)).outcome).toBe('unmarked');
+
+    expect(await closedAtOf(mine)).not.toBeNull();
+    expect(await closedAtOf(mineOther)).not.toBeNull();
+    expect(await closedAtOf(theirs)).toBeNull();
+    expect(await closedAtOf(elsewhere)).toBeNull();
+    expect((await closedAtOf(closedBefore))?.toISOString()).toBe(closedBeforeAt);
+    expect(await lastAudit(ATHLETE)).toEqual({
+      run_id: TB_RUN, athlete_id: ATHLETE, present: false, closed_window_ids: [mine, mineOther].sort(),
+    });
+    await expect(tap(mine, 1, COACH_E, 'occurrence')).rejects.toThrow('not marked present');
+    await close(theirs);
+    await close(elsewhere);
+  });
+
+  test('a take-back that takes no mark away closes nothing and writes nothing (an old window stays open)', async () => {
+    const old = await freshWindow();
+    // Old data: a mark taken back before W3-WINDOWS shipped, its window left open.
+    await db.query(
+      `update pilot.session_run_athletes set removed_at = clock_timestamp(), removed_by_account_id = $4
+        where organization_id = $1 and run_id = $2 and athlete_id = $3`,
+      [ORG, TB_RUN, ATHLETE, COACH_E],
+    );
+    const auditsBefore = (await db.query<{ n: number }>('select count(*)::int as n from pilot.audit_events')).rows[0].n;
+    expect((await mark(ATHLETE, false)).outcome).toBe('unchanged');
+    expect(await closedAtOf(old)).toBeNull();
+    expect((await db.query<{ n: number }>('select count(*)::int as n from pilot.audit_events')).rows[0].n).toBe(auditsBefore);
+    await close(old);
+  });
+
+  test('closing is once: a re-mark does not bring the window back, and the next open is a new window (behaviour change)', async () => {
+    const ended = await freshWindow();
+    await mark(ATHLETE, false);
+    expect((await mark(ATHLETE, true)).outcome).toBe('marked');
+    expect(await closedAtOf(ended)).not.toBeNull();
+    const next = await joinOrOpen({ runId: TB_RUN, openedByAccountId: COACH_E });
+    expect(next.window_id).not.toBe(ended);
+    expect(next.closed_at).toBeNull();
+    await close(next.window_id);
+  });
+
+  test('the close is in the take-back\'s transaction: while it waits on the window, the mark still stands', async () => {
+    const windowId = await freshWindow();
+    const holder = await holding(
+      'select 1 from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2 for update',
+      [ORG, windowId],
+    );
+    const taking = mark(ATHLETE, false);
+    taking.catch(() => undefined);
+    let queued = false;
+    let standingWhileWaiting: Date | null | undefined;
+    try {
+      queued = await waiters(1);
+      standingWhileWaiting = await markRemovedAt(ATHLETE);
+    } finally {
+      await release(holder);
+    }
+    expect(queued).toBe(true);
+    expect(standingWhileWaiting).toBeNull();
+    expect((await taking).outcome).toBe('unmarked');
+    expect(await markRemovedAt(ATHLETE)).not.toBeNull();
+    expect(await closedAtOf(windowId)).not.toBeNull();
+  });
+
+  test('a tap in flight and a take-back: no deadlock; the tap lands, then the window closes', async () => {
+    const windowId = await freshWindow();
+    // Pause the tap once it holds the mark and the window (for share): hold its chance's episode lock.
+    const holder = await holdEpisode(windowId, 1);
+    const tapping = tap(windowId, 1, COACH_E, 'occurrence');
+    tapping.catch(() => undefined);
+    let taking: Promise<{ outcome: string }> = Promise.resolve({ outcome: 'none' });
+    const queued: boolean[] = [];
+    try {
+      queued.push(await waiters(1));
+      taking = mark(ATHLETE, false);
+      taking.catch(() => undefined);
+      // The take-back queues on the mark the tap holds.
+      queued.push(await waiters(2));
+    } finally {
+      await release(holder);
+    }
+    expect(queued).toEqual([true, true]);
+    expect(await tapping).toEqual({ chance: 1, polarity: 'occurrence' });
+    expect((await taking).outcome).toBe('unmarked');
+    expect(await closedAtOf(windowId)).not.toBeNull();
+    expect((await readingsOf(windowId, 1)).map((row) => row.observer_account_id)).toEqual([COACH_E]);
+  });
+
+  test('a join from another run behind a take-back in flight looks once more, and opens a new window (Q3 A)', async () => {
+    const stale = await freshWindow();
+    // Pause the take-back after its mark update, at the window close: hold the window row.
+    const holder = await holding(
+      'select 1 from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2 for update',
+      [ORG, stale],
+    );
+    const taking = mark(ATHLETE, false);
+    taking.catch(() => undefined);
+    let joining: Promise<{ window_id: string; run_id: string }> = Promise.resolve({ window_id: '', run_id: '' });
+    const queued: boolean[] = [];
+    try {
+      queued.push(await waiters(1));
+      // From RUN, where the athlete is marked: it reads the window open, then waits on the mark on TB_RUN.
+      joining = joinOrOpen();
+      joining.catch(() => undefined);
+      queued.push(await waiters(2));
+    } finally {
+      await release(holder);
+    }
+    expect(queued).toEqual([true, true]);
+    expect((await taking).outcome).toBe('unmarked');
+    const joined = await joining;
+    expect(joined.window_id).not.toBe(stale);
+    expect(joined.run_id).toBe(RUN);
+    expect(await closedAtOf(stale)).not.toBeNull();
+    await close(joined.window_id);
+  });
+
+  test('a settle with no athlete id still closes every open window on its run, every athlete\'s (Q1 A)', async () => {
+    const mine = (await open({ runId: SETTLE_RUN, openedByAccountId: COACH_F })).window_id;
+    const theirs = (await open({ runId: SETTLE_RUN, athleteId: OTHER_ATHLETE, openedByAccountId: COACH_F })).window_id;
+    await runs.finishSessionScriptRun(ORG, COACH_F, SETTLE_RUN, { runState: 'completed' });
+    expect(await closedAtOf(mine)).not.toBeNull();
+    expect(await closedAtOf(theirs)).not.toBeNull();
+  });
+});
 
 describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
   let windowId: string;

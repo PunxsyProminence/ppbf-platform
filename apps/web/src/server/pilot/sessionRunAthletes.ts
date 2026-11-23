@@ -4,7 +4,7 @@ import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ForbiddenError } from './errors';
 import { copyTapToRegister, type RegisterResult, undoTapOnRegister } from './sessionRunClass';
-import { SessionScriptRunError } from './sessionScriptRuns';
+import { closeRunWindows, SessionScriptRunError } from './sessionScriptRuns';
 import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
 
 // WHO WAS IN A SESSION (audit finding F-067).
@@ -109,6 +109,7 @@ export async function setRunAthletePresent(input: {
 
     let outcome: RunAthleteOutcome;
     let remarked = false;
+    let closedWindowIds: string[] = [];
     let pointer: { register_class_id: string | null; register_written_at: string | null } | null = null;
     if (input.present) {
       // A first mark inserts. A mark that was taken back is cleared and re-stamped. A standing
@@ -147,6 +148,13 @@ export async function setRunAthletePresent(input: {
         [actor.organizationId, runId, athleteId, actor.accountId],
       );
       outcome = removed.rowCount === 1 ? 'unmarked' : 'unchanged';
+      // A child marked not there can no longer be tapped in a window on this run, so the athlete's
+      // open windows here close now, in this transaction (W3-WINDOWS; Overwatch 7091097843): none is
+      // left open to block a window elsewhere (STALE_WINDOW). The lock order holds: mark, then window,
+      // as a tap takes them. Closing is once (the window guard), so a re-mark starts a new window.
+      if (outcome === 'unmarked') {
+        closedWindowIds = await closeRunWindows(client, actor.organizationId, [runId], athleteId);
+      }
     }
 
     if (outcome !== 'unchanged') {
@@ -158,7 +166,11 @@ export async function setRunAthletePresent(input: {
           organization_id: actor.organizationId,
           entity_type: 'session_run_athlete',
           entity_id: `${runId}:${athleteId}`,
-          details: { run_id: runId, athlete_id: athleteId, present: input.present, ...(remarked ? { remarked: true } : {}) },
+          details: {
+            run_id: runId, athlete_id: athleteId, present: input.present, ...(remarked ? { remarked: true } : {}),
+            // Which windows this take-back ended (7111507024 Q2 A); the window table records no closer.
+            ...(closedWindowIds.length > 0 ? { closed_window_ids: closedWindowIds } : {}),
+          },
           shadow_mirror: false,
         },
         client,

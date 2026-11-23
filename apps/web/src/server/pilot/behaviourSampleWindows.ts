@@ -32,7 +32,8 @@ import { ForbiddenError, ValidationError } from './errors';
 // checked here. The callers are the staff window routes, app/api/pilot/coach/
 // behaviour-windows (PATTERN-1e-3), which take every account id from the
 // session. A window is opened only on a live run (Overwatch 7086220125), and a
-// settling run closes its open windows (sessionScriptRuns.ts, PATTERN-1e-2).
+// settling run closes its open windows (sessionScriptRuns.ts, PATTERN-1e-2), as a presence mark
+// taken back closes that athlete's on its run (sessionRunAthletes.ts, W3-WINDOWS).
 
 export const DEFAULT_WINDOW_CHANCES = 10;
 export const MAX_WINDOW_CHANCES = 50;
@@ -64,7 +65,10 @@ const REFUSALS: Record<string, string> = {
   pilot_behaviour_windows_active_key: 'That behaviour name is not on the active list.',
 };
 
-/** An open window this athlete cannot be tapped in blocks a new one until its session settles or its coach closes it. */
+/**
+ * An open window this athlete cannot be tapped in blocks a new one until its session settles or its coach closes it.
+ * Since W3-WINDOWS a take-back closes such windows, so this is left for ones opened before that shipped.
+ */
 export const STALE_WINDOW = 'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
   + 'It ends when that session is settled or its coach closes it.';
 
@@ -140,35 +144,41 @@ export async function openBehaviourWindow(input: {
       });
       // Its own statement after the lock, under READ COMMITTED (set above): it sees a
       // window the other open committed while this one waited. Found, the caller joins it.
-      const already = await client.query<BehaviourWindowRow>(
+      const lookUp = async (): Promise<BehaviourWindowRow | undefined> => (await client.query<BehaviourWindowRow>(
         `select ${FIELDS} from pilot.behaviour_observations_windows
           where organization_id = $1 and athlete_id = $2 and behaviour_key = $3 and closed_at is null
           order by opened_at, window_id
           limit 1`,
         [input.organizationId, input.athleteId, input.behaviourKey],
-      );
-      if (already.rows.length > 0) {
-        const found = already.rows[0];
-        // Joined only where its taps can land (Overwatch 7091097843 A1): the writer checks presence on
-        // the window's own run, so a window on a run the athlete has since been taken off is refused,
-        // not handed back to be tapped in vain. The writer's own check, so the presence table is named
-        // there alone. Presence only: the fixed context 'session' runs no drill or block check, so no
-        // refusal about another coach's session plan reaches this caller (its plan was checked at its open).
-        if (found.run_id !== input.runId) {
-          try {
-            await reportPlaceFor(client, {
-              organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id },
-              context: { attemptContext: 'session' },
-            });
-          } catch (error) {
-            if (error instanceof ValidationError && error.message.startsWith('That athlete is not marked present')) {
-              throw new ValidationError(STALE_WINDOW);
-            }
-            throw error;
-          }
+      )).rows[0];
+      // Joined only where its taps can land (Overwatch 7091097843 A1): the writer checks presence on
+      // the window's own run, so a window on a run the athlete has since been taken off is refused,
+      // not handed back to be tapped in vain. The writer's own check, so the presence table is named
+      // there alone. Presence only: the fixed context 'session' runs no drill or block check, so no
+      // refusal about another coach's session plan reaches this caller (its plan was checked at its open).
+      const joinable = async (found: BehaviourWindowRow): Promise<boolean> => {
+        if (found.run_id === input.runId) return true;
+        try {
+          await reportPlaceFor(client, {
+            organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id },
+            context: { attemptContext: 'session' },
+          });
+          return true;
+        } catch (error) {
+          if (error instanceof ValidationError && error.message.startsWith('That athlete is not marked present')) return false;
+          throw error;
         }
-        return found;
+      };
+      let found = await lookUp();
+      if (found && !(await joinable(found))) {
+        // One look again, never a loop (W3-WINDOWS; Overwatch 7111507024 Q3 A). A take-back closes the
+        // athlete's windows on its run in its own transaction (sessionRunAthletes.ts), and this open may
+        // have read the window before that committed, then waited on the mark: this new statement, under
+        // READ COMMITTED, sees the close. A window still open there is old data, and is refused.
+        found = await lookUp();
+        if (found && !(await joinable(found))) throw new ValidationError(STALE_WINDOW);
       }
+      if (found) return found;
       const inserted = await client.query<BehaviourWindowRow>(
         `insert into pilot.behaviour_observations_windows
            (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, chances,
