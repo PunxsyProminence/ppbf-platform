@@ -565,6 +565,10 @@ jobs:
     timeout-minutes: 20
     env:
       CI: true
+      # next build's "Running TypeScript" step outgrew Node's default ~4 GB heap
+      # (#2140: static died twice at Mark-Compact ~4042 MB, "JavaScript heap out
+      # of memory"). Build steps only; the Dockerfile builder stage sets the same.
+      NODE_OPTIONS: --max-old-space-size=6144
 
     steps:
       - name: Check out source

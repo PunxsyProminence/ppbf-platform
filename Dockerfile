@@ -21,6 +21,10 @@ WORKDIR /app
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# next build's "Running TypeScript" step outgrew Node's default ~4 GB heap
+# (#2140: CI's static build died twice at ~4042 MB). This stage only: ENV is per
+# stage, and the runner stage below keeps Node's default heap at runtime.
+ENV NODE_OPTIONS=--max-old-space-size=6144
 RUN npm run --prefix apps/web build
 
 # Stage 3: Runner Production Image
