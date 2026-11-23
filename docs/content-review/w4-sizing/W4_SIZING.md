@@ -548,6 +548,18 @@ nothing. Barrier types are Home and Transportation only." Its proposal: "Point t
 Observations and the coach (a compose box would be FUTURE)." Stage 3 section
 3.6 lists the compose box as FUTURE.
 
+**Answered since (OD-2026-11-21-006; lane W4S-REFRESH, 2026-11-23).** Each is
+Jason's answer on the card named. Sizes are unchanged: the answers choose the
+sized option.
+
+| Q | Answer | Effect |
+|---|---|---|
+| Q4.1 (OW27-24) | *"A: A message box on the Parent Hub (Recommended)"* | PM-1 to PM-3 as sized: about 970 lines, 3 PRs, 1 migration |
+| Q4.2 | Ruled earlier. OD-2026-11-21-006's check note lists it as "ruled, batch 1"; the ruling is OD-2026-10-12-024, *"A: No, each sees only their own (Recommended)"*, about a child's two guardians and their replies to the coach | Each guardian sees only their own thread. INFERRED: that ruling is about replies; applying it to a message a parent starts follows its words, "nothing may show one guardian what the other did" |
+| Q4.3 (OW27-25) | *"A: Yes, the gym can pick it (Recommended)"*, narrowed because OW27-10 A already put the event list in the gym's settings | A parent's new message is one more event the gym can turn on for staff (item 1, Q1.9) |
+| Q4.4 (OW27-26) | *"A: Decision Loop 'From the family' (Recommended)"* | PM-2 is on `/coach/decision-loop`; no coach-home inbox |
+| Q4.5 (OW27-27) | *"A: Child's coach, covering coaches, admins (Recommended)"* | The unread count goes up for the same people a SHADOW safety alert reaches. Other coaches can still read the message |
+
 **What exists (OBSERVED):** a parent can write to the coach outside Messages,
 and a coach can write to the family. On the Messages tab, a parent can only
 reply.
@@ -556,7 +568,7 @@ reply.
   free-text note for the coach about their own child
   (`apps/web/app/api/pilot/parent/observations/route.ts:17-35`), from
   `apps/web/components/ParentObservations.tsx:98` on the Parent Hub
-  (`ParentHub.tsx:1870`).
+  (`ParentHub.tsx:1906`).
   - It is a `pilot.coach_observations` row: "No new table, no migration"
     (`route.ts:22-26`).
   - A guardian reads only the notes they wrote, not the other guardian's (the
@@ -568,7 +580,7 @@ reply.
   only, home and transportation (`:24`).
 - **Coach to family.** A coach posts a note to the family as a
   `coach_observations` row with `note_type 'parent_message'`
-  (`apps/web/app/coach/decision-loop/page.tsx:1102`). The parent reads it on
+  (`apps/web/app/coach/decision-loop/page.tsx:1114`). The parent reads it on
   Messages (`apps/web/app/api/pilot/parent/messages/route.ts:36`, `:38`).
 - **Parent replies.** The parent replies under a coach note in
   `pilot.family_message_replies`
@@ -577,13 +589,13 @@ reply.
 - **Unread state.** Both sides keep it:
   `pilot_slice_postgres_family_message_reads_migration.sql:59` and
   `pilot_slice_postgres_family_reply_reads_migration.sql:54`. The parent's
-  count is at `apps/web/components/ParentHub.tsx:1476`. The coach's "New" mark
+  count, per child, is at `apps/web/components/ParentHub.tsx:1577`. The coach's "New" mark
   is per reply, for each staff member, on one athlete's panel
   (`apps/web/components/FamilyNotesPosted.tsx:15-16`, `:42-44`).
 - **Who coaches whom.** The assigned coach plus active cover is
   `athleteIdsForCoach` (`apps/web/src/server/pilot/access.ts:508`, `:511-516`).
   The guardian check is `isGuardianLinkedToAthlete`
-  (`apps/web/src/server/pilot/guardianAccess.ts:70`).
+  (`apps/web/src/server/pilot/guardianAccess.ts:100`).
 
 **What is missing (for Q4.1 A):**
 
@@ -599,7 +611,7 @@ reply.
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
 | PM-1 | Migration, store and routes: a parent starts a message about their own child; a coach replies under it; read state | about 420 (may go over) | matched, AS2-a 414 |
-| PM-2 | Staff side: the messages on "From the family" with reply, and the unread count across the roster | about 300 | judgement |
+| PM-2 | Staff side: the messages on "From the family" with reply (Q4.4 A), and the unread count, raised for the child's coach, any covering coach and admins (Q4.5 A) | about 300 | judgement |
 | PM-3 | Parent side: the compose box and the thread on the Messages tab | about 250 | judgement |
 
 - **Total:** about 970 lines in 3 PRs.
@@ -610,47 +622,20 @@ reply.
 - **Migrations:** 1 (none under C).
 - **Route:** Opus (minors' data, permissions, guardian access).
 - **G3:** applies.
-- **Dependencies:** #2012 before PM-1. Under item 1's gym setting, a parent's
-  new message is one more event the gym can turn on for staff (Q1.9).
-- **File overlap:**
-  - PM-1 uses `guardianAccess.ts`, which #2012 (lane GA) changes (+30 lines at
-    `5efdc9b6`). PM-1 goes after #2012 merges. It also shares the registration
-    files with #2013.
-  - PM-2 changes `apps/web/app/coach/decision-loop/page.tsx`, which #2010 (lane
-    AS-5, AS5-1) changes (+20 lines at `0d342ee3`).
-  - A coach-home inbox (Q4.4 B) changes `CoachWorkspace.tsx`, which is U2's file
-    and #2010's Q11 B.
+- **Dependencies:** #2012 (merged, `48d9bd46`) was PM-1's. Under item 1's gym
+  setting, a parent's new message is one more event the gym can turn on for
+  staff (OW27-25 A).
+- **File overlap (open PRs listed 2026-11-23: #2039, #2082, #2124, #2126):**
+  - PM-1 uses `guardianAccess.ts`; #2012's change is on `main`. It shares the
+    registration files with nothing open that this lane read.
+  - PM-2 changes `apps/web/app/coach/decision-loop/page.tsx`; #2010 (lane AS-5,
+    AS5-1, `393d4305`) is merged and is the last change to it on `main`. None
+    of the open PRs read changes it (#2126's files unknown).
+  - Q4.4 B's coach-home inbox, which would have changed `CoachWorkspace.tsx`,
+    was not chosen.
 
-**Owner questions:**
-
-- **Q4.1 What does FAM-09 build?**
-  - **A (recommended):** the scrub's FUTURE item: a compose box on the Parent
-    Hub's Messages tab. The parent's message sits in the same list as the
-    coach's notes, and the coach answers under it.
-  - **B:** no new box. Staff can answer under a parent's existing Observations
-    note, and the parent sees the answer there.
-  - **C:** nothing to build. Observations already lets a parent write to the
-    coach, and Report a Barrier covers home and transportation only. The
-    scrub's AS-9 batch would point the empty Messages state to them; a search
-    of ACTIVE_WORK on `main` found no AS-9 lane.
-- **Q4.2 Does the other guardian see the thread?**
-  - **A (recommended):** no. Each guardian sees their own, the same line the
-    Observations note and the barrier report draw for split households
-    (LQ-PH04-1).
-  - **B:** both guardians see it.
-- **Q4.3 (folded into Q1.9, lane W4R).** Under OD-2026-11-20-001 (OW27-10 A)
-  the gym picks which events send the email. A parent's new message is one more
-  event on that list for staff, so this is no longer asked here (INFERRED).
-- **Q4.4 Where do coaches answer?**
-  - **A (recommended):** on the Decision Loop's "From the family", where
-    parents' notes are read today.
-  - **B:** on the coach home, beside the alerts.
-- **Q4.5 Whose unread count does a new message raise?** Today any staff member
-  can read every note type (`route.ts:31-32`).
-  - **A (recommended):** the child's assigned coach, any coach covering them,
-    and admins: the people a SHADOW safety alert reaches (OD-2026-10-01-008
-    section 3).
-  - **B:** every coach in the gym.
+**Owner questions.** None open. Q4.1 to Q4.5 are answered (the table above).
+Options as asked are in OD-2026-11-21-006; Q4.2's are in OD-2026-10-12-024.
 
 ## 5. A coach adds drills or blocks to a session plan, and schedules a class from it (scrub CF-11)
 
