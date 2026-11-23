@@ -95,6 +95,11 @@ test.each(CHECKED)('%s: the door "%s" is the page title', (_href, label, titles)
 });
 
 
+test('the /profile door reads "Your Profile" (OD-2026-11-20-001, Q11 A; AS-8 plan #2020 Q18 A), not "Your Corner"', () => {
+  const door = BUILDING.find((d) => d.href === '/profile');
+  expect(door?.label).toBe('Your Profile');
+});
+
 test('each board seat door names its seat page, "<seatLabel> Workspace"', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { boardSeatConfigs } = require('../app/board/boardWorkspaceConfig') as typeof import('../app/board/boardWorkspaceConfig');
