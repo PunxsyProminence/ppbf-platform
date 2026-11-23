@@ -76,13 +76,29 @@ export async function painNoteVerdictFor(
 ): Promise<PainNoteVerdict> {
   const verdict = painNoteVerdict(note);
   if (verdict.disclosure === null || verdict.adminOnly) return verdict;
-  const earlier = await queryOne<{ found: boolean }>(
-    `select true as found from pilot.safety_escalations
-      where organization_id = $1 and athlete_id = $2 and source_type = 'athlete_voice'
-        and metadata->>'channel' = 'pain_report_note'
-      limit 1`,
-    [context.organizationId, context.athleteId],
-  );
+  // Either record counts: the escalation, or the stored verdict, which commits
+  // with its pain report even when the escalation could not be filed (PR 2
+  // reviewers A and B). A failed lookup FAILS CLOSED: the note is held for
+  // admins, and the pain report is still stored, with the same answer to the
+  // athlete as any other note (PR 2 reviewer B).
+  let earlier: { found: boolean } | null;
+  try {
+    earlier = await queryOne<{ found: boolean }>(
+      `select (
+         exists (select 1 from pilot.safety_escalations
+                  where organization_id = $1 and athlete_id = $2 and source_type = 'athlete_voice'
+                    and metadata->>'channel' = 'pain_report_note')
+         or exists (select 1 from pilot.shadow_near_misses
+                     where organization_id = $1 and athlete_id = $2 and athlete_note_admin_only)
+       ) as found`,
+      [context.organizationId, context.athleteId],
+    );
+  } catch (error) {
+    console.error('[pain-report-note] earlier-note lookup failed; holding the note for admins', {
+      error: error instanceof Error ? error.message.split('\n')[0] : String(error),
+    });
+    return { ...verdict, adminOnly: true };
+  }
   return earlier?.found ? { ...verdict, adminOnly: true } : verdict;
 }
 

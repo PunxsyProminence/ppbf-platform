@@ -393,6 +393,41 @@ describe('pain report note (DR-25)', () => {
       .toEqual(['(no note)', '(no note)', 'my knee still hurts']);
   });
 
+  test('an earlier note held for admins counts even when its escalation was never filed', async () => {
+    jest.spyOn(escalationLadder, 'fileEscalation').mockRejectedValueOnce(new Error('database went away'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await filePain(STAFF_DISCLOSURE);
+    expect(await escalations()).toEqual([]);
+
+    await filePain('he hit me again');
+    const rows = await nearMisses();
+    expect(rows.map((row) => row.athlete_note_admin_only)).toEqual([true, true]);
+    expect((await escalations()).map((row) => row.source_type)).toEqual(['athlete_voice']);
+  });
+
+  test('a failed earlier-note lookup holds the note for admins and still stores the report, with the same answer', async () => {
+    const plain = await filePain('sore after sparring');
+    const db = jest.requireMock('./db') as { queryOne: jest.Mock };
+    const original = db.queryOne.getMockImplementation()!;
+    db.queryOne.mockImplementation(async (text: string, params: unknown[] = []) => {
+      if (text.includes('athlete_note_admin_only)')) throw new Error('lookup failed');
+      return original(text, params);
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const answer = await filePain('he hit me again');
+      expect(answer.status).toBe(200);
+      expect(comparable(answer.body)).toBe(comparable(plain.body));
+    } finally {
+      db.queryOne.mockImplementation(original);
+    }
+    const rows = await nearMisses();
+    expect(rows.map((row) => [row.athlete_note, row.athlete_note_admin_only])).toEqual([
+      ['sore after sparring', false],
+      ['he hit me again', true],
+    ]);
+  });
+
   test('the escalation is filed even when the shadow event after the near miss fails', async () => {
     jest.spyOn(shadowEvents, 'emitShadowEvent').mockRejectedValue(new Error('event insert failed'));
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
