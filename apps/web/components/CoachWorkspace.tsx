@@ -4508,7 +4508,7 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                       {shadowQueue.map((item) => (
-                        <div key={item.intake_case_id} id={`shadow-intel-${item.intake_case_id}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div key={item.intake_case_id} id={`shadow-intel-${item.intake_case_id}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {shadowObservationStateLabel(item.status)}</p>
                           <p>Documents: {item.document_count}</p>
@@ -4559,7 +4559,7 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                       {shadowObservations.slice(0, 6).map((item) => (
-                        <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{shadowObservationLabel(item.label)}</p>
                           <p>From: {SHADOW_OBSERVATION_SOURCE_LABEL[item.source] ?? item.source}</p>
                           <p>Review: {shadowObservationStateLabel(item.review_state)}</p>
@@ -4573,7 +4573,7 @@ export default function CoachWorkspace() {
               {shadowReadError ? (
                 <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                   <div className="flex items-center justify-between gap-[var(--s3)]">
-                    <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)] font-semibold">{shadowReadError}</p>
+                    <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-md)] font-semibold">{shadowReadError}</p>
                     <button
                       onClick={() => void loadShadowData()}
                       className="btn btn--ghost flex-shrink-0"

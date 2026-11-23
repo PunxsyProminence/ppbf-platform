@@ -382,7 +382,9 @@ export default function SessionRunPresence({
               ? 'Nobody marked here yet. Tap each athlete in the room.'
               : `${reading.present.size} marked here.`}
           </p>
-          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
+          {/* No inline size: an inline --t-xs (11.8px) beat the kiosk .t-body
+              floor on this gym-floor screen (sweep finding P-1, 2026-11-23). */}
+          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]">
             {tied
               ? 'Staff only. This session is tied to a class: a mark here also goes on that class’s register.'
               : 'Staff only. This is who was in this session; it does not change anyone’s own check-in or attendance.'}
@@ -427,7 +429,9 @@ export default function SessionRunPresence({
               <label className="field mt-[var(--s3)] block">
                 <span className="t-label">Find an athlete</span>
                 <input
-                  className="input"
+                  /* input--kiosk: the legacy .input minimum (46px, unlayered)
+                     beat both kiosk tap rules (sweep finding P-2). */
+                  className="input input--kiosk"
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   autoComplete="off"
