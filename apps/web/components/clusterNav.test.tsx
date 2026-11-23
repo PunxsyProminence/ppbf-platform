@@ -21,7 +21,9 @@ let mockPath = '/coach/intelligence';
 jest.mock('next/navigation', () => ({ usePathname: () => mockPath }));
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => <a href={href}>{children}</a>,
+  default: ({ children, href, className }: { readonly children: ReactNode; readonly href: string; readonly className?: string }) => (
+    <a href={href} className={className}>{children}</a>
+  ),
 }));
 
 afterEach(() => clearRoleSession());
@@ -69,14 +71,13 @@ describe('the cluster lines', () => {
     ]);
   });
 
-  test('an athlete on the sparring log sees no line: one page is nowhere to go', async () => {
-    createPersistentRoleSession('athlete');
-    mockPath = '/athlete/dashboard/sparring';
-    let container: HTMLElement | undefined;
-    await act(async () => {
-      ({ container } = render(<ClusterNav cluster="sparring" />));
-    });
-    expect(container!.innerHTML).toBe('');
+  // Lane AS-5 (#2131 QR4 = A): Sparring Caps and Athlete Limits are sections
+  // of Sparring and Limits, so the Sparring line had one page left and is
+  // gone, and the athlete's Sparring Log no longer draws a line.
+  test('there is no Sparring line, and the Sparring Log draws none', () => {
+    expect(Object.keys(COACH_CLUSTERS)).not.toContain('sparring');
+    const log = fs.readFileSync(path.join(__dirname, '..', 'app', 'athlete', 'dashboard', 'sparring', 'page.tsx'), 'utf8');
+    expect(log).not.toContain('<ClusterNav');
   });
 
   // Lane AS-5 (app scrub CS-02): the clinic's records of one athlete.
@@ -91,21 +92,6 @@ describe('the cluster lines', () => {
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       '/coach/athlete-safety',
       '/coach/sparring-exposure',
-    ]);
-  });
-
-  // Lane AS-5 (app scrub CS-06, Q9 = A): the athlete's own log is not on the
-  // coach's line.
-  test('a coach\'s Sparring line names the coach pages, not the athlete\'s Sparring Log', async () => {
-    expect(COACH_CLUSTERS.sparring).not.toContain('/athlete/dashboard/sparring');
-    createPersistentRoleSession('coach');
-    mockPath = '/coach/sparring-caps';
-    await act(async () => {
-      render(<ClusterNav cluster="sparring" />);
-    });
-    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
-      '/coach/sparring-exposure',
-      '/coach/athlete-limits',
     ]);
   });
 
@@ -129,17 +115,76 @@ describe('the cluster lines', () => {
   });
 });
 
+// Lane AS4-4D4E (AS-4 part 4d; GO on #2128, Q3 = A, Q4 = A).
+describe('the planning, film and Teach Shadow lines (app scrub CF-10, CS-13) and their tap size (CF-17, CS-11)', () => {
+  test('Teach Shadow is its own line, and Film names no Teach Shadow page', () => {
+    expect(COACH_CLUSTERS['teach-shadow']).toEqual([
+      '/teach-shadow',
+      '/teach-shadow/capture',
+      '/teach-shadow/cut',
+      '/teach-shadow/annotation',
+      '/teach-shadow/agreement',
+    ]);
+    expect(COACH_CLUSTERS.film.some((href) => href.startsWith('/teach-shadow'))).toBe(false);
+  });
+
+  test('a coach on Teach Shadow sees the Teach Shadow line, not the Film Study pages', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/teach-shadow/cut';
+    await act(async () => {
+      render(<ClusterNav cluster="teach-shadow" />);
+    });
+    expect(screen.getByRole('navigation', { name: 'Teach Shadow' })).toBeTruthy();
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/teach-shadow', '/teach-shadow/capture', '/teach-shadow/annotation', '/teach-shadow/agreement']);
+    expect(hrefs.some((href) => href!.startsWith('/coach/video'))).toBe(false);
+  });
+
+  test('a coach on Class plans sees the planning line with Library and Workout Templates', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/class-plans';
+    await act(async () => {
+      render(<ClusterNav cluster="planning" />);
+    });
+    expect(screen.getByText('Class plans').getAttribute('aria-current')).toBe('page');
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/coach/library');
+    expect(hrefs).toContain('/coach/workout-templates');
+    expect(hrefs).not.toContain('/coach/class-plans');
+  });
+
+  test('every link in a line carries the tap-link class', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/workout-templates';
+    await act(async () => {
+      render(<ClusterNav cluster="planning" />);
+    });
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThan(1);
+    for (const link of links) expect(link.className.split(/\s+/)).toContain('tap-link');
+  });
+
+  test('globals.css lifts a tap-link to the 55px tap size on a kiosk surface only', () => {
+    const css = fs.readFileSync(path.join(WEB, 'app', 'globals.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/\[data-surface="kiosk"\]\s+\.tap-link\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toMatch(/min-height:\s*var\(--tap\)/);
+    // Opt-in by class: no bare link rule stretches links inside sentences.
+    expect(css).not.toMatch(/\[data-surface="kiosk"\]\s+a\s*[,{]/);
+  });
+});
+
 describe('the coach home', () => {
   const workspace = fs.readFileSync(path.join(__dirname, 'CoachWorkspace.tsx'), 'utf8');
 
-  /* The four clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
+  /* The clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
      Dashboard; since lane 6C7's 7a-2 they are in the home's Safety job, which
      draws the coach job bar's Safety section (stage 2 section 3.4 row 22).
      coachHomeLayout.test.tsx pins the rendered links. */
-  test('links the four clinic pages by their doors, through the Safety job', () => {
+  test('links the clinic pages by their doors, through the Safety job', () => {
     const safety = jobBarFor('coach')?.sections.find((section) => section.label === 'Safety');
     const hrefs = (safety?.items ?? []).map((item) => item.href);
-    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']) {
+    for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure']) {
       expect(hrefs).toContain(href);
       const door = BUILDING.find((d) => d.href === href);
       expect(door && door.roles !== OPEN && door.roles.includes('coach')).toBe(true);

@@ -99,7 +99,7 @@ const HOME_JOBS: ReadonlyArray<{ section: string; title: string; extra?: readonl
   { section: 'Class', title: "Run tonight's class", extra: ['/coach/floor-groups'] },
   { section: 'Athletes', title: 'Athletes' },
   { section: 'Plan', title: 'Plan' },
-  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps'] },
+  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/sparring-exposure'] },
 ];
 
 const doorLabel = (href: string): string | null => BUILDING.find((door) => door.href === href)?.label ?? null;
@@ -2657,7 +2657,8 @@ export default function CoachWorkspace() {
         meta: `${BARRIER_TYPE_LABEL[report.note_type] ?? report.note_type} · reported by ${report.reporter_role === 'parent' ? 'a guardian' : report.reporter_role} · ${formatGymDateTimeShort(report.created_at) ?? report.created_at}`,
         details: [],
         body: report.note_text,
-        link: { href: '/coach/decision-loop', label: "Open Decision Loop to Post to the Family's Page" },
+        // The Decision Loop opens on this report's athlete, as the pain link above does (CS-03).
+        link: { href: '/coach/decision-loop', label: "Open Decision Loop to Post to the Family's Page", athleteId: report.athlete_id },
       });
     }
     return queue;
@@ -3309,26 +3310,26 @@ export default function CoachWorkspace() {
                           </p>
                         )}
                       </div>
-                      {/* The Show on TV switch, the same one the live screen
-                          carries. Off by default on every run. The switch alone puts
-                          nothing on a TV: the coach sends the run from Gym TVs below. */}
+                      {/* The "Allow on a TV" switch, in the class screen's words
+                          (SessionScriptLiveDelivery, #2001). Off by default on every run.
+                          The switch alone puts nothing on a TV: the coach sends the run
+                          from Gym TVs below. So this card says only the switch's state,
+                          never "on the TV" (DR-09); it reads no TV status. */}
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                        {liveRun.show_on_wall ? (
-                          <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
-                        ) : (
-                          <span className="badge badge--filed"><i aria-hidden="true">—</i>NOT ON THE TV</span>
-                        )}
                         <button
                           type="button"
+                          role="switch"
+                          aria-checked={liveRun.show_on_wall}
                           onClick={() => void setShowOnWall(!liveRun.show_on_wall)}
                           disabled={showOnWallBusy}
                           className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {liveRun.show_on_wall ? 'Take off the TV' : 'Show on TV'}
+                          Allow on a TV
                         </button>
+                        <span aria-hidden="true" className="t-body text-[color:var(--bone-200)]">{liveRun.show_on_wall ? 'On' : 'Off'}</span>
                       </div>
                       <p className="t-data text-[color:var(--bone-400)]">
-                        Switching this on lets you send the session to a gym TV from Gym TVs below.
+                        With this on, send the session to a gym TV from Gym TVs below.
                       </p>
                       {showOnWallError && (
                         <p role="alert" className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">

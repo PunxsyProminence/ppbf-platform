@@ -64,9 +64,10 @@ enforces the other windows below, and nothing sets `deleted_at` at age 18.
 | Check-in body mass (`pilot.shadow_formula_observations`, kind `body_weight`, since #1199; no table of its own) | Period not yet ruled | -- | Not yet ruled |
 | Issued workouts: the block, order, scale level, contact level and coach note of each step of a workout template issued to an athlete, and the random request key of the press that issued it when the screen sent one (`pilot.workout_issues`, `pilot.workout_issue_steps`; they leave with the athlete's assignments, by cascade) | Period not yet ruled | -- | Not yet ruled |
 | Standing height, coach-entered, one row per reading; a correction is a new row naming the reading it replaces (`pilot.athlete_heights`; append-only, it leaves with the athlete row by cascade when the purge deletes it) | Period not yet ruled | -- | Not yet ruled |
+| Pain report note and review: the athlete's optional note on their own pain report (500 characters at most), its safety-scan verdict (admins only, or coaches may read it), and which staff account marked the report reviewed and when (`pilot.shadow_near_misses` columns `athlete_note`, `athlete_note_admin_only`, `reviewed_by_account_id`, `reviewed_at`; added 2026-11-23, DR-25). They leave with the athlete row by cascade when the purge deletes it; the reviewer is cleared when that account is deleted, and the time is kept. The purge's name scrub (`scrubGymNotes`) reaches the note from PR 2 of DR-25 (Overwatch Q6 A on #2135); until that merges, a purged person named in another athlete's note stays named there | Period not yet ruled | -- | Not yet ruled |
 
 The rows above from injury records down name tables added or extended for athlete data that no window has been
-ruled for yet (2026-10-04; minor limits added 2026-10-07; staff session notes and capacity notes 2026-10-09; issued workouts 2026-10-11; heights 2026-10-18). They are listed so the gap is visible, not filled; the periods are
+ruled for yet (2026-10-04; minor limits added 2026-10-07; staff session notes and capacity notes 2026-10-09; issued workouts 2026-10-11; heights 2026-10-18; pain report note and review 2026-11-23). They are listed so the gap is visible, not filled; the periods are
 the owner's decision.
 
 ### Guardians/Parents

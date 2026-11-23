@@ -32,24 +32,25 @@ export const COACH_CLUSTERS = {
     '/coach/athlete-intelligence',
     '/coach/decision-loop',
   ],
-  // Not the athlete's own Sparring Log: the coach's line names the coach pages
-  // (app scrub CS-06; lane AS-5 Q9 = A). The Log keeps its own door.
-  sparring: ['/coach/sparring-caps', '/coach/sparring-exposure', '/coach/athlete-limits'],
   // The clinic's records of one athlete (app scrub CS-02, lane AS-5).
   clinic: ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure'],
   interventions: ['/coach/intervention-protocols', '/coach/intervention-executions', '/coach/intervention-review'],
-  film: [
-    '/coach/video-analysis',
-    '/coach/video-publications',
-    '/coach/video-publications/library',
+  film: ['/coach/video-analysis', '/coach/video-publications', '/coach/video-publications/library'],
+  // Teach Shadow is its own room, not part of Film Study (app scrub CS-13;
+  // lane AS4-4D4E, Q3 = A on #2128).
+  'teach-shadow': [
     '/teach-shadow',
     '/teach-shadow/capture',
     '/teach-shadow/cut',
     '/teach-shadow/annotation',
     '/teach-shadow/agreement',
   ],
+  // Class plans and Library were menu-only, linked only to each other (app
+  // scrub CF-10; lane AS4-4D4E).
   planning: [
     '/coach/workout-templates',
+    '/coach/class-plans',
+    '/coach/library',
     '/coach/session-scripts',
     '/coach/cards',
     '/coach/development-blocks',
@@ -61,11 +62,11 @@ export type CoachCluster = keyof typeof COACH_CLUSTERS;
 
 const CLUSTER_NAMES: Record<CoachCluster, string> = {
   'who-needs-me': 'Who needs you',
-  sparring: 'Sparring',
   // The room's own name (buildingMap ROOM_LABEL) and the coach home's heading.
   clinic: 'Clinic',
   interventions: 'Interventions',
   film: 'Film',
+  'teach-shadow': 'Teach Shadow',
   planning: 'Planning',
 };
 
@@ -91,7 +92,9 @@ export default function ClusterNav({ cluster }: { readonly cluster: CoachCluster
             </li>
           ) : (
             <li key={door!.href}>
-              <ChromeLink href={door!.href} className="underline">
+              {/* tap-link: 55px where the page is a kiosk surface (app/globals.css;
+                  app scrub CF-17, CS-11). On a desk page it changes nothing. */}
+              <ChromeLink href={door!.href} className="tap-link underline">
                 {door!.label}
               </ChromeLink>
             </li>

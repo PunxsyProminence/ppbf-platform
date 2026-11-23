@@ -24,6 +24,7 @@ import { apiBase } from '@/lib/apiBase';
 import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
+import { useTabParam } from './useTabParam';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -144,15 +145,13 @@ function firstName(name: string | null | undefined): string | null {
   return trimmed.split(/\s+/)[0];
 }
 
-function countsByChild(
+/* Each child's label on the parent tiles, in tile order: first name; full
+   name when two share a first name; "Your child" with no name on file. One
+   rule for the all-children tiles and the selected child's (FAM-12). */
+function childLabels(
   childList: ReadonlyArray<{ id: string; name: string }>,
   allMessages: ReadonlyArray<ParentMessage>,
-  counted: (message: ParentMessage) => boolean,
-): ChildCount[] {
-  const counts = new Map<string, number>();
-  for (const message of allMessages) {
-    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
-  }
+): Array<{ id: string; label: string }> {
   // One list of people for both tiles: the roster's children, each once, then
   // any child only a message names (every message, counted or not, so the two
   // tiles never list different children).
@@ -177,11 +176,23 @@ function countsByChild(
     if (person.first) firstUses.set(person.first, (firstUses.get(person.first) ?? 0) + 1);
   }
   return people.map((person) => ({
+    id: person.id,
     label: person.first
       ? (firstUses.get(person.first) ?? 0) > 1 ? person.full ?? person.first : person.first
       : 'Your child',
-    count: counts.get(person.id) ?? 0,
   }));
+}
+
+function countsByChild(
+  childList: ReadonlyArray<{ id: string; name: string }>,
+  allMessages: ReadonlyArray<ParentMessage>,
+  counted: (message: ParentMessage) => boolean,
+): ChildCount[] {
+  const counts = new Map<string, number>();
+  for (const message of allMessages) {
+    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
+  }
+  return childLabels(childList, allMessages).map(({ id, label }) => ({ label, count: counts.get(id) ?? 0 }));
 }
 
 /* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
@@ -364,8 +375,27 @@ const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
+/* The tab rail, in order. Also the tabs the address may open (`?tab=`; lane
+   AS4-4D4E, AS-4 part 4e): every tab here is drawn for every parent. */
+const PARENT_HUB_TABS: readonly { id: TabID; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'parent-floor', label: 'Parent Floor' },
+  { id: 'home-assignments', label: 'Assignments' },
+  { id: 'observations', label: 'Observations' },
+  { id: 'family-goals', label: 'Family Goals' },
+  { id: 'messages', label: 'Messages' },
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'progress', label: 'Progress' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'shadow', label: 'SHADOW Intel' },
+];
+const ADDRESSABLE_TABS: readonly TabID[] = PARENT_HUB_TABS.map((tab) => tab.id);
+
 export default function ParentHub() {
-  const [activeTab, setActiveTab] = useState<TabID>('overview');
+  /* The open tab is kept in the address (`?tab=`), so "Back to Parent Hub"
+     and the job bar's tab items open the tab, not Overview (app scrub FAM-06;
+     lane AS4-4D4E). No value, or one the rail does not draw, opens Overview. */
+  const [activeTab, setActiveTab] = useTabParam<TabID>(ADDRESSABLE_TABS, 'overview');
   // The tab row scrolls sideways on a phone (AS9-3), so the open tab is
   // brought into view in the row when it changes. Not on first paint, so
   // opening the hub never moves the page.
@@ -374,6 +404,15 @@ export default function ParentHub() {
   useEffect(() => {
     if (!tabShownOnceRef.current) {
       tabShownOnceRef.current = true;
+      /* A tab opened from the address (lane AS4-4D4E) may sit off the side of
+         the row on a phone. The row alone is scrolled to it, so opening the hub
+         still never moves the page (review on #2130). */
+      const button = tabButtonsRef.current.get(activeTab);
+      const row = button?.parentElement;
+      // Measured on screen, so it holds whatever the row's positioning parent is.
+      if (activeTab !== 'overview' && button && row) {
+        row.scrollLeft += button.getBoundingClientRect().left - row.getBoundingClientRect().left;
+      }
       return;
     }
     tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
@@ -1521,18 +1560,7 @@ export default function ParentHub() {
         {/* TAB NAVIGATION */}
         <div className="ge-family__rail mat-paper rounded-[var(--r-md)]">
           <div className="flex flex-nowrap gap-[var(--s2)] overflow-x-auto p-[var(--s3)]">
-            {[
-              { id: 'overview', label: 'Overview' },
-              { id: 'parent-floor', label: 'Parent Floor' },
-              { id: 'home-assignments', label: 'Assignments' },
-              { id: 'observations', label: 'Observations' },
-              { id: 'family-goals', label: 'Family Goals' },
-              { id: 'messages', label: 'Messages' },
-              { id: 'attendance', label: 'Attendance' },
-              { id: 'progress', label: 'Progress' },
-              { id: 'resources', label: 'Resources' },
-              { id: 'shadow', label: 'SHADOW Intel' }
-            ].map(tab => (
+            {PARENT_HUB_TABS.map(tab => (
               <button
                 key={tab.id}
                 ref={(element) => {
@@ -1540,7 +1568,7 @@ export default function ParentHub() {
                   else tabButtonsRef.current.delete(tab.id);
                 }}
                 type="button"
-                onClick={() => setActiveTab(tab.id as TabID)}
+                onClick={() => setActiveTab(tab.id)}
                 aria-pressed={activeTab === tab.id}
                 aria-current={activeTab === tab.id ? 'true' : undefined}
                 className={cx(
@@ -1571,6 +1599,7 @@ export default function ParentHub() {
             missing from the line, or the line would be a bare 0. */}
         <ParentSummaryPanel
           childProgress={progressText}
+          childLabel={activeChildId ? childLabels(children, messages).find((entry) => entry.id === activeChildId)?.label ?? null : null}
           tasksDue={messagesLoaded && rosterAnswered ? countsByChild(children, messages, isOpenTask) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}

@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import MinorLimitsPanel, { LIMIT_TYPES, describeLimit } from './MinorLimitsPanel';
@@ -181,7 +181,7 @@ test('the contact cap is shown read-only with a link to its own page, and is nev
   openPanel();
   await screen.findByText(/Cap in force: highest stage/);
   expect(screen.getByText(/at most 1 hard or open sessions in any 7 days/)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('/coach/sparring-caps');
+  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('#sparring-caps');
   expect(screen.queryByRole('combobox')).toBeNull();
   expect(screen.getAllByRole('button').map((b) => b.textContent)).not.toContain('Save cap');
 });
@@ -328,4 +328,37 @@ test('describeLimit names each type and its clearing', () => {
   expect(describeLimit(SUPERVISION as never)).toBe('Supervision: Coach within arm’s reach for all pad work');
   expect(describeLimit(CLEARED_CUT as never)).toBe('Weight cut limit cleared');
   expect(describeLimit({ ...HEAT, value_number: 2.5, limit_type: 'weight_cut_max_percent_body_weight' } as never)).toBe('Weight cut: at most 2.5% of body weight');
+});
+
+// Lane AS-5 (#2131 QR3 = A; #2134 re-review): on Sparring and Limits a picked
+// athlete's panel opens at once, and a cap saved in the Sparring Caps section
+// moves capVersion so an open panel reads the cap again. Two cap reads can
+// overlap; only the newest may land, so an older "no cap" never replaces the
+// cap a coach just set.
+test('openAtStart opens the panel; after a cap save the newest cap read wins over an older one', async () => {
+  const SET_CAP = {
+    cap_id: 'cap-new', set_at: '2026-11-23T08:00:00.000Z', set_by_name: 'Coach J', note: '',
+    highest_allowed_stage: 'none', max_hard_open_sessions_per_7_days: null,
+  };
+  const capReplies: Array<(body: unknown) => void> = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes(CAPS_URL)) {
+      return new Promise<Response>((resolve) => { capReplies.push((body) => resolve(respond(body))); });
+    }
+    return respond({ ok: true, athlete_is_minor: true, limits: NONE, history: [] });
+  }) as unknown as typeof fetch;
+
+  const { rerender } = render(<MinorLimitsPanel athleteId="ath-1" athleteName="Rosa" openAtStart capVersion={0} />);
+  await waitFor(() => expect(capReplies).toHaveLength(1));
+  rerender(<MinorLimitsPanel athleteId="ath-1" athleteName="Rosa" openAtStart capVersion={1} />);
+  await waitFor(() => expect(capReplies).toHaveLength(2));
+
+  // The newer read (after the save) answers first, with the cap just set...
+  await act(async () => { capReplies[1]({ ok: true, cap: SET_CAP, history: [SET_CAP] }); });
+  expect(await screen.findByText(/Cap in force: highest stage No contact/)).toBeTruthy();
+  // ...then the older opening read answers "no cap". It must not land.
+  await act(async () => { capReplies[0]({ ok: true, cap: null, history: [] }); });
+  expect(screen.getByText(/Cap in force: highest stage No contact/)).toBeTruthy();
+  expect(screen.queryByText('No sparring cap set.')).toBeNull();
 });

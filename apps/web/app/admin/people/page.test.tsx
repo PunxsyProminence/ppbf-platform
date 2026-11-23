@@ -487,6 +487,23 @@ describe('sign-in status labels follow the credential policy', () => {
     expect(screen.queryByText('Deactivated')).toBeNull();
   });
 
+  // DR-29 (part): the banner says "athletes cannot sign in yet", so it counts
+  // athletes only. A local staff row with no PIN (what repair-auth-provider
+  // exists for) is not an athlete waiting for a code.
+  test('the Pending banner counts athletes only, not a local staff row with no PIN', async () => {
+    global.fetch = fetchMock({
+      members: [
+        { account_id: 'ath-pending', login_email: null, auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', active_flag: false, has_pin: false, membership_active: false },
+        { account_id: 'staff-local', login_email: 'Front.Desk@example.com', auth_provider: 'ppbf_local', role: 'staff', athlete_id: null, active_flag: true, has_pin: false, membership_active: true },
+      ],
+      roster: ROSTER,
+    }) as never;
+    render(<PeopleConsolePage />);
+    const badge = await screen.findByText((_, element) => element?.tagName === 'SPAN' && /^▲\d+ Pending$/.test(element.textContent ?? ''));
+    expect(badge.textContent).toBe('▲1 Pending');
+    expect(screen.getByText('athlete cannot sign in yet')).toBeTruthy();
+  });
+
   test('reset sends no shared PIN and displays the returned one-time code', async () => {
     const bodies: Record<string, unknown>[] = [];
     global.fetch = fetchMock({

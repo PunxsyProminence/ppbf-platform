@@ -6094,3 +6094,56 @@ describe('End training is where the athlete sees training has started', () => {
     expect(cornerAfter()?.contains(screen.getByText(AFTER_Q))).toBe(true);
   });
 });
+
+// Lane AS4-4D4E (AS-4 part 4e; app scrub ATH-16; GO on #2128, condition 2):
+// the open tab is kept in the address, so coming back opens the tab the
+// athlete left. Only a tab the rail draws opens from it, and a Floor in the
+// address before today's check-in still shows the lock.
+describe('the open tab is kept in the address', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('?tab=smart-goals opens Goals', async () => {
+    window.history.replaceState(null, '', '/athlete/dashboard?tab=smart-goals');
+    await renderAsOpened();
+
+    expect(screen.getByRole('button', { name: 'Goals' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
+  });
+
+  test.each([['assessments'], ['nonsense']])('?tab=%s opens How I feel today, as with no value', async (value) => {
+    window.history.replaceState(null, '', `/athlete/dashboard?tab=${value}`);
+    await renderAsOpened();
+
+    expect(screen.getByRole('button', { name: 'How I feel today' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  test('?tab=athlete-floor before the check-in today still shows the lock, not the Floor', async () => {
+    storedCheckIn = null;
+    window.history.replaceState(null, '', '/athlete/dashboard?tab=athlete-floor');
+    await renderAsOpened();
+
+    expect(screen.getByRole('button', { name: 'Floor' }).getAttribute('aria-current')).toBe('page');
+    expect(await screen.findByText('How I feel today, first')).toBeTruthy();
+  });
+
+  test('pressing a tab writes it to the address, and the opening tab leaves none', async () => {
+    window.history.replaceState(null, '', '/athlete/dashboard');
+    await renderAsOpened();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('my-dashboard');
+
+    fireEvent.click(screen.getByRole('button', { name: 'How I feel today' }));
+    expect(window.location.search).toBe('');
+  });
+});
+
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});

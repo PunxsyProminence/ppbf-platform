@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
+import ClusterNav from '@/components/ClusterNav';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import type { ClassPlanTrackDetail, LibraryTrackSummary } from '@/src/server/pilot/classPlanShapes';
@@ -403,6 +404,7 @@ function Library() {
       <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
         <p className="t-eyebrow">Coach Workspace</p>
         <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Library</h1>
+        <ClusterNav cluster="planning" />
         <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
           The gym&apos;s manuals, sheets and checklists, shown as written. This page only reads.
         </p>

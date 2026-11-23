@@ -11,7 +11,13 @@ import { apiBase } from '@/lib/apiBase';
 // (Q3 A); ten chances unless set, closable early (Q7 A); "Change last tap" flips the coach's own
 // last tap, as a revision (Q8 A). A coach who joins, or comes back to, a window starts at the chance
 // the count stands at (Overwatch 7084899452 point 2) and sees no one else's taps (Q2 A); from there
-// each of their taps moves them on one chance.
+// each of their taps moves them on one chance. "Skip this chance" (Jason 2026-11-22, "yes add it";
+// Overwatch 7088785576 on #2082) moves this coach's own count on one with no answer saved, for an
+// attempt they missed, so their later taps stay paired with the right attempts. It is held on this
+// screen only: a skip sends nothing, so a coach who comes back starts where the count stands.
+// "Undo skip" (Overwatch 7093381575, inside the same "yes add it") moves back one chance, offered
+// only while this coach has made no save since the skip: a stray skip would otherwise mis-pair every
+// later tap.
 //
 // WHAT IT SHOWS. Only what this coach tapped: x shown of n. No tier, label or bar (Q6, LL-Q2), and
 // nothing of another coach. Staff only, like the routes it calls. Shown and Not shown differ by word
@@ -82,6 +88,8 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
   // is not known which tap is the coach's last (a lost answer, another window, a reload).
   const [lastTap, setLastTap] = useState<Tap | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  // Skips made since this coach's last save, on this screen: what "Undo skip" may take back.
+  const [skips, setSkips] = useState(0);
   const [form, setForm] = useState({ behaviourKey: '', context: 'session', task: 'controlled', chances: '10' });
   // Each opening of the panel is a new generation: an answer for a panel since hidden is dropped.
   const generation = useRef(0);
@@ -129,9 +137,12 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     }
   };
 
+  // Each Join is a new generation, so only the latest choice can land (Codex P2 on #2120).
   const join = async (windowId: string, names: BehaviourName[]) => {
+    generation.current += 1;
     setLastTap(null);
     setConfirmClose(false);
+    setSkips(0);
     setMessage('');
     await readWindow(generation.current, windowId, names);
   };
@@ -139,8 +150,13 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
   const open = async (event: FormEvent) => {
     event.preventDefault();
     if (view.state !== 'choose') return;
+    // A new generation: a Join read still in flight cannot land over this open (review of 2b).
+    generation.current += 1;
     const seen = generation.current;
+    // Words and state for this panel only: dropped once the coach has hidden it or chosen again.
+    const live = () => seen === generation.current;
     setBusy(true);
+    setSkips(0);
     setMessage('Saving…');
     try {
       const response = await call(WINDOWS, {
@@ -151,62 +167,97 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         }),
       });
       if (response.ok) {
+        // The answer may be a window another coach opened first, which this coach joins (one open
+        // window per athlete and behaviour, PATTERN-2a): read it as Join does, so the coach starts
+        // where the count stands and sees their own taps, not chance 1.
         const body = (await response.json()) as { window: WindowRow };
-        setLastTap(null);
-        setConfirmClose(false);
-        setMessage('');
-        show(seen, { state: 'window', names: view.names, window: body.window, next: 1, taps: [] });
+        if (live()) setLastTap(null);
+        if (live()) setConfirmClose(false);
+        if (live()) setMessage('');
+        try {
+          await readWindow(seen, body.window.window_id, view.names);
+        } finally {
+          setBusy(false);
+        }
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
-        setMessage(`Not opened: ${await reasonOf(response)}`);
+        if (live()) setMessage(`Not opened: ${await reasonOf(response)}`);
+        setBusy(false);
         return;
       }
-      setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
+      if (live()) setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
     } catch {
-      setMessage('It is not known whether the window was opened; reading the list again.');
+      if (live()) setMessage('It is not known whether the window was opened; reading the list again.');
+    }
+    try {
+      await readList(seen);
     } finally {
       setBusy(false);
     }
-    await readList(seen);
   };
 
   const send = async (body: { action: string; chance?: number; polarity?: Polarity }, what: string) => {
     if (view.state !== 'window') return;
     const current = view;
     const seen = generation.current;
+    const live = () => seen === generation.current;
     setBusy(true);
+    setSkips(0);
     setMessage('Saving…');
     try {
       const response = await call(`${WINDOWS}/${encodeURIComponent(current.window.window_id)}`, { method: 'PATCH', ...jsonBody(body) });
       if (response.ok) {
         const answer = (await response.json()) as { tap?: Tap; window?: WindowRow };
-        setConfirmClose(false);
+        if (live()) setConfirmClose(false);
         if (answer.window) {
-          setMessage('');
+          if (live()) setMessage('');
           show(seen, { ...current, window: answer.window });
         } else if (answer.tap) {
           const tap = answer.tap;
-          setLastTap(tap);
-          setMessage(`Saved: chance ${tap.chance}, ${polarityWord(tap.polarity)}.`);
+          if (live()) setLastTap(tap);
+          if (live()) setMessage(`Saved: chance ${tap.chance}, ${polarityWord(tap.polarity)}.`);
           const next = body.action === 'tap' ? tap.chance + 1 : current.next;
           show(seen, { ...current, next, taps: [...current.taps.filter((mine) => mine.chance !== tap.chance), tap] });
         }
+        setBusy(false);
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
-        setMessage(`Not saved: ${await reasonOf(response)}`);
+        if (live()) setMessage(`Not saved: ${await reasonOf(response)}`);
       } else {
-        setLastTap(null);
-        setMessage(`It is not known whether the ${what} was saved (${response.status}); reading the window again.`);
+        if (live()) setLastTap(null);
+        if (live()) setMessage(`It is not known whether the ${what} was saved (${response.status}); reading the window again.`);
       }
     } catch {
-      setLastTap(null);
-      setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
+      if (live()) setLastTap(null);
+      if (live()) setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
+    }
+    // Held until the re-read settles (Codex P1 on #2120): a tap that did commit must not be sent
+    // again on the old chance while the read is slow.
+    try {
+      await readWindow(seen, current.window.window_id, current.names, current.next);
     } finally {
       setBusy(false);
     }
-    await readWindow(seen, current.window.window_id, current.names, current.next);
+  };
+
+  // No request: the chance gets no answer from this coach, and their place moves on one (2b).
+  const skip = () => {
+    if (view.state !== 'window' || busy) return;
+    setConfirmClose(false);
+    setMessage(`Skipped chance ${view.next}: nothing saved for it. A skip is kept on this screen only.`);
+    setSkips((count) => count + 1);
+    setView({ ...view, next: view.next + 1 });
+  };
+
+  // Back one chance, only over a skip made since this coach's last save (Overwatch 7093381575).
+  const undoSkip = () => {
+    if (view.state !== 'window' || busy || skips === 0) return;
+    setConfirmClose(false);
+    setMessage(`Back to chance ${view.next - 1}: the skip is undone.`);
+    setSkips((count) => count - 1);
+    setView({ ...view, next: view.next - 1 });
   };
 
   const nameOf = (names: BehaviourName[], key: string) => names.find((name) => name.behaviour_key === key)?.label ?? 'A behaviour';
@@ -225,6 +276,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
           generation.current += 1;
           setMessage('');
           setConfirmClose(false);
+          setSkips(0);
           if (view.state === 'closed') void readList(generation.current);
           else setView({ state: 'closed' });
         }}
@@ -303,7 +355,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
               {working.window.closed_at ? (
                 <p>This window is closed.</p>
               ) : working.next > working.window.chances ? (
-                <p>{`All ${working.window.chances} chances are tapped: the window is full.`}</p>
+                <p>No chances left: the window is full.</p>
               ) : (
                 <>
                   <p className="font-semibold">{`Chance ${working.next} of ${working.window.chances}`}</p>
@@ -319,13 +371,22 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
                       <span className="sr-only">{` for ${athleteName}, chance ${working.next}`}</span>
                     </button>
                   </div>
+                  <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy} onClick={skip}>
+                    <span aria-hidden="true">↷ </span>Skip this chance
+                    <span className="sr-only">{` (chance ${working.next}, nothing saved)`}</span>
+                  </button>
                 </>
               )}
+              {!working.window.closed_at && skips > 0 ? (
+                <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy} onClick={undoSkip}>
+                  <span aria-hidden="true">↶ </span>Undo skip
+                  <span className="sr-only">{` (back to chance ${working.next - 1})`}</span>
+                </button>
+              ) : null}
               {!working.window.closed_at && lastTap ? (
                 <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy}
                   onClick={() => void send({ action: 'change_last', polarity: lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence' }, 'change')}>
-                  {`Change last tap to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
-                  <span className="sr-only">{` (chance ${lastTap.chance})`}</span>
+                  {`Change last tap (chance ${lastTap.chance}) to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
                 </button>
               ) : null}
               <p>{working.taps.length === 0 ? 'You: no taps yet' : `You: ${shown} shown of ${working.taps.length} tapped`}</p>

@@ -130,12 +130,19 @@ function installFetch(options: {
   return fetchMock;
 }
 
-function tileValue(label: string): string {
+/** A tile's label <p>: the label alone, or the label then the selected child's name (FAM-12). */
+function tileLabel(label: string): HTMLElement | undefined {
   // Tab buttons share some labels; the tile's label is the <p> inside the
   // summary grid, which renders before any tab content.
-  const labelElement = screen.getAllByText(label).find((element) => element.tagName === 'P');
+  return screen
+    .queryAllByText((_, element) => element?.tagName === 'P' && (element.textContent === label || (element.textContent ?? '').startsWith(`${label} · `)))
+    .find((element) => element.tagName === 'P');
+}
+
+function tileValue(label: string): string {
+  const labelElement = tileLabel(label);
   const tile = labelElement?.parentElement;
-  return tile?.textContent?.replace(label, '').trim() ?? '';
+  return tile?.textContent?.replace(labelElement?.textContent ?? label, '').trim() ?? '';
 }
 
 /** The Current Status panel on the Overview tab, as text. */
@@ -189,6 +196,24 @@ test('the status panel has no Current Track row, and no longer repeats the child
   expect(document.body.textContent).not.toMatch(/current track/i);
   // The "Child Name" row went (scrub FAM-20): the child picker names the child.
   expect(screen.queryByText('Child Name')).toBeNull();
+});
+
+// FAM-12 (part): the three tiles that count the selected child alone name that
+// child, by the rule the all-children tiles use (first name here), and the
+// name moves with the selection. The all-children tiles keep their own lines.
+test('Progress, Upcoming and Class attendance name the selected child and follow the selection', async () => {
+  installFetch();
+  await renderHub();
+
+  await waitFor(() => expect(tileLabel('Progress')?.textContent).toBe('Progress · First'));
+  expect(tileLabel('Upcoming')?.textContent).toBe('Upcoming · First');
+  expect(tileLabel('Class attendance')?.textContent).toBe('Class attendance · First');
+  expect(tileLabel('Parent Floor tasks')?.textContent).toBe('Parent Floor tasks');
+
+  await selectChild('Second Child');
+  await waitFor(() => expect(tileLabel('Progress')?.textContent).toBe('Progress · Second'));
+  expect(tileLabel('Upcoming')?.textContent).toBe('Upcoming · Second');
+  expect(tileLabel('Class attendance')?.textContent).toBe('Class attendance · Second');
 });
 
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {

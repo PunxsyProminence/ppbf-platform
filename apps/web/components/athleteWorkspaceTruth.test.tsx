@@ -246,3 +246,10 @@ describe('SHADOW-01: "Saved" is said only when the server stored the exchange', 
     expect(screen.queryByText(SAVED)).toBeNull();
   });
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});
