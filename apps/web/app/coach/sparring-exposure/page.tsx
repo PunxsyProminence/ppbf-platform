@@ -97,7 +97,7 @@ async function readRestrictions(id: string, signal: AbortSignal): Promise<Restri
 /** The restriction fact: in force first (with the Restricted mark), else each record's own state words.
     A record this screen cannot show is never read as none: the panel's failed-read sentence says so. */
 function RestrictionLine({ read }: { read: RestrictionRead }) {
-  if (read === 'loading') return <p className="t-body" role="status">Loading...</p>;
+  if (read === 'loading') return <p className="t-body" role="status">Reading medical restrictions...</p>;
   if (read === 'failed') {
     return <p className="t-body">The medical restrictions could not be read. Nothing is shown as clear because of it.</p>;
   }
@@ -341,8 +341,13 @@ export default function CoachSparringExposurePage() {
   // places on this page that show that athlete's cap read it again.
   const [capSaves, setCapSaves] = useState<Record<string, number>>({});
   // The picked athlete's minor status and medical restrictions (CS-07).
-  const [minorRead, setMinorRead] = useState<MinorRead>('loading');
-  const [restrictionRead, setRestrictionRead] = useState<RestrictionRead>('loading');
+  // Each answer keeps the athlete it was read for, and is shown only while
+  // that athlete is the pick: a re-pick shows "Reading..." at once, never the
+  // last athlete's facts under the new name, even for one frame.
+  const [minorFor, setMinorFor] = useState<{ id: string; read: MinorRead } | null>(null);
+  const [restrictionFor, setRestrictionFor] = useState<{ id: string; read: RestrictionRead } | null>(null);
+  const minorRead: MinorRead = minorFor && minorFor.id === athleteId ? minorFor.read : 'loading';
+  const restrictionRead: RestrictionRead = restrictionFor && restrictionFor.id === athleteId ? restrictionFor.read : 'loading';
   // The section an old address asked for (#sparring-caps, #athlete-limits), opened once, by that section.
   const arrivalRef = useRef<string | null | undefined>(undefined);
   const takeArrival = useCallback((id: string) => {
@@ -404,19 +409,21 @@ export default function CoachSparringExposurePage() {
     return (await response.json()) as Recent;
   }, []);
 
-  // Read on each pick; the abort keeps a slow read for the last athlete from
-  // landing under the next one, and the reset clears the last athlete's facts.
+  // Read on each pick. Once the pick moves on, the read is aborted and
+  // whatever it returns, answer or failure, is dropped (an abort during the
+  // body read would otherwise come back as "failed").
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- the reads are the outside system kept in step */
-    setMinorRead('loading');
-    setRestrictionRead('loading');
-    /* eslint-enable react-hooks/set-state-in-effect */
     if (!athleteId) return;
     const controller = new AbortController();
-    const landed = (error: unknown) => (error as { name?: string }).name !== 'AbortError';
-    readMinor(athleteId, controller.signal).then(setMinorRead, (error) => { if (landed(error)) setMinorRead('failed'); });
-    readRestrictions(athleteId, controller.signal)
-      .then(setRestrictionRead, (error) => { if (landed(error)) setRestrictionRead('failed'); });
+    const keep = (write: () => void) => { if (!controller.signal.aborted) write(); };
+    readMinor(athleteId, controller.signal).then(
+      (read) => keep(() => setMinorFor({ id: athleteId, read })),
+      () => keep(() => setMinorFor({ id: athleteId, read: 'failed' })),
+    );
+    readRestrictions(athleteId, controller.signal).then(
+      (read) => keep(() => setRestrictionFor({ id: athleteId, read })),
+      () => keep(() => setRestrictionFor({ id: athleteId, read: 'failed' })),
+    );
     return () => controller.abort();
   }, [athleteId]);
 
@@ -632,10 +639,10 @@ export default function CoachSparringExposurePage() {
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-status">
             <h3 className="t-eyebrow">Athlete Limits</h3>
             {minorRead === 'loading' ? (
-              <p className="t-body" role="status">Loading...</p>
+              <p className="t-body" role="status">Reading…</p>
             ) : minorRead === 'failed' ? (
               <p className="t-body">
-                This athlete’s limits could not be read just now. Unknown is not “no limit set” — check again before training.
+                <span aria-hidden="true">▲ </span>This athlete’s limits could not be read just now. Unknown is not “no limit set” — check again before training.
               </p>
             ) : (
               <p className="t-body font-semibold" data-athlete-age={minorRead.isMinor ? 'minor' : 'adult'}>
@@ -656,10 +663,16 @@ export default function CoachSparringExposurePage() {
           </section>
         )}
 
-        {athleteId && recentState === 'loaded' && recent && (
+        {/* Shown as soon as an athlete is picked, so the cap is never missing
+            before the form: still being read, or unknown, is said in words. */}
+        {athleteId && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-cap">
             <h3 className="t-eyebrow">Sparring Caps</h3>
-            {!isCapCheck(recent.cap_check) || recent.cap_check.cap_state === 'unknown' ? (
+            {recentState !== 'loaded' || !recent ? (
+              recentState === 'unavailable'
+                ? <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
+                : <p className="t-body" role="status">Reading the sparring cap…</p>
+            ) : !isCapCheck(recent.cap_check) || recent.cap_check.cap_state === 'unknown' ? (
               <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
             ) : recent.cap_check.cap_state === 'none' || !recent.cap_check.cap ? (
               <p>No cap set for this athlete.</p>
@@ -676,7 +689,7 @@ export default function CoachSparringExposurePage() {
                 )}
               </>
             )}
-            {isCapCheck(recent.cap_check) && (
+            {recentState === 'loaded' && recent && isCapCheck(recent.cap_check) && (
               <p data-testid="spar-hard-open-days">
                 {recent.cap_check.hard_open_days_in_7 === null
                   ? 'Gym days with hard or open sparring in the last 7 could not be counted just now.'

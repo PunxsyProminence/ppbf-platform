@@ -806,7 +806,7 @@ describe('Sparring and Limits', () => {
     expect(screen.getByLabelText('Which athlete').className).toContain('input--kiosk');
   });
 
-  test('a cap saved below is read again by the Coach-set cap block and by Athlete Limits', async () => {
+  test('a cap saved below is read again by the Sparring Caps block and by Athlete Limits', async () => {
     await renderAndPick();
     await limitsSection().findByText('Minor \u2014 these limits are the coach\u2019s limits for a child.');
     const getsBefore = gets.length;
@@ -906,7 +906,9 @@ describe('before a segment: minor, cap, restriction', () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
     });
     expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
-    expect(status().getAllByText('Loading...').length).toBe(2);
+    expect(status().getByText('Reading…')).toBeTruthy();
+    expect(status().getByText('Reading medical restrictions...')).toBeTruthy();
+    expect(within(screen.getByTestId('spar-cap')).getByText('Reading the sparring cap…')).toBeTruthy();
     // And when they land, Marcus's own answer shows.
     installFetch({ restrictions: [] });
     await act(async () => {
@@ -918,6 +920,54 @@ describe('before a segment: minor, cap, restriction', () => {
     expect(await status().findByText('No medical restriction on file for this member.')).toBeTruthy();
     expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
     expect(restrictionGets).toEqual([expect.stringContaining('athlete_id=ath-2')]);
+  });
+
+  test('a restriction in force without a release need says just "In force"', async () => {
+    await renderAndPick({ restrictions: [restriction('in_force')] });
+    const restricted = await screen.findByTestId('spar-status-restricted');
+    expect(restricted.textContent).toContain('In force');
+    expect(restricted.textContent).not.toContain('release needed');
+  });
+
+  test('the cap is said before the form even when it could not be read', async () => {
+    await renderAndPick({ recentOk: false });
+    const cap = screen.getByTestId('spar-cap');
+    expect(cap.textContent).toContain('This athlete\'s cap could not be read just now. Unknown is not');
+    expect(cap.compareDocumentPosition(screen.getByText('One segment')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('a late answer for the last athlete never lands under the next one', async () => {
+    installFetch();
+    const late: Array<(r: Response) => void> = [];
+    const served = global.fetch;
+    // Rosa's two status reads hang until released; everything else is served.
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('athlete_id=ath-1') && (url.includes('/medical-restrictions') || url.includes('/athlete-minor-limits'))) {
+        return new Promise<Response>((resolve) => { late.push(resolve); });
+      }
+      return served(input, init);
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<CoachSparringExposurePage />);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+    });
+    // Marcus's reads hang too, so only Rosa's late answers could fill the block.
+    global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    await act(async () => {
+      for (const resolve of late) {
+        resolve({ ok: true, status: 200, json: async () => ({ ok: true, athlete_is_minor: true, restrictions: [restriction('in_force')] }) } as Response);
+      }
+    });
+    expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
+    expect(status().queryByText('Minor \u2014 these limits are the coach\u2019s limits for a child.')).toBeNull();
+    expect(status().getByText('Reading\u2026')).toBeTruthy();
+    expect(status().getByText('Reading medical restrictions...')).toBeTruthy();
   });
 
   test('Athlete Safety opens on this athlete in page memory, never in the address', async () => {
