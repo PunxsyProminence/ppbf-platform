@@ -2920,20 +2920,20 @@ export default function CoachWorkspace() {
           </div>
 
           {escalationsLoading && (
-            <p className="text-xs text-[color:var(--bone-300)]">Checking for open escalations...</p>
+            <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Checking for open escalations...</p>
           )}
 
           {!escalationsLoading && escalationsError && (
             <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
               <p className="text-sm font-semibold text-[color:var(--restricted-ink)]">{escalationsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--restricted-ink)]">
+              <p className="mt-1 text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
                 Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
               </p>
             </div>
           )}
 
           {!escalationsLoading && !escalationsError && escalations.length === 0 && (
-            <p className="text-xs text-[color:var(--bone-400)]">
+            <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
               No open escalations for your athletes. One appears here the moment a near miss, pain
               report, or safety-gate flag escalates.
             </p>
@@ -3021,13 +3021,13 @@ export default function CoachWorkspace() {
           </div>
 
           {barrierReportsLoading && (
-            <p className="text-xs text-[color:var(--bone-300)]">Checking for family barrier reports...</p>
+            <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Checking for family barrier reports...</p>
           )}
 
           {!barrierReportsLoading && barrierReportsError && (
             <div className="border-2 border-[color:rgb(var(--brass-400-rgb)_/_.5)] p-3">
               <p className="text-sm font-semibold text-[color:var(--brass-300)]">{barrierReportsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--bone-300)]">
+              <p className="mt-1 text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                 Reports may exist that are not shown here. Do not read this as &quot;no family asked for
                 help&quot;.
               </p>
@@ -3035,7 +3035,7 @@ export default function CoachWorkspace() {
           )}
 
           {!barrierReportsLoading && !barrierReportsError && barrierReports.length === 0 && (
-            <p className="text-xs text-[color:var(--bone-400)]">
+            <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
               No guardian on your roster has reported a barrier to training. A report appears here as
               soon as one is sent.
             </p>
@@ -3044,7 +3044,7 @@ export default function CoachWorkspace() {
           {!barrierReportsLoading && !barrierReportsError && barrierReports.length > 0 && (
             <div className="space-y-3">
               {barrierReportsTruncated && (
-                <p className="text-xs text-[color:var(--bone-300)]">
+                <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                   More reports exist than are listed here; the newest are shown first.
                 </p>
               )}
@@ -3064,7 +3064,7 @@ export default function CoachWorkspace() {
                     </div>
                   </div>
                   <p className="text-sm text-[color:var(--bone-200)]">{report.note_text}</p>
-                  <p className="text-xs text-[color:var(--bone-400)]">
+                  <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
                     Answer the family through Post to the Family&apos;s Page on the Decision Loop.
                   </p>
                 </article>
@@ -3305,7 +3305,7 @@ export default function CoachWorkspace() {
                           )}
                         </p>
                         {typeof liveRun.athletes_present === 'number' && (
-                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-md)' }}>
                             Count stated at start: <span className="t-data">{liveRun.athletes_present}</span>
                           </p>
                         )}
@@ -3439,7 +3439,7 @@ export default function CoachWorkspace() {
                           Retry
                         </button>
                       </div>
-                      <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-xs)]">{athletesError}</p>
+                      <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-md)]">{athletesError}</p>
                     </div>
                   )}
 
@@ -3635,7 +3635,7 @@ export default function CoachWorkspace() {
                           coach in the gym. */}
                       {athleteChosenByCoach && selectedAthleteId === athlete.id
                         && athlete.ringName && athlete.accountId && (
-                        <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           {nicknameClearArmedId === athlete.id ? (
                             <>
                               <p>
@@ -3703,7 +3703,7 @@ export default function CoachWorkspace() {
                           the lock the SERVER reported, and says nothing about a
                           duration when the server did not state one. */}
                       {athlete.id in nicknameClearedHours && (
-                        <p className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           {typeof nicknameClearedHours[athlete.id] === 'number'
                             ? `Ring name removed. ${athlete.name} cannot set a new one for ${nicknameClearedHours[athlete.id]} hours.`
                             : `Ring name removed. ${athlete.name} cannot set a new one until the gym's lock expires.`}
@@ -4436,7 +4436,7 @@ export default function CoachWorkspace() {
                       Retry
                     </button>
                   </div>
-                  <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-xs)]">This board is incomplete. Open review items may exist that are not listed below.</p>
+                  <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-md)]">This board is incomplete. Open review items may exist that are not listed below.</p>
                 </div>
               )}
 
