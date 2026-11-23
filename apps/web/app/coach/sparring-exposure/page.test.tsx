@@ -900,7 +900,18 @@ describe('before a segment: minor, cap, restriction', () => {
   test('a re-pick never shows the last athlete\'s restriction under the next', async () => {
     await renderAndPick({ restrictions: [restriction('in_force')] });
     await screen.findByTestId('spar-status-restricted');
+    // Marcus's reads hang: until they land, Rosa's restriction must already be gone.
+    global.fetch = jest.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
+    expect(status().getAllByText('Loading...').length).toBe(2);
+    // And when they land, Marcus's own answer shows.
     installFetch({ restrictions: [] });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: '' } });
+    });
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
     });
