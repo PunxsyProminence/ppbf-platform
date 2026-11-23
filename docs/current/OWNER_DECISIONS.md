@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-23-006 | 2026-11-23 | An athlete's pain-report note does not show on the class screen (PAIN-NOTES Q11) | PRIMARY |  |  |
 | OD-2026-11-23-005 | 2026-11-23 | Start the next lanes once production is live | PRIMARY |  |  |
 | OD-2026-11-23-004 | 2026-11-23 | Release of main `b5bfc1119f712bcd3b3678faefe06106442b00f6` to production | PRIMARY |  |  |
 | OD-2026-11-23-003 | 2026-11-23 | A pain note that names a staff member is hidden from coaches (PAIN-NOTES Q7) | PRIMARY |  |  |
@@ -652,6 +653,22 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-23-006 -- An athlete's pain-report note does not show on the class screen (PAIN-NOTES Q11)
+
+**Provenance: PRIMARY.** Jason typed this in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-23. The time, "about 18:04 UTC", and his words were passed to lane RECORDS-1123 by App Overwatch in a message (REPORTED to this lane, not re-read from the transcript). New; edits no earlier entry's text.
+
+**Question as App Overwatch described it (REPORTED):** should an athlete's pain-report note show on the class screen (the gym-floor tablet)? Option A (recommended): no notes there, and coaches read them on the coach home. Option B: notes only behind a "Show note" button, held notes never. Option C: notes shown in full, held notes never.
+
+**Jason (2026-11-23, about 18:04 UTC, PRIMARY):** *"A: Keep them off"*
+
+**Ruling:** no pain-report notes on the class screen; coaches read them on the coach home.
+
+**Applied (Overwatch, not his words; REPORTED):** #2139 as built at `f33c10b3` needs no code change.
+
+**Status:** recorded 2026-11-23 by PR.
 
 ---
 
