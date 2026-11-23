@@ -149,8 +149,15 @@ function installFetch(stubs: Stubs = {}) {
     }
     if (route) {
       panelGets.push(url);
+      // After a cap save, the cap route answers with the cap just set.
+      const savedCap = capSavePosts.length > 0
+        ? {
+            cap_id: 'cap-new', set_at: '2026-11-23T08:00:00Z', set_by_name: 'Coach J', note: '',
+            highest_allowed_stage: 'none', max_hard_open_sessions_per_7_days: null,
+          }
+        : null;
       const body = route === 'caps'
-        ? { ok: true, cap: null, history: [] }
+        ? { ok: true, cap: savedCap, history: savedCap ? [savedCap] : [] }
         : {
             ok: true,
             // Rosa is a minor, Marcus an adult: a re-pick must never keep one's label under the other.
@@ -802,6 +809,10 @@ describe('Sparring and Limits', () => {
     // ...and the open Athlete Limits panel reads the cap again (the caps panel's own re-read is one more).
     const capReadsAfter = panelGets.filter((url) => url.includes('/athlete-contact-caps?athlete_id=ath-1')).length;
     expect(capReadsAfter - capReadsBefore).toBeGreaterThanOrEqual(2);
+    // And Athlete Limits shows the cap just set, not the "no cap" it read before.
+    const limits = within(document.getElementById('athlete-limits')!);
+    expect(await limits.findByText(/Cap in force: highest stage No contact/)).toBeTruthy();
+    expect(limits.queryByText('No sparring cap set.')).toBeNull();
   });
 
   test('an old address opens its section once that section\'s roster is read', async () => {

@@ -23,7 +23,7 @@ import { formatGymDateNumeric } from '@/src/lib/gymTime';
 // with the caps, labelled to keep medical detail out.
 //
 // WARN, NEVER BLOCK (Jason, 2026-10-04: "Warn only"). Nothing here stops
-// sparring. The Sparring Record screen checks each saved segment against the
+// sparring. The Sparring Record section checks each saved segment against the
 // cap and warns under "Saved." (PR C ships that check and this sentence
 // together, so the text never promises a warning that is not live).
 //
@@ -309,7 +309,7 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
               </div>
               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                 Saving replaces the cap in force; the old one stays in the history below. Going over a cap
-                shows a warning on the Sparring Record screen when a segment is saved. It never blocks
+                shows a warning in the Sparring Record section when a segment is saved. It never blocks
                 sparring — the coach decides.
               </p>
               <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">

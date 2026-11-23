@@ -129,7 +129,7 @@ test('it says where going over a cap is warned about, and that it never blocks',
   serve(() => respond({ ok: true, cap: null, history: [] }));
   openPanel();
   await screen.findByText(/No cap set/);
-  expect(screen.getByText(/shows a warning on the Sparring Record screen when a segment is saved/)).toBeTruthy();
+  expect(screen.getByText(/shows a warning in the Sparring Record section when a segment is saved/)).toBeTruthy();
   expect(screen.getByText(/It never blocks/)).toBeTruthy();
   expect(screen.queryByText(/does not check caps yet/)).toBeNull();
 });

@@ -447,15 +447,15 @@ export default function CoachSparringExposurePage() {
   );
   const matching = athletes.filter((a) => a.full_name.toLowerCase().includes(findQuery)).length;
   const pickedName = athletes.find((a) => a.athlete_id === athleteId)?.full_name ?? '';
-  const settled = capsRoster !== 'loading' && limitsRoster !== 'loading';
+  // Everything above the sections is drawn, so a jump to one is not pushed down afterwards.
+  const settled = capsRoster !== 'loading' && limitsRoster !== 'loading' && rosterState !== 'loading';
   // A cap saved below: Athlete Limits shows it read-only, and the Coach-set
   // cap block above shows it for the picked athlete; both read it again.
   const capSaved = (savedFor: string) => {
     setCapSaves((prev) => ({ ...prev, [savedFor]: (prev[savedFor] ?? 0) + 1 }));
-    if (savedFor === athleteId && !saving) {
-      setRecentState('loading');
-      setReloadTick((tick) => tick + 1);
-    }
+    // Re-read with the block left up until the answer lands, so the page
+    // does not jump above the panel the coach is using.
+    if (savedFor === athleteId && !saving) setReloadTick((tick) => tick + 1);
   };
 
   return (

@@ -169,7 +169,14 @@ export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart =
     });
   }, []);
 
-  const readCap = useCallback(async (landed: () => boolean) => {
+  // Each cap read gets its own number too: a re-read after a save elsewhere
+  // can overlap the opening read, and only the newest answer may land, so an
+  // older "no cap" never replaces the cap a coach just set.
+  const latestCapRead = useRef(0);
+  const readCap = useCallback(async (openLanded: () => boolean) => {
+    const capTicket = latestCapRead.current + 1;
+    latestCapRead.current = capTicket;
+    const landed = () => openLanded() && latestCapRead.current === capTicket;
     setCapReading({ state: 'loading' });
     try {
       const response = await fetch(
