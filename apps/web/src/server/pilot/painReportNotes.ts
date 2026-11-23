@@ -213,8 +213,9 @@ export interface PainNoteRead {
 /**
  * One pain report's note, for the "Read the note" press on an escalation (Q12 A on #2139). The
  * coach pain list's mask, in SQL, so a held note never leaves the database for a coach; no 7-day
- * window, because the escalation can outlive the list. Null when the organization has no pain
- * report by that id. The caller gates the role and the athlete, as the list does.
+ * window, because the escalation can outlive the list -- but only for a report a pain-note
+ * escalation points at, and that the viewer's escalation list shows. Null when the organization
+ * has no such report. The caller gates the role and the athlete, as the list does.
  */
 export async function readPainNote(
   organizationId: string,
@@ -222,11 +223,22 @@ export async function readPainNote(
   viewerReadsAdminOnlyNotes: boolean,
 ): Promise<PainNoteRead | null> {
   const row = await queryOne<{ athlete_id: string; athlete_note: string | null; athlete_note_admin_only: boolean | null }>(
-    `select athlete_id,
-            case when athlete_note_admin_only and not $4::boolean then null else athlete_note end as athlete_note,
-            case when $4::boolean then athlete_note_admin_only else null end as athlete_note_admin_only
-       from pilot.shadow_near_misses
-      where organization_id = $1 and near_miss_id::text = lower($2) and metadata->>'trigger' = $3`,
+    `select n.athlete_id,
+            case when n.athlete_note_admin_only and not $4::boolean then null else n.athlete_note end as athlete_note,
+            case when $4::boolean then n.athlete_note_admin_only else null end as athlete_note_admin_only
+       from pilot.shadow_near_misses n
+      where n.organization_id = $1 and n.near_miss_id::text = lower($2) and n.metadata->>'trigger' = $3
+        -- THROUGH AN ESCALATION ONLY (Q12 A: "through the escalation's near_miss_id"): a pain-note
+        -- escalation must point at this report, and one the viewer's escalation list shows --
+        -- admins any, a coach never an admin-only ('athlete_voice') one (escalations/route.ts).
+        -- So this is not a way round the pain list's 7-day window (PR 4 reviewer B).
+        and exists (
+          select 1 from pilot.safety_escalations e
+           where e.organization_id = n.organization_id
+             and e.metadata->>'channel' = 'pain_report_note'
+             and e.metadata->>'near_miss_id' = n.near_miss_id::text
+             and ($4::boolean or e.source_type <> 'athlete_voice')
+        )`,
     [organizationId, nearMissId, PAIN_REPORT_TRIGGER, viewerReadsAdminOnlyNotes],
   );
   if (!row) return null;

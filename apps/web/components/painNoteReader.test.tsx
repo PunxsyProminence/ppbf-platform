@@ -102,3 +102,19 @@ test.each([
   expect(screen.getByRole('alert')).toHaveTextContent(PAIN_NOTE_READ_FAILED);
   expect(screen.getByRole('button', { name: 'Read the note' })).toBeEnabled();
 });
+
+test('a shown note can be hidden again, and reading it again asks the server again', async () => {
+  answer = () => json({ ok: true, note: 'sore after sparring' });
+  render(<PainNoteReader nearMissId="nm-1" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Read the note' }));
+  await settle();
+  expect(screen.getByText('sore after sparring')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Hide the note' }));
+  expect(screen.queryByText('sore after sparring')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Read the note' })).toBeEnabled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read the note' }));
+  await settle();
+  expect(calls).toEqual([NOTE_URL, NOTE_URL]);
+});

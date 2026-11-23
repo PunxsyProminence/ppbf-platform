@@ -80,6 +80,10 @@ export default function PainNoteReader({ nearMissId }: { readonly nearMissId: st
         {state.note && state.adminOnly ? (
           <p className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">{PAIN_NOTE_ADMIN_ONLY_LINE}</p>
         ) : null}
+        {/* A note read on a screen others can see can be put away again (PR 4 reviewer B). */}
+        <button type="button" className="btn btn--ghost mt-[var(--s2)]" onClick={() => setState({ kind: 'idle' })}>
+          Hide the note
+        </button>
       </div>
     );
   }

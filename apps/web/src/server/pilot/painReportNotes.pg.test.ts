@@ -626,7 +626,7 @@ describe('Mark reviewed (DR-25)', () => {
 
 // Q12 A on #2139: "Read the note" on a pain-note escalation, through the near miss it points at.
 describe('Read the note (DR-25, Q12 A)', () => {
-  test('an admin reads a held note and is told it is held; a coach reading the same gets no note and no key', async () => {
+  test('an admin reads a held note and is told it is held; a coach gets the same 404 as a missing report', async () => {
     await filePain(STAFF_DISCLOSURE);
     const [{ near_miss_id: id }] = await nearMisses();
 
@@ -634,13 +634,23 @@ describe('Read the note (DR-25, Q12 A)', () => {
     expect(admin.status).toBe(200);
     expect(admin.body).toEqual({ ok: true, note: STAFF_DISCLOSURE, noteAdminOnly: true });
 
+    // The held note's escalation is athlete_voice, which no coach's escalation list shows.
     const coach = await readNote(AS.coach(), id as string);
-    expect(coach.status).toBe(200);
-    expect(coach.body).toEqual({ ok: true, note: null });
+    const missing = await readNote(AS.coach(), '00000000-0000-4000-8000-000000000000');
+    expect(coach.status).toBe(404);
+    expect(coach.body).toEqual(missing.body);
   });
 
-  test('a coach reads a plain note; the read has no 7-day window', async () => {
+  test('a note no escalation points at is not readable here, by an admin or a coach', async () => {
     await filePain('sore after sparring');
+    const [{ near_miss_id: id }] = await nearMisses();
+    expect(await escalations()).toEqual([]);
+    expect((await readNote(AS.orgAdmin(), id as string)).status).toBe(404);
+    expect((await readNote(AS.coach(), id as string)).status).toBe(404);
+  });
+
+  test('a coach reads a note its escalation list shows; the read has no 7-day window', async () => {
+    await filePain(NON_STAFF_DISCLOSURE);
     const [{ near_miss_id: id }] = await nearMisses();
     await activeClient!.query(
       `update pilot.shadow_near_misses set created_at = now() - interval '30 days' where near_miss_id = $1::uuid`,
@@ -648,12 +658,14 @@ describe('Read the note (DR-25, Q12 A)', () => {
     );
     expect((await readPainList(AS.coach())).body.painReports).toEqual([]);
     const coach = await readNote(AS.coach(), id as string);
-    expect(coach.body).toEqual({ ok: true, note: 'sore after sparring' });
+    expect(coach.body).toEqual({ ok: true, note: NON_STAFF_DISCLOSURE });
   });
 
   test('another gym, a deleted athlete, a missing report, a non-pain near miss and a malformed id all get the same 404', async () => {
-    await filePain('sore after sparring');
+    await filePain(NON_STAFF_DISCLOSURE);
     const [{ near_miss_id: id }] = await nearMisses();
+    // Readable before any of the refusals below.
+    expect((await readNote(AS.orgAdmin(), id as string)).status).toBe(200);
     const handFlagged = (await activeClient!.query(
       `insert into pilot.shadow_near_misses (organization_id, athlete_id, description, severity, detected_by, metadata)
        values ($1, $2, 'Hand-flagged.', 'low', 'human', '{}'::jsonb) returning near_miss_id::text`,
