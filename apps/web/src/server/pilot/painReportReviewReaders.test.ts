@@ -16,10 +16,12 @@ import path from 'node:path';
  *     `returning *`, `to_jsonb(alias)` and the like carry a new column to a reader without naming it;
  *   - the near-misses reader (shadowNearMisses.ts) and the SHADOW feed (shadowReadModels.ts),
  *     which athletes and parents reach, name none of the new columns.
- * BLIND SPOTS: a table name assembled at run time (`pilot.${name}`, or held in a constant) is not
- * seen by the whole-row check; the pinned file list is the backstop: such a file still has to be
- * written, and none of the pinned ones does it. A whole row named later in a select list
- * (`select n.id, n from ...`) is not told apart from a column name without parsing SQL.
+ * BLIND SPOTS: a table name assembled at run time (`pilot.${name}`, held in a constant, or joined
+ * from two strings with +) is not seen by the whole-row check; the pinned file list is the
+ * backstop: such a file still has to be written, and none of the pinned ones does it. A whole row
+ * named later in a select list (`select n.id, n from ...`) is not told apart from a column name
+ * without parsing SQL. The scanner reads a regex literal as code, so a regex containing a quote, a
+ * backtick, `//` or `/*` can hide the rest of its line; none of the pinned files has one.
  */
 
 const repoRoot = path.resolve(__dirname, '../../../../..');
@@ -58,8 +60,11 @@ const WHOLE_ROW: readonly RegExp[] = [
   /\b[a-z_]\w*\.\*(?![\w)])/i,
   /returning\s+\*/i,
   /\b(?:to_jsonb?|row_to_json|jsonb?_agg|jsonb?_populate_record|hstore)\s*\(\s*[a-z_]\w*\s*\)/i,
-  // `select n from pilot.shadow_near_misses n`: the selected name is the table's own alias.
-  /select\s+([a-z_]\w*)\s+from\s+pilot\."?shadow_near_misses"?\s+(?:as\s+)?\1\b/i,
+  // `select n from pilot.shadow_near_misses n`, also through a join: the selected name is the
+  // near-miss table's own alias.
+  /select\s+([a-z_]\w*)\s+from\s+[\s\S]*?pilot\."?shadow_near_misses"?\s+(?:as\s+)?\1\b/i,
+  // `select shadow_near_misses from pilot.shadow_near_misses`: the whole row by the table's name.
+  /select\s+"?shadow_near_misses"?\s+from\b/i,
 ];
 
 const SKIP_DIRECTORIES = new Set(['node_modules', '.next', '.git', 'docs', 'coverage', 'dist', 'build']);
@@ -187,6 +192,8 @@ describe('pain report note and review: no new reader (DR-25)', () => {
       'select row_to_json(n) from pilot.shadow_near_misses n',
       'select jsonb_agg(n) from pilot.shadow_near_misses n',
       'select n from pilot.shadow_near_misses n',
+      'select n from pilot.athletes a join pilot.shadow_near_misses n on true',
+      'select shadow_near_misses from pilot.shadow_near_misses',
     ]) {
       expect([statement, caught(statement)]).toEqual([statement, true]);
     }
