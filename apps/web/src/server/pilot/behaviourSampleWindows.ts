@@ -152,11 +152,13 @@ export async function openBehaviourWindow(input: {
         // Joined only where its taps can land (Overwatch 7091097843 A1): the writer checks presence on
         // the window's own run, so a window on a run the athlete has since been taken off is refused,
         // not handed back to be tapped in vain. The writer's own check, so the presence table is named
-        // there alone.
+        // there alone. Presence only: the fixed context 'session' runs no drill or block check, so no
+        // refusal about another coach's session plan reaches this caller (its plan was checked at its open).
         if (found.run_id !== input.runId) {
           try {
             await reportPlaceFor(client, {
-              organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id }, context: contextOf(found),
+              organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id },
+              context: { attemptContext: 'session' },
             });
           } catch (error) {
             if (error instanceof ValidationError && error.message.startsWith('That athlete is not marked present')) {

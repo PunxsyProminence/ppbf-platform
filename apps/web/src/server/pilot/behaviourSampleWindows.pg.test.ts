@@ -29,6 +29,7 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import { closePool } from './db';
+import { ValidationError } from './errors';
 
 jest.setTimeout(240_000);
 
@@ -719,7 +720,10 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     const stale = await joinOrOpen({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' }, openedByAccountId: COACH_B });
     await presence.setRunAthletePresent({ actor, runId: PLANNED_RUN, athleteId: ATHLETE, present: false });
     try {
-      await expect(joinOrOpen()).rejects.toThrow(
+      // The whole message, as a ValidationError (the routes answer it as a 400).
+      const refusal = await joinOrOpen().then(() => null, (error: unknown) => error);
+      expect(refusal).toBeInstanceOf(ValidationError);
+      expect((refusal as Error).message).toBe(
         'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
         + 'It ends when that session is settled or its coach closes it.',
       );
