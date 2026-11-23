@@ -106,6 +106,11 @@ interface CoachSummaryPanelProps {
 
 interface ParentSummaryPanelProps {
   childProgress: string;
+  /* The selected child's label, named on the three tiles that count that
+     child alone (Progress, Upcoming, Class attendance), so a parent of two
+     can tell whose figure it is (FAM-12). Built by the same rule as the
+     all-children tiles' labels. null (no child selected) names nobody. */
+  childLabel?: string | null;
   // null on every count means "no backend feed answered this" and renders as
   // Unavailable. A number -- including 0 -- is a real observation. The
   // distinction matters most at zero: "0 tasks due" tells a parent nothing is
@@ -356,6 +361,7 @@ export function CoachSummaryPanel({
 // PARENT SUMMARY PANEL
 export function ParentSummaryPanel({
   childProgress,
+  childLabel = null,
   tasksDue,
   upcomingEvents,
   attendance,
@@ -365,11 +371,12 @@ export function ParentSummaryPanel({
   // cell must render as a neutral "no data" state, not as a number. Feeding
   // null through as 0 would tell a parent "nothing due / nothing upcoming /
   // no messages" when the truth is "nobody knows".
+  const forChild = (label: string) => (childLabel ? `${label} · ${childLabel}` : label);
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Progress */}
       <div className={KPI_TILE}>
-        <p className="t-label">Progress</p>
+        <p className="t-label">{forChild('Progress')}</p>
         <p className="t-body mt-[var(--s3)]">{childProgress}</p>
       </div>
 
@@ -393,12 +400,12 @@ export function ParentSummaryPanel({
       {/* Events */}
       {upcomingEvents === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Upcoming</p>
+          <p className="t-label">{forChild('Upcoming')}</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={STAT_TILE}>
-          <p className="stat-label">Upcoming</p>
+          <p className="stat-label">{forChild('Upcoming')}</p>
           <p className="stat-val">{upcomingEvents}</p>
         </div>
       )}
@@ -408,12 +415,12 @@ export function ParentSummaryPanel({
           2026-10-19 item 3). PROPOSED label. */}
       {attendance === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Class attendance</p>
+          <p className="t-label">{forChild('Class attendance')}</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={KPI_TILE}>
-          <p className="t-label">Class attendance</p>
+          <p className="t-label">{forChild('Class attendance')}</p>
           <p className="t-body mt-[var(--s3)]">
             {`Present ${attendance.present} · Excused ${attendance.excused} · Absent ${attendance.absent}`}
           </p>
