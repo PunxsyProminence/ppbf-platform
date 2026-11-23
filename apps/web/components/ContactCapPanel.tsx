@@ -80,8 +80,10 @@ function isSetCap(value: unknown): value is CapRow {
     && (value.highest_allowed_stage !== null || value.max_hard_open_sessions_per_7_days !== null);
 }
 
-export default function ContactCapPanel({ athleteId, athleteName, openAtStart = false }: {
+export default function ContactCapPanel({ athleteId, athleteName, openAtStart = false, onSaved }: {
   athleteId: string; athleteName: string; openAtStart?: boolean;
+  /** Told after a cap is saved, so other places on the page that show it can read it again. */
+  onSaved?: () => void;
 }) {
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [stage, setStage] = useState('');
@@ -187,6 +189,7 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
           setRefusal(refusalWords({ error: payload?.error, status: response.status }, {}, 'The cap was not saved. Try again.'));
           return;
         }
+        onSaved?.();
         // The read that follows fills the form from the cap now in force --
         // only if the coach has not closed the panel meanwhile: read() opens
         // the panel, and a save must never reopen what the coach closed.
@@ -197,7 +200,7 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
         setBusy(false);
       }
     },
-    [athleteId, note, read, sessions, stage],
+    [athleteId, note, onSaved, read, sessions, stage],
   );
 
   const open = reading.state !== 'closed';
@@ -225,7 +228,7 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
 
           {reading.state === 'unavailable' ? (
             <div className="mt-[var(--s2)]" role="alert">
-              <p className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+              <p className="t-body" style={{ fontSize: 'var(--t-md)' }}>
                 This athlete’s cap could not be read just now. Unknown is not “no cap” — check again
                 before sparring.
               </p>
@@ -244,9 +247,9 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
                       <p key={line} className="t-body font-semibold">{line}</p>
                     ))}
                     {reading.cap.note ? (
-                      <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{reading.cap.note}</p>
+                      <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>{reading.cap.note}</p>
                     ) : null}
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
+                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>
                       Set by {reading.cap.set_by_name} on {formatGymDateNumeric(reading.cap.set_at)}
                     </p>
                   </>
@@ -262,7 +265,7 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
                   <label className="t-label" htmlFor={`${panelId}-stage`}>Highest contact stage allowed</label>
                   <select
                     id={`${panelId}-stage`}
-                    className="select"
+                    className="select input--kiosk"
                     value={stage}
                     onChange={(event) => setStage(event.target.value)}
                   >
@@ -278,14 +281,14 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
                   </label>
                   <input
                     id={`${panelId}-sessions`}
-                    className="input"
+                    className="input input--kiosk"
                     inputMode="numeric"
                     placeholder="Blank = no limit"
                     aria-describedby={`${panelId}-sessions-hint`}
                     value={sessions}
                     onChange={(event) => setSessions(event.target.value)}
                   />
-                  <p id={`${panelId}-sessions-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
+                  <p id={`${panelId}-sessions-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>
                     A session is a gym day with any hard sparring or open sparring.
                   </p>
                 </div>
@@ -294,17 +297,17 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
                 <label className="t-label" htmlFor={`${panelId}-note`}>Staff note (optional)</label>
                 <input
                   id={`${panelId}-note`}
-                  className="input"
+                  className="input input--kiosk"
                   maxLength={1000}
                   aria-describedby={`${panelId}-note-hint`}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                 />
-                <p id={`${panelId}-note-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
+                <p id={`${panelId}-note-hint`} className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>
                   Staff only. No medical details here — those belong in the clearance record.
                 </p>
               </div>
-              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-xs)' }}>
+              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                 Saving replaces the cap in force; the old one stays in the history below. Going over a cap
                 shows a warning on the Sparring Record screen when a segment is saved. It never blocks
                 sparring — the coach decides.
@@ -334,16 +337,16 @@ export default function ContactCapPanel({ athleteId, athleteName, openAtStart = 
                   <p className="t-body font-semibold">
                     <span aria-hidden="true">▲ </span>NOT SAVED
                   </p>
-                  <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
+                  <p className="t-body mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>{refusal}</p>
                 </div>
               ) : null}
 
               {reading.history.length > 0 ? (
                 <details className="mt-[var(--s3)]">
-                  <summary className="t-label">Cap history ({reading.history.length})</summary>
+                  <summary className="t-label min-h-[var(--tap)] cursor-pointer">Cap history ({reading.history.length})</summary>
                   <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                     {reading.history.map((row) => (
-                      <li key={row.cap_id} className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                      <li key={row.cap_id} className="t-data" style={{ fontSize: 'var(--t-md)' }}>
                         {formatGymDateNumeric(row.set_at)} · {row.set_by_name} · {describeCap(row).join(' · ')}
                         {row.note ? ` · ${row.note}` : ''}
                       </li>

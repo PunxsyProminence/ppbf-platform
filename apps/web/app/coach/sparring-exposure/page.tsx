@@ -71,34 +71,56 @@ async function accessibleRoster(all: RosterAthlete[], route: string): Promise<Ro
  * One limits section: Sparring Caps or Athlete Limits, in the words its own
  * page had. A roster that could not be read is never "no athletes".
  */
-function LimitsSection({ id, title, intro, roster, pickedId, findQuery, empty, panel }: {
+function LimitsSection({ id, title, intro, roster, settled, pickedId, findQuery, empty, notPicked, takeArrival, panel }: {
   id: string; title: string; intro: string; roster: SectionRoster; pickedId: string; findQuery: string; empty: string;
+  /** Both sections' rosters are read, so the page above this one no longer grows. */
+  settled: boolean;
+  /** Said when the picked athlete is not one this section's route admits (copy PROPOSED, lane AS5-REST). */
+  notPicked: string;
+  /** True once, if the page was opened at this section's old address. */
+  takeArrival: (id: string) => boolean;
   panel: (athlete: RosterAthlete, name: string) => ReactNode;
 }) {
   const shown = Array.isArray(roster)
     ? roster.filter((a) => (pickedId ? a.athlete_id === pickedId : (a.full_name ?? '').toLowerCase().includes(findQuery)))
     : [];
+  const sectionRef = useRef<HTMLElement>(null);
+  // An old address opens its section once the section is on screen and both
+  // rosters are read: here, not in the page, so the jump also waits for the
+  // shell's sign-in check, and the caps list cannot grow above it afterwards.
+  useEffect(() => {
+    if (settled && takeArrival(id)) sectionRef.current?.scrollIntoView?.({ block: 'start' });
+  }, [settled, id, takeArrival]);
+  // Every line about the list sits on the section's mat, never on the wall photo.
   return (
-    <section id={id} className="space-y-[var(--s3)]">
-      <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+    <section id={id} ref={sectionRef} className="space-y-[var(--s3)]">
+      <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
         <h2 className="t-command text-[length:var(--t-lg)]">{title}</h2>
-        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{intro}</p>
-      </div>
-      {roster === 'failed' ? (
-        <div className="alert alert--warning" role="alert">
-          <span className="alert-icon" aria-hidden="true">▲</span>
-          <div className="alert-body">
-            <p className="alert-title" style={KIOSK_TITLE}>Not loaded</p>
-            <p className="alert-msg" style={KIOSK_TEXT}>Your roster could not be loaded. Reload to try again.</p>
+        <p className="t-body text-[color:var(--bone-300)]">{intro}</p>
+        {roster === 'failed' ? (
+          <div className="alert alert--warning" role="alert">
+            <span className="alert-icon" aria-hidden="true">▲</span>
+            <div className="alert-body">
+              <p className="alert-title" style={KIOSK_TITLE}>Not loaded</p>
+              <p className="alert-msg" style={KIOSK_TEXT}>Your roster could not be loaded. Reload to try again.</p>
+            </div>
           </div>
-        </div>
-      ) : roster === 'loading' ? (
-        <p className="t-body" role="status">Loading your roster…</p>
-      ) : roster.length === 0 || (pickedId && shown.length === 0) ? (
-        <p className="t-body">{empty}</p>
-      ) : shown.length === 0 ? (
-        <p className="t-body">No athlete matches &ldquo;{findQuery}&rdquo;. Clear the box to see them all.</p>
-      ) : (
+        ) : roster === 'loading' ? (
+          <p className="t-body" role="status">Loading your roster…</p>
+        ) : roster.length === 0 ? (
+          <p className="t-body">{empty}</p>
+        ) : pickedId && shown.length === 0 ? (
+          <p className="t-body">{notPicked}</p>
+        ) : shown.length === 0 ? (
+          <p className="t-body">No athlete matches &ldquo;{findQuery}&rdquo;. Clear the box to see them all.</p>
+        ) : findQuery && !pickedId ? (
+          // What the Find box left in THIS list, in the board's words.
+          <p className="t-label" aria-live="polite">
+            {`${shown.length} of ${roster.length} ${roster.length === 1 ? 'athlete matches' : 'athletes match'}.`}
+          </p>
+        ) : null}
+      </div>
+      {Array.isArray(roster) && shown.length > 0 && (
         <ul className="space-y-[var(--s3)]">
           {shown.map((athlete) => (
             <li key={athlete.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -244,8 +266,17 @@ export default function CoachSparringExposurePage() {
   const [findText, setFindText] = useState('');
   const [capsRoster, setCapsRoster] = useState<SectionRoster>('loading');
   const [limitsRoster, setLimitsRoster] = useState<SectionRoster>('loading');
-  // The section an old address asked for (#sparring-caps, #athlete-limits), opened once its roster is read.
-  const scrollToRef = useRef<string | null | undefined>(undefined);
+  // Saves made in the Sparring Caps section, per athlete, so the two other
+  // places on this page that show that athlete's cap read it again.
+  const [capSaves, setCapSaves] = useState<Record<string, number>>({});
+  // The section an old address asked for (#sparring-caps, #athlete-limits), opened once, by that section.
+  const arrivalRef = useRef<string | null | undefined>(undefined);
+  const takeArrival = useCallback((id: string) => {
+    if (arrivalRef.current === undefined) arrivalRef.current = window.location.hash.slice(1) || null;
+    if (arrivalRef.current !== id) return false;
+    arrivalRef.current = null;
+    return true;
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -269,18 +300,6 @@ export default function CoachSparringExposurePage() {
     })();
     return () => { live = false; };
   }, []);
-
-  useEffect(() => {
-    if (scrollToRef.current === undefined) {
-      const wanted = window.location.hash.slice(1);
-      scrollToRef.current = wanted === 'sparring-caps' || wanted === 'athlete-limits' ? wanted : null;
-    }
-    const wanted = scrollToRef.current;
-    const roster = wanted === 'sparring-caps' ? capsRoster : limitsRoster;
-    if (!wanted || roster === 'loading') return;
-    scrollToRef.current = null;
-    document.getElementById(wanted)?.scrollIntoView?.({ block: 'start' });
-  }, [capsRoster, limitsRoster]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -428,6 +447,16 @@ export default function CoachSparringExposurePage() {
   );
   const matching = athletes.filter((a) => a.full_name.toLowerCase().includes(findQuery)).length;
   const pickedName = athletes.find((a) => a.athlete_id === athleteId)?.full_name ?? '';
+  const settled = capsRoster !== 'loading' && limitsRoster !== 'loading';
+  // A cap saved below: Athlete Limits shows it read-only, and the Coach-set
+  // cap block above shows it for the picked athlete; both read it again.
+  const capSaved = (savedFor: string) => {
+    setCapSaves((prev) => ({ ...prev, [savedFor]: (prev[savedFor] ?? 0) + 1 }));
+    if (savedFor === athleteId && !saving) {
+      setRecentState('loading');
+      setReloadTick((tick) => tick + 1);
+    }
+  };
 
   return (
     <RoleStandaloneView
@@ -443,6 +472,11 @@ export default function CoachSparringExposurePage() {
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Sparring and Limits</h1>
           <ClusterNav cluster="clinic" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
+          {/* The page is long with no athlete picked: one press to each section. */}
+          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+            <a href="#sparring-caps" className="btn btn--ghost">Sparring Caps</a>
+            <a href="#athlete-limits" className="btn btn--ghost">Athlete Limits</a>
+          </div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record what you saw in one sparring segment. The app counts and shows it. It does not score it, set a
             limit, or clear anyone. You decide.
@@ -485,7 +519,7 @@ export default function CoachSparringExposurePage() {
               // Locked while a save is in flight, so its result (and the
               // re-read after it) cannot land under a different athlete.
               disabled={saving || rosterState !== 'loaded' || athletes.length === 0}
-              className="select"
+              className="select input--kiosk"
             >
               <option value="">{rosterState === 'loading' ? 'Loading your athletes...' : 'Choose an athlete'}</option>
               {offered.map((item) => <option key={item.athlete_id} value={item.athlete_id}>{item.full_name}</option>)}
@@ -655,9 +689,9 @@ export default function CoachSparringExposurePage() {
               <div className="alert alert--warning" role="alert" data-testid="spar-cap-warnings">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Over the coach-set cap</p>
+                  <p className="alert-title" style={KIOSK_TITLE}>Over the coach-set cap</p>
                   {(savedCheck.warnings ?? []).filter((w) => OVER_KINDS.has(w.kind)).map((warning) => (
-                    <p key={warning.kind} className="alert-msg">{warning.message}</p>
+                    <p key={warning.kind} className="alert-msg" style={KIOSK_TEXT}>{warning.message}</p>
                   ))}
                 </div>
               </div>
@@ -667,9 +701,9 @@ export default function CoachSparringExposurePage() {
               <div className="alert alert--warning" data-testid="spar-cap-unchecked">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Not fully checked against the cap</p>
+                  <p className="alert-title" style={KIOSK_TITLE}>Not fully checked against the cap</p>
                   {(savedCheck.warnings ?? []).filter((w) => !OVER_KINDS.has(w.kind)).map((warning) => (
-                    <p key={warning.kind} className="alert-msg">{warning.message}</p>
+                    <p key={warning.kind} className="alert-msg" style={KIOSK_TEXT}>{warning.message}</p>
                   ))}
                 </div>
               </div>
@@ -734,19 +768,21 @@ export default function CoachSparringExposurePage() {
         {/* The two pages this one absorbed, in their own words (#2010 Q6 = A). A
             pick opens that athlete's panel at once (#2131 QR3 = A); a re-pick
             remounts it, so one athlete's limits never show under another. */}
-        <LimitsSection id="sparring-caps" title="Sparring Caps" roster={capsRoster} pickedId={athleteId} findQuery={findQuery}
+        <LimitsSection id="sparring-caps" title="Sparring Caps" roster={capsRoster} settled={settled} pickedId={athleteId} findQuery={findQuery}
           intro="The limits you set for each athlete's sparring: the highest contact stage, and the most hard or open sparring sessions in any 7 days. The app never picks a limit, and a cap never blocks sparring — the coach decides."
           empty="No athletes you can set caps for."
+          notPicked={`${pickedName} is not one of the athletes you can set caps for.`} takeArrival={takeArrival}
           panel={(athlete, name) => (
             <ContactCapPanel key={`${athlete.athlete_id}:${athleteId}`} athleteId={athlete.athlete_id} athleteName={name}
-              openAtStart={athleteId === athlete.athlete_id} />
+              openAtStart={athleteId === athlete.athlete_id} onSaved={() => capSaved(athlete.athlete_id)} />
           )} />
-        <LimitsSection id="athlete-limits" title="Athlete Limits" roster={limitsRoster} pickedId={athleteId} findQuery={findQuery}
+        <LimitsSection id="athlete-limits" title="Athlete Limits" roster={limitsRoster} settled={settled} pickedId={athleteId} findQuery={findQuery}
           intro="The limits you set for each athlete: heat exposure in minutes per session, the most weight cut as a percent of body weight, and the supervision you require. The app never picks a limit, and nothing here blocks training — the coach decides."
           empty="No athletes you can set limits for."
+          notPicked={`${pickedName} is not one of the athletes you can set limits for.`} takeArrival={takeArrival}
           panel={(athlete, name) => (
             <MinorLimitsPanel key={`${athlete.athlete_id}:${athleteId}`} athleteId={athlete.athlete_id} athleteName={name}
-              openAtStart={athleteId === athlete.athlete_id} />
+              openAtStart={athleteId === athlete.athlete_id} capVersion={capSaves[athlete.athlete_id] ?? 0} />
           )} />
       </div>
     </RoleStandaloneView>

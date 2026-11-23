@@ -131,8 +131,10 @@ const EMPTY: Record<LimitType, string> = {
   supervision: '',
 };
 
-export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart = false }: {
+export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart = false, capVersion = 0 }: {
   athleteId: string; athleteName: string; openAtStart?: boolean;
+  /** Moves when this athlete's cap is saved elsewhere on the page; an open panel reads the cap again. */
+  capVersion?: number;
 }) {
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
   const [capReading, setCapReading] = useState<CapReading>({ state: 'loading' });
@@ -229,6 +231,15 @@ export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart =
     if (openAtStart) void read();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
+
+  // The cap is shown here read-only; when it is saved in the Sparring Caps
+  // section, an open panel reads it again so it never shows the old one.
+  const seenCapVersion = useRef(capVersion);
+  useEffect(() => {
+    if (capVersion === seenCapVersion.current) return;
+    seenCapVersion.current = capVersion;
+    if (isOpen.current) void readCap(() => isOpen.current);
+  }, [capVersion, readCap]);
 
   const toggle = useCallback(() => {
     setRefusal(null);
@@ -373,7 +384,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart =
                         <input
                           id={fieldId}
                           type="text"
-                          className="input"
+                          className="input input--kiosk"
                           inputMode={type === 'supervision' ? 'text' : 'decimal'}
                           maxLength={type === 'supervision' ? SUPERVISION_MAX : 12}
                           placeholder={type === 'supervision' ? 'In your own words' : undefined}
@@ -386,7 +397,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart =
                         <input
                           id={`${fieldId}-note`}
                           type="text"
-                          className="input"
+                          className="input input--kiosk"
                           maxLength={NOTE_MAX}
                           value={notes[type]}
                           onChange={(event) => setNotes((prev) => ({ ...prev, [type]: event.target.value }))}
@@ -423,7 +434,7 @@ export default function MinorLimitsPanel({ athleteId, athleteName, openAtStart =
 
               {reading.history.length > 0 ? (
                 <details className="mt-[var(--s3)]">
-                  <summary className="t-label">Limit history ({reading.history.length})</summary>
+                  <summary className="t-label min-h-[var(--tap)] cursor-pointer">Limit history ({reading.history.length})</summary>
                   <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                     {reading.history.map((item) => (
                       <li key={item.limit_id} className="t-data">
