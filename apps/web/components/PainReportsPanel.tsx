@@ -166,7 +166,8 @@ export default function PainReportsPanel({
    * Whether the cards draw the athlete's note (DR-25). False on the class screen, the gym floor
    * tablet: a child's words, and above all a note held for admins (an admin can run a class
    * there), are not drawn where the room can read them. Every card then draws no note field at
-   * all, so a bystander cannot tell which reports have one. Notes are read on the coach home.
+   * all, so a bystander cannot tell which reports have one, and no "Mark reviewed" control (a
+   * review there would vouch for a note nobody saw). Notes are read and reviewed on the coach home.
    * (PR 3 reviewer B; put to Overwatch on #2139.)
    */
   readonly showsNotes?: boolean;
@@ -280,7 +281,10 @@ export default function PainReportsPanel({
                 {PAIN_PROVENANCE[report.reporter]}
               </p>
 
-              <PainReviewControl report={report} />
+              {/* A report is marked reviewed only where its note can be read: on a screen that
+                  hides notes (the floor tablet), a review would vouch for a note nobody there saw
+                  (PR 3 reviewer A). */}
+              {showsNotes ? <PainReviewControl report={report} /> : null}
             </article>
           ))}
 
