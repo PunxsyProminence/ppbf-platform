@@ -64,6 +64,10 @@ const REFUSALS: Record<string, string> = {
   pilot_behaviour_windows_active_key: 'That behaviour name is not on the active list.',
 };
 
+/** An open window this athlete cannot be tapped in blocks a new one until its session settles or its coach closes it. */
+export const STALE_WINDOW = 'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
+  + 'It ends when that session is settled or its coach closes it.';
+
 /** Ten unless the coach says otherwise; a whole number from 1 to 50 (Q7 A). */
 export function windowChances(value: unknown): number {
   if (value === undefined) return DEFAULT_WINDOW_CHANCES;
@@ -143,7 +147,26 @@ export async function openBehaviourWindow(input: {
           limit 1`,
         [input.organizationId, input.athleteId, input.behaviourKey],
       );
-      if (already.rows.length > 0) return already.rows[0];
+      if (already.rows.length > 0) {
+        const found = already.rows[0];
+        // Joined only where its taps can land (Overwatch 7091097843 A1): the writer checks presence on
+        // the window's own run, so a window on a run the athlete has since been taken off is refused,
+        // not handed back to be tapped in vain. The writer's own check, so the presence table is named
+        // there alone.
+        if (found.run_id !== input.runId) {
+          try {
+            await reportPlaceFor(client, {
+              organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id }, context: contextOf(found),
+            });
+          } catch (error) {
+            if (error instanceof ValidationError && error.message.startsWith('That athlete is not marked present')) {
+              throw new ValidationError(STALE_WINDOW);
+            }
+            throw error;
+          }
+        }
+        return found;
+      }
       const inserted = await client.query<BehaviourWindowRow>(
         `insert into pilot.behaviour_observations_windows
            (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, chances,

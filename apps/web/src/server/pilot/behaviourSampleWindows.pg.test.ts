@@ -713,6 +713,29 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     expect(await openCount()).toBe(1);
   });
 
+  test('a window on a run the athlete was taken off is not joined: refused, saying what ends it (Overwatch 7091097843 A1)', async () => {
+    const actor = { accountId: COACH_B, role: 'coach' as const, organizationId: ORG, athleteId: null };
+    await closeOpenWindowsOf();
+    const stale = await joinOrOpen({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' }, openedByAccountId: COACH_B });
+    await presence.setRunAthletePresent({ actor, runId: PLANNED_RUN, athleteId: ATHLETE, present: false });
+    try {
+      await expect(joinOrOpen()).rejects.toThrow(
+        'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
+        + 'It ends when that session is settled or its coach closes it.',
+      );
+      expect(windows.STALE_WINDOW).toBe(
+        'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
+        + 'It ends when that session is settled or its coach closes it.',
+      );
+      // Nothing was opened beside it, and it stays open for its own run to settle or close.
+      expect(await openCount()).toBe(1);
+    } finally {
+      await presence.setRunAthletePresent({ actor, runId: PLANNED_RUN, athleteId: ATHLETE, present: true });
+    }
+    // Marked present there again, the window is joinable again.
+    expect((await joinOrOpen()).window_id).toBe(stale.window_id);
+  });
+
   test('a closed window does not hold the place: the next open is a new window', async () => {
     const first = await open();
     await windows.closeBehaviourWindow({ organizationId: ORG, windowId: first.window_id, closedByAccountId: COACH_A });
