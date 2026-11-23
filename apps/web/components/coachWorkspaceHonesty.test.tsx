@@ -1400,6 +1400,11 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
     await renderWorkspace();
     const open = screen.getByRole('button', { name: /^Dashboard/ });
     expect(open.textContent).toContain('(open)');
+    // Research finding F-2 (2026-11-22): the word was --t-xs (11.8px) on a
+    // kiosk page. It now takes the tab's own size, in bold.
+    const word = Array.from(open.querySelectorAll('span')).find((span) => span.textContent === '(open)')!;
+    expect(word.className).not.toMatch(/--t-xs|font-normal|text-\[length/);
+    expect(word.className).toContain('font-bold');
     expect(open.textContent).toContain('◉');
     expect(open.getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: /^Tasks/ }).textContent).not.toContain('(open)');

@@ -2992,8 +2992,15 @@
 }
 
 /* Brass nameplate voice for the section eyebrows -- the engraved plate above
-   each compartment. */
-.ge-locker .t-eyebrow {
+   each compartment. Not on paper: this pale brass on a .mat-paper panel read
+   1.36 to 1.64:1 (the training hold's "A note from your coaches",
+   RefusalStamp.tsx; research finding A-6, 2026-11-22). There the legacy
+   sheet's own `.mat-paper .t-eyebrow` (the room's --brass-800) applies
+   instead and reads 7.45 to 9.03:1. `.pap` alone is not excluded: nothing
+   restates the eyebrow's ink for it, and no .pap-only panel carries an
+   eyebrow today. `:where()` keeps this rule's weight at (0,2,0), so nothing
+   it used to lose to now wins. liveReadabilityFixes.test.ts guards it. */
+.ge-locker .t-eyebrow:not(:where(.mat-paper) *) {
   color: color-mix(in srgb, var(--brass-300) 82%, var(--bone-200));
   letter-spacing: 0.15em;
 }

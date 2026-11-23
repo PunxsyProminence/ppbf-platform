@@ -1063,10 +1063,17 @@ body.ppbf.on-canvas {
 :where(.on-canvas) a:not(.btn)       { color: var(--brass-800); }
 :where(.on-canvas) a:not(.btn):hover { color: #241B12; text-decoration: underline; }
 
+/* The ink was 80% of the status hue, which read 4.00:1 (cleared), 4.33:1
+   (monitor) and 3.67:1 (restricted) on the pill's own tint: an 11px bold
+   badge needs 4.5:1. At 55% the five hues read 5.21 to 6.49:1 (computed from
+   these tokens; research finding F-1, 2026-11-22, the parent Consent page's
+   "Consent on file / needed" pill).
+   One rule, so every badge on a cream page gets the same fix.
+   liveReadabilityFixes.test.ts recomputes the ratios. */
 .on-canvas .badge {
   background-color: color-mix(in srgb, var(--badge) 20%, var(--canvas-warm));
   border-color: color-mix(in srgb, var(--badge) 65%, var(--canvas-warm));
-  color: color-mix(in srgb, var(--badge) 80%, #241B12);
+  color: color-mix(in srgb, var(--badge) 55%, #241B12);
 }
 .on-canvas .badge i { color: inherit; }
 
