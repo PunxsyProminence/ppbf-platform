@@ -688,6 +688,20 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     expect(await openCount()).toBe(1);
   });
 
+  test('two opens at once still make one window where the database\'s default isolation is repeatable read', async () => {
+    // The open sets READ COMMITTED itself; a server default must not change the answer.
+    await db.query(`alter database ${TEST_DB_NAME} set default_transaction_isolation = 'repeatable read'`);
+    await closePool();
+    try {
+      const [a, b] = await twoAtOnce({ openedByAccountId: COACH_A }, { openedByAccountId: COACH_B });
+      expect(b.window_id).toBe(a.window_id);
+      expect(await openCount()).toBe(1);
+    } finally {
+      await db.query(`alter database ${TEST_DB_NAME} reset default_transaction_isolation`);
+      await closePool();
+    }
+  });
+
   test('a later open joins the open window as it stands, whatever task, context and chances were asked', async () => {
     const first = await open();
     const joined = await joinOrOpen({

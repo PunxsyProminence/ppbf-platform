@@ -104,6 +104,9 @@ export async function openBehaviourWindow(input: {
       : ['context', input.context.attemptContext];
   try {
     return await withTransaction(async (client) => {
+      // READ COMMITTED, set here and not assumed (withTransaction sends a plain BEGIN): the
+      // already-open select below must see a window committed while this open waited on the lock.
+      await client.query('set transaction isolation level read committed');
       // A window belongs to a live class (Overwatch 7086220125). The run row is
       // held for share until the window commits: a settle (which updates it)
       // waits for this open, or this open waits for the settle and then finds
@@ -117,8 +120,6 @@ export async function openBehaviourWindow(input: {
       );
       if (run.rows.length === 0) throw new ValidationError('That session run is not in this gym.');
       if (run.rows[0].run_state !== 'in_progress') throw new ValidationError('That session run has ended.');
-      // The writer's own checks: the run is this gym's, the athlete is marked
-      // present on it, and the drill or block was part of it (Q5 A).
       // One open window per athlete and behaviour in the gym (Overwatch 7088669068; 7090923249 A):
       // paired judgments need one shared count. Two opens share the run row (for share), so it does
       // not order them, and the athlete may be on another live run; this key's lock does, always
@@ -128,10 +129,12 @@ export async function openBehaviourWindow(input: {
         `select pg_advisory_xact_lock(hashtextextended('pilot.behaviour_windows|' || $1 || '|' || $2 || '|' || $3, 0))`,
         [input.organizationId, input.athleteId, input.behaviourKey],
       );
+      // The writer's own checks: the run is this gym's, the athlete is marked
+      // present on it, and the drill or block was part of it (Q5 A).
       await reportPlaceFor(client, {
         organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: input.runId }, context: input.context,
       });
-      // Its own statement after the lock, under READ COMMITTED (withTransaction's default): it sees a
+      // Its own statement after the lock, under READ COMMITTED (set above): it sees a
       // window the other open committed while this one waited. Found, the caller joins it.
       const already = await client.query<BehaviourWindowRow>(
         `select ${FIELDS} from pilot.behaviour_observations_windows
