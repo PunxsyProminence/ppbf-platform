@@ -20,6 +20,10 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-23-005 | 2026-11-23 | Start the next lanes once production is live | PRIMARY |  |  |
+| OD-2026-11-23-004 | 2026-11-23 | Release of main `b5bfc1119f712bcd3b3678faefe06106442b00f6` to production | PRIMARY |  |  |
+| OD-2026-11-23-003 | 2026-11-23 | A pain note that names a staff member is hidden from coaches (PAIN-NOTES Q7) | PRIMARY |  |  |
+| OD-2026-11-23-002 | 2026-11-23 | Pain reports get a notes field for the athlete and a "Reviewed" action for the coach (DR-25) | PRIMARY |  |  |
 | OD-2026-11-23-001 | 2026-11-23 | The "Skip this chance" control, #2117, finished lanes, the three live readability fixes, Overwatch's order of work and the staging test coaches | PRIMARY |  |  |
 | OD-2026-11-22-004 | 2026-11-22 | Release 0a9b2972 without the signed-in staging check; App Overwatch approves the production gates | PRIMARY |  | yes |
 | OD-2026-11-22-003 | 2026-11-22 | Overwatch's recommendations on HF9-1, the coach home word, the release, #2059 and staging test accounts | PRIMARY |  |  |
@@ -648,6 +652,71 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-23-005 -- Start the next lanes once production is live
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-23. The timestamps are UTC, taken by Overwatch from its session transcript and passed to lane RECORDS-1123 in its brief (REPORTED to this lane, not re-read from the transcript). New; edits no earlier entry's text.
+
+**Jason (2026-11-23 18:00 UTC, PRIMARY), asked "Start the next lanes once production is live?":** *"Yes, as recommended"*
+
+**Overwatch's recommendation, which his answer takes (REPORTED):** a records PR (rulings, merged list, release rows); merge PAIN-NOTES PRs 2 and 3; start a sign-in lane on Opus for ATH-09, ATH-15 and FAM-15; restart AS12-3.
+
+**Ruling:** start those four things, as recommended.
+
+**Applied (Overwatch, not his words; REPORTED in the lane brief):** lanes started: SIGNIN-FIX, AS12-3 and RECORDS-1123 (this PR).
+
+**Status:** recorded 2026-11-23 by PR.
+
+---
+
+## OD-2026-11-23-004 -- Release of main `b5bfc1119f712bcd3b3678faefe06106442b00f6` to production
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-23. The timestamps are UTC, taken by Overwatch from its session transcript and passed to lane RECORDS-1123 in its brief (REPORTED to this lane, not re-read from the transcript). New; edits no earlier entry's text.
+
+**Jason (2026-11-23 16:53 UTC, PRIMARY):** *"release to production"*
+
+**Jason (2026-11-23 16:54 UTC, PRIMARY), after he clicked the approval in GitHub:** *"i approved it."*
+
+**Ruling:** release main `b5bfc111` to production.
+
+**Applied (Overwatch, not his words):** the run ids, revision and image digest are in `docs/current/PRODUCTION_STATE.json` and the release row in `ACTIVE_WORK.md`; they were read from GitHub and Azure by lane RECORDS-1123 on 2026-11-23 (read-only). Whether Jason made a signed-in staging check for this release is not in the brief, so this entry does not claim one.
+
+**Status:** recorded 2026-11-23 by PR.
+
+---
+
+## OD-2026-11-23-003 -- A pain note that names a staff member is hidden from coaches (PAIN-NOTES Q7)
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-23. The timestamps are UTC, taken by Overwatch from its session transcript and passed to lane RECORDS-1123 in its brief (REPORTED to this lane, not re-read from the transcript). New; edits no earlier entry's text.
+
+**Question as put to Jason (REPORTED, from the brief):** "when a pain note names a staff member, should it be hidden from coaches?" Option A: "Any note naming staff is hidden from coaches, shown to admins and escalated." Option B: "Only with a harm cue." The cost stated with A: routine notes miss the coaches, and admins get more escalations.
+
+**Jason (2026-11-23 16:17 UTC, PRIMARY):** *"A: Keep strict"*
+
+**Ruling:** any pain note that names a staff member is hidden from coaches, shown to admins and escalated. The cost, stated once in the same exchange: routine notes miss the coaches, and admins get more escalations.
+
+**Status:** recorded 2026-11-23 by PR.
+
+---
+
+## OD-2026-11-23-002 -- Pain reports get a notes field for the athlete and a "Reviewed" action for the coach (DR-25)
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-23. The timestamps are UTC, taken by Overwatch from its session transcript and passed to lane RECORDS-1123 in its brief (REPORTED to this lane, not re-read from the transcript). New; edits no earlier entry's text.
+
+**Question as Overwatch asked it (REPORTED, from the brief):** "should a pain report get a notes field for the athlete, and should the coach's pain list get a "Reviewed" action?" Options: A: Add both (recommended); B: Notes only; C: Leave as is.
+
+**Jason (2026-11-23 07:46 UTC, PRIMARY):** *"A: Add both"*
+
+**Ruling:** a pain report gets a notes field for the athlete, and the coach's pain list gets a "Reviewed" action.
+
+**Applied (Overwatch, not his words):**
+- The plan is #2133. Overwatch's GO covered Q1 to Q5, all A.
+- Overwatch's own rulings, recorded in the PR bodies as Overwatch rulings and not Jason's: Q6 A, Q10 B and Q12 A.
+- Built by #2135 (the migration `pain-report-review`, merged `57649700`) and #2138 (the server, merged `935640327c1b553ae07db5e25c6cef3f67fe13eb`). #2139 (screens) and #2140 (the admin note reader) are open drafts (OBSERVED by `gh pr view`, 2026-11-23).
+
+**Status:** recorded 2026-11-23 by PR.
 
 ---
 
