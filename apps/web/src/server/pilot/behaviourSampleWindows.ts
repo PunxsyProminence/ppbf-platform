@@ -64,6 +64,10 @@ const REFUSALS: Record<string, string> = {
   pilot_behaviour_windows_active_key: 'That behaviour name is not on the active list.',
 };
 
+/** An open window this athlete cannot be tapped in blocks a new one until its session settles or its coach closes it. */
+export const STALE_WINDOW = 'This athlete has an open window for this behaviour in another session where they are no longer marked present. '
+  + 'It ends when that session is settled or its coach closes it.';
+
 /** Ten unless the coach says otherwise; a whole number from 1 to 50 (Q7 A). */
 export function windowChances(value: unknown): number {
   if (value === undefined) return DEFAULT_WINDOW_CHANCES;
@@ -80,6 +84,10 @@ export function contextOf(row: Pick<BehaviourWindowRow, 'context_kind' | 'contex
   return { attemptContext: row.context_id };
 }
 
+/**
+ * Opens a window, or, when this athlete already has one open on this behaviour in the gym, returns
+ * that one to join (its own task, context and chances, whatever was asked), so no second count starts.
+ */
 export async function openBehaviourWindow(input: {
   organizationId: string;
   athleteId: string;
@@ -100,6 +108,9 @@ export async function openBehaviourWindow(input: {
       : ['context', input.context.attemptContext];
   try {
     return await withTransaction(async (client) => {
+      // READ COMMITTED, set here and not assumed (withTransaction sends a plain BEGIN): the
+      // already-open select below must see a window committed while this open waited on the lock.
+      await client.query('set transaction isolation level read committed');
       // A window belongs to a live class (Overwatch 7086220125). The run row is
       // held for share until the window commits: a settle (which updates it)
       // waits for this open, or this open waits for the settle and then finds
@@ -113,11 +124,51 @@ export async function openBehaviourWindow(input: {
       );
       if (run.rows.length === 0) throw new ValidationError('That session run is not in this gym.');
       if (run.rows[0].run_state !== 'in_progress') throw new ValidationError('That session run has ended.');
+      // One open window per athlete and behaviour in the gym (Overwatch 7088669068; 7090923249 A):
+      // paired judgments need one shared count. Two opens share the run row (for share), so it does
+      // not order them, and the athlete may be on another live run; this key's lock does, always
+      // taken after the run row. The presence check comes first, so a caller refused for an athlete
+      // not present learns nothing of another window.
+      await client.query(
+        `select pg_advisory_xact_lock(hashtextextended('pilot.behaviour_windows|' || $1 || '|' || $2 || '|' || $3, 0))`,
+        [input.organizationId, input.athleteId, input.behaviourKey],
+      );
       // The writer's own checks: the run is this gym's, the athlete is marked
       // present on it, and the drill or block was part of it (Q5 A).
       await reportPlaceFor(client, {
         organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: input.runId }, context: input.context,
       });
+      // Its own statement after the lock, under READ COMMITTED (set above): it sees a
+      // window the other open committed while this one waited. Found, the caller joins it.
+      const already = await client.query<BehaviourWindowRow>(
+        `select ${FIELDS} from pilot.behaviour_observations_windows
+          where organization_id = $1 and athlete_id = $2 and behaviour_key = $3 and closed_at is null
+          order by opened_at, window_id
+          limit 1`,
+        [input.organizationId, input.athleteId, input.behaviourKey],
+      );
+      if (already.rows.length > 0) {
+        const found = already.rows[0];
+        // Joined only where its taps can land (Overwatch 7091097843 A1): the writer checks presence on
+        // the window's own run, so a window on a run the athlete has since been taken off is refused,
+        // not handed back to be tapped in vain. The writer's own check, so the presence table is named
+        // there alone. Presence only: the fixed context 'session' runs no drill or block check, so no
+        // refusal about another coach's session plan reaches this caller (its plan was checked at its open).
+        if (found.run_id !== input.runId) {
+          try {
+            await reportPlaceFor(client, {
+              organizationId: input.organizationId, athleteId: input.athleteId, session: { runId: found.run_id },
+              context: { attemptContext: 'session' },
+            });
+          } catch (error) {
+            if (error instanceof ValidationError && error.message.startsWith('That athlete is not marked present')) {
+              throw new ValidationError(STALE_WINDOW);
+            }
+            throw error;
+          }
+        }
+        return found;
+      }
       const inserted = await client.query<BehaviourWindowRow>(
         `insert into pilot.behaviour_observations_windows
            (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, chances,
