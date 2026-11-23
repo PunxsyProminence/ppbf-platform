@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import {
   PAIN_REPORT_ALERT_WINDOW_DAYS,
   listAthletesWithRecentPainReports,
@@ -64,6 +64,9 @@ export async function GET(request: NextRequest) {
     const page = await listPainReportsForAthletes(principal.organizationId, authorized, {
       windowDays: PAIN_REPORT_ALERT_WINDOW_DAYS,
       limit,
+      // DR-25 Q3 A: a note held for admins reaches organization admins and
+      // admins only; a coach's read never fetches it.
+      viewerReadsAdminOnlyNotes: isOrganizationAdminRole(principal.role),
     });
 
     return NextResponse.json(
