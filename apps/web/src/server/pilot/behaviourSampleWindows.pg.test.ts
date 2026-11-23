@@ -707,6 +707,49 @@ describe('one open window per athlete and behaviour in the gym (PATTERN-2a; Over
     expect(next.closed_at).toBeNull();
   });
 
+  test('another gym\'s open window on the same athlete id and behaviour key is not this gym\'s: the open makes a new one', async () => {
+    // Athlete ids are unique per gym only, so the same id can be a child in another gym.
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Fixture Athlete', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $3, now(), now(), null)`,
+      [OTHER_ORG, ATHLETE, OTHER_GYM_COACH],
+    );
+    await db.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, $2, 'Fixture other behaviour', 'SK-JAB-01', $3)`,
+      [OTHER_ORG, OTHER_KEY, OTHER_GYM_COACH],
+    );
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+       values ($1, 'run-bsw-2a-othergym', null, null, $2, current_date, 'in_progress', now() - interval '1 minute')`,
+      [OTHER_ORG, OTHER_GYM_COACH],
+    );
+    try {
+      await db.query(
+        `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+         values ($1, 'run-bsw-2a-othergym', $2, $3, 'coach')`,
+        [OTHER_ORG, ATHLETE, OTHER_GYM_COACH],
+      );
+      const theirs = await windows.openBehaviourWindow({
+        organizationId: OTHER_ORG, athleteId: ATHLETE, behaviourKey: OTHER_KEY, runId: 'run-bsw-2a-othergym',
+        context: { attemptContext: 'session' }, taskConstraint: 'controlled', openedByAccountId: OTHER_GYM_COACH, openedByRole: 'coach',
+      });
+      const ours = await open({ behaviourKey: OTHER_KEY });
+      expect(ours.window_id).not.toBe(theirs.window_id);
+      expect(ours.opened_by_account_id).toBe(COACH_A);
+      await windows.closeBehaviourWindow({ organizationId: OTHER_ORG, windowId: theirs.window_id, closedByAccountId: OTHER_GYM_COACH });
+    } finally {
+      await db.query(
+        `update pilot.session_script_runs set run_state = 'completed', ended_at = now()
+          where organization_id = $1 and run_id = 'run-bsw-2a-othergym'`,
+        [OTHER_ORG],
+      );
+    }
+  });
+
   test('a caller refused by the run or presence checks learns nothing of the open window', async () => {
     await open();
     await db.query(
