@@ -55,7 +55,11 @@ export default function StoreIndexPage() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
       <div className="mx-auto max-w-3xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Shop</p>
+        {/* The store linked nowhere back (app scrub FAM-16; lane AS4-4D4E). */}
+        <Link href="/" className="inline-flex min-h-[44px] items-center text-sm font-bold underline">
+          Back to the front page
+        </Link>
+        <p className="mt-4 text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Shop</p>
         <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment Store</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           Buying gear here supports the gym directly.

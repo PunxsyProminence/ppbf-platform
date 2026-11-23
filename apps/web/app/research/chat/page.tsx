@@ -13,6 +13,8 @@ import {
 import { formatGymClock24 } from '@/src/lib/gymTime';
 import OperationsLink from '@/components/OperationsLink';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
+import { visibleDoors } from '@/components/buildingMap';
+import type { ClubRole } from '@/components/roleRoutes';
 
 interface QAMessage {
   id: string;
@@ -41,6 +43,14 @@ const PAPER_LABEL = 'font-mono text-[length:var(--t-xs)] font-bold uppercase tra
    the closed side. This hides a door, it is not the gate. */
 function mayOpenShadowAdmin(role: string | null): boolean {
   return role === 'admin' || role === 'platform_owner';
+}
+
+/* The same courtesy for Evidence Review Queue, read from its door: /evidence
+   admits administrators and the platform owner, and this page also admits
+   coaches, staff, volunteers, athletes and parents, whom it bounced (app scrub
+   BOA-09; lane AS4-4D4E). This hides a link; /evidence keeps its own gate. */
+function mayOpenEvidence(role: ClubRole | null): boolean {
+  return visibleDoors(role).some((door) => door.href === '/evidence');
 }
 
 export default function ResearchQAChatPage() {
@@ -295,9 +305,11 @@ export default function ResearchQAChatPage() {
               <Link href="/research" className="btn btn--ghost justify-start">
                 Research Intake
               </Link>
-              <Link href="/evidence" className="btn btn--ghost justify-start">
-                Evidence Review
-              </Link>
+              {mayOpenEvidence(session?.role ?? null) && (
+                <Link href="/evidence" className="btn btn--ghost justify-start">
+                  Evidence Review
+                </Link>
+              )}
               <OperationsLink className="btn btn--ghost justify-start">
                 Operations Hub
               </OperationsLink>

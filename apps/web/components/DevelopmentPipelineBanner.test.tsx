@@ -9,9 +9,14 @@
 // a list is not progress.
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import DevelopmentPipelineBanner from './DevelopmentPipelineBanner';
+import { clearRoleSession, createPersistentRoleSession } from './roleSession';
+
+afterEach(() => {
+  act(() => clearRoleSession());
+});
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -49,6 +54,8 @@ test('the last stage is the last stage, not a release announcement', () => {
 test('every stage link but the current one is drawn the same way', () => {
   // The old banner styled stages behind you differently from stages ahead of
   // you, which is the same false claim made in colour rather than in words.
+  // An admin's doors admit all five stages, so all five are links.
+  createPersistentRoleSession('admin');
   const { container } = render(<DevelopmentPipelineBanner currentStage="simulator" />);
 
   const links = [...container.querySelectorAll('a')];
@@ -86,6 +93,9 @@ test('stands on leather rather than on the night ground', () => {
 // title of the page it opens. CSS draws the links in capitals; the words are
 // the titles.
 test('each stage label is the title of the page it opens', () => {
+  // An admin's doors admit all five stages (lane AS4-4D4E: a stage is a link
+  // only when its door admits the reader).
+  createPersistentRoleSession('admin');
   const { container } = render(<DevelopmentPipelineBanner currentStage="research" />);
 
   const links = [...container.querySelectorAll('a')].map((link) => [link.textContent, link.getAttribute('href')]);
@@ -98,4 +108,36 @@ test('each stage label is the title of the page it opens', () => {
   ]);
   expect(screen.getByText('Stage 1 of 5: Research Inbox')).toBeTruthy();
   expect(screen.getByText('Next: Evidence Review Queue')).toBeTruthy();
+});
+
+// Lane AS4-4D4E (app scrub BOA-09; Q2 = A on #2128): a stage is a link only
+// when its door admits the reader. Audit Trace admits coaches, and its banner
+// offered them Evidence Review Queue, whose gate refuses them.
+describe('a stage is a link only when its door admits the reader', () => {
+  const linkNames = (container: HTMLElement) => [...container.querySelectorAll('a')].map((a) => a.textContent);
+
+  test('a coach on Audit Trace is not offered the admin-only stages', () => {
+    createPersistentRoleSession('coach');
+    const { container } = render(<DevelopmentPipelineBanner currentStage="audit" />);
+
+    expect(linkNames(container)).toEqual(['Research Inbox', 'Audit Trace']);
+    // Every stage is still named, in order, and the count still reads 5.
+    expect(screen.getByText('Evidence Review Queue').tagName).toBe('SPAN');
+    expect(screen.getByText('Stage 5 of 5: Audit Trace')).toBeTruthy();
+  });
+
+  test('the platform owner is not offered Audit Trace, whose gate refuses it', () => {
+    createPersistentRoleSession('platform_owner');
+    const { container } = render(<DevelopmentPipelineBanner currentStage="simulator" />);
+
+    expect(linkNames(container)).toEqual(['Research Inbox', 'Evidence Review Queue', 'Concept Relationship Map', 'Validation Sandbox']);
+    expect(screen.getByText('Audit Trace').tagName).toBe('SPAN');
+  });
+
+  test('with no session no stage is a link, and the current stage is still marked', () => {
+    const { container } = render(<DevelopmentPipelineBanner currentStage="research" />);
+
+    expect(container.querySelectorAll('a')).toHaveLength(0);
+    expect(screen.getByText('Research Inbox').getAttribute('aria-current')).toBe('page');
+  });
 });
