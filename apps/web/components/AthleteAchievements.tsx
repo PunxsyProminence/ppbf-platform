@@ -411,11 +411,11 @@ export default function AthleteAchievements({
         </h4>
 
         {recognitionFailed ? (
-          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--bone-400)]'}`}>
+          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--card-ink-muted)]'}`}>
             The coaches’ notes could not be loaded just now.
           </p>
         ) : recognitions.length === 0 ? (
-          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--bone-400)]'}`}>
+          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--card-ink-muted)]'}`}>
             {isFamily
               ? 'Nothing here yet. Coaches write these when they catch somebody doing well.'
               : 'Nothing here yet. This fills up when a coach catches you doing something right.'}
@@ -434,7 +434,7 @@ export default function AthleteAchievements({
                   <p
                     className={isFamily
                       ? 't-body text-[length:var(--t-md)]'
-                      : 'text-[length:var(--t-md)] text-[color:var(--bone-100)]'}
+                      : 'text-[length:var(--t-md)] text-[color:var(--card-ink)]'}
                     style={{ fontFamily: 'var(--font-type)' }}
                   >
                     {said}
@@ -443,7 +443,7 @@ export default function AthleteAchievements({
                     <p
                       className={isFamily
                         ? 't-body mt-[var(--s2)]'
-                        : 'mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-200)]'}
+                        : 'mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--card-ink)]'}
                       style={{ fontFamily: 'var(--font-hand)' }}
                     >
                       “{item.note}”
@@ -598,7 +598,7 @@ function SHELL(isFamily: boolean): string {
 function NOTE_CARD(isFamily: boolean): string {
   return isFamily
     ? 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] bg-[var(--paper)] p-[var(--s4)]'
-    : 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] bg-[rgba(0,0,0,.3)] p-[var(--s4)]';
+    : 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] bg-[var(--paper)] p-[var(--s4)]';
 }
 
 function TrackPanel({
