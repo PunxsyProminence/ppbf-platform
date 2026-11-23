@@ -211,6 +211,8 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
 
   const nameOf = (names: BehaviourName[], key: string) => names.find((name) => name.behaviour_key === key)?.label ?? 'A behaviour';
   const panelId = `${id}-panel`;
+  const working = view.state === 'window' ? view : null;
+  const shown = working ? working.taps.filter((tap) => tap.polarity === 'occurrence').length : 0;
 
   return (
     <div className="mt-[var(--s2)]">
@@ -293,63 +295,60 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
             </>
           ) : null}
 
-          {view.state === 'window' ? (() => {
-            const { window, taps, next } = view;
-            const shown = taps.filter((tap) => tap.polarity === 'occurrence').length;
-            const tapButton = (polarity: Polarity, icon: string) => (
-              <button type="button" className="btn flex-1" style={BIG_SIZE} disabled={busy} aria-busy={busy}
-                onClick={() => void send({ action: 'tap', chance: next, polarity }, 'tap')}>
-                <span aria-hidden="true">{`${icon} `}</span>{polarityWord(polarity)}
-                <span className="sr-only">{` for ${athleteName}, chance ${next}`}</span>
-              </button>
-            );
-            return (
-              <>
-                <p className="font-semibold">
-                  {`${nameOf(view.names, window.behaviour_key)}: ${athleteName} (${wordOf(TASKS, window.task_constraint)}, ${contextOf(window)})`}
-                </p>
-                {window.closed_at ? (
-                  <p>This window is closed.</p>
-                ) : next > window.chances ? (
-                  <p>{`All ${window.chances} chances are tapped: the window is full.`}</p>
-                ) : (
-                  <>
-                    <p className="font-semibold">{`Chance ${next} of ${window.chances}`}</p>
-                    <div className="flex flex-wrap gap-[var(--s4)]">
-                      {tapButton('occurrence', '✓')}
-                      {tapButton('counterexample', '✗')}
-                    </div>
-                  </>
-                )}
-                {!window.closed_at && lastTap ? (
-                  <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy}
-                    onClick={() => void send({ action: 'change_last', polarity: lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence' }, 'change')}>
-                    {`Change last tap to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
-                    <span className="sr-only">{` (chance ${lastTap.chance})`}</span>
-                  </button>
-                ) : null}
-                <p>{taps.length === 0 ? 'You: no taps yet' : `You: ${shown} shown of ${taps.length} tapped`}</p>
-                {!window.closed_at && !confirmClose ? (
-                  <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} onClick={() => setConfirmClose(true)}>
-                    Close the window
-                  </button>
-                ) : null}
-                {!window.closed_at && confirmClose ? (
-                  <div className="space-y-[var(--s2)]">
-                    <p>Closing ends this window for every coach, and it cannot be opened again.</p>
-                    <div className="flex flex-wrap gap-[var(--s3)]">
-                      <button type="button" className={BUTTON} disabled={busy} aria-busy={busy} onClick={() => void send({ action: 'close' }, 'close')}>
-                        Yes, close it
-                      </button>
-                      <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} onClick={() => setConfirmClose(false)}>
-                        Keep it open
-                      </button>
-                    </div>
+          {working ? (
+            <>
+              <p className="font-semibold">
+                {`${nameOf(working.names, working.window.behaviour_key)}: ${athleteName} (${wordOf(TASKS, working.window.task_constraint)}, ${contextOf(working.window)})`}
+              </p>
+              {working.window.closed_at ? (
+                <p>This window is closed.</p>
+              ) : working.next > working.window.chances ? (
+                <p>{`All ${working.window.chances} chances are tapped: the window is full.`}</p>
+              ) : (
+                <>
+                  <p className="font-semibold">{`Chance ${working.next} of ${working.window.chances}`}</p>
+                  <div className="flex flex-wrap gap-[var(--s4)]">
+                    <button type="button" className="btn flex-1" style={BIG_SIZE} disabled={busy} aria-busy={busy}
+                      onClick={() => void send({ action: 'tap', chance: working.next, polarity: 'occurrence' }, 'tap')}>
+                      <span aria-hidden="true">✓ </span>Shown
+                      <span className="sr-only">{` for ${athleteName}, chance ${working.next}`}</span>
+                    </button>
+                    <button type="button" className="btn flex-1" style={BIG_SIZE} disabled={busy} aria-busy={busy}
+                      onClick={() => void send({ action: 'tap', chance: working.next, polarity: 'counterexample' }, 'tap')}>
+                      <span aria-hidden="true">✗ </span>Not shown
+                      <span className="sr-only">{` for ${athleteName}, chance ${working.next}`}</span>
+                    </button>
                   </div>
-                ) : null}
-              </>
-            );
-          })() : null}
+                </>
+              )}
+              {!working.window.closed_at && lastTap ? (
+                <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy}
+                  onClick={() => void send({ action: 'change_last', polarity: lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence' }, 'change')}>
+                  {`Change last tap to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
+                  <span className="sr-only">{` (chance ${lastTap.chance})`}</span>
+                </button>
+              ) : null}
+              <p>{working.taps.length === 0 ? 'You: no taps yet' : `You: ${shown} shown of ${working.taps.length} tapped`}</p>
+              {!working.window.closed_at && !confirmClose ? (
+                <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} onClick={() => setConfirmClose(true)}>
+                  Close the window
+                </button>
+              ) : null}
+              {!working.window.closed_at && confirmClose ? (
+                <div className="space-y-[var(--s2)]">
+                  <p>Closing ends this window for every coach, and it cannot be opened again.</p>
+                  <div className="flex flex-wrap gap-[var(--s3)]">
+                    <button type="button" className={BUTTON} disabled={busy} aria-busy={busy} onClick={() => void send({ action: 'close' }, 'close')}>
+                      Yes, close it
+                    </button>
+                    <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} onClick={() => setConfirmClose(false)}>
+                      Keep it open
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
 
           <p role="status">{message}</p>
         </div>
