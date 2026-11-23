@@ -47,10 +47,37 @@ recommended option first.
   Overwatch's answers on #2050 (2026-11-20) are applied: Q1.9, Q1.10 and Q8.2.
   Items 2 to 8 were not re-read: #2005, #2006, #2008, #2009, #2010, #2012,
   #2013 and #2016, cited there as open, have since merged.
-- **Lane W4S-REFRESH update, 2026-11-23 (in progress):** the recorded answers of
-  OD-2026-11-21-006 (OW27-17 to OW27-37) and OD-2026-11-21-007 (OW27-38 to
-  OW27-44) are applied; OD-2026-11-23-001 answers no W4 question. Item 1's
-  Q1.11 and Q1.12 are applied in this commit; the other items follow.
+- **Lane W4S-REFRESH update, 2026-11-23.** Every answer below is read from
+  `docs/current/OWNER_DECISIONS.md` itself, and each change names its OD id and
+  card number.
+  - **Code read at:** `main` `a4b420c41a9d10c2e991df9b6290914aed41b126`. Items 2
+    to 7 were re-read there: every cited file and line was checked against the
+    earlier base (`7a1736d9`), and those that moved or changed were re-read
+    (the cites in those items now read at `a4b420c`). Items 1, 4, 8 and 9 had
+    their cites that moved updated, and item 9 re-read for U2's 4a to 4c. Where
+    an item still names an older commit, its code was not re-read.
+  - **Merged since the 2026-11-20 reads:** #2005 (`48bc2ae1`), #2006
+    (`a940ea4a`), #2008 (`9ef38ecb`), #2009 (`79716421`), #2010 (`393d4305`),
+    #2012 (`48d9bd46`), #2013 (`cdb69cff`), #2016 (`e8231d2b`), #2029
+    (U2-4a, `b555d5b8`), #2068 (U2-4b, `5b28948a`) and #2073 (U2-4c,
+    `3580389a`); with AS8-4 (#2100, `cc29c963`) and the PATTERN window screen
+    (#2120, `fce92a0`).
+  - **Open PRs on 2026-11-23** (listed through the GitHub API): #2039, #2082,
+    #2124, #2126 and this one. Only #2124's files were read
+    (`BehaviourSampleWindow.tsx` and its test); #2126 listed none; #2039 and
+    #2082 were not read. Overlap statements say so.
+  - **Applied:** OD-2026-11-21-006 (OW27-17 to OW27-36, items 2 to 7) and
+    OD-2026-11-21-007 (OW27-38 to OW27-41, items 1 and 9). **OD-2026-11-23-001
+    answers no W4 question.** It records the "Skip this chance" control (a coach
+    write on the live floor, noted under item 7), that finished lanes are
+    archived, the three live readability fixes, Overwatch's order of work and the
+    staging test coach accounts. OW27-37 (the Overwatch restart limit) and
+    OW27-42 to OW27-44 (words and where Overwatch 28 runs) are not W4 questions.
+  - **No stale wait remains:** item 7's old wait on Q7.1 and Q7.2 is removed
+    (both are answered), as are the waits on #2005 to #2016 and #2029.
+  - The sections of items 2 to 7 are kept in their earlier form where nothing
+    changed. A table headed "Answered since" opens each item that has answers.
+
 
 ## How the sizes were made
 
@@ -67,6 +94,10 @@ INFERRED estimate, made one of two ways.
   change. Its table row says "judgement".
 - **After lane W4R:** 17 of 39 matched (adding EM-5, EM-6, RN-1 and RN-4) and
   22 judgement (EM-3, EM-4a, EM-4b, RN-2, RN-3 and W4S's 17 others).
+- **After lane W4S-REFRESH:** 20 of 46 matched (adding SC-0a, SC-0b and SC-3a,
+  each matched to AS2-a or AS2-c) and 26 judgement (adding EM-2b, SP-1b, SP-2b
+  and SC-3b, and splitting SP-1 and SP-2 into a and b; WP-3, FN-1, SC-1 and SC-2
+  grew).
 
 The merged PRs, measured that way on `main`:
 
@@ -87,8 +118,10 @@ judgement row came in at the median of the eight measured PRs (about 480), the
 total would be about 12,900 lines rather than about 9,050, with more PRs where
 a row goes over 400. Each table marks a PR that may go over. Tests are not
 counted; in the PRs above they were 0.6 to 3.5 times the non-test lines.
-After lane W4R the same check gives about 15,700 rather than about 11,080.
-The 22 judgement rows sum to about 5,970; at 480 each they would be 10,560.
+After lane W4R the same check gave about 15,700 rather than about 11,080.
+The 22 judgement rows summed to about 5,970; at 480 each they would be 10,560.
+After lane W4S-REFRESH the check gives about 18,600 rather than about 12,880.
+The 26 judgement rows sum to about 6,770; at 480 each they would be 12,480.
 
 **Risk route** (from the brief): Opus for sign-in, permissions, minors' data
 and safety; Sonnet otherwise. **G3** is Jason's signed-in staging check for
@@ -171,7 +204,7 @@ named:
 - **SHADOW disclosures.** The disclosure path files a row for the coach of
   record, any covering coach and admins, and says "No email, text or push --
   the escalation list is the only channel"
-  (`apps/web/src/server/pilot/shadowDisclosure.ts:19-20`, `:328`).
+  (`apps/web/src/server/pilot/shadowDisclosure.ts:19-20`, `:380`).
 - **Family notes.** Parents' replies send nothing: "Nothing is sent (no email,
   no push)" (`apps/web/src/server/pilot/familyMessageReplies.ts:20`).
 - **A tick to send on.** The SHADOW job worker starts in
@@ -185,7 +218,7 @@ named:
 **Also on `main` `600b4f7` (OBSERVED, lane W4R), for the answers above:**
 
 - **A settings page for every user type.** `/profile` admits athlete, coach,
-  parent, admin, staff and volunteer (`apps/web/app/profile/page.tsx:26`);
+  parent, admin, staff and volunteer (`apps/web/app/profile/page.tsx:30`);
   `mapPilotRoleToClubRole` reads `organization_admin` as `admin`
   (`apps/web/components/roleSession.ts:231`, `:245-246`). Its panels are
   portrait, ring name, corner, program and sign-in
@@ -204,7 +237,8 @@ named:
   `:1527-1529`, `:1552-1555`), for staff and, since #2013 (`cdb69cf`), athletes.
   An athlete who has not activated also has it off (`auth.ts:1199-1201`).
 - **Age and the gym's name.** `isMinor` counts an unknown date of birth as a
-  minor (`apps/web/src/server/pilot/wallDisplay.ts:220-223`; 18 at `:128`).
+  minor (at `600b4f7`: `apps/web/src/server/pilot/wallDisplay.ts:220-223`, 18
+  at `:128`; at `a4b420c` it is `apps/web/src/lib/minorAge.ts:51`, 18 at `:12`).
   The name is `pilot.organizations.organization_name`
   (`infra/azure/pilot_slice_postgres.sql:8`).
 - **No address for an athlete.** Athlete logins are created with no
@@ -1150,8 +1184,8 @@ answer on the card named:
   different option." The card's own option C was "Only the names already
   answered".
 - **Q9.2, OW27-41:** *"A: No; Search uses the shown name (Recommended)"*.
-- **Size:** unchanged, about 1,090 lines in 4 PRs. #2029 (`e0a3757f`), U2-4a
-  (`b555d5b8`), 4b (`5b28948a`) and 4c (`3580389a`) have merged, so RN-2 no
+- **Size:** unchanged, about 1,090 lines in 4 PRs. #2029 (U2-4a, `b555d5b8`),
+  #2068 (4b, `5b28948a`) and #2073 (4c, `3580389a`) have merged, so RN-2 no
   longer waits for them, and RN-3 no longer waits for AS8-4.
 
 **What "room" names in code** (OBSERVED, re-read at `main` `a4b420c`; the
@@ -1285,42 +1319,70 @@ answered A (OW27-41), both OD-2026-11-21-007 (the table above).
 
 | # | Item | PRs | Est. lines outside tests | Migrations | Route | G3 | Waits on |
 |---|---|---|---|---|---|---|---|
-| 1 | Email alerts (re-sized, W4R) | 7 (8 if Q1.11 B) | about 2,140 (2,290 if Q1.11 B) | 3 (4 if Q1.11 B) | Opus | yes | Q1.11, Q1.12; a running tick |
-| 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
-| 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
-| 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
-| 5 | Plan blocks; class from a plan | 4 | about 1,150 | 0 or 1 | Opus (SP-1, SP-3, SP-4), Sonnet (SP-2) | no (INFERRED) | Q5.1, Q5.2; U2 for the class screen |
-| 6 | Stopped coming | 2 (3 if Q6.4 B) | about 550 | 0 (1 if Q6.4 B) | Opus | yes | Q6.1 to Q6.4; U2 for the door |
-| 7 | Offline save queue | 4 (6 if B) | about 1,120 (1,620 if B) | 0 or 1 | Opus | yes | BLOCKED: Q7.1, Q7.2 |
-| 8 | Typed lines to drills | 8 | about 2,530 (Q8.1 answered B) | 0 | Opus | no (INFERRED) | no open question (#2008 has merged) |
-| 9 | Room renaming (W4R) | 4 (7 if Q9.1 B; 3 if C) | about 1,090 (1,790 to 2,090 if B; 970 if C) | 1 | Opus (RN-1), Sonnet (RN-2 to RN-4) | no (INFERRED) | Q9.1, Q9.2; #2029; U2's 4b; AS8-4 |
+| 1 | Email alerts (W4R; Q1.11 and Q1.12 answered) | 8 | about 2,290 | 3 (4 if EM-2b keeps its code in its own table) | Opus | yes | a running tick; no open question |
+| 2 | Web push (later) | 3 (4 without the package) | about 920 (1,120 without the package) | 1 | Opus | yes | item 1 (EM-1, EM-3, EM-5); a key in Azure; a dependency call; "later" (OD-2026-11-19-019). Q2.1 and Q2.2 answered |
+| 3 | On the floor now | 4 | about 700 | 0 | Opus | yes | the privacy review (FN-0), signed off by Overwatch after two reviewers (Q3.5 B). Q3.1 to Q3.4 answered |
+| 4 | Parent starts a message | 3 | about 970 | 1 | Opus | yes | no open question (Q4.1 A to Q4.5 A) |
+| 5 | Plan blocks (drill, copied, text); class from a plan | 6 | about 1,540 | 1 | Opus (SP-1a, SP-1b, SP-3, SP-4), Sonnet (SP-2a, SP-2b) | no (INFERRED) | no open question. Whether a U2 6c PR will change the class screen is UNKNOWN |
+| 6 | Stopped coming (gym setting; "reached out" mark) | 6 | about 1,720 (about 870 on the cards' figures) | 2 | Opus | yes | no open question |
+| 7 | Offline save queue (open page only) | 4 | about 1,120 | 0 or 1 | Opus | yes | no open question (unblocked by Q7.1 A and Q7.2 A) |
+| 8 | Typed lines to drills | 8 | about 2,530 | 0 | Opus | no (INFERRED) | no open question |
+| 9 | Room renaming (W4R; Q9.1 and Q9.2 answered) | 4 | about 1,090 | 1 | Opus (RN-1), Sonnet (RN-2 to RN-4) | no (INFERRED) | no open question |
 
 **Total (INFERRED):**
 
-Updated by lane W4R: item 1 re-sized, item 9 added. W4S's figures were 32
-PRs, about 9,050 lines and 30 questions.
+Updated by lane W4S-REFRESH, 2026-11-23, at `main` `a4b420c`: items 2 to 7 re-sized
+under the recorded answers (OD-2026-11-21-006), items 1 and 9 under
+OD-2026-11-21-007. W4S's figures were 32 PRs, about 9,050 lines and 30
+questions; lane W4R's were 39 PRs, about 11,080 lines.
 
-- **Size:** 39 PRs, about 11,080 changed lines outside tests, with the recorded
-  answers and the recommended answers to the open questions. Item 8 is sized
-  with every unique line a new drill, the recorded Q8.1 answer.
-- **Larger case:** adding the sized alternatives gives 47 PRs and about 12,830
-  to 13,130. Those are: web push without the package, the "reached out" mark,
-  offline queue B, Q1.11 B's confirm step, and Q9.1 B's page names. Q4.4 B,
-  and Q5.1 B and C, are not sized.
-- **If the judgement rows run like the measured PRs:** about 15,700 (see "How
+- **Size:** 46 PRs, about 12,880 changed lines outside tests, with the recorded
+  answers to every question. By item: 2,290 + 920 + 700 + 970 + 1,540 + 1,720 +
+  1,120 + 2,530 + 1,090. Item 8 is sized with every unique line a new drill, the
+  recorded Q8.1 answer.
+- **What moved:** item 1 +150 (EM-2b, Q1.11 B); item 2 +30 (the gym-tablet
+  check, Q2.1 B); item 3 +60 (two sources, Q3.1 C); item 5 +390 (copied and text
+  blocks, Q5.1 A); item 6 +1,170 (the gym setting, Q6.1 A, about 590; the "reached
+  out" mark, Q6.4 B, about 530; the rest, +50); items 4, 7, 8 and 9 unchanged.
+- **Larger case:** web push without the package, Overwatch's call, adds 1 PR
+  and about 200: 47 PRs, about 13,080. The sized options that were not chosen
+  (Q7.1 B, about 500 more; Q9.1 B, about 700 to 1,000 more) are not part of it.
+- **Smaller case:** item 6 on the cards' own figures (a setting of about 120, a
+  mark of about 200) is about 870, so the total is about 12,030.
+- **If the judgement rows run like the measured PRs:** about 18,600 (see "How
   the sizes were made").
-- **Migrations:** 7 or 8 with the recommended answers; 5 to 10 across all
-  answers.
-- **Questions:** 23 open. Each is written out once, in its item.
-  - Open: Q1.11, Q1.12, Q2.1 to Q2.2, Q3.1 to Q3.5, Q4.1, Q4.2, Q4.4, Q4.5,
-    Q5.1 to Q5.2, Q6.1 to Q6.4, Q7.1 to Q7.2, and Q9.1 to Q9.2.
-  - Jason's, going to him as cards (Overwatch on #2050): Q1.11, Q9.1 and Q9.2.
-  - Answered in OD-2026-11-20-001: Q1.1 to Q1.8 and Q8.1.
-  - Answered by Overwatch on #2050: Q1.9 (as a reading, INFERRED), Q1.10 (its
-    pick under Jason's OW27-06 delegation) and Q8.2 (from OD-2026-11-19-030).
-    Q4.3 is folded into Q1.9.
-- **Route:** 35 of the 39 PRs route to Opus. SP-2 is Sonnet unless SP-1 finds a
-  contact gate; RN-2 to RN-4 are Sonnet.
+- **Migrations:** 9 with the recorded answers (item 1: 3; item 2: 1; item 4: 1;
+  item 5: 1; item 6: 2; item 9: 1), up to 11 if EM-2b keeps its code in its own
+  table and item 7's request keys need a unique-key migration. Overwatch may fold
+  some into fewer files.
+- **Questions: 0 open.** All 36 W4 questions are answered or ruled. Each is
+  written out once, in its item.
+  - Q1.1 to Q1.8: OD-2026-11-20-001 (OW27-01 to OW27-08 and OW27-10).
+  - Q1.9 (as a reading, INFERRED), Q1.10 (its pick under Jason's OW27-06
+    delegation) and Q8.2 (from OD-2026-11-19-030): Overwatch on #2050. Q8.1:
+    OD-2026-11-20-001, OW27-09.
+  - OD-2026-11-21-007: Q1.11 = OW27-38 B; Q1.12 = OW27-39 A; Q9.1 = OW27-40 A;
+    Q9.2 = OW27-41 A.
+  - OD-2026-11-21-006: Q2.1 = OW27-17 B; Q2.2 = OW27-18 A; Q3.1 = OW27-19 C;
+    Q3.2 = OW27-20 A; Q3.3 = OW27-21 A; Q3.4 = OW27-22 A; Q3.5 = OW27-23 B;
+    Q4.1 = OW27-24 A; Q4.3 = OW27-25 A; Q4.4 = OW27-26 A; Q4.5 = OW27-27 A;
+    Q5.1 = OW27-28, answered by OW27-36 A; Q5.2 = OW27-29 A; Q6.1 = OW27-30 A;
+    Q6.2 = OW27-31 A; Q6.3 = OW27-32 A; Q6.4 = OW27-33 B; Q7.1 = OW27-34 A;
+    Q7.2 = OW27-35 A.
+  - Q4.2: ruled earlier, OD-2026-10-12-024 (listed as "ruled, batch 1" in
+    OD-2026-11-21-006's check note).
+  - Against the recommendation (as OD-2026-11-21-006 lists): OW27-17 B, OW27-19
+    C, OW27-23 B and OW27-33 B.
+  - OD-2026-11-23-001 answers none.
+  - Not ruled, left to the builds (each is in its item): the code email's
+    wording (item 1); whether a personal phone's push subscription ends at
+    sign-out and whether the email switch also gates push (item 2); the words of
+    the live line and the register-only case (item 3); the gap setting's range,
+    the "present at least once" source and what "reached out" holds (item 6);
+    whether the PATTERN window taps join the live-floor saves (item 7); whether
+    job bar section names are renamable (item 9).
+- **Route:** 41 of the 46 PRs route to Opus. SP-2a and SP-2b are Sonnet unless
+  SP-1a or SP-1b finds a contact gate; RN-2 to RN-4 are Sonnet.
 - **Not given here:** a completion date. This lane did not measure lane
   throughput.
 
@@ -1328,17 +1390,21 @@ PRs, about 9,050 lines and 30 questions.
 
 - Item 8: #2008 has merged, and Q8.1 and Q8.2 are answered; no question is
   open.
-- Items 1, 4 and 6 need only their questions, apart from these:
-  - Item 1's EM-3 needs a tick confirmed (#2013 has merged).
-  - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
-    Loop PR.
-- Item 3 needs its privacy review signed off first.
-- Item 5's class part and items 3 and 6's coach-side pieces wait on lane U2's
-  files.
-- Item 2 waits on item 1.
-- Item 7 is BLOCKED until Q7.1 selects a design.
-- Item 9 waits for #2029 (U2's AS-4) and AS-8's AS8-4, and its job bar part for
-  U2's 4b.
+- Items 1, 4, 5, 6, 7 and 9 need no answer. What each still needs:
+  - Item 1's EM-3 needs a tick confirmed (#2013 has merged); EM-2b after EM-2
+    and EM-3.
+  - Item 4's PM-1 and PM-2 have nothing open waiting on them: #2012 and #2010
+    have merged.
+  - Item 5's SP-4 changes the class screen; U2's 6a, 6b-1, 6b-2 and 6d are
+    merged, and whether a 6c PR comes is UNKNOWN.
+  - Item 6's SC-0a first, then SC-1; SC-2's door goes into one Room Map room
+    (Overwatch's call).
+  - Item 9's RN-1 first; AS-4 (4a to 4c) and AS8-4 have merged.
+- Item 3 needs its privacy review signed off first, by Overwatch after two
+  reviewers (Q3.5 B), then FN-1, then FN-2 and FN-3.
+- Item 2 waits on item 1, and is "later" (OD-2026-11-19-019).
+- Item 7 is not blocked: Q7.1 A and Q7.2 A (OD-2026-11-21-006) select its
+  design.
 
 ## Adjacent finding (reported, not part of any W4 item)
 
