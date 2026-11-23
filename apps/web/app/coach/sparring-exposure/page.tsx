@@ -14,7 +14,7 @@ import ContactCapPanel from '@/components/ContactCapPanel';
 import MinorLimitsPanel from '@/components/MinorLimitsPanel';
 import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 import {
-  IN_FORCE_STATES, STATE_WORDS, hiddenWords, isStaffRestriction, type RestrictionState,
+  IN_FORCE_STATES, STATE_WORDS, isStaffRestriction, type RestrictionState,
 } from '@/components/MedicalRestrictionsPanel';
 import { ATHLETE_SAFETY_PAGE, handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
@@ -94,7 +94,8 @@ async function readRestrictions(id: string, signal: AbortSignal): Promise<Restri
   return { states: shown.map((row) => row.state), hidden: payload.restrictions.length - shown.length };
 }
 
-/** The restriction fact: in force first (with the Restricted mark), else each record's own state words. */
+/** The restriction fact: in force first (with the Restricted mark), else each record's own state words.
+    A record this screen cannot show is never read as none: the panel's failed-read sentence says so. */
 function RestrictionLine({ read }: { read: RestrictionRead }) {
   if (read === 'loading') return <p className="t-body" role="status">Loading...</p>;
   if (read === 'failed') {
@@ -116,7 +117,9 @@ function RestrictionLine({ read }: { read: RestrictionRead }) {
       ) : read.hidden === 0 ? (
         <p className="t-body">No medical restriction on file for this member.</p>
       ) : null}
-      {read.hidden > 0 && <p className="t-body">{hiddenWords(read.hidden)}</p>}
+      {read.hidden > 0 && (
+        <p className="t-body">The medical restrictions could not be read. Nothing is shown as clear because of it.</p>
+      )}
     </>
   );
 }

@@ -105,7 +105,7 @@ const KIOSK_TITLE = { fontSize: 'var(--t-md)', lineHeight: 1.25 } as const;
 export const IN_FORCE_STATES: ReadonlySet<RestrictionState> = new Set(['in_force', 'release_needed']);
 
 /** Rows the server sent that this screen could not show, said as a count (never dropped silently). */
-export function hiddenWords(count: number): string {
+function hiddenWords(count: number): string {
   return count === 1 ? '1 record could not be shown.' : `${count} records could not be shown.`;
 }
 

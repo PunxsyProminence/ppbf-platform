@@ -885,7 +885,7 @@ describe('before a segment: minor, cap, restriction', () => {
 
   test('a record the screen cannot show is counted, and the line never says none', async () => {
     await renderAndPick({ restrictions: [{ restriction_id: 'bad' }] });
-    expect(await status().findByText('1 record could not be shown.')).toBeTruthy();
+    expect(await status().findByText('The medical restrictions could not be read. Nothing is shown as clear because of it.')).toBeTruthy();
     expect(status().queryByText('No medical restriction on file for this member.')).toBeNull();
   });
 
