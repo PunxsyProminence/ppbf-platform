@@ -152,7 +152,7 @@
     },
     {
       "path": "src/server/pilot/painReportReviewReaders.test.ts",
-      "minimumTests": 6,
+      "minimumTests": 7,
       "guards": "No new reader of a pain report's note or review (DR-25; Overwatch GO on PR #2133): every non-test file naming pilot.shadow_near_misses is pinned, only the allowed files name the note and review columns, and no statement naming the table reads a whole row (select *, alias.*, returning *, row-to-JSON). If it stops loading, a coach or a family screen could start reading a child's note, including one held for admins only, with the run still green."
     },
     {

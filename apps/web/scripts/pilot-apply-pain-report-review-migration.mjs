@@ -95,11 +95,15 @@ export async function applyMigrationTransaction(client, sql) {
     // transaction already holding one, give up and let the operator re-run in
     // a quieter moment. Nothing is half-applied: it is one transaction.
     //
-    // pilot.accounts is locked FIRST, the order an account deletion takes
-    // them (it cascades from accounts into shadow_near_misses through
-    // detected_by_account_id). Taking shadow_near_misses first, as the file's
-    // first ALTER would, can deadlock against the nightly cleanup's account
-    // delete (PR 1 reviewer A).
+    // pilot.accounts is locked FIRST, the order the nightly purge's account
+    // branch takes them (an account delete cascades into shadow_near_misses
+    // through detected_by_account_id). Its athlete branch takes the opposite
+    // order (the athlete delete cascades into shadow_near_misses, then it
+    // updates pilot.accounts), so no single order avoids every deadlock with a
+    // purge running at the same moment. Either way Postgres aborts one side
+    // cleanly: this transaction rolls back whole and is re-run, or the purge's
+    // savepoint for that athlete rolls back and it is purged on the next run
+    // (PR 1 reviewer A).
     await client.query("set local lock_timeout = '10s'");
     await client.query('lock table pilot.accounts in share row exclusive mode');
     await client.query(sql);
