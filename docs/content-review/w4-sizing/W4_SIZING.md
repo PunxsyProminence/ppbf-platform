@@ -47,6 +47,10 @@ recommended option first.
   Overwatch's answers on #2050 (2026-11-20) are applied: Q1.9, Q1.10 and Q8.2.
   Items 2 to 8 were not re-read: #2005, #2006, #2008, #2009, #2010, #2012,
   #2013 and #2016, cited there as open, have since merged.
+- **Lane W4S-REFRESH update, 2026-11-23 (in progress):** the recorded answers of
+  OD-2026-11-21-006 (OW27-17 to OW27-37) and OD-2026-11-21-007 (OW27-38 to
+  OW27-44) are applied; OD-2026-11-23-001 answers no W4 question. Item 1's
+  Q1.11 and Q1.12 are applied in this commit; the other items follow.
 
 ## How the sizes were made
 
@@ -249,32 +253,34 @@ gone.
 
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
-| EM-1 | Migration: each person's switch (per account; on and off times; audited). With Q1.11 A or B, the adult athlete's own address on the same row. Runner. An own-account read and write route that refuses anyone OW27-02 C leaves out: under-18 athletes, athletes with no date of birth, and other roles. | about 420 (may go over) | matched, AS2-a 414 |
-| EM-2 | The switch on `/profile`, shown only to the people OW27-02 C names. With Q1.11 A or B, the address field. | about 200 | matched, AS2-c 174, plus the field |
+| EM-1 | Migration: each person's switch (per account; on and off times; audited). With Q1.11 B (OW27-38), the adult athlete's own address on the same row, not used until confirmed. Runner. An own-account read and write route that refuses anyone OW27-02 C leaves out: under-18 athletes, athletes with no date of birth, and other roles. | about 420 (may go over) | matched, AS2-a 414 |
+| EM-2 | The switch on `/profile`, shown only to the people OW27-02 C names, and the address field beside it (Q1.11 B, OW27-38). | about 200 | matched, AS2-c 174, plus the field |
+| EM-2b | The confirm step (Q1.11 B, OW27-38): the code email, the field for the code, and the address used only after it is entered. INFERRED: the code is kept on EM-1's table, or on a table of its own (one more migration). | about 150 | OW27-38's own figure ("about 150 lines, maybe a migration"); judgement |
 | EM-3 | Migration: the send log: who, when, and the event's kind and row id (Q1.10). The sender: a sweep on a server tick, with retry, through `sendPlainTextMail` and the sign-in sender constant (`magicLinkStore.ts:29`). The subject is the gym's name and "open the app"; the body is "open the app". The "sends no email" comments are corrected. | about 380 (may go over) | judgement |
 | EM-4a | Staff events: escalations (SHADOW alerts included) and parent replies. One email is queued per staff member who can read the event in the app, whose user type the gym turned it on for, whose switch is on and whose sign-in is on. | about 260 | judgement |
 | EM-4b | Family and athlete events: family notes, gym announcements and a coach's message to an athlete, with the same checks. An athlete only when 18 or over (`isMinor`). | about 280 | judgement |
-| EM-5 | Migration: the gym's choice, one row per gym, user type and event; every event starts off (Q1.12 A, the basis Overwatch set for the size). Runner. Read and write for the organization admin, audited. | about 400 | matched, AS2-a 414 |
+| EM-5 | Migration: the gym's choice, one row per gym, user type and event; every event on the gym's list starts ticked (Q1.12 = OW27-39 A), and each person's own switch still starts off. Runner. Read and write for the organization admin, audited. | about 400 | matched, AS2-a 414 |
 | EM-6 | An "Email alerts" drawer on Customize the Gym: the events, by user type. | about 200 | matched, AS2-c 174 |
 
-- **Total:** about 2,140 lines in 7 PRs, sized under Q1.11 A and Q1.12 A.
-  Q1.11 B adds a confirm step: one more PR, about 150, and maybe a migration.
-  Q1.11 C is about the size of A. Q1.11 D drops the athlete parts: about 2,000.
-  Q1.12 changes no size. All judgement.
+- **Total:** about 2,290 lines in 8 PRs, sized under the recorded answers
+  Q1.11 B (OW27-38) and Q1.12 A (OW27-39). It is the earlier 2,140 in 7 PRs plus
+  EM-2b, about 150. The other options are not built: A and C would be about
+  2,140, D about 2,000. All judgement.
 - **Order:** EM-1 and EM-5, then EM-3, then EM-4a and EM-4b; EM-2 and EM-6
-  after their routes.
+  after their routes; EM-2b after EM-2 and EM-3 (it sends mail).
 - **Migrations:** 3, in EM-1, EM-3 and EM-5 (INFERRED: Overwatch may fold them
-  into fewer files); 4 if Q1.11 B keeps its code in a table of its own.
-- **Route:** Opus for all seven: sign-in addresses, minors' ages, safety
+  into fewer files); 4 if EM-2b keeps its code in a table of its own.
+- **Route:** Opus for all eight: sign-in addresses, minors' ages, safety
   alerts, a new organization-admin write.
-- **G3:** applies. EM-2 is on `/profile`, shown only to the people OW27-02 C
-  names; EM-6 is on Gym Office; EM-4a
+- **G3:** applies. EM-2 and EM-2b are on `/profile`, shown only to the people
+  OW27-02 C names; EM-6 is on Gym Office; EM-4a
   and EM-4b route safety alerts and messages to and about minors.
 - **Dependencies:** EM-3 needs a tick that runs: the deploy workflows set
   `PPBF_SHADOW_WORKER_ENABLED`, and Overwatch confirms the deployed value, or
   the sweep runs from a scheduled workflow, as `session-autoclose.yml` does.
   The athlete sign-in switch is on `main` (#2013). Item 2 reuses EM-1 and EM-3.
-  Item 4's parent message, once built, joins the gym's list (Q1.9).
+  Item 4's parent message, once built, joins the gym's list (OW27-25 A,
+  OD-2026-11-21-006; Q1.9).
 - **File overlap (open PR heads read 2026-11-20):** no open lane PR changes
   `ProfileSettings.tsx`, the Customize page, `escalationLadder.ts`, `intake.ts`,
   `familyMessageReplies.ts`, `announcements.ts`, `graphMailer.ts`,
@@ -287,7 +293,8 @@ gone.
 
 **Owner questions.** Q1.1 to Q1.8 are answered (the table above); their options,
 as asked, are in OD-2026-11-20-001. Overwatch answered Q1.9 and Q1.10 on #2050
-(2026-11-20). Two are open, Q1.11 and Q1.12.
+(2026-11-20). Q1.11 and Q1.12 are answered by OD-2026-11-21-007 (OW27-38 and
+OW27-39). None is open.
 
 - **Q1.9 Which events are on the gym's list? Answered, as a reading
   (INFERRED).** Overwatch on #2050: "Q1.9 = A, as a reading". These are not
@@ -300,51 +307,31 @@ as asked, are in OD-2026-11-20-001. Overwatch answered Q1.9 and Q1.10 on #2050
   - athletes 18 or over: a coach's message to an athlete;
   - all three: gym announcements (athletes read them:
     `apps/web/app/api/pilot/announcements/get/route.ts:58`);
-  - once item 4 is built, staff: a parent's new message (was Q4.3).
+  - once item 4 is built, staff: a parent's new message (was Q4.3; answered
+    yes by OW27-25 A, OD-2026-11-21-006).
 - **Q1.10 Does the send log keep the event's reference? Answered: yes.**
   Overwatch on #2050: "Q1.10 = A". This is Overwatch's pick under Jason's
   OW27-06 delegation (*"Use your best judgment for this question"*), not
   Jason's words. The send log keeps who, when, and the event's kind and row
   id; no content, device or IP. The sweep then sends each queued email once, so
   a restart neither resends nor skips.
-- **Q1.11 Where does an athlete 18 or over get an email address?** Jason's; it
-  goes to him as a card. None exists today (above). Checked, not answered in:
-  OD-2026-11-20-001 (OW27-02, -10),
-  OD-2026-11-19-025, OD-2026-10-04-010, OD-2026-11-19-019,
-  `docs/research/app-scrub-2026-11-19/`, this brief.
-  - **A (recommended):** typed by the athlete beside their switch, no confirm
-    step. Sized this way. Pros: smallest; every email stays the gym's name and
-    "open the app".
-    Cons: a mistyped address gets those emails until the athlete corrects it or
-    turns the switch off.
-  - **B:** typed by the athlete beside their switch, used only after they
-    confirm a code the app emails to it. Pros: the address is known to be
-    theirs, as sign-in proves a parent's or staff member's. Cons: the code email
-    says more than "open the app" (OD-2026-11-19-019), so it needs Jason's word;
-    one more PR, about 150 lines, and somewhere to keep the code (on EM-1's
-    table or one more migration; INFERRED).
-  - **C:** entered by the gym office on Gym Office; the athlete keeps the
-    switch. About the size of A.
-  - **D:** none for now. The athlete parts are not built, and OW27-02 C's
-    athletes 18 or over get nothing until a source exists. About 2,000.
-- **Q1.12 Which events start turned on for a gym?** Overwatch on #2050: "Which
-  boxes start ticked is not ruled: list it as open, sized with none ticked."
-  Checked, not answered in: OD-2026-11-20-001 (OW27-10; OW27-01, whose recorded
-  reading says "who sets it and the starting set are not stated"),
-  OD-2026-11-19-019, `docs/research/app-scrub-2026-11-19/`, this brief, #2050's
-  comments.
-  - **A (recommended):** none. No email goes out until the organization admin
-    turns an event on. Sized this way. Pros: the gym sends only what it chose
-    (OW27-01: *"it should be settings for the gym"*). Cons: a gym that never
-    opens the drawer sends nothing, even to people whose switch is on.
-  - **B:** every event on, for the user types who read it. Pros: the email
-    works as soon as a person turns their switch on. Cons: emails go out for
-    events the gym has not looked at.
-  - **C:** safety escalations on for staff; the rest off. Pros: staff who opted
-    in get safety alerts with no gym step. Cons: one event is chosen for the
-    gym.
-  - Size: none of the three changes it; the start is a value in EM-5
-    (INFERRED).
+- **Q1.11 Where does an athlete 18 or over get an email address? Answered:
+  B.** OD-2026-11-21-007, OW27-38, Jason's answer: *"B: Typed, then confirmed
+  with a code (Recommended)"*. The entry's recorded reading: the adult athlete
+  types the address beside their switch; it is used only after they enter a
+  code the app emails to it; that one code email may say more than "open the
+  app", "a narrow exception to OD-2026-11-19-009's alert wording, by this
+  answer". It adds one PR, about 150 lines, "maybe a migration" (EM-2b above).
+  The card's options were A (typed, no confirm), B, C (gym office enters it)
+  and D (none for now). As the entry notes, the sizing had recommended A and
+  Overwatch recommended B. The code email's wording and expiry are not ruled
+  here.
+- **Q1.12 Which events start turned on for a gym? Answered: A.**
+  OD-2026-11-21-007, OW27-39, Jason's answer: *"A: All ticked; each person
+  still opts in (Recommended)"*. The entry's reading: every event on the gym's
+  list starts ticked; each person's own switch still starts off (OD-2026-11-19-019).
+  This replaces the "none ticked" basis the earlier size used. Size: no change
+  (a value in EM-5; INFERRED, as the card says "about the same size").
 
 ## 2. Web push (later, per Jason)
 
