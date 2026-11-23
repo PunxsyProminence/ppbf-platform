@@ -432,6 +432,8 @@ test('Acknowledge is the armed second press: one press arms it, the second sends
     fireEvent.click(ack);
     expect(harness.posted).toEqual([]);
     const armed = screen.getByRole('button', { name: /^Press again: acknowledge / });
+    // This page never shows an athlete id, not even on the armed button.
+    expect(armed.textContent).not.toContain('ath-1');
     now += ARM_SETTLE_MS;
     fireEvent.click(armed);
     await waitFor(() => expect(harness.posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc-1' }]));
