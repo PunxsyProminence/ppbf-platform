@@ -7014,6 +7014,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/pain-reports/[nearMissId]/review/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/pain-reports/[nearMissId]/review",
+    "gate": "requirePrincipal + requireRole(DECISION_LOOP_ROLES) + assertActorCanAccessAthlete on the report's own athlete (inside markPainReportReviewed's transaction)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "DR-25 Mark reviewed on a minor's pain report: the read's gate exactly (Overwatch Q1 A on #2133). A malformed id, a missing report, another gym's, a near miss that is not a pain report and a refused athlete all answer the same 404; first review wins; audit entry 'reviewed'. Answers the reviewer's staff name, never an account id.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/readiness-board/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/readiness-board",

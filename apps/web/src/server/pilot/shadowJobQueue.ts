@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 49;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 50;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -196,6 +196,10 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 49;
 // its review row was written. What goes into authorizedContext is unchanged;
 // bumped because a listed file moved. A v46 job still queued at deploy is
 // refused as STALE.
+// 50: DR-25 (lane PAIN-NOTES): shadowNearMisses.ts flagNearMiss gains a
+// withinTransaction hook for a pain report's note. What goes into
+// authorizedContext is unchanged; bumped because a listed file moved. A v49
+// job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -301,6 +305,9 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 48, sha256: '0cc3d9c26534db793862000080480ed7e84144f5777bc72b71bf20103a323ab2' },
   // Lane AS5-REST, AS5-3a (#2134 QR8 = A): the limits directive names the Sparring and Limits sections.
   { version: 49, sha256: 'f56706e25b35a1ecdc2af0f8f7636dee486f16517a2eac1eeb5521fe5e01844b' },
+  // Lane PAIN-NOTES, DR-25 PR 2: shadowNearMisses.ts flagNearMiss gains a withinTransaction hook
+  // (the pain note); what SHADOW context reads from near misses is unchanged.
+  { version: 50, sha256: '4178b98a9498fa68970ba8ae05c50a4b80e94b73168d4c19ee9b581cbd417a2e' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

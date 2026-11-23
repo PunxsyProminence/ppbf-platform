@@ -1,7 +1,6 @@
 import { getStaffDisplayName } from '../achievements';
 import { query } from '../db';
 import {
-  PAIN_REPORT_NEAR_MISS_TRIGGER,
   filePainNoteEscalation,
   painNoteVerdictFor,
   storePainNote,
@@ -35,10 +34,11 @@ export const PAIN_REPORT_PENDING_REVIEW_EVENT_NAME = 'SHADOW_ATHLETE_PAIN_REPORT
  *
  * It is a stored value, not a label: changing it orphans every report already
  * in the database from the coach's alert, so the read path below and the write
- * path further down share this constant rather than repeating the string. It
- * lives in painReportNotes.ts, which the review write shares too.
+ * path further down share this constant rather than repeating the string.
+ * painReportNotes.ts holds the same value for the review write;
+ * painReportReviewReaders.test.ts pins the two equal.
  */
-const PAIN_REPORT_TRIGGER = PAIN_REPORT_NEAR_MISS_TRIGGER;
+const PAIN_REPORT_TRIGGER = 'athlete_pain_report';
 
 /**
  * How far back the coach's pain-report alert looks.
