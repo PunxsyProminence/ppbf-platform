@@ -2,15 +2,26 @@
   "_readme": "Audit snapshot, not a controller and not bot-owned. Live Azure state and current GitHub workflow evidence outrank this file (docs/AI_DELIVERY_PIPELINE.md, Production-state records). Any authorized release verifier may propose an update only after directly observing the relevant environment -- workflow-run logs and live HTTPS probes count as observation of what they actually show, and nothing more. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
   "environments": {
     "staging": {
-      "deployed_sha": "0a9b2972706d217bddc650e4814aa4cf22799ddc",
-      "deployed_image_digest": "sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916",
-      "deployment_timestamp": "2026-11-22T22:48:52Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45079338035",
+      "deployed_sha": "b5bfc1119f712bcd3b3678faefe06106442b00f6",
+      "deployed_image_digest": "sha256:5f85f05f863b44e2db35c3199e73c4713b17a885ca7caf2a7b83dbb321fdb93a",
+      "deployment_timestamp": "2026-11-23T16:32:54Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45216502781",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000315",
-      "last_verified_by": "App Overwatch (Claude Code desktop session), 2026-11-22; it dispatched the run.",
-      "last_verified_at": "2026-11-22T22:50:00Z",
-      "last_verification_method": "gh run view: deploy-staging 45079338035 on 0a9b2972 conclusion success; staging-image-digest artifact read; curl of the staging root returned 200. az containerapp revision list (read-only): app-ppbf-staging--0000315 is the only revision with traffic, created 2026-11-22T22:48:52Z, image digest a52c3d10..., the same as the artifact. Staging migration behaviour-sample-windows applied earlier by apply-migrations run 45069168932.",
+      "revision": "app-ppbf-staging--0000316",
+      "last_verified_by": "Lane RECORDS-1123 (Claude Code side session started by App Overwatch), 2026-11-23. Read-only; the facts are the ones App Overwatch observed about 17:40Z, re-read here.",
+      "last_verified_at": "2026-11-23T18:08:00Z",
+      "last_verification_method": "az containerapp revision list (read-only, app-ppbf-staging, rg-ppbf-enterprise-staging): the only active revision is app-ppbf-staging--0000316, created 2026-11-23T16:32:54Z, traffic 100 (deployment_timestamp is that creation time, not a 'Running 100' poll; the poll was not read). az containerapp show: image acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:5f85f05f863b44e2db35c3199e73c4713b17a885ca7caf2a7b83dbb321fdb93a, the same image production runs. gh run view 45216502781 (deploy-staging, conclusion success, workflow_dispatch, head b5bfc1119f712bcd3b3678faefe06106442b00f6, created 2026-11-23T16:26:19Z, updated 16:34:03Z). Staging migration pain-report-review: apply-migrations run 45216166770 (conclusion success, head b5bfc111, CONTAINER_APP_NAME app-ppbf-staging, log line 'PILOT PAIN REPORT REVIEW MIGRATION PASS' at 16:25:53Z, no approvals needed). NOT done: the staging-image-digest artifact was not downloaded (the digest is read from Azure); Jason's signed-in staging check is not recorded in the lane brief (UNVERIFIED).",
+      "superseded_record_2026-11-23_release_0a9b2972": {
+        "note": "Carried, not deleted. Correct until the 2026-11-23 staging deploy of b5bfc111 above.",
+        "deployed_sha": "0a9b2972706d217bddc650e4814aa4cf22799ddc",
+        "deployed_image_digest": "sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916",
+        "deployment_timestamp": "2026-11-22T22:48:52Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45079338035",
+        "revision": "app-ppbf-staging--0000315",
+        "last_verified_by": "App Overwatch (Claude Code desktop session), 2026-11-22; it dispatched the run.",
+        "last_verified_at": "2026-11-22T22:50:00Z",
+        "last_verification_method": "gh run view: deploy-staging 45079338035 on 0a9b2972 conclusion success; staging-image-digest artifact read; curl of the staging root returned 200. az containerapp revision list (read-only): app-ppbf-staging--0000315 is the only revision with traffic, created 2026-11-22T22:48:52Z, image digest a52c3d10..., the same as the artifact. Staging migration behaviour-sample-windows applied earlier by apply-migrations run 45069168932."
+      },
       "superseded_record_2026-11-22_64eee643": {
         "note": "Carried, not deleted. Correct until the 2026-11-22 release of 0a9b2972 below.",
         "deployed_sha": "64eee64326c51e760c0a623ebf95e7e105976d53",
@@ -180,17 +191,28 @@
       }
     },
     "production": {
-      "deployed_sha": "0a9b2972706d217bddc650e4814aa4cf22799ddc",
-      "deployed_image_digest": "sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916",
-      "deployment_timestamp": "2026-11-22T22:54:32Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45080133853",
+      "deployed_sha": "b5bfc1119f712bcd3b3678faefe06106442b00f6",
+      "deployed_image_digest": "sha256:5f85f05f863b44e2db35c3199e73c4713b17a885ca7caf2a7b83dbb321fdb93a",
+      "deployment_timestamp": "2026-11-23T17:02:26Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45222067670",
       "container_app": "app-ppbf-production",
       "resource_group": "rg-ppbf-enterprise-staging",
-      "revision": "app-ppbf-production--0000213",
+      "revision": "app-ppbf-production--0000214",
       "app_origin": "https://www.punxsyprominence.org",
-      "last_verified_by": "App Overwatch (Claude Code desktop session), 2026-11-22. It dispatched apply-migrations run 45079947040 (production, behaviour-sample-windows) and deploy-production run 45080133853 and approved both production gates as PunxsyProminence on Jason's words \"skip my check this time and take it straight to production i give you permission to make the cliks if you can\".",
-      "last_verified_at": "2026-11-22T22:55:00Z",
-      "last_verification_method": "az containerapp revision list (read-only): app-ppbf-production--0000213 at 100% traffic, created 2026-11-22T22:54:32Z, image acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916, equal to the staging-image-digest artifact of deploy-staging run 45079338035; gh run view: 45080133853 conclusion success, guard success; curl https://www.punxsyprominence.org returned 200 at 22:55Z. Migration behaviour-sample-windows applied to production by apply-migrations run 45079947040 (log: PILOT BEHAVIOUR SAMPLE WINDOWS MIGRATION PASS). NOT done: Jason's signed-in staging check (waived by him for this release); no signed-in journey on production.",
+      "last_verified_by": "Lane RECORDS-1123 (Claude Code side session started by App Overwatch), 2026-11-23. Read-only; the facts are the ones App Overwatch observed about 17:40Z, re-read here. Jason said \"release to production\" (16:53 UTC) and \"i approved it.\" (16:54 UTC); OD-2026-11-23-004.",
+      "last_verified_at": "2026-11-23T18:08:00Z",
+      "last_verification_method": "az containerapp revision list (read-only, app-ppbf-production, rg-ppbf-enterprise-staging): the only active revision is app-ppbf-production--0000214, Healthy, traffic 100, created 2026-11-23T17:02:26Z (deployment_timestamp is that creation time). az containerapp show: image acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:5f85f05f863b44e2db35c3199e73c4713b17a885ca7caf2a7b83dbb321fdb93a, equal to the staging image. gh run view 45222067670 (deploy-production, conclusion success, workflow_dispatch, head b5bfc1119f712bcd3b3678faefe06106442b00f6, created 2026-11-23T16:56:15Z, updated 17:03:22Z); gh api .../actions/runs/45222067670/approvals: environment production, state approved, by PunxsyProminence. Migration pain-report-review applied to production by apply-migrations run 45221538973 (conclusion success, created 16:53:22Z, head b5bfc111, its approvals: environment production, approved, by PunxsyProminence; log line 'PILOT PAIN REPORT REVIEW MIGRATION PASS' at 16:55:35Z). curl https://www.punxsyprominence.org returned 200 at about 18:05Z. NOT done: no signed-in journey on production; Jason's signed-in staging check is not recorded in the lane brief (UNVERIFIED); the schema.known_applied_migrations list was not updated (it has not been itemised since 2026-10-23; the migration is recorded here).",
+      "superseded_record_2026-11-23_release_0a9b2972": {
+        "note": "Carried, not deleted. Correct until the 2026-11-23 release of b5bfc111 above.",
+        "deployed_sha": "0a9b2972706d217bddc650e4814aa4cf22799ddc",
+        "deployed_image_digest": "sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916",
+        "deployment_timestamp": "2026-11-22T22:54:32Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45080133853",
+        "revision": "app-ppbf-production--0000213",
+        "last_verified_by": "App Overwatch (Claude Code desktop session), 2026-11-22. It dispatched apply-migrations run 45079947040 (production, behaviour-sample-windows) and deploy-production run 45080133853 and approved both production gates as PunxsyProminence on Jason's words \"skip my check this time and take it straight to production i give you permission to make the cliks if you can\".",
+        "last_verified_at": "2026-11-22T22:55:00Z",
+        "last_verification_method": "az containerapp revision list (read-only): app-ppbf-production--0000213 at 100% traffic, created 2026-11-22T22:54:32Z, image acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916, equal to the staging-image-digest artifact of deploy-staging run 45079338035; gh run view: 45080133853 conclusion success, guard success; curl https://www.punxsyprominence.org returned 200 at 22:55Z. Migration behaviour-sample-windows applied to production by apply-migrations run 45079947040 (log: PILOT BEHAVIOUR SAMPLE WINDOWS MIGRATION PASS). NOT done: Jason's signed-in staging check (waived by him for this release); no signed-in journey on production."
+      },
       "superseded_record_2026-11-22_release_b6fa8fe6": {
         "note": "Carried, not deleted. Correct until the 2026-11-22 release of 0a9b2972 below.",
         "deployed_sha": "b6fa8fe648fc2408351004e0c5df027db45bfe7b",
@@ -638,8 +660,8 @@
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
   "docs_only_verification_2026-08-19": "SUPERSEDED 2026-08-23. Both environments now run 2238ea17; see the environment entries above.\n\nSUPERSEDED 2026-08-22 -- kept because a note that was believed and then found wrong is worth more in place than deleted. This note said, correctly at the time and directly from the Actions API, that the most recent successful runs of both workflows sat on 1da832e9 (PR #391) and that ~122 commits from roughly PR #412 onward were undeployed. Both halves are now false: production advanced three times (latest run 32418590207 on a11ea7c1, 2026-08-20) and staging advanced several more (latest run 32526743194 on 247bf977, 2026-08-21). The undeployed batch is 22 commits and 2 migrations from a11ea7c1, not ~122 commits. The failure mode is worth naming: the note carried its own date but the deployed_sha fields it agreed with did not read as dated, so a later audit sized the pending release at 25 migrations and 62 commits from the stale value and was wrong by an order of magnitude in the direction that makes a release look scarier than it is.",
-  "last_updated_by": "App Overwatch (Claude Code desktop session), 2026-11-22, records PR after release 0a9b2972",
-  "last_updated_at": "2026-11-22T23:55:00Z",
+  "last_updated_by": "Lane RECORDS-1123 (App Overwatch brief), 2026-11-23, records PR after release b5bfc111",
+  "last_updated_at": "2026-11-23T18:10:00Z",
   "production_seed_identity_2026-08-24": "check-database run 32770083477 (check=seed-identity, target=production, read-only) resolved production privileged accounts: 8 organizations, 34 privileged accounts, 6 active. The active privileged seeder is \"Admin@punxsyprominence.org\" (CAPITAL A), platform_owner, org ppbf-default-org. The lowercase \"admin@punxsyprominence.org\" exists and is active=NO. The check emits an explicit CASE-DIFFERING DUPLICATES warning; copy the exact string including capitals. Staging uses a DIFFERENT account and its value must never be reused here.",
   "production_reference_data_2026-08-24": "SEEDED. seed-reference-data run 32788628209 (target=production, dataset=all, mode=apply, seed_account_id=Admin@punxsyprominence.org, organization_id left blank so it resolved from the app-ppbf-production default org secret) completed success 2026-08-24T23:25:48Z against ppbf-pg-195892. All four loaders PASS. Inserted, matching the dry-run (run 32787708007) exactly: drill_library 119, drill_scale_levels 357, drill_stop_rules 674, drill_cues 258 rows processed, disciplines 5, competence_levels 6, cohort_definitions 6, session_scripts 3, session_script_blocks 65, session_script_renderings 4 -- every one reporting \"0 already present\", i.e. a genuine first fill of an empty production catalog set, not a re-run. The dry-run had proved the same numbers with nothing written (\"Rolled back. Nothing was written.\"), which is why the apply was safe to make. Run summary: \"Written. The loaders are idempotent -- re-running adds no duplicates.\" NOT OBSERVED: no authenticated end-user read of these catalogs through the deployed app; the evidence is the loader output, not a browser."
 }

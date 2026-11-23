@@ -56,6 +56,9 @@ const BAR =
   + "sm:gap-[var(--s4)] sm:px-[var(--s5)] sm:py-[var(--s3)]";
 const EYEBROW =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.32em] text-[color:var(--bone-400)]";
+/* The bar's controls are --tap (55px) tall already; on /wall, where a child at
+   a tablet may be standing back from it, they are --tap wide as well. */
+const WALL_EXIT_WIDTH = "min-w-[var(--tap)] justify-center";
 
 /* Control geometry now lives in sessionBarControls.ts, because FeedbackBox and
    SoundToggle render on this same bar and could not reach these constants from
@@ -82,9 +85,17 @@ export default function GlobalRoleHeader() {
      cache is empty, rather than waiting on someone else's side effect. It
      never redirects on failure -- an unauthenticated visitor to a public
      page is not an error, and redirect-on-401 stays RoleSessionGate's job so
-     this bar does not fight it over the URL. */
+     this bar does not fight it over the URL.
+
+     /wall asks too (lane SIGNIN-FIX, scrub ATH-09). It used to be skipped, and
+     the cache is in memory only, so a /wall opened by address or reloaded
+     never learned that someone was signed in: no way out and no idle sign-out
+     (see the /wall branch below). On the gym TV, which nobody signs in to,
+     this is one session POST per page load; its "nobody is signed in" answer
+     marks a session boundary, which touches only this browser's tablet keys
+     (gymTabletMark.ts). */
   useEffect(() => {
-    if (session || isWallRoute || pathname === "/login") {
+    if (session || pathname === "/login") {
       return;
     }
 
@@ -126,19 +137,56 @@ export default function GlobalRoleHeader() {
     })();
 
     return () => controller.abort();
-  }, [session, isWallRoute, pathname]);
+  }, [session, pathname]);
 
   /* The wall display stands alone. /wall is a television bolted to the gym
      floor: no pointer, no keyboard, nobody signed in, and nobody within fifteen
      feet of it. A sticky session bar there is a strip of furniture that can
      never be used, and on a screen that runs twelve hours a day it is also a
      fixed high-contrast band in the same pixels all evening -- the exact shape
-     that burns into a panel.
+     that burns into a panel. So with nobody signed in, this draws nothing.
+
+     SOMEONE SIGNED IN ON /wall GETS A WAY OUT (lane SIGNIN-FIX, scrub ATH-09;
+     Overwatch Q1 = A on #2143). /wall is also reachable from a tablet, by
+     address or a link, and there it was a dead end: no Home, no Logout, and,
+     because this bar is what mounts it, no idle sign-out on a marked gym
+     tablet. So a signed-in /wall gets the bar's own two controls, same words
+     and classes, in a corner plate laid over the board rather than a bar that
+     would push the full-screen board down, and the idle watch without its
+     plate. It shows for as long as someone is signed in (Q1 = A). A paired TV
+     is never signed in (it reads with the device cookie), so the TV is
+     unchanged. The watch still does nothing on an unmarked device (ATH-10).
+
+     Pinned inline. Today the plate is NOT a direct child of <body>: it sits in
+     ThemeProvider's <div data-theme-ready> (PlateVariantGround is display:
+     contents), so globals.css's unlayered `body > * { position: relative;
+     z-index: 2 }` does not reach it. The inline style keeps it fixed even if
+     that wrapper goes, which is why TabletIdleSignOut's banner is pinned the
+     same way (review A, NIT 1). Its 900 counts inside the wrapper's stacking
+     context, above the board; the idle banner (1000) and its cover (1002) are
+     appended to <body> itself, so the plate never hides either.
 
      This is placed AFTER every hook above deliberately: an early return before
      useSyncExternalStore would make the hook order depend on the route. */
   if (isWallRoute) {
-    return null;
+    if (!session) {
+      return null;
+    }
+    return (
+      <div
+        data-wall-session-exit=""
+        style={{ position: "fixed", top: "var(--s4)", right: "var(--s4)", zIndex: 900 }}
+        className="mat-leather flex items-center gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[var(--brass-700)] p-[var(--s2)] shadow-[0_3px_10px_rgba(0,0,0,.45)]"
+      >
+        <ChromeLink href="/dashboard" className={`${CONTROL_QUIET} ${WALL_EXIT_WIDTH}`}>
+          Home
+        </ChromeLink>
+        <button type="button" onClick={signOut} className={`${CONTROL_EXIT} ${WALL_EXIT_WIDTH}`}>
+          Logout
+        </button>
+        <TabletIdleSignOut showPlate={false} />
+      </div>
+    );
   }
 
   /* A REFUSAL IS A WHOLE SCREEN, AND THIS BAR IS PART OF IT.

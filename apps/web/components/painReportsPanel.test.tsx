@@ -34,7 +34,7 @@ function report(id: string, overrides: Record<string, unknown> = {}) {
     painType: 'Sharp',
     observedAt: null,
     recordedAt: null,
-    reporter: 'athlete',
+    reporter: 'athlete', note: null, reviewed: null,
     ...overrides,
   };
 }
@@ -64,12 +64,12 @@ afterEach(() => {
 // The read as the harness last rendered it, recorded after each render.
 const seen: { read: PainReportsRead | null } = { read: null };
 
-function Harness({ refreshMs, boardShown = false, timed = false }: { refreshMs?: number; boardShown?: boolean; timed?: boolean }) {
+function Harness({ refreshMs, boardShown = false, timed = false, showsNotes }: { refreshMs?: number; boardShown?: boolean; timed?: boolean; showsNotes?: boolean }) {
   const read = usePainReports({ refreshMs });
   useEffect(() => {
     seen.read = read;
   });
-  return <PainReportsPanel read={read} boardShown={boardShown} readsEveryTwoMinutes={timed} />;
+  return <PainReportsPanel read={read} boardShown={boardShown} readsEveryTwoMinutes={timed} showsNotes={showsNotes} />;
 }
 
 async function settle() {
@@ -78,7 +78,7 @@ async function settle() {
   });
 }
 
-async function show(props: { refreshMs?: number; boardShown?: boolean; timed?: boolean } = {}) {
+async function show(props: { refreshMs?: number; boardShown?: boolean; timed?: boolean; showsNotes?: boolean } = {}) {
   await act(async () => {
     render(<Harness {...props} />);
   });
@@ -399,5 +399,130 @@ describe('the list, as the coach home drew it', () => {
     await show();
     const html = document.body.innerHTML;
     expect(html).not.toMatch(/locked/);
+  });
+});
+
+// DR-25 (Jason 2026-11-23, DR-25 A; Overwatch GO on #2133 and its wording on #2138): the athlete's
+// note on each card, and "Mark reviewed" with who and when, each state a word and a glyph.
+describe('the note and Mark reviewed (DR-25)', () => {
+  const REVIEW = '/api/pilot/coach/pain-reports/n1/review';
+  let reviewAnswers: Array<() => Response | Promise<Response>>;
+
+  beforeEach(() => {
+    reviewAnswers = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      reads.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url === FEED) return answers[0]();
+      if (url === REVIEW && init?.method === 'POST') {
+        const next = reviewAnswers.shift();
+        if (!next) throw new Error('no review answer queued');
+        return next();
+      }
+      throw new Error(`unexpected ${url}`);
+    }) as unknown as typeof fetch;
+  });
+
+  test("a note shows under Athlete's note; none reads No note", async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1', { note: 'left knee clicks\nwhen I squat' }), report('n2')] })];
+    await show();
+    const [withNote, without] = screen.getAllByRole('article');
+    expect(withNote).toHaveTextContent("Athlete's note");
+    expect(withNote).toHaveTextContent('left knee clicks when I squat');
+    expect(without).toHaveTextContent('No note');
+    expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
+  });
+
+  test("an admin's copy of a held note says only admins see it and a coach's review does not cover it", async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1', { note: 'My coach hits me', noteAdminOnly: true })] })];
+    await show();
+    expect(screen.getByText('My coach hits me')).toBeInTheDocument();
+    expect(screen.getByText("Only admins see this note. A coach's review does not cover it.")).toBeInTheDocument();
+  });
+
+  test('not reviewed: the word, the glyph and the button; pressed, it names who reviewed it and when', async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1')] })];
+    let release: (response: Response) => void = () => undefined;
+    reviewAnswers = [() => new Promise<Response>((resolve) => {
+      release = resolve;
+    })];
+    await show();
+    expect(screen.getByText('Not reviewed yet')).toBeInTheDocument();
+    expect(screen.getByText('○', { exact: false })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+    await settle();
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(reads).toContain(`POST ${REVIEW}`);
+
+    await act(async () => {
+      release(json({ ok: true, reviewed: { at: '2026-11-23T16:00:00.000Z', byName: 'Rosa Coach' } }));
+    });
+    await settle();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    // The time follows the name.
+    expect(screen.getByText(/Reviewed by Rosa Coach, \S/)).toBeInTheDocument();
+    expect(screen.getByText('✓', { exact: false })).toBeInTheDocument();
+  });
+
+  test('a report already reviewed names the reviewer, or a staff member when they cannot be named', async () => {
+    answers = [() => json({
+      ...EMPTY,
+      painReports: [
+        report('n1', { reviewed: { at: '2026-11-23T16:00:00.000Z', byName: 'Rosa Coach' } }),
+        report('n2', { reviewed: { at: '2026-11-23T16:05:00.000Z', byName: null } }),
+      ],
+    })];
+    await show();
+    expect(screen.getByText(/Reviewed by Rosa Coach,/)).toBeInTheDocument();
+    expect(screen.getByText(/Reviewed by a staff member,/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+  });
+
+  test("a failed press shows the panel's own words and the button again", async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1')] })];
+    reviewAnswers = [() => json({ error: 'Not found' }, 404)];
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+    await settle();
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not mark this report reviewed. Try again.');
+    expect(screen.getByRole('button', { name: 'Mark reviewed' })).toBeEnabled();
+    expect(screen.getByText('Not reviewed yet')).toBeInTheDocument();
+  });
+
+  test("on the floor tablet (showsNotes false) no card draws a note field or a review control, not even for an admin's held note", async () => {
+    answers = [() => json({
+      ...EMPTY,
+      painReports: [
+        report('n1', { note: 'My coach hits me', noteAdminOnly: true }),
+        report('n2', { note: 'sore after sparring', noteAdminOnly: false }),
+        report('n3'),
+      ],
+    })];
+    await show({ showsNotes: false });
+    expect(screen.getAllByRole('article')).toHaveLength(3);
+    expect(screen.queryByText("Athlete's note")).toBeNull();
+    expect(screen.queryByText('No note')).toBeNull();
+    expect(screen.queryByText('My coach hits me')).toBeNull();
+    expect(screen.queryByText('sore after sparring')).toBeNull();
+    expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
+    // Nor is any report marked reviewed there: a review would vouch for a note nobody saw.
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    expect(screen.queryByText('Not reviewed yet')).toBeNull();
+  });
+
+  test('a row whose note or review it cannot read is not drawn, and the list says reports may be missing', async () => {
+    answers = [() => json({
+      ...EMPTY,
+      painReports: [
+        report('n1', { note: 42 }),
+        report('n2', { reviewed: { at: '', byName: 'x' } }),
+        report('n3', { noteAdminOnly: 'yes' }),
+        report('n4'),
+      ],
+    })];
+    await show();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByText(FAILED_WORDS, { exact: false })).toBeInTheDocument();
   });
 });

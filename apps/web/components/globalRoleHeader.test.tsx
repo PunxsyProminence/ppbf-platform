@@ -18,22 +18,26 @@ import { getRoleSessionSnapshot, loadAuthoritativeRoleSession, persistAuthoritat
 
 const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
 
+const mockReplace = jest.fn();
+
 jest.mock('next/navigation', () => ({
   usePathname: jest.fn(() => '/dashboard'),
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
 }));
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, className }: { readonly children: ReactNode; readonly href: string; readonly className?: string }) => (
+    <a href={href} className={className}>{children}</a>
   ),
 }));
+
+const mockClearRoleSession = jest.fn();
 
 jest.mock('./roleSession', () => ({
   getRoleSessionSnapshot: jest.fn(),
   subscribeRoleSession: () => () => {},
-  clearRoleSession: jest.fn(),
+  clearRoleSession: () => mockClearRoleSession(),
   loadAuthoritativeRoleSession: jest.fn(),
   persistAuthoritativeRoleSession: jest.fn(),
 }));
@@ -541,5 +545,169 @@ describe('the job bar rides the full session bar (AS-4, U2-4b)', () => {
     mockUsePathname.mockReturnValue('/shadow');
     renderAs('board');
     expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+  });
+});
+
+/* ATH-09 (lane SIGNIN-FIX, Overwatch Q1 = A on #2143): /wall was a dead end
+   for anyone signed in. The bar drew nothing there and skipped the session
+   check, so there was no Home, no Logout and no gym tablet idle sign-out. The
+   gym TV, which nobody signs in to, must render exactly as before. */
+describe('/wall: a way out for whoever is signed in, and nothing for the TV', () => {
+  beforeEach(() => {
+    mockUsePathname.mockReturnValue('/wall');
+  });
+
+  it('renders nothing for the signed-out TV, before and after the server answers', async () => {
+    window.localStorage.clear();
+    mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'unauthenticated', signedOut: true } as never);
+    mockSnapshot.mockReturnValue(null);
+
+    const { container } = render(<GlobalRoleHeader />);
+    expect(container.innerHTML).toBe('');
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.innerHTML).toBe('');
+    expect(mockPersistAuthoritative).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();
+  });
+
+  it('asks the server once per load on the signed-out TV, and marks only the tablet keys', async () => {
+    window.localStorage.clear();
+    window.localStorage.setItem('ppbf.unrelated', 'kept');
+    // The device mark survives; the last-use clock is cleared (review B NIT).
+    window.localStorage.setItem('ppbf.device.gymTablet', '1');
+    window.localStorage.setItem('ppbf.device.gymTabletLastUse', '123');
+    mockLoadAuthoritative.mockResolvedValue({ ok: false, reason: 'unauthenticated', signedOut: true } as never);
+    mockSnapshot.mockReturnValue(null);
+
+    const { rerender } = render(<GlobalRoleHeader />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    rerender(<GlobalRoleHeader />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockLoadAuthoritative).toHaveBeenCalledTimes(1);
+    expect(mockLoadAuthoritative.mock.calls[0][0]).toContain('/api/pilot/auth/session');
+    expect(mockLoadAuthoritative.mock.calls[0][1]).not.toHaveProperty('method');
+    const keys = Object.keys(window.localStorage).sort();
+    expect(keys).toEqual(['ppbf.device.gymTablet', 'ppbf.device.gymTabletSignedOutAt', 'ppbf.unrelated']);
+    expect(window.localStorage.getItem('ppbf.unrelated')).toBe('kept');
+    expect(window.localStorage.getItem('ppbf.device.gymTablet')).toBe('1');
+  });
+
+  it.each([
+    ['a thrown fetch (offline)', () => mockLoadAuthoritative.mockRejectedValueOnce(new Error('offline'))],
+    ['a 5xx', () => mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'server_error', statusCode: 503 } as never)],
+    ['an unreadable answer (no signedOut)', () => mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'unauthenticated' } as never)],
+  ])('renders nothing for the TV, and marks nothing, on %s', async (_label, arrange) => {
+    window.localStorage.clear();
+    arrange();
+    mockSnapshot.mockReturnValue(null);
+
+    const { container } = render(<GlobalRoleHeader />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.innerHTML).toBe('');
+    expect(window.localStorage.getItem('ppbf.device.gymTabletSignedOutAt')).toBeNull();
+  });
+
+  it('learns a session /wall was opened with, by address, and keeps it', async () => {
+    mockLoadAuthoritative.mockResolvedValueOnce({
+      ok: true,
+      session: { role: 'athlete', expiresAt: Date.now() + 60_000 },
+      destination: '/athlete',
+    } as never);
+    mockSnapshot.mockReturnValue(null);
+
+    render(<GlobalRoleHeader />);
+
+    await waitFor(() => {
+      expect(mockPersistAuthoritative).toHaveBeenCalledWith(expect.objectContaining({ role: 'athlete' }));
+    });
+  });
+
+  it('shows the way out once the server answers that someone is signed in (review A, NIT 3)', async () => {
+    // The cache, as the real roleSession would hold it: what is persisted is
+    // what the next snapshot reads.
+    let cached: unknown = null;
+    mockSnapshot.mockImplementation(() => cached as never);
+    mockPersistAuthoritative.mockImplementation((next) => {
+      cached = next;
+      return next;
+    });
+    mockLoadAuthoritative.mockResolvedValueOnce({
+      ok: true,
+      session: { role: 'athlete', expiresAt: Date.now() + 60_000 },
+      destination: '/athlete',
+    } as never);
+
+    const { container, rerender } = render(<GlobalRoleHeader />);
+    expect(container.innerHTML).toBe('');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // subscribeRoleSession is a no-op in this file, so the store's change
+    // notice is stood in for by a re-render.
+    rerender(<GlobalRoleHeader />);
+
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
+  });
+
+  it('gives a signed-in person Home and Logout, at least 55px, and the idle watch without its plate', () => {
+    renderAs('athlete');
+
+    const home = screen.getByRole('link', { name: 'Home' });
+    expect(home.getAttribute('href')).toBe('/dashboard');
+    const logout = screen.getByRole('button', { name: 'Logout' });
+    for (const control of [home, logout]) {
+      // --tap is 55px (kioskTypeFloor.test.ts holds the token).
+      expect(control.className).toContain('min-h-[var(--tap)]');
+      expect(control.className).toContain('min-w-[var(--tap)]');
+    }
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
+
+    // Laid over the board, pinned inline (globals.css `body > *` would
+    // otherwise make it relative), under the idle banner (1000).
+    const plate = document.querySelector('[data-wall-session-exit]') as HTMLElement;
+    expect(plate.style.position).toBe('fixed');
+    expect(Number(plate.style.zIndex)).toBeLessThan(1000);
+  });
+
+  it('draws nothing else of the bar on /wall: no role words, Tell Us, corridor or jobs', () => {
+    renderAs('coach');
+
+    expect(screen.queryByText('Coach')).toBeNull();
+    expect(screen.queryByRole('button', { name: /tell us/i })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+    expect(document.querySelector('header')).toBeNull();
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('signs out from /wall the way the bar does', () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    renderAs('athlete');
+
+    act(() => {
+      screen.getByRole('button', { name: 'Logout' }).click();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/pilot/auth/logout'),
+      expect.objectContaining({ method: 'POST', credentials: 'include', keepalive: true }),
+    );
+    expect(mockClearRoleSession).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/login');
   });
 });

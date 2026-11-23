@@ -33,7 +33,7 @@ function painReport(nearMissId: string, severity: string): Record<string, unknow
     painType: 'Sharp',
     observedAt: '2026-08-14T17:30:00.000Z',
     recordedAt: '2026-08-14T18:00:00.000Z',
-    reporter: 'athlete',
+    reporter: 'athlete', note: null, reviewed: null,
   };
 }
 

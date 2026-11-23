@@ -434,7 +434,7 @@ function WrongRoleNotice() {
           gym&apos;s administrator. As platform owner you create organizations and appoint their admins.
         </p>
         <Link href="/admin/platform" className="btn btn--ghost">
-          The platform desk
+          Omega
         </Link>
       </div>
     </main>

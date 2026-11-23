@@ -98,8 +98,8 @@ describe('the platform owner', () => {
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
-    expect(screen.getByRole('link', { name: 'Organization Provisioning' }).getAttribute('href')).toBe('/admin/organizations');
+    expect(screen.getByRole('link', { name: 'Omega' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.getByRole('link', { name: 'Get Your Gym Online' }).getAttribute('href')).toBe('/admin/organizations');
     expect(screen.queryByRole('button', { name: 'Capability Library' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Capabilities' })).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
@@ -454,10 +454,10 @@ it.each(['organization_admin', 'admin'] as const)(
   },
 );
 
-it('keeps the organization provisioning link for a platform owner', async () => {
+it('keeps the Get Your Gym Online link for a platform owner', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
   await renderAsPlatformOwner(fetchMock);
-  expect(screen.getByRole('link', { name: /organization provisioning/i }).getAttribute('href'))
+  expect(screen.getByRole('link', { name: /get your gym online/i }).getAttribute('href'))
     .toBe('/admin/organizations');
 });
 

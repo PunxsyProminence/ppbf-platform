@@ -1014,7 +1014,7 @@ export default function ResearchIntakePage() {
             </Link>
             {opensEvidence ? (
               <Link href="/evidence" className="btn btn--ghost">
-                Evidence Review
+                Evidence Review Queue
               </Link>
             ) : null}
             {/* The applicability verdicts are given there; same door and
@@ -1172,7 +1172,7 @@ export default function ResearchIntakePage() {
                     <p className={PAPER_LABEL}>Next: Evidence Review</p>
                     {opensEvidence ? (
                       <Link href="/evidence" className="btn">
-                        Move to Evidence
+                        Evidence Review Queue
                       </Link>
                     ) : null}
                   </div>

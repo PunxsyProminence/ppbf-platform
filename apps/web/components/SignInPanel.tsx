@@ -496,8 +496,9 @@ export default function SignInPanel({
         </div>
 
         <header className="mb-[var(--s6)] mt-[var(--s5)] text-center">
-          {/* The bell itself. Decorative -- the heading directly below says
-              the word, so announcing it twice would be noise. Drawn rather
+          {/* The bell itself. Decorative: it is the room's mark (The Bell),
+              and the heading directly below says what the page is for.
+              Announcing a bell to a screen reader would be noise. Drawn rather
               than set in an emoji or an icon font: neither is a system glyph
               and neither holds its shape at this size. */}
           <svg
@@ -515,13 +516,16 @@ export default function SignInPanel({
             <path d="M20 37a4 4 0 0 0 8 0" />
           </svg>
           <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
-            The Bell
+            Sign In
           </h1>
-          {/* LEAD SENTENCES (app scrub FAM-15). The order of the three ways
-              stays (AS-9 Q10 = B), so the lead lines tell a parent which block
-              is theirs, in body type rather than the small muted line. */}
+          {/* THE HEADING AND THE ORDER ARE JASON'S (app scrub FAM-15, lane
+              SIGNIN-FIX #2143): Q3 "A: Sign In" -- the page says what it is
+              for, and The Bell stays the room's name everywhere else; Q2 "C:
+              Parents first" -- Email Link, then Account ID & PIN, then
+              Microsoft. The lead line tells a parent which block is theirs, in
+              body type rather than the small muted line. */}
           <p className="t-body mt-[var(--s3)]">
-            Sign in to continue. Parents: Email Link, the second way below, is
+            Sign in to continue. Parents: Email Link, the first way below, is
             yours.
           </p>
           <p className="t-muted mx-auto mt-[var(--s3)] max-w-[52ch]" style={{ fontSize: 'var(--t-sm)' }}>
@@ -558,23 +562,6 @@ export default function SignInPanel({
             />
           </div>
         )}
-
-        <section className="grid gap-[var(--s5)]" aria-labelledby="signin-microsoft-heading">
-          <div>
-            <h2 id="signin-microsoft-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
-              Microsoft Sign In
-            </h2>
-            <p className="t-body mt-[var(--s3)]">
-              For coaches, staff and admins. Your organization admin manages who can access the platform.
-              Parents: Email Link is below.
-            </p>
-          </div>
-          <button type="button" onClick={microsoftSignIn} className="btn btn--kiosk">
-            Continue With Microsoft
-          </button>
-        </section>
-
-        <MethodRule />
 
         <form
           aria-labelledby="signin-magic-link-heading"
@@ -625,7 +612,7 @@ export default function SignInPanel({
           </div>
           <div className="field">
             <label className="t-label" htmlFor="magic-link-password">
-              Password (Parents)
+              Password (If You Made One)
             </label>
             <input
               id="magic-link-password"
@@ -799,6 +786,23 @@ export default function SignInPanel({
             </button>
           </div>
         </form>
+
+        <MethodRule />
+
+        <section className="grid gap-[var(--s5)]" aria-labelledby="signin-microsoft-heading">
+          <div>
+            <h2 id="signin-microsoft-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+              Microsoft Sign In
+            </h2>
+            <p className="t-body mt-[var(--s3)]">
+              For coaches, staff and admins. Your organization admin manages who can access the platform.
+              Parents: Email Link is above.
+            </p>
+          </div>
+          <button type="button" onClick={microsoftSignIn} className="btn btn--kiosk">
+            Continue With Microsoft
+          </button>
+        </section>
 
         {/* "Access logged" stood here and was false, shipped by the same
             commit that removed "Your PIN is local and never leaves your

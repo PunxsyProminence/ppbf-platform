@@ -15,8 +15,11 @@ import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
 import {
+  PAIN_REPORT_KIND,
   alertCoachToPainReport,
+  isPainReport,
 } from '@/src/server/pilot/formulas/painReportAlert';
+import { normalizePainNote } from '@/src/server/pilot/painReportNotes';
 import {
   FormulaRepositoryError,
   listRecentSparringEntries,
@@ -57,6 +60,8 @@ interface ObservationRequestBody {
   observedAt?: unknown;
   idempotencyKey?: unknown;
   supersedesObservationId?: unknown;
+  /** DR-25: the athlete's optional note on their own pain report. Not stored with the observation. */
+  note?: unknown;
 }
 
 function boundedString(value: unknown, maximum: number): value is string {
@@ -174,6 +179,20 @@ export async function POST(request: NextRequest) {
     const dimensions = normalizeDimensions(body.dimensions);
     if (!dimensions) {
       return invalidObservation('Formula observation dimensions are invalid.');
+    }
+    // DR-25 (Jason 2026-11-23, DR-25 A, to be recorded). The note is the
+    // athlete's own, on their own pain report only (Overwatch GO on #2133):
+    // trimmed, at most PAIN_NOTE_MAX characters, and never stored with the
+    // observation -- it goes to the pain report's near miss alone.
+    const note = normalizePainNote(body.note);
+    if (note === 'invalid') {
+      return invalidObservation('Pain report note is invalid.');
+    }
+    if (
+      note !== null
+      && (principal.role !== 'athlete' || body.kind !== PAIN_REPORT_KIND || !isPainReport(body.kind, body.value as number | null))
+    ) {
+      return invalidObservation("Only an athlete's own pain report carries a note.");
     }
 
     await assertActorCanAccessAthlete(principal, body.athleteId);
@@ -312,6 +331,7 @@ export async function POST(request: NextRequest) {
       actorRole: principal.role,
       contextId: body.contextId.trim(),
       observedAt: new Date(body.observedAt).toISOString(),
+      note,
     });
 
     const sourceType = principal.role === 'athlete'

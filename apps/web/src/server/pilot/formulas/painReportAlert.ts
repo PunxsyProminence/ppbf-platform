@@ -1,4 +1,10 @@
+import { getStaffDisplayName } from '../achievements';
 import { query } from '../db';
+import {
+  filePainNoteEscalation,
+  painNoteVerdictFor,
+  storePainNote,
+} from '../painReportNotes';
 import { emitShadowEvent } from '../shadowEvents';
 import { flagNearMiss } from '../shadowNearMisses';
 import type { ShadowNearMissSeverity } from '../shadowNearMisses';
@@ -29,6 +35,8 @@ export const PAIN_REPORT_PENDING_REVIEW_EVENT_NAME = 'SHADOW_ATHLETE_PAIN_REPORT
  * It is a stored value, not a label: changing it orphans every report already
  * in the database from the coach's alert, so the read path below and the write
  * path further down share this constant rather than repeating the string.
+ * painReportNotes.ts holds the same value for the review write;
+ * painReportReviewReaders.test.ts pins the two equal.
  */
 const PAIN_REPORT_TRIGGER = 'athlete_pain_report';
 
@@ -196,6 +204,12 @@ export async function alertCoachToPainReport(input: {
   actorRole: string;
   contextId: string;
   observedAt: string;
+  /**
+   * The athlete's own note (DR-25), already trimmed and length-checked by the
+   * route, or null. Stored on the near miss only -- never in the description,
+   * the metadata, the shadow event or an escalation, which reach other readers.
+   */
+  note?: string | null;
 }): Promise<PainReportAlertOutcome> {
   assertValidPainReportSeverity(input.kind, input.value);
   if (!isPainReport(input.kind, input.value)) {
@@ -205,8 +219,20 @@ export async function alertCoachToPainReport(input: {
   const value = input.value as number;
   const severity = severityForPain(value);
   const reporter = classifyPainReporter(input.actorRole);
+  const note = input.note ?? null;
+  const verdict = note === null
+    ? null
+    : await painNoteVerdictFor(note, { organizationId: input.organizationId, athleteId: input.athleteId });
 
-  await flagNearMiss({
+  const nearMiss = await flagNearMiss({
+    withinTransaction: note === null || verdict === null
+      ? undefined
+      : (client, row) => storePainNote(
+        client,
+        { organizationId: input.organizationId, nearMissId: row.near_miss_id },
+        note,
+        verdict,
+      ),
     organizationId: input.organizationId,
     athleteId: input.athleteId,
     description: describe(input.athleteId, value, input.dimensions, reporter),
@@ -237,6 +263,17 @@ export async function alertCoachToPainReport(input: {
       reporter_role: reporter,
     },
   });
+
+  // Straight after the near miss commits, BEFORE the shadow event: if that
+  // insert fails, a disclosure must already have reached a person (PR 2
+  // reviewer A). Never throws: see filePainNoteEscalation for why the
+  // athlete's response must not depend on it.
+  if (verdict !== null) {
+    await filePainNoteEscalation(
+      { organizationId: input.organizationId, athleteId: input.athleteId, nearMissId: nearMiss.near_miss_id },
+      verdict,
+    );
+  }
 
   // 'PENDING' is load-bearing: shadowReadModels.toReviewState reads it out of
   // the event name to show the coach that this item is still unreviewed.
@@ -303,6 +340,23 @@ export interface CoachPainReport {
    * was.
    */
   readonly reporter: PainReporter;
+  /**
+   * The athlete's own note (DR-25), or null when there is none -- and null for
+   * a coach when the note's safety scan held it for admins, with nothing else
+   * on the report saying a note exists (Overwatch GO on #2133, Q3 A).
+   */
+  readonly note: string | null;
+  /**
+   * Present only for an organization admin or admin: true when the note is
+   * held for admins. A coach's report never carries the key.
+   */
+  readonly noteAdminOnly?: boolean;
+  /**
+   * Who marked the report reviewed and when, or null while nobody has.
+   * `byName` is the reviewer's staff name at this gym, or null when they
+   * cannot be named (a deleted account among them); never an account id.
+   */
+  readonly reviewed: { readonly at: string; readonly byName: string | null } | null;
 }
 
 export interface CoachPainReportPage {
@@ -318,6 +372,12 @@ interface CoachPainReportRow {
   severity: ShadowNearMissSeverity;
   metadata: Record<string, unknown> | null;
   created_at: Date | string | null;
+  athlete_note: string | null;
+  /** Null for a coach's read, whatever is stored: the query never hands a coach the verdict. */
+  athlete_note_admin_only: boolean | null;
+  /** Internal: resolved to a name below and never returned. */
+  reviewed_by_account_id: string | null;
+  reviewed_at: Date | string | null;
 }
 
 function metadataText(metadata: Record<string, unknown>, key: string): string | null {
@@ -332,11 +392,26 @@ function isoText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function toCoachPainReport(row: CoachPainReportRow): CoachPainReport {
+function toCoachPainReport(
+  row: CoachPainReportRow,
+  viewerReadsAdminOnlyNotes: boolean,
+  reviewerNames: ReadonlyMap<string, string | null>,
+): CoachPainReport {
   const metadata = row.metadata ?? {};
   const score = metadata.severity_1_10;
+  const reviewedAt = isoText(row.reviewed_at);
 
   return {
+    note: typeof row.athlete_note === 'string' && row.athlete_note.length > 0 ? row.athlete_note : null,
+    ...(viewerReadsAdminOnlyNotes ? { noteAdminOnly: row.athlete_note_admin_only === true } : {}),
+    reviewed: reviewedAt === null
+      ? null
+      : {
+        at: reviewedAt,
+        byName: typeof row.reviewed_by_account_id === 'string'
+          ? reviewerNames.get(row.reviewed_by_account_id) ?? null
+          : null,
+      },
     nearMissId: row.near_miss_id,
     athleteId: row.athlete_id,
     athleteName: typeof row.athlete_name === 'string' && row.athlete_name.trim().length > 0
@@ -392,7 +467,16 @@ export async function listAthletesWithRecentPainReports(
 export async function listPainReportsForAthletes(
   organizationId: string,
   athleteIds: readonly string[],
-  options: { windowDays?: number; limit: number },
+  options: {
+    windowDays?: number;
+    limit: number;
+    /**
+     * True only for an organization admin or admin (isOrganizationAdminRole).
+     * Required, so no caller can forget it: false is the coach's read, in which
+     * an admin-only note never leaves the database (the CASE below).
+     */
+    viewerReadsAdminOnlyNotes: boolean;
+  },
 ): Promise<CoachPainReportPage> {
   if (athleteIds.length === 0) {
     return { reports: [], truncated: false };
@@ -405,7 +489,11 @@ export async function listPainReportsForAthletes(
             a.full_name as athlete_name,
             n.severity,
             n.metadata,
-            n.created_at
+            n.created_at,
+            case when n.athlete_note_admin_only and not $6::boolean then null else n.athlete_note end as athlete_note,
+            case when $6::boolean then n.athlete_note_admin_only else null end as athlete_note_admin_only,
+            n.reviewed_by_account_id,
+            n.reviewed_at
      from pilot.shadow_near_misses n
      left join pilot.athletes a
        on a.organization_id = n.organization_id and a.athlete_id = n.athlete_id
@@ -422,11 +510,22 @@ export async function listPainReportsForAthletes(
        end asc,
        n.created_at desc
      limit $5`,
-    [organizationId, [...athleteIds], PAIN_REPORT_TRIGGER, windowDays, options.limit + 1],
+    [
+      organizationId, [...athleteIds], PAIN_REPORT_TRIGGER, windowDays, options.limit + 1,
+      options.viewerReadsAdminOnlyNotes,
+    ],
   );
 
+  const page = rows.slice(0, options.limit);
+  // The reviewer's name through the same gated lookup every staff name uses
+  // (a member of this gym, not deleted); one lookup per distinct reviewer.
+  const reviewerIds = [...new Set(page.map((row) => row.reviewed_by_account_id).filter((id): id is string => typeof id === 'string'))];
+  const reviewerNames = new Map(await Promise.all(
+    reviewerIds.map(async (id) => [id, await getStaffDisplayName(organizationId, id)] as const),
+  ));
+
   return {
-    reports: rows.slice(0, options.limit).map(toCoachPainReport),
+    reports: page.map((row) => toCoachPainReport(row, options.viewerReadsAdminOnlyNotes, reviewerNames)),
     truncated: rows.length > options.limit,
   };
 }

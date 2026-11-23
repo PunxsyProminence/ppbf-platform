@@ -404,7 +404,7 @@ function WrongRoleNotice() {
         </p>
         <div className="flex flex-wrap items-center justify-center gap-[var(--s3)]">
           <Link href="/admin/organizations" className="btn">
-            Organization Provisioning
+            Get Your Gym Online
           </Link>
           <BackHome />
         </div>

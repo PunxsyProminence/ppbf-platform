@@ -478,7 +478,7 @@ describe('/admin/athletes', () => {
     expect(await screen.findByText(/athlete records are managed per gym/i)).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
     // /admin shows the platform owner a notice too; the way back is its own desk.
-    expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.getByRole('link', { name: 'Omega' }).getAttribute('href')).toBe('/admin/platform');
     expect(screen.queryAllByRole('link').some((link) => link.getAttribute('href') === '/admin')).toBe(false);
   });
 });

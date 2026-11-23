@@ -57,7 +57,7 @@ test('following a pain report\'s "Record what you did" hands that report\'s athl
         ok: true, windowDays: 14, truncated: false,
         painReports: [{
           nearMissId: 'nm_1', athleteId: 'ath_7', athleteName: 'Casey R.', severity: 'moderate', painScore: 2,
-          location: 'Calf', painType: null, observedAt: null, recordedAt: '2026-10-11T18:00:00.000Z', reporter: 'athlete',
+          location: 'Calf', painType: null, observedAt: null, recordedAt: '2026-10-11T18:00:00.000Z', reporter: 'athlete', note: null, reviewed: null,
         }],
       });
     }

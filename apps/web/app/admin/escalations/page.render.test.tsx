@@ -442,3 +442,43 @@ test('Acknowledge is the armed second press: one press arms it, the second sends
     clock.mockRestore();
   }
 });
+
+// DR-25, Q12 A on #2139: a pain-note escalation offers "Read the note"; no other row does.
+test('only a pain-note escalation offers Read the note, and the press reads that row\'s note', async () => {
+  const NOTE_ROW = {
+    ...ESCALATION,
+    escalation_id: 'esc-note',
+    source_type: 'athlete_voice' as const,
+    severity: 'high' as const,
+    reason: 'An athlete wrote a note on a pain report that needs a person to read it.',
+    metadata: { channel: 'pain_report_note', near_miss_id: 'nm-77' },
+  };
+  const CHAT_ROW = {
+    ...ESCALATION,
+    escalation_id: 'esc-chat',
+    source_type: 'athlete_voice' as const,
+    reason: 'An athlete said something in SHADOW chat.',
+    metadata: { channel: 'shadow_chat', conversation_id: 'c1' },
+  };
+  const reads: string[] = [];
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/auth/session')) return jsonResponse({ ok: true, role: 'admin' });
+    if (url.includes('/pain-reports/')) {
+      reads.push(url);
+      return jsonResponse({ ok: true, note: 'My coach hits me', noteAdminOnly: true });
+    }
+    return jsonResponse({ ok: true, escalations: [NOTE_ROW, CHAT_ROW] });
+  }) as unknown as typeof fetch;
+
+  render(<EscalationsPage />);
+  const noteRow = (await screen.findByText(NOTE_ROW.reason)).closest('tr') as HTMLElement;
+  const chatRow = screen.getByText(CHAT_ROW.reason).closest('tr') as HTMLElement;
+  expect(within(chatRow).queryByRole('button', { name: 'Read the note' })).toBeNull();
+  expect(reads).toEqual([]);
+
+  fireEvent.click(within(noteRow).getByRole('button', { name: 'Read the note' }));
+  expect(await within(noteRow).findByText('My coach hits me')).toBeTruthy();
+  expect(reads).toEqual(['/api/pilot/coach/pain-reports/nm-77/note']);
+  expect(within(noteRow).getByText("Only admins see this note. A coach's review does not cover it.")).toBeTruthy();
+});

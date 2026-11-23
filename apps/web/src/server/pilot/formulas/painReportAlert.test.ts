@@ -159,7 +159,7 @@ describe('listAthletesWithRecentPainReports', () => {
 
 describe('listPainReportsForAthletes', () => {
   test('never queries for an empty athlete set', async () => {
-    const page = await listPainReportsForAthletes('org-1', [], { limit: 25 });
+    const page = await listPainReportsForAthletes('org-1', [], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     expect(page).toEqual({ reports: [], truncated: false });
     expect(mockQuery).not.toHaveBeenCalled();
@@ -168,7 +168,7 @@ describe('listPainReportsForAthletes', () => {
   test('names the athlete, the severity, the body location and both timestamps', async () => {
     mockQuery.mockResolvedValueOnce([painReportRow()]);
 
-    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     expect(page.truncated).toBe(false);
     expect(page.reports).toEqual([{
@@ -188,13 +188,16 @@ describe('listPainReportsForAthletes', () => {
       // rewriting these as athlete reports is the thing this whole change
       // exists to stop.
       reporter: 'unknown',
+      // DR-25: no note and nobody has reviewed it; a coach's read carries no noteAdminOnly key.
+      note: null,
+      reviewed: null,
     }]);
   });
 
   test('a historical row with no reporter_role reads as unknown, never as athlete', async () => {
     mockQuery.mockResolvedValueOnce([painReportRow()]);
 
-    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     expect(page.reports[0].reporter).toBe('unknown');
   });
@@ -212,7 +215,7 @@ describe('listPainReportsForAthletes', () => {
       metadata: { ...(row.metadata as Record<string, unknown>), reporter_role: stored },
     }]);
 
-    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     // Read back through the same classifier that wrote it, so a value this
     // build does not recognise cannot reach a coach's screen as a raw string.
@@ -225,7 +228,7 @@ describe('listPainReportsForAthletes', () => {
   test('does not carry the free-text description off the server', async () => {
     mockQuery.mockResolvedValueOnce([]);
 
-    await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+    await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     expect(String(mockQuery.mock.calls[0][0])).not.toContain('description');
   });
@@ -233,7 +236,7 @@ describe('listPainReportsForAthletes', () => {
   test('bounds the read to the given athletes and orders critical reports first', async () => {
     mockQuery.mockResolvedValueOnce([]);
 
-    await listPainReportsForAthletes('org-1', ['athlete-1', 'athlete-2'], { limit: 25 });
+    await listPainReportsForAthletes('org-1', ['athlete-1', 'athlete-2'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain("n.athlete_id = any($2::text[])");
@@ -251,7 +254,7 @@ describe('listPainReportsForAthletes', () => {
       painReportRow({ near_miss_id: 'nm-3' }),
     ]);
 
-    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 2 });
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 2, viewerReadsAdminOnlyNotes: false });
 
     expect(mockQuery.mock.calls[0][1]?.[4]).toBe(3);
     expect(page.reports).toHaveLength(2);
@@ -264,7 +267,7 @@ describe('listPainReportsForAthletes', () => {
       metadata: { trigger: 'athlete_pain_report', severity_1_10: 8, location: null, pain_type: '   ' },
     })]);
 
-    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25 });
+    const page = await listPainReportsForAthletes('org-1', ['athlete-1'], { limit: 25, viewerReadsAdminOnlyNotes: false });
 
     expect(page.reports[0]).toEqual(expect.objectContaining({
       athleteName: null,

@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { query, withTransaction } from './db';
 import { NotFoundError } from './errors';
 import { fileEscalation, shouldAutoEscalateNearMiss } from './escalationLadder';
@@ -42,6 +44,14 @@ export async function flagNearMiss(input: {
   detectedByRole: string;
   detectedBy?: 'system' | 'human';
   metadata?: Record<string, unknown>;
+  /**
+   * Runs inside the insert's transaction, after the row and its audit entry
+   * and before any escalation, so whatever it writes commits with the near
+   * miss or not at all. painReportAlert.ts uses it for the athlete's note on
+   * a pain report, which this module deliberately never names (no reader of
+   * near misses here may carry it; painReportReviewReaders.test.ts).
+   */
+  withinTransaction?: (client: PoolClient, row: ShadowNearMissRow) => Promise<void>;
 }): Promise<ShadowNearMissRow> {
   return withTransaction(async (client) => {
     // A cited decision must be about the same athlete, in the same gym. The
@@ -93,6 +103,10 @@ export async function flagNearMiss(input: {
       actorRole: input.detectedByRole,
       afterState: { severity: row.severity, decisionId: row.decision_id },
     });
+
+    if (input.withinTransaction) {
+      await input.withinTransaction(client, row);
+    }
 
     // High/critical near misses escalate automatically -- see
     // escalationLadder.ts's module doc for why this is the one chokepoint

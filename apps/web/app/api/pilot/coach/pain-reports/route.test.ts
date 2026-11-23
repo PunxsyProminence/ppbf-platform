@@ -63,6 +63,8 @@ function painReport(athleteId: string, reporter: PainReporter = 'athlete') {
     observedAt: '2026-07-31T10:00:00.000Z',
     recordedAt: '2026-07-31T10:00:02.000Z',
     reporter,
+    note: null,
+    reviewed: null,
   };
 }
 
@@ -202,5 +204,25 @@ test('caps the requested limit', async () => {
     'org-1',
     ['athlete-1'],
     expect.objectContaining({ limit: 50 }),
+  );
+});
+
+// DR-25 Q3 A: an admin-only note leaves the database for organization admins and admins only.
+test.each([
+  ['coach', false],
+  ['organization_admin', true],
+  ['admin', true],
+] as const)('a %s read asks for admin-only notes: %s', async (role, expected) => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal({ role }));
+  mockListAthletes.mockResolvedValueOnce(['athlete-1']);
+  mockListReports.mockResolvedValueOnce({ reports: [], truncated: false });
+
+  const response = await get();
+
+  expect(response.status).toBe(200);
+  expect(mockListReports).toHaveBeenLastCalledWith(
+    'org-1',
+    ['athlete-1'],
+    expect.objectContaining({ viewerReadsAdminOnlyNotes: expected }),
   );
 });

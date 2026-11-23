@@ -765,39 +765,68 @@ describe('a refused sign-in wears the right kind of "no"', () => {
 });
 
 /**
- * A PARENT CAN TELL WHICH WAY IN IS THEIRS (app scrub FAM-15; AS-9 Q10 = B).
- *
- * Only the lead sentences changed. The order of the three ways stays (AS-9
- * Q10 = B), and the header now leans on it ("the second way below"), so the
- * order is held here too. The password box under the email box and the two
- * button names are the owner's (OD-2026-10-01-002 section 3 item 4).
+ * A PARENT CAN TELL WHICH WAY IN IS THEIRS (app scrub FAM-15, lane SIGNIN-FIX
+ * #2143). Jason's rulings, 2026-11-23:
+ *   - Q2 "C: Parents first": Email Link, then Account ID & PIN, then Microsoft
+ *     (reverses AS-9 plan answer Q10 = B);
+ *   - Q3 "A: Sign In": the h1 says what the page is for;
+ *   - Q4 (with Q5, "both A"): the password box is labelled
+ *     "Password (If You Made One)".
+ * The password box under the email box and the two button names are the
+ * owner's earlier ruling and do not move (OD-2026-10-01-002 section 3 item 4).
  */
-describe('the lead sentences point a parent at Email Link', () => {
-  test('the header names Email Link as the parents\' way, and the order is unchanged', async () => {
+describe('the order, heading and words a parent meets first', () => {
+  test('the page is headed Sign In, and the bell stays a decoration', async () => {
     await renderPanel();
 
-    expect(screen.getByText(/Sign in to continue\. Parents: Email Link, the second way below, is yours\./)).toBeTruthy();
-    expect(screen.getByText(/^Once you are signed in, you will land on the right dashboard for your role\./)).toBeTruthy();
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1.textContent?.trim()).toBe('Sign In');
+    expect(screen.queryByRole('heading', { name: 'The Bell' })).toBeNull();
+    expect(h1.parentElement?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  test('Email Link comes first, then Account ID & PIN, then Microsoft, and the header says so', async () => {
+    await renderPanel();
+
+    expect(screen.getByText(/Sign in to continue\. Parents: Email Link, the first way below, is yours\./)).toBeTruthy();
+    expect(screen.queryByText(/the second way below/)).toBeNull();
     expect(screen.queryByText(/Any of the three ways below will do/)).toBeNull();
-    const methods = ['Microsoft Sign In', 'Email Link', 'Account ID & PIN'];
+    expect(screen.getByText(/^Once you are signed in, you will land on the right dashboard for your role\./)).toBeTruthy();
+    const methods = ['Email Link', 'Account ID & PIN', 'Microsoft Sign In'];
     expect(
       screen.getAllByRole('heading', { level: 2 })
         .map((heading) => heading.textContent)
         .filter((text): text is string => methods.includes(text ?? '')),
     ).toEqual(methods);
+    // The blocks themselves, not only their headings, are in that order.
+    const emailLink = screen.getByRole('form', { name: 'Email Link' });
+    const pin = screen.getByRole('form', { name: 'Account ID & PIN' });
+    const microsoft = screen.getByRole('region', { name: 'Microsoft Sign In' });
+    expect(emailLink.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pin.compareDocumentPosition(microsoft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test('the Microsoft block sends a parent on, and Email Link names parents first', async () => {
+  test('the Microsoft block points a parent back up, and Email Link names parents first', async () => {
     await renderPanel();
 
     const microsoft = screen.getByRole('region', { name: 'Microsoft Sign In' });
-    expect(microsoft.textContent).toContain('Parents: Email Link is below.');
+    expect(microsoft.textContent).toContain('Parents: Email Link is above.');
+    expect(microsoft.textContent).not.toContain('is below');
     const emailLink = screen.getByRole('form', { name: 'Email Link' });
     expect(emailLink.textContent).toContain('For parents, and for coaches, staff and volunteers.');
-    // The owner's two buttons stay (OD-2026-10-01-002 section 3 item 4), and
-    // the box's label is unchanged.
+  });
+
+  test('the password box keeps its place and buttons, and its label says it is optional', async () => {
+    await renderPanel();
+
+    const emailLink = screen.getByRole('form', { name: 'Email Link' });
+    const password = screen.getByLabelText('Password (If You Made One)');
+    expect(screen.queryByLabelText('Password (Parents)')).toBeNull();
+    // Under the email box, inside the Email Link form (OD-2026-10-01-002).
+    expect(emailLink.contains(password)).toBe(true);
+    const email = screen.getByLabelText('Email Address');
+    expect(email.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('button', { name: /^email me a link instead$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sign In With Password' }).textContent).toBe('Sign In');
-    expect(screen.getByLabelText('Password (Parents)')).toBeTruthy();
   });
 });

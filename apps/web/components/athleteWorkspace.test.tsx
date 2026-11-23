@@ -882,6 +882,111 @@ describe('athlete safety reporting', () => {
    * hook, because the defect was visible before it was storable: the wrong
    * thing was on screen whether or not the athlete pressed anything.
    */
+  // DR-25 (Jason 2026-11-23, DR-25 A; words approved by Overwatch on #2133): an optional note.
+  describe('the pain note', () => {
+    const NOTE_LABEL = 'Anything else your coach should know? (optional)';
+
+    test('opens empty, with the help line and a 0 of 500 count', async () => {
+      await openPainModal();
+      const box = screen.getByLabelText(NOTE_LABEL) as HTMLTextAreaElement;
+      expect(box.value).toBe('');
+      expect(screen.getByText('Optional. You can leave it empty. It goes to the gym staff with your pain report.')).toBeTruthy();
+      expect(screen.getByText('0 of 500')).toBeTruthy();
+      fireEvent.change(box, { target: { value: '  clicks when I squat ' } });
+      expect(screen.getByText('19 of 500')).toBeTruthy();
+    });
+
+    test('counts as the server does: an emoji is one character, spaces at the ends are not counted', async () => {
+      await openPainModal();
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: ` ${'\u{1F915}'.repeat(260)} ` } });
+      expect(screen.getByText('260 of 500')).toBeTruthy();
+      expect(screen.queryByText(/your note is too long/i)).toBeNull();
+    });
+
+    test('a note over 500 characters holds Save, with the reason on screen, and sends nothing', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: 'é'.repeat(501) } });
+      expect(screen.getByText('501 of 500')).toBeTruthy();
+      expect(screen.getByText('Your note is too long. Shorten it to 500 characters or fewer to save.')).toBeTruthy();
+      const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+      expect(save.disabled).toBe(true);
+      fireEvent.click(save);
+      await Promise.resolve();
+      expect(painObservations()).toEqual([]);
+    });
+
+    test('a NUL typed or pasted into the note never enters it', async () => {
+      await openPainModal();
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: 'sore\u0000knee' } });
+      expect((screen.getByLabelText(NOTE_LABEL) as HTMLTextAreaElement).value).toBe('soreknee');
+    });
+
+    test('a retry with the same note, padded differently, reuses the report; a changed note is a new report', async () => {
+      painObservationResponse = { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: 'clicks when I squat' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(painObservations()).toHaveLength(1));
+      await screen.findByText(/did not save|was not saved/i);
+
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: ' clicks when I squat  ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(painObservations()).toHaveLength(2));
+      await screen.findByText(/did not save|was not saved/i);
+
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: 'clicks and swells when I squat' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      const [first, same, changed] = painObservations();
+      expect(same!.body.idempotencyKey).toBe(first!.body.idempotencyKey);
+      expect(same!.body).toEqual(first!.body);
+      expect(changed!.body.idempotencyKey).not.toBe(first!.body.idempotencyKey);
+      expect(changed!.body.note).toBe('clicks and swells when I squat');
+    });
+
+    test('a written note is sent trimmed, on its own and not in dimensions', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: '  clicks when I squat \n' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await screen.findByText(/flagged for a coach to look at/);
+      const [observation] = painObservations();
+      expect(observation.body.note).toBe('clicks when I squat');
+      expect(observation.body.dimensions).not.toHaveProperty('note');
+    });
+
+    test('an empty or blank note sends no note at all', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: '   ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await screen.findByText(/flagged for a coach to look at/);
+      const [observation] = painObservations();
+      expect(observation.body).not.toHaveProperty('note');
+    });
+
+    test('the next report opens with an empty note', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 4 });
+      fireEvent.change(screen.getByLabelText(NOTE_LABEL), { target: { value: 'clicks when I squat' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByText(/flagged for a coach to look at/);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+      expect((screen.getByLabelText(NOTE_LABEL) as HTMLTextAreaElement).value).toBe('');
+    });
+  });
+
   describe('the pain form starts unanswered', () => {
     test('nothing is chosen, and nothing numeric is shown, when the modal opens', async () => {
       await openPainModal();

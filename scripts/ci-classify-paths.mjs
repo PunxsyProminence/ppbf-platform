@@ -110,6 +110,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/coachDisplayName.ts',
   'apps/web/src/shared/enjoyment.ts',
   'apps/web/src/shared/organizationProfile.ts',
+  'apps/web/src/shared/painNote.ts',
   'apps/web/src/shared/painScoreLabel.ts',
   'apps/web/src/shared/parentObservations.ts',
   'apps/web/src/shared/pilotRoleRouting.ts',

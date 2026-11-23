@@ -650,6 +650,17 @@ describe('the SHADOW Human Review door', () => {
   });
 });
 
+// BOA-18: /admin/system is two pages under one door. Its hint says what each
+// role is shown, in the words of the two views' own intros (app/admin/system/page.tsx).
+describe('the System door', () => {
+  it('describes both views, platform owner and gym admin', () => {
+    const door = BUILDING.find((d) => d.href === '/admin/system');
+    expect(door?.hint).toBe(
+      "Platform owner: the routes and jobs the platform is built from. Gym admin: this gym's local findings and the checks on its research sources. Read-only.",
+    );
+  });
+});
+
 /*
  * AS-4 4a: "Menus show only pages a person can open" (display only). /wall leaves
  * the athlete and parent menus; a board member sees only the seats their session

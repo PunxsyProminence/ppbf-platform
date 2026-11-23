@@ -59,6 +59,8 @@ const SHADOW_RUNTIME_MIGRATION_FILES = [
   'pilot_slice_postgres_board_role_migration.sql',
   'pilot_slice_postgres_shadow_decision_loop_migration.sql',
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
+  // DR-25: the coach list reads the note and review columns.
+  'pilot_slice_postgres_pain_report_review_migration.sql',
 ];
 
 const ORG_A = 'org-pain-a';
@@ -260,7 +262,7 @@ describe('a pain report written by an athlete is retrievable by their coach', ()
     expect(athleteIds).toEqual([ATHLETE_A]);
 
     // Second read: the reports themselves, for the ids that survived access.
-    const page = await painReport.listPainReportsForAthletes(ORG_A, athleteIds, { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, athleteIds, { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.truncated).toBe(false);
     expect(page.reports).toHaveLength(1);
 
@@ -337,14 +339,14 @@ describe('the jsonb predicate that separates a pain report from any other near m
 
     // Ask for BOTH athletes explicitly, so the exclusion is the predicate's
     // doing and not a side effect of the first read having already dropped one.
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.reports.map((row) => row.athleteId)).toEqual([ATHLETE_A]);
   });
 
   test('a coach reporting on the athlete\'s behalf is labelled as the coach, not the child', async () => {
     await report({ value: 5, actorRole: 'coach' });
 
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A], { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.reports[0].reporter).toBe('coach');
   });
 });
@@ -361,7 +363,7 @@ describe('the window, the ordering and the cap the coach panel depends on', () =
     );
 
     expect(await painReport.listAthletesWithRecentPainReports(ORG_A)).toEqual([]);
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A], { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.reports).toEqual([]);
 
     // Widening the window brings the same row back, which is what proves the
@@ -370,6 +372,7 @@ describe('the window, the ordering and the cap the coach panel depends on', () =
     const widened = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A], {
       limit: 20,
       windowDays: 90,
+      viewerReadsAdminOnlyNotes: false,
     });
     expect(widened.reports).toHaveLength(1);
     expect(await painReport.listAthletesWithRecentPainReports(ORG_A, 90)).toEqual([ATHLETE_A]);
@@ -379,7 +382,7 @@ describe('the window, the ordering and the cap the coach panel depends on', () =
     await report({ value: 2, athleteId: ATHLETE_A });
     await report({ value: 9, athleteId: ATHLETE_A2 });
 
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.reports.map((row) => [row.severity, row.painScore])).toEqual([
       ['critical', 9],
       ['moderate', 2],
@@ -390,11 +393,11 @@ describe('the window, the ordering and the cap the coach panel depends on', () =
     await report({ value: 5, athleteId: ATHLETE_A });
     await report({ value: 6, athleteId: ATHLETE_A2 });
 
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 1 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 1, viewerReadsAdminOnlyNotes: false });
     expect(page.reports).toHaveLength(1);
     expect(page.truncated).toBe(true);
 
-    const full = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 2 });
+    const full = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_A, ATHLETE_A2], { limit: 2, viewerReadsAdminOnlyNotes: false });
     expect(full.reports).toHaveLength(2);
     expect(full.truncated).toBe(false);
   });
@@ -414,12 +417,12 @@ describe('one gym only', () => {
     // Naming the other gym's athlete id explicitly is the case that matters:
     // the organization predicate has to refuse it even when the caller asks
     // for it directly.
-    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_B], { limit: 20 });
+    const page = await painReport.listPainReportsForAthletes(ORG_A, [ATHLETE_B], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(page.reports).toEqual([]);
 
     // And the report really was written -- so the empty results above are the
     // scope predicate working, not the write having failed.
-    const theirs = await painReport.listPainReportsForAthletes(ORG_B, [ATHLETE_B], { limit: 20 });
+    const theirs = await painReport.listPainReportsForAthletes(ORG_B, [ATHLETE_B], { limit: 20, viewerReadsAdminOnlyNotes: false });
     expect(theirs.reports.map((row) => row.athleteId)).toEqual([ATHLETE_B]);
   });
 });
