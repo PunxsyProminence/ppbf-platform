@@ -686,7 +686,7 @@ export default function CoachSparringExposurePage() {
             <h3 className="t-eyebrow">Sparring Caps</h3>
             {recentState !== 'loaded' || !recent ? (
               recentState === 'unavailable'
-                ? <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
+                ? <p className="t-body">This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
                 : <p className="t-body" role="status">Reading the sparring cap…</p>
             ) : !isCapCheck(recent.cap_check) || recent.cap_check.cap_state === 'unknown' ? (
               <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
