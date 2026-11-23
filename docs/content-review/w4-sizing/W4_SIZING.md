@@ -338,15 +338,42 @@ OW27-39). None is open.
 **Ruling:** OD-2026-11-19-019: web push "is later"; its build is "Not ruled
 here". Sized only.
 
+**Answered since (OD-2026-11-21-006; re-sized by lane W4S-REFRESH at `main`
+`a4b420c41a9d10c2e991df9b6290914aed41b126`, 2026-11-23):**
+
+- **Q2.1, OW27-17:** Jason chose *"B: No push on a gym tablet"*, against the
+  recommendation. The entry records it as the new restriction, "by Jason's
+  direction (RULES s1 allows it when the owner directs it): a device marked as a
+  gym tablet never offers web push."
+- **Q2.2, OW27-18:** *"A: Same settings as the email (Recommended)"*. Push
+  follows the gym's event picks, one per event, and goes to no switched-off
+  account.
+- **Still later.** The card repeats that web push is "later"
+  (OD-2026-11-19-019). Nothing here starts it.
+
 **What exists (OBSERVED, searches):**
 
 - **No push code.** A case-sensitive search of the repository for
   `serviceWorker`, `PushManager`, `VAPID`, `web-push`, `webmanifest`, `sw.js`,
   `pushSubscription` and `Notification.requestPermission` found no match
-  (apart from this report).
+  (apart from this report), re-run at `a4b420c`.
 - **No web app manifest.** The one `manifest.json` is
-  `design-system/manifest.json`, which is not a web app manifest.
-- **No package.** `web-push` is not in `apps/web/package.json`.
+  `design-system/manifest.json`, which is not a web app manifest. At `a4b420c`
+  neither `apps/web/app/manifest*` nor a `*.webmanifest` under
+  `apps/web/public` exists.
+- **No package.** `web-push` is not in `apps/web/package.json` at `a4b420c`.
+- **How a gym tablet is told apart (for Q2.1 B).** A device mark the gym admin
+  sets on the tablet itself, from Customize the Gym: one key,
+  `ppbf.device.gymTablet`, in that browser's `localStorage`
+  (`apps/web/src/lib/gymTabletMark.ts:21`; read by `isGymTabletMarked`, `:32`).
+  Its own header calls it "a fact about the DEVICE, not the person" (`:8`) and
+  "not a security boundary" (`:11`). Its readers are the header,
+  `TabletIdleSignOut.tsx`, the sign-in pages and `GymTabletSettings.tsx`.
+  INFERRED: a push opt-in can ask the same function, so no new table or
+  setting is needed. UNVERIFIED: whether a Home Screen web app on an iPad
+  shares that `localStorage` with Safari. The OW27-17 card says iPad push works
+  only for a Home Screen app, so the case would arise. If it does not share it,
+  the mark would have to be set inside the installed app.
 
 **External fact (UNVERIFIED against the primary page):**
 
@@ -369,33 +396,40 @@ tablets are shared, and they sign out after idle time
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
 | WP-1 | Manifest, service worker, migration for subscriptions, subscribe and unsubscribe routes | about 420 (may go over) | judgement |
-| WP-2 | The sender, on EM-3's send log: VAPID signing and payload encryption | about 250 with the `web-push` package. About 450 without it, which splits into signing and encryption. | judgement |
-| WP-3 | The opt-in on a tap; unsubscribe at sign-out | about 220 | judgement |
+| WP-2 | The sender, on EM-3's send log: VAPID signing and payload encryption. It sends for the events the gym turned on (Q2.2 A), once per event, to no switched-off account. | about 250 with the `web-push` package. About 450 without it, which splits into signing and encryption. | judgement |
+| WP-3 | The opt-in on a tap, not offered on a device marked as a gym tablet (Q2.1 B: a check of `isGymTabletMarked`, about 30 lines, INFERRED); unsubscribe at sign-out | about 250 | judgement; the earlier 220 plus the tablet check |
 
-- **Total:** about 890 lines in 3 PRs with the package; about 1,090 in 4
-  without.
+- **Total:** about 920 lines in 3 PRs with the package; about 1,120 in 4
+  without. The earlier sizing said about 890 and 1,090; the 30 is Q2.1 B's
+  check. Q2.2 A adds none: it reuses the gym's event picks (EM-5) and the send
+  log (EM-3).
+- **Not ruled:** whether a subscription on a personal phone also ends at
+  sign-out. OW27-17 A had said so; B says only that a marked tablet never
+  offers push. The table keeps the unsubscribe (INFERRED). Whether a person's
+  email switch also gates push is not ruled either; sized as the tap alone.
 - **Migrations:** 1.
 - **Also needs:** one new dependency if `web-push` is used (Overwatch's call),
   and one secret that Overwatch or Jason puts in Azure. No AI enters a secret.
 - **Route:** Opus (sign-in and sign-out, shared tablets, minors).
 - **G3:** applies.
-- **Dependencies:** item 1 (EM-1 and EM-3) first. WP-3 touches the tablet
-  sign-out work of lane U1's AS2 PRs (merged).
-- **File overlap:** WP-1 shares the registration files (above). WP-2 adds a
-  package to `apps/web/package.json` and `package-lock.json`. All nine open
-  dependabot PRs change the lockfile; seven also change `apps/web/package.json`
-  (#1994 and #1997 change only `apps/research-bridge/package.json`).
+- **Dependencies:** item 1 (EM-1, EM-3 and EM-5, whose event picks Q2.2 A
+  reuses) first. WP-3 touches the tablet sign-out work of lane U1's AS2 PRs
+  (merged) and reads `gymTabletMark.ts`.
+- **File overlap (open PRs listed 2026-11-23):** WP-1 shares the registration
+  files (above). WP-2 adds a package to `apps/web/package.json` and
+  `package-lock.json`. The nine dependabot PRs cited earlier are no longer
+  open: the open PRs are #2039, #2082, #2124, #2126 and this one. #2124's files
+  (`BehaviourSampleWindow.tsx` and its test) touch none of these; #2126 listed
+  no files when read; #2039 and #2082 were not read.
 
-**Owner questions (for when web push is started):**
+**Owner questions.** None open. Q2.1 is answered B (OW27-17) and Q2.2 is
+answered A (OW27-18), both OD-2026-11-21-006. Their options, as asked:
 
-- **Q2.1 Push on a shared gym tablet?**
-  - **A (recommended):** allowed like any device; the subscription ends at
-    sign-out. This adds no new restriction.
-  - **B:** no push on a device marked as a gym tablet. This is a new
-    restriction, so it needs Jason's direction.
-- **Q2.2 Same events and limits as the email?**
-  - **A (recommended):** yes, the Q1.1, Q1.3 and Q1.8 answers.
-  - **B:** its own list.
+- **Q2.1 Push on a shared gym tablet?** A: allowed like any device, the
+  subscription ending at sign-out (recommended). **B: no push on a device marked
+  as a gym tablet: Jason's answer.**
+- **Q2.2 Same events and limits as the email?** **A: yes (recommended): Jason's
+  answer.** B: its own list.
 
 ## 3. A live "on the floor now" line on every home
 
