@@ -790,6 +790,7 @@ describe('the order, heading and words a parent meets first', () => {
 
     expect(screen.getByText(/Sign in to continue\. Parents: Email Link, the first way below, is yours\./)).toBeTruthy();
     expect(screen.queryByText(/the second way below/)).toBeNull();
+    expect(screen.queryByText(/Any of the three ways below will do/)).toBeNull();
     expect(screen.getByText(/^Once you are signed in, you will land on the right dashboard for your role\./)).toBeTruthy();
     const methods = ['Email Link', 'Account ID & PIN', 'Microsoft Sign In'];
     expect(
