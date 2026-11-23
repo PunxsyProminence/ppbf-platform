@@ -490,7 +490,7 @@ describe('the note and Mark reviewed (DR-25)', () => {
     expect(screen.getByText('Not reviewed yet')).toBeInTheDocument();
   });
 
-  test("on the floor tablet (showsNotes false) no card draws a note field, not even an admin's held note", async () => {
+  test("on the floor tablet (showsNotes false) no card draws a note field or a review control, not even for an admin's held note", async () => {
     answers = [() => json({
       ...EMPTY,
       painReports: [
@@ -506,8 +506,9 @@ describe('the note and Mark reviewed (DR-25)', () => {
     expect(screen.queryByText('My coach hits me')).toBeNull();
     expect(screen.queryByText('sore after sparring')).toBeNull();
     expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
-    // The review control stays.
-    expect(screen.getAllByRole('button', { name: 'Mark reviewed' })).toHaveLength(3);
+    // Nor is any report marked reviewed there: a review would vouch for a note nobody saw.
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    expect(screen.queryByText('Not reviewed yet')).toBeNull();
   });
 
   test('a row whose note or review it cannot read is not drawn, and the list says reports may be missing', async () => {
