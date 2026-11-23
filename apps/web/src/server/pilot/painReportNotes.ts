@@ -114,7 +114,7 @@ export async function painNoteVerdictFor(
 /** Fixed on purpose: the reason renders on the escalation surface, so it never quotes the note. */
 export const PAIN_NOTE_ESCALATION_REASON =
   'An athlete wrote a note on a pain report that needs a person to read it. '
-  + 'Read it on the pain report list; if it is not there, speak with the athlete.';
+  + 'On the Escalations page, press Read the note on this row. If it does not open, speak with the athlete.';
 
 /**
  * Stores the note and its verdict on the near miss, inside flagNearMiss's transaction (its
@@ -205,6 +205,37 @@ export interface PainReportReviewResult {
  * The athlete a pain report is about, or null when the organization has no pain report by that id
  * (a malformed id, another gym's report and a near miss that is not a pain report all answer null).
  */
+export interface PainNoteRead {
+  readonly athleteId: string;
+  /** Null when there is none, or when a coach reads a note held for admins. */
+  readonly note: string | null;
+  /** The verdict, for an admin's read only; null on a coach's. */
+  readonly adminOnly: boolean | null;
+}
+
+/**
+ * One pain report's note, for the "Read the note" press on an escalation (Q12 A on #2139). The
+ * coach pain list's mask, in SQL, so a held note never leaves the database for a coach; no 7-day
+ * window, because the escalation can outlive the list. Null when the organization has no pain
+ * report by that id. The caller gates the role and the athlete, as the list does.
+ */
+export async function readPainNote(
+  organizationId: string,
+  nearMissId: string,
+  viewerReadsAdminOnlyNotes: boolean,
+): Promise<PainNoteRead | null> {
+  const row = await queryOne<{ athlete_id: string; athlete_note: string | null; athlete_note_admin_only: boolean | null }>(
+    `select athlete_id,
+            case when athlete_note_admin_only and not $4::boolean then null else athlete_note end as athlete_note,
+            case when $4::boolean then athlete_note_admin_only else null end as athlete_note_admin_only
+       from pilot.shadow_near_misses
+      where organization_id = $1 and near_miss_id::text = lower($2) and metadata->>'trigger' = $3`,
+    [organizationId, nearMissId, PAIN_REPORT_TRIGGER, viewerReadsAdminOnlyNotes],
+  );
+  if (!row) return null;
+  return { athleteId: row.athlete_id, note: row.athlete_note, adminOnly: row.athlete_note_admin_only };
+}
+
 export async function painReportAthlete(
   client: PoolClient,
   organizationId: string,
