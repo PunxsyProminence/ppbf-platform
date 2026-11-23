@@ -152,7 +152,7 @@ test('a tap goes to the chance on screen, the count moves on, and change last ta
   expect(screen.getByRole('status')).toHaveTextContent('Saved: chance 1, Shown.');
   expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
   expect(screen.getByText('You: 1 shown of 1 tapped')).toBeInTheDocument();
-  await press(/Change last tap to Not shown/);
+  await press(/Change last tap \(chance \d+\) to Not shown/);
   expect(calls.at(-1)?.body).toEqual({ action: 'change_last', polarity: 'counterexample' });
   expect(screen.getByText('You: 0 shown of 1 tapped')).toBeInTheDocument();
   expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
@@ -205,7 +205,7 @@ test('a coach joining or coming back starts at the chance the count stands at, n
   // Back when the count is past the last chance: the window is full, whatever this coach tapped.
   current = 11;
   await reopen();
-  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
+  expect(screen.getByText('No chances left: the window is full.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: SHOWN })).toBeNull();
 });
 
@@ -216,7 +216,7 @@ test('the last chance takes a tap, and then the window is full', async () => {
   expect(screen.getByText('Chance 10 of 10')).toBeInTheDocument();
   await press(NOT_SHOWN);
   expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 10, polarity: 'counterexample' });
-  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
+  expect(screen.getByText('No chances left: the window is full.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: NOT_SHOWN })).toBeNull();
   expect(screen.getByRole('button', { name: 'Close the window' })).toBeInTheDocument();
 });
@@ -440,7 +440,7 @@ test('skip this chance moves the coach\'s own count on one and saves nothing; th
   const before = calls.length;
   await press(SKIP);
   expect(calls.length).toBe(before);
-  expect(screen.getByRole('status')).toHaveTextContent('Skipped chance 3: nothing saved for it.');
+  expect(screen.getByRole('status')).toHaveTextContent('Skipped chance 3: nothing saved for it. A skip is kept on this screen only.');
   expect(screen.getByText('Chance 4 of 10')).toBeInTheDocument();
   expect(screen.getByText('You: no taps yet')).toBeInTheDocument();
   await press(SHOWN);
@@ -456,8 +456,9 @@ test('change last tap after a skip still flips the coach\'s last tap, not the sk
   await press(SHOWN);
   await press(SKIP);
   expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Change last tap to Not shown/ })).toHaveAccessibleName('Change last tap to Not shown (chance 1)');
-  await press(/Change last tap to Not shown/);
+  // The chance is on the button itself, so after a skip the coach sees which tap it changes.
+  expect(screen.getByRole('button', { name: /Change last tap/ })).toHaveTextContent('Change last tap (chance 1) to Not shown');
+  await press(/Change last tap \(chance \d+\) to Not shown/);
   expect(calls.at(-1)?.body).toEqual({ action: 'change_last', polarity: 'counterexample' });
   expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
 });
@@ -467,7 +468,7 @@ test('skipping the last chance leaves the window full, with no tap and no skip t
   await showOpened();
   await press(/Join:/);
   await press(SKIP);
-  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
+  expect(screen.getByText('No chances left: the window is full.')).toBeInTheDocument();
   for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.queryByRole('button', { name })).toBeNull();
 });
 
@@ -569,4 +570,46 @@ test('of two Join taps made before either read lands, the later one wins, whiche
   });
   expect(screen.getByText(/^An old name: Ada Reyes/)).toBeInTheDocument();
   expect(screen.queryByText(/^Drops the lead hand after the jab: Ada Reyes/)).toBeNull();
+});
+
+// Review of 2b: an open made while a Join read is in flight is the latest choice.
+test('an open made while a Join read is still out wins over that read, whichever lands last', async () => {
+  let releaseJoin: (response: Response) => void = () => undefined;
+  serve((call) => {
+    if (call.method === 'GET' && call.url === WINDOW) return new Promise<Response>((resolve) => { releaseJoin = resolve; });
+    if (call.method === 'POST' && call.url === WINDOWS) return respond({ ok: true, window: { ...OPEN_ROW, window_id: 'win-2', behaviour_key: 'k_old' } }, 201);
+    if (call.url === `${WINDOWS}/win-2`) return windowRead(1, [], { ...OPEN_ROW, window_id: 'win-2', behaviour_key: 'k_old' });
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press('Open the window');
+  expect(screen.getByText(/^An old name: Ada Reyes/)).toBeInTheDocument();
+  await act(async () => {
+    releaseJoin(windowRead(4));
+  });
+  expect(screen.getByText(/^An old name: Ada Reyes/)).toBeInTheDocument();
+  expect(screen.queryByText('Chance 4 of 10')).toBeNull();
+});
+
+// Review of 2b: a tap's answer that lands after the coach hid the panel says nothing on the new one.
+test('a tap answered after the coach hid and reopened the screen leaves no word on the new panel', async () => {
+  let release: (response: Response) => void = () => undefined;
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') return windowRead(1);
+    if (call.method === 'PATCH') return new Promise<Response>((resolve) => { release = resolve; });
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  act(() => {
+    fireEvent.click(screen.getByRole('button', { name: SHOWN }));
+  });
+  await press(/^Hide/);
+  await press(/Watch a behaviour/);
+  await act(async () => {
+    release(respond({ ok: true, tap: { chance: 1, polarity: 'occurrence' } }));
+  });
+  expect(screen.getByRole('status')).not.toHaveTextContent('Saved');
+  expect(screen.queryByRole('button', { name: /Change last tap/ })).toBeNull();
 });

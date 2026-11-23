@@ -144,7 +144,11 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
   const open = async (event: FormEvent) => {
     event.preventDefault();
     if (view.state !== 'choose') return;
+    // A new generation: a Join read still in flight cannot land over this open (review of 2b).
+    generation.current += 1;
     const seen = generation.current;
+    // Words and state for this panel only: dropped once the coach has hidden it or chosen again.
+    const live = () => seen === generation.current;
     setBusy(true);
     setMessage('Saving…');
     try {
@@ -160,9 +164,9 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         // window per athlete and behaviour, PATTERN-2a): read it as Join does, so the coach starts
         // where the count stands and sees their own taps, not chance 1.
         const body = (await response.json()) as { window: WindowRow };
-        setLastTap(null);
-        setConfirmClose(false);
-        setMessage('');
+        if (live()) setLastTap(null);
+        if (live()) setConfirmClose(false);
+        if (live()) setMessage('');
         try {
           await readWindow(seen, body.window.window_id, view.names);
         } finally {
@@ -171,13 +175,13 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
-        setMessage(`Not opened: ${await reasonOf(response)}`);
+        if (live()) setMessage(`Not opened: ${await reasonOf(response)}`);
         setBusy(false);
         return;
       }
-      setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
+      if (live()) setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
     } catch {
-      setMessage('It is not known whether the window was opened; reading the list again.');
+      if (live()) setMessage('It is not known whether the window was opened; reading the list again.');
     }
     try {
       await readList(seen);
@@ -190,20 +194,21 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     if (view.state !== 'window') return;
     const current = view;
     const seen = generation.current;
+    const live = () => seen === generation.current;
     setBusy(true);
     setMessage('Saving…');
     try {
       const response = await call(`${WINDOWS}/${encodeURIComponent(current.window.window_id)}`, { method: 'PATCH', ...jsonBody(body) });
       if (response.ok) {
         const answer = (await response.json()) as { tap?: Tap; window?: WindowRow };
-        setConfirmClose(false);
+        if (live()) setConfirmClose(false);
         if (answer.window) {
-          setMessage('');
+          if (live()) setMessage('');
           show(seen, { ...current, window: answer.window });
         } else if (answer.tap) {
           const tap = answer.tap;
-          setLastTap(tap);
-          setMessage(`Saved: chance ${tap.chance}, ${polarityWord(tap.polarity)}.`);
+          if (live()) setLastTap(tap);
+          if (live()) setMessage(`Saved: chance ${tap.chance}, ${polarityWord(tap.polarity)}.`);
           const next = body.action === 'tap' ? tap.chance + 1 : current.next;
           show(seen, { ...current, next, taps: [...current.taps.filter((mine) => mine.chance !== tap.chance), tap] });
         }
@@ -211,14 +216,14 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
-        setMessage(`Not saved: ${await reasonOf(response)}`);
+        if (live()) setMessage(`Not saved: ${await reasonOf(response)}`);
       } else {
-        setLastTap(null);
-        setMessage(`It is not known whether the ${what} was saved (${response.status}); reading the window again.`);
+        if (live()) setLastTap(null);
+        if (live()) setMessage(`It is not known whether the ${what} was saved (${response.status}); reading the window again.`);
       }
     } catch {
-      setLastTap(null);
-      setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
+      if (live()) setLastTap(null);
+      if (live()) setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
     }
     // Held until the re-read settles (Codex P1 on #2120): a tap that did commit must not be sent
     // again on the old chance while the read is slow.
@@ -233,7 +238,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
   const skip = () => {
     if (view.state !== 'window' || busy) return;
     setConfirmClose(false);
-    setMessage(`Skipped chance ${view.next}: nothing saved for it.`);
+    setMessage(`Skipped chance ${view.next}: nothing saved for it. A skip is kept on this screen only.`);
     setView({ ...view, next: view.next + 1 });
   };
 
@@ -331,7 +336,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
               {working.window.closed_at ? (
                 <p>This window is closed.</p>
               ) : working.next > working.window.chances ? (
-                <p>{`No chances left: all ${working.window.chances} are tapped or skipped, so the window is full.`}</p>
+                <p>No chances left: the window is full.</p>
               ) : (
                 <>
                   <p className="font-semibold">{`Chance ${working.next} of ${working.window.chances}`}</p>
@@ -356,8 +361,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
               {!working.window.closed_at && lastTap ? (
                 <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy}
                   onClick={() => void send({ action: 'change_last', polarity: lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence' }, 'change')}>
-                  {`Change last tap to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
-                  <span className="sr-only">{` (chance ${lastTap.chance})`}</span>
+                  {`Change last tap (chance ${lastTap.chance}) to ${polarityWord(lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence')}`}
                 </button>
               ) : null}
               <p>{working.taps.length === 0 ? 'You: no taps yet' : `You: ${shown} shown of ${working.taps.length} tapped`}</p>
