@@ -13,9 +13,13 @@
 //     'athlete_voice'; otherwise 'shadow_disclosure'), with a fixed reason and no words of the note;
 //   - a coach's read never carries an admin-only note, or anything saying one exists; an
 //     organization admin's read carries it and the verdict;
-//   - "Mark reviewed" has the read's gate exactly: the coach of record and an organization admin may,
-//     a coach not on the athlete and another gym's coach get the same 404 as a missing report, and
-//     parent, athlete, board and platform owner are refused by role; the first review wins;
+//   - "Mark reviewed" has the read's gate exactly: any coach of the gym (since #1480) and an
+//     organization admin may; another gym's coach and a deleted athlete get the same 404 as a
+//     missing report; parent, athlete, board and platform owner are refused by role; the first
+//     review wins;
+//   - once an athlete's note named staff, their later disclosing notes stay admin-only (SHADOW
+//     chat's conversationAlreadyNamedStaff), and the escalation is filed even when the shadow event
+//     that follows the near miss fails;
 //   - a note over 500 characters, or from anyone but the athlete, is refused before anything is
 //     stored.
 // The sentences that disclose are verbatim from shadowDisclosureRoute.pg.test.ts, where the SHADOW
@@ -76,6 +80,7 @@ import { POST as observationsPOST } from '@/app/api/pilot/shadow/formulas/observ
 import { getStaffDisplayName } from './achievements';
 import type { PilotPrincipal } from './auth';
 import * as escalationLadder from './escalationLadder';
+import * as shadowEvents from './shadowEvents';
 import { requirePrincipal } from './http';
 
 jest.setTimeout(300_000);
@@ -352,17 +357,18 @@ describe('pain report note (DR-25)', () => {
   });
 
   test('a disclosing note is stored the same way and files its escalation with no words of the note', async () => {
-    await filePain(`${STAFF_DISCLOSURE} ${MARKER}`);
+    // The disclosure naming no one first: once staff are named, later ones stay admin-only.
     await filePain(`${NON_STAFF_DISCLOSURE} ${MARKER}`);
+    await filePain(`${STAFF_DISCLOSURE} ${MARKER}`);
 
     const rows = await nearMisses();
-    expect(rows.map((row) => row.athlete_note_admin_only)).toEqual([true, false]);
+    expect(rows.map((row) => row.athlete_note_admin_only)).toEqual([false, true]);
     expect(await markerElsewhere()).toEqual([]);
 
     const filed = await escalations();
     expect(filed.map((row) => [row.source_type, row.escalated_to_role])).toEqual([
-      ['athlete_voice', 'organization_admin'],
       ['shadow_disclosure', 'coach'],
+      ['athlete_voice', 'organization_admin'],
     ]);
     for (const [index, escalation] of filed.entries()) {
       expect(escalation.source_id).toBeNull();
@@ -372,6 +378,27 @@ describe('pain report note (DR-25)', () => {
       );
       expect(escalation.metadata).toEqual({ channel: 'pain_report_note', near_miss_id: rows[index].near_miss_id });
     }
+  });
+
+  test("once a note named staff, the same athlete's later disclosing notes stay admin-only; a plain note does not", async () => {
+    await filePain(STAFF_DISCLOSURE);
+    await filePain('he hit me again');
+    await filePain('my knee still hurts');
+
+    const rows = await nearMisses();
+    expect(rows.map((row) => row.athlete_note_admin_only)).toEqual([true, true, false]);
+    expect((await escalations()).map((row) => row.source_type)).toEqual(['athlete_voice', 'athlete_voice']);
+    const coach = await readPainList(AS.coach());
+    expect(coach.body.painReports!.map((report) => report.note ?? '(no note)').sort())
+      .toEqual(['(no note)', '(no note)', 'my knee still hurts']);
+  });
+
+  test('the escalation is filed even when the shadow event after the near miss fails', async () => {
+    jest.spyOn(shadowEvents, 'emitShadowEvent').mockRejectedValue(new Error('event insert failed'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const answer = await filePain(STAFF_DISCLOSURE);
+    expect(answer.status).toBe(500);
+    expect((await escalations()).map((row) => row.source_type)).toEqual(['athlete_voice']);
   });
 
   test('the athlete is answered the same with a plain note, a disclosing note, no note, and when the escalation fails', async () => {
@@ -400,6 +427,7 @@ describe('pain report note (DR-25)', () => {
   test('a note over 500 characters, from a coach, on another kind, or not a string is refused before anything is stored', async () => {
     expect((await filePain('x'.repeat(501))).status).toBe(400);
     expect((await filePain(['not', 'text'])).status).toBe(400);
+    expect((await filePain('sore\u0000knee')).status).toBe(400);
     expect((await filePain('sore', { as: AS.coach() })).status).toBe(400);
     expect((await filePain('sore', { kind: 'numeric', value: 4 })).status).toBe(400);
     expect(await nearMisses()).toEqual([]);
@@ -407,7 +435,8 @@ describe('pain report note (DR-25)', () => {
     // 500 accented characters are 500, not 1000 bytes; edge whitespace is trimmed; blank is no note.
     expect((await filePain(`  ${'é'.repeat(500)}\n`)).status).toBe(200);
     expect((await filePain('   \n\t ')).status).toBe(200);
-    expect((await nearMisses()).map((row) => row.athlete_note)).toEqual(['é'.repeat(500), null]);
+    expect((await filePain(' \u200b\ufeff ')).status).toBe(200);
+    expect((await nearMisses()).map((row) => row.athlete_note)).toEqual(['é'.repeat(500), null, null]);
   });
 });
 

@@ -3,7 +3,7 @@ import { query } from '../db';
 import {
   PAIN_REPORT_NEAR_MISS_TRIGGER,
   filePainNoteEscalation,
-  painNoteVerdict,
+  painNoteVerdictFor,
   storePainNote,
 } from '../painReportNotes';
 import { emitShadowEvent } from '../shadowEvents';
@@ -220,7 +220,9 @@ export async function alertCoachToPainReport(input: {
   const severity = severityForPain(value);
   const reporter = classifyPainReporter(input.actorRole);
   const note = input.note ?? null;
-  const verdict = note === null ? null : painNoteVerdict(note);
+  const verdict = note === null
+    ? null
+    : await painNoteVerdictFor(note, { organizationId: input.organizationId, athleteId: input.athleteId });
 
   const nearMiss = await flagNearMiss({
     withinTransaction: note === null || verdict === null
@@ -262,6 +264,17 @@ export async function alertCoachToPainReport(input: {
     },
   });
 
+  // Straight after the near miss commits, BEFORE the shadow event: if that
+  // insert fails, a disclosure must already have reached a person (PR 2
+  // reviewer A). Never throws: see filePainNoteEscalation for why the
+  // athlete's response must not depend on it.
+  if (verdict !== null) {
+    await filePainNoteEscalation(
+      { organizationId: input.organizationId, athleteId: input.athleteId, nearMissId: nearMiss.near_miss_id },
+      verdict,
+    );
+  }
+
   // 'PENDING' is load-bearing: shadowReadModels.toReviewState reads it out of
   // the event name to show the coach that this item is still unreviewed.
   await emitShadowEvent({
@@ -285,15 +298,6 @@ export async function alertCoachToPainReport(input: {
       reporter_role: reporter,
     },
   });
-
-  // After everything above has committed, and never throwing: see
-  // filePainNoteEscalation for why the athlete's response must not depend on it.
-  if (verdict !== null) {
-    await filePainNoteEscalation(
-      { organizationId: input.organizationId, athleteId: input.athleteId, nearMissId: nearMiss.near_miss_id },
-      verdict,
-    );
-  }
 
   return { raised: true, severity };
 }

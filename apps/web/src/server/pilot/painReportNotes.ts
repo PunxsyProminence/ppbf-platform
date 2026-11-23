@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
 
 import { athleteVoiceSeverity } from './athleteVoice';
-import { withTransaction } from './db';
+import { queryOne, withTransaction } from './db';
 import { NotFoundError } from './errors';
 import { fileEscalation, type SafetyEscalationSourceType } from './escalationLadder';
 import { detectShadowDisclosure, type ShadowDisclosure } from './shadowDisclosure';
@@ -22,16 +22,21 @@ export const PAIN_NOTE_MAX = 500;
 /** Characters btrim strips in the database check: space, tab, carriage return, line feed. */
 const EDGE_WHITESPACE = /^[ \t\r\n]+|[ \t\r\n]+$/g;
 
+/** Invisible format characters (zero-width space and joiners, BOM, direction marks). */
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+
 /**
- * The note as it will be stored: trimmed, and null when nothing is left. 'invalid' for anything
- * that is not a string, or a note over the limit. Counted in characters (code points), as
- * Postgres's char_length counts them, so an accented note is not cut short.
+ * The note as it will be stored: trimmed, and null when nothing visible is left (whitespace and
+ * invisible format characters only). 'invalid' for anything that is not a string, a note holding
+ * a NUL (Postgres text cannot store one, and the failed write would take the whole pain report
+ * with it), or a note over the limit. Counted in characters (code points), as Postgres's
+ * char_length counts them, so an accented note is not cut short.
  */
 export function normalizePainNote(value: unknown): string | null | 'invalid' {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') return 'invalid';
+  if (typeof value !== 'string' || value.includes('\u0000')) return 'invalid';
   const trimmed = value.trim().replace(EDGE_WHITESPACE, '');
-  if (trimmed.length === 0) return null;
+  if (trimmed.replace(FORMAT_CHARACTERS, '').trim().length === 0) return null;
   return [...trimmed].length > PAIN_NOTE_MAX ? 'invalid' : trimmed;
 }
 
@@ -44,14 +49,41 @@ export interface PainNoteVerdict {
 
 /**
  * The note's safety-scan verdict, by the SHADOW chat rules (shadowDisclosure.ts): the same scan
- * and carve-outs, which already ignore plain pain and injury words (a pain note is mostly those),
- * and the same admin-only routing. OD-2026-10-01-008 section 3 as applied by OD-2026-10-15-002,
- * with Overwatch's 2026-10-15 hard-floor admin-only exception, applied to this new free-text
- * channel from a minor by Overwatch's GO on PR #2133 (Q3 A).
+ * and carve-outs, and the same admin-only routing. OD-2026-10-01-008 section 3 as applied by
+ * OD-2026-10-15-002, with Overwatch's 2026-10-15 hard-floor admin-only exception, applied to this
+ * new free-text channel from a minor by Overwatch's GO on PR #2133 (Q3 A).
+ *
+ * Plain pain and injury words alone are not a disclosure, so most notes pass. But a note that
+ * also names gym staff ("coach wrapped it, my wrist hurts") is admin-only under that ruling, as
+ * the same sentence is in SHADOW chat: coaches are not shown it and an admin is told. The cost was
+ * put to Overwatch on PR #2138.
  */
 export function painNoteVerdict(note: string): PainNoteVerdict {
   const disclosure = detectShadowDisclosure(note, 'athlete');
   return { adminOnly: disclosure?.adminOnly ?? false, disclosure };
+}
+
+/**
+ * The verdict, and STILL ADMIN-ONLY ONCE STAFF WERE NAMED: the pain-note form of SHADOW chat's
+ * conversationAlreadyNamedStaff (shadowDisclosure.ts). "My coach hits me" is admin-only; the
+ * same child's next note, "he hit me again", names nobody and would otherwise go to the coach of
+ * record, who may be "he". So a disclosing note from an athlete who has any earlier pain-note
+ * escalation filed admin-only is admin-only too. A note that discloses nothing is unaffected.
+ */
+export async function painNoteVerdictFor(
+  note: string,
+  context: { organizationId: string; athleteId: string },
+): Promise<PainNoteVerdict> {
+  const verdict = painNoteVerdict(note);
+  if (verdict.disclosure === null || verdict.adminOnly) return verdict;
+  const earlier = await queryOne<{ found: boolean }>(
+    `select true as found from pilot.safety_escalations
+      where organization_id = $1 and athlete_id = $2 and source_type = 'athlete_voice'
+        and metadata->>'channel' = 'pain_report_note'
+      limit 1`,
+    [context.organizationId, context.athleteId],
+  );
+  return earlier?.found ? { ...verdict, adminOnly: true } : verdict;
 }
 
 /** Fixed on purpose: the reason renders on the escalation surface, so it never quotes the note. */
@@ -211,6 +243,9 @@ export async function markPainReportReviewed(input: {
       [input.organizationId, input.nearMissId],
     );
     const row = existing.rows[0];
+    if (!row) {
+      throw new NotFoundError('Pain report not found.', 'PAIN_REPORT_NOT_FOUND');
+    }
     return {
       athleteId,
       reviewedAt: new Date(row.reviewed_at).toISOString(),
