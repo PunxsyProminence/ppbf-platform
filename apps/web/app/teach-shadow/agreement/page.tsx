@@ -243,7 +243,7 @@ export default function LabelAgreementPage() {
         <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <p className="t-eyebrow text-[color:var(--brass-200)]">Teach Shadow</p>
           <h1 className="t-gothic mt-[var(--s2)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>Label Agreement</h1>
-          <ClusterNav cluster="film" />
+          <ClusterNav cluster="teach-shadow" />
         </header>
 
         {showStatePanel ? (

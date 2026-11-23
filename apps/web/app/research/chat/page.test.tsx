@@ -123,9 +123,9 @@ describe('the SHADOW (Admin) link', () => {
     await renderPage();
 
     expect(screen.queryByRole('link', { name: 'SHADOW (Admin)' })).toBeNull();
-    // The rest of the navigation is untouched.
+    // The rest of the navigation is untouched (Evidence Review has its own
+    // door check, below).
     expect(screen.getByRole('link', { name: 'Research Intake' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Evidence Review' })).toBeTruthy();
   });
 
   test('is not offered before the session is known', async () => {
@@ -140,6 +140,37 @@ describe('the SHADOW (Admin) link', () => {
     await renderPage();
 
     expect(screen.getByRole('link', { name: 'SHADOW (Admin)' }).getAttribute('href')).toBe('/admin/shadow');
+  });
+});
+
+// Lane AS4-4D4E (app scrub BOA-09): /evidence admits administrators and the
+// platform owner only, so its link is offered by its door, as SHADOW (Admin)
+// is above. Display only: /evidence keeps its own gate.
+describe('the Evidence Review link', () => {
+  afterEach(() => {
+    act(() => clearRoleSession());
+  });
+
+  test.each(['parent', 'athlete', 'coach', 'volunteer', 'staff'] as const)('is not offered to a %s', async (role) => {
+    createPersistentRoleSession(role);
+    await renderPage();
+
+    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Research Intake' })).toBeTruthy();
+  });
+
+  test('is not offered before the session is known', async () => {
+    clearRoleSession();
+    await renderPage();
+
+    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
+  });
+
+  test.each(['admin', 'platform_owner'] as const)('is offered to a %s', async (role) => {
+    createPersistentRoleSession(role);
+    await renderPage();
+
+    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
   });
 });
 

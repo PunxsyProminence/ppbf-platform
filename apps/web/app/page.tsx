@@ -703,6 +703,11 @@ export default async function HomePage() {
               <a href={`mailto:${org.email}`}>{org.email}</a>
             </p>
             <p className="t-body">
+              {/* A visitor had no way to find the store (app scrub FAM-16; lane
+                  AS4-4D4E). The words are the store page's title. */}
+              <Link href="/store">Equipment Store</Link>
+            </p>
+            <p className="t-body">
               {/* The privacy page covers the interest form only (FAM-26; AS-9
                   Q11 = A), so the link says so. */}
               <Link href="/privacy">Privacy: interest form</Link>

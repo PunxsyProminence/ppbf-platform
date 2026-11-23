@@ -351,7 +351,7 @@ export default function TeachShadowCapturePage() {
             <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
               Capture Examples
             </h1>
-            <ClusterNav cluster="film" />
+            <ClusterNav cluster="teach-shadow" />
             <p className="t-body mt-[var(--s3)] max-w-3xl">
               Short teaching captures. Recording stops itself at {limitMb} MB, which is a deliberate margin under
               the upload limit rather than the limit itself, so a take is never lost to a refused upload. Several

@@ -1,4 +1,9 @@
+'use client';
+
 import Link from 'next/link';
+import { useSyncExternalStore } from 'react';
+import { visibleDoors } from './buildingMap';
+import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 
 export type PipelineStageKey = 'research' | 'evidence' | 'knowledge' | 'simulator' | 'audit';
 
@@ -39,7 +44,15 @@ interface DevelopmentPipelineBannerProps {
    RoleStandaloneView.tsx:45-47 documents -- so the current-stage label fell
    back to inherited ink at roughly 1.3:1 and was invisible on every file-room
    page. `text-[color:...]` is the form that lands. */
+/* A stage is a link only when its door admits the reader (app scrub BOA-09;
+   lane AS4-4D4E, Q2 = A on #2128): Audit Trace admits coaches, and its banner
+   offered them Evidence Review Queue, whose gate refuses them, so the click
+   bounced home with nothing said. Every other stage is still named, in the
+   same place, as text. This hides a link; each page keeps its own gate. With
+   no session yet no stage is a link (the closed side). */
 export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentPipelineBannerProps) {
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const openable = new Set(visibleDoors(session?.role ?? null).map((door) => door.href));
   const currentIndex = pipelineStages.findIndex((stage) => stage.key === currentStage);
   const nextStage = currentIndex >= 0 && currentIndex < pipelineStages.length - 1 ? pipelineStages[currentIndex + 1] : null;
   const current = currentIndex >= 0 ? pipelineStages[currentIndex] : null;
@@ -54,20 +67,26 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
       <ol className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s2)]">
         {pipelineStages.map((stage, index) => {
           const isCurrent = stage.key === currentStage;
+          const opens = openable.has(stage.href);
+          // A stage that is not a link does not light up or animate under the
+          // pointer, so it does not read as pressable (layout review, #2129).
+          const stageClass = `inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] py-[var(--s3)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.09em]${opens ? ' transition' : ''} ${
+            isCurrent
+              ? 'mat-leather--raised border-[color:var(--brass-300)] text-[color:var(--bone-100)]'
+              : `border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)]${opens ? ' hover:border-[color:var(--brass-400)]' : ''}`
+          }`;
 
           return (
             <li key={stage.key} className="flex items-center gap-[var(--s2)]">
-              <Link
-                href={stage.href}
-                aria-current={isCurrent ? 'page' : undefined}
-                className={`inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] py-[var(--s3)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.09em] transition ${
-                  isCurrent
-                    ? 'mat-leather--raised border-[color:var(--brass-300)] text-[color:var(--bone-100)]'
-                    : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
-                }`}
-              >
-                {stage.label}
-              </Link>
+              {opens ? (
+                <Link href={stage.href} aria-current={isCurrent ? 'page' : undefined} className={stageClass}>
+                  {stage.label}
+                </Link>
+              ) : (
+                <span aria-current={isCurrent ? 'page' : undefined} className={stageClass}>
+                  {stage.label}
+                </span>
+              )}
               {/* The file room's motion is a queue read left to right, so the
                   separator points the way the row actually runs. */}
               {index < pipelineStages.length - 1 && (

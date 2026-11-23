@@ -26,6 +26,7 @@ import type { ReactNode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 
 import KnowledgeGraphPage from './page';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -189,6 +190,9 @@ test('a projection that answered empty still says each stream has no items', asy
 // AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): each header link reads the
 // title of the page it opens.
 test('the header links read the titles of the pages they open', async () => {
+  // The banner draws a stage as a link only when its door admits the reader
+  // (lane AS4-4D4E, #2129); an admin's doors admit every stage.
+  createPersistentRoleSession('admin');
   installFetch(async () => ({ ok: true, json: async () => ({ ok: true, items: [] }) } as Response));
 
   await act(async () => {
@@ -209,4 +213,5 @@ test('the header links read the titles of the pages they open', async () => {
   for (const old of ['Research Intake', 'Evidence Review', 'Simulator']) {
     expect(screen.queryByRole('link', { name: old })).toBeNull();
   }
+  act(() => clearRoleSession());
 });

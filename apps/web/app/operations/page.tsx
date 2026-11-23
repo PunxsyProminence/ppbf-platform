@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { OPERATIONS_ROLES, canUseOperationsHub } from '@/components/operationsAccess';
+import { visibleDoors } from '@/components/buildingMap';
 
 /* No role selector and no cross-role workspace tiles (lane U2, audit UX-A
    A-5): every one of them opened a page that refuses an admin, so RoleSessionGate
@@ -181,6 +182,14 @@ export default function OperationsHubPage() {
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const viewerRole = session?.role ?? null;
   const showsLabDesks = canUseOperationsHub(viewerRole);
+  /* Every link on this page is drawn only when its door admits the reader
+     (app scrub OFF-22, BOA-09; lane AS4-4D4E). The hub admits the platform
+     owner, and the register, the desks and the utility links offered it
+     pages whose gates refuse it (Audit Trace, the admin desks), so the click
+     bounced home with nothing said. A register row stays, without its link
+     (the record is the record). Visibility only: every page keeps its gate. */
+  const openable = new Set(visibleDoors(viewerRole).map((door) => door.href));
+  const opens = (href: string) => openable.has(href.split('?')[0]);
 
   return (
     <RoleSessionGate allowedRoles={[...OPERATIONS_ROLES]}>
@@ -264,7 +273,7 @@ export default function OperationsHubPage() {
                     The research, evidence, and audit desks, and the rooms that keep their records.
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {developmentLab.map((item) => (
+                    {developmentLab.filter((item) => opens(item.href)).map((item) => (
                       <Link
                         key={item.href}
                         href={item.href}
@@ -332,10 +341,12 @@ export default function OperationsHubPage() {
                             <td className="max-w-[58ch]">{item.notes}</td>
                             <td className="ledger-id">{item.record ?? '—'}</td>
                             <td>
-                              {item.href ? (
+                              {item.href && opens(item.href) ? (
                                 <Link href={item.href} className="btn--lever hover:no-underline" aria-label={`Open ${item.name}`}>
                                   Open
                                 </Link>
+                              ) : item.href ? (
+                                <span className="t-muted">—</span>
                               ) : (
                                 <span className="t-muted">No screen yet</span>
                               )}
@@ -379,15 +390,17 @@ export default function OperationsHubPage() {
                   The night record — every SHADOW event and reading, newest first — is kept in the
                   after-hours room, not at this desk. Open it when you need the log itself.
                 </p>
-                <Link href="/admin/shadow" className="btn btn--ghost">
-                  Open the after-hours room
-                </Link>
+                {opens('/admin/shadow') ? (
+                  <Link href="/admin/shadow" className="btn btn--ghost">
+                    Open the after-hours room
+                  </Link>
+                ) : null}
               </section>
 
               <section className="space-y-[var(--s3)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                 <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Around The Building</h2>
                 <div className="grid gap-2">
-                  {utilityLinks.map((item) => (
+                  {utilityLinks.filter((item) => opens(item.href)).map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
