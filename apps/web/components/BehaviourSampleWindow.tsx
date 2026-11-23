@@ -132,7 +132,9 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     }
   };
 
+  // Each Join is a new generation, so only the latest choice can land (Codex P2 on #2120).
   const join = async (windowId: string, names: BehaviourName[]) => {
+    generation.current += 1;
     setLastTap(null);
     setConfirmClose(false);
     setMessage('');
@@ -154,24 +156,34 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         }),
       });
       if (response.ok) {
+        // The answer may be a window another coach opened first, which this coach joins (one open
+        // window per athlete and behaviour, PATTERN-2a): read it as Join does, so the coach starts
+        // where the count stands and sees their own taps, not chance 1.
         const body = (await response.json()) as { window: WindowRow };
         setLastTap(null);
         setConfirmClose(false);
         setMessage('');
-        show(seen, { state: 'window', names: view.names, window: body.window, next: 1, taps: [] });
+        try {
+          await readWindow(seen, body.window.window_id, view.names);
+        } finally {
+          setBusy(false);
+        }
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
         setMessage(`Not opened: ${await reasonOf(response)}`);
+        setBusy(false);
         return;
       }
       setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
     } catch {
       setMessage('It is not known whether the window was opened; reading the list again.');
+    }
+    try {
+      await readList(seen);
     } finally {
       setBusy(false);
     }
-    await readList(seen);
   };
 
   const send = async (body: { action: string; chance?: number; polarity?: Polarity }, what: string) => {
@@ -195,6 +207,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
           const next = body.action === 'tap' ? tap.chance + 1 : current.next;
           show(seen, { ...current, next, taps: [...current.taps.filter((mine) => mine.chance !== tap.chance), tap] });
         }
+        setBusy(false);
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
@@ -206,10 +219,14 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     } catch {
       setLastTap(null);
       setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
+    }
+    // Held until the re-read settles (Codex P1 on #2120): a tap that did commit must not be sent
+    // again on the old chance while the read is slow.
+    try {
+      await readWindow(seen, current.window.window_id, current.names, current.next);
     } finally {
       setBusy(false);
     }
-    await readWindow(seen, current.window.window_id, current.names, current.next);
   };
 
   // No request: the chance gets no answer from this coach, and their place moves on one (2b).

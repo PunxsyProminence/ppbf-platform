@@ -104,7 +104,8 @@ test('reads nothing until the coach opens it, then offers the active names, the 
 
 test('opens a window for this athlete in this run, as asked, then shows chance 1 of its chances and no change to make', async () => {
   serve((call) => lists()(call) ?? (call.method === 'POST' && call.url === WINDOWS
-    ? respond({ ok: true, window: { ...OPEN_ROW, task_constraint: 'live', chances: 6 } }, 201) : undefined));
+    ? respond({ ok: true, window: { ...OPEN_ROW, task_constraint: 'live', chances: 6 } }, 201)
+    : call.method === 'GET' && call.url === WINDOW ? windowRead(1, [], { ...OPEN_ROW, task_constraint: 'live', chances: 6 }) : undefined));
   await showOpened();
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'live' } });
@@ -395,6 +396,7 @@ test('a tap answered with a server error forgets the last tap, as a lost one doe
 test('opening a new window forgets the last tap made in another', async () => {
   serve((call) => {
     if (call.url === WINDOW) return call.method === 'GET' ? windowRead(1) : patchEcho(call);
+    if (call.url === `${WINDOWS}/win-2`) return windowRead(1, [], { ...OPEN_ROW, window_id: 'win-2' });
     if (call.method === 'POST') return respond({ ok: true, window: { ...OPEN_ROW, window_id: 'win-2' } }, 201);
     return lists([OPEN_ROW])(call);
   });
@@ -503,4 +505,68 @@ test('a re-read after a refused tap keeps the place a skip moved to', async () =
   expect(calls.at(-1)?.url).toBe(WINDOW);
   expect(calls.at(-2)?.body).toEqual({ action: 'tap', chance: 3, polarity: 'occurrence' });
   expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+});
+
+// Overwatch 7091097843 (B1): an open can answer a window another coach opened first (PATTERN-2a).
+test('an open answered with a window already under way reads it, and starts where the count stands with the coach\'s own taps', async () => {
+  serve((call) => {
+    if (call.method === 'POST' && call.url === WINDOWS) return respond({ ok: true, window: OPEN_ROW }, 201);
+    if (call.url === WINDOW) return call.method === 'GET' ? windowRead(6, [{ chance: 2, polarity: 'occurrence' }]) : patchEcho(call);
+    return lists()(call);
+  });
+  await showOpened();
+  await press('Open the window');
+  expect(calls.filter((call) => call.method === 'GET' && call.url === WINDOW)).toHaveLength(1);
+  expect(screen.getByText('Chance 6 of 10')).toBeInTheDocument();
+  expect(screen.getByText('You: 1 shown of 1 tapped')).toBeInTheDocument();
+  await press(NOT_SHOWN);
+  expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 6, polarity: 'counterexample' });
+});
+
+// Codex P1 on #2120 (4660882829).
+test('after a tap with no known answer, the tap and skip buttons stay held until the re-read lands', async () => {
+  let release: (response: Response) => void = () => undefined;
+  let reads = 0;
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') {
+      reads += 1;
+      return reads === 1 ? windowRead(1) : new Promise<Response>((resolve) => { release = resolve; });
+    }
+    if (call.method === 'PATCH') return respond({}, 502);
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  expect(screen.getByRole('status')).toHaveTextContent('It is not known whether the tap was saved (502); reading the window again.');
+  for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.getByRole('button', { name })).toBeDisabled();
+  // The tap did commit: the re-read shows it, and the coach moves on past it.
+  await act(async () => {
+    release(windowRead(2, [{ chance: 1, polarity: 'occurrence' }]));
+  });
+  expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
+  for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.getByRole('button', { name })).toBeEnabled();
+});
+
+// Codex P2 on #2120 (4660882836).
+test('of two Join taps made before either read lands, the later one wins, whichever answer comes last', async () => {
+  const SECOND = { ...OPEN_ROW, window_id: 'win-3', behaviour_key: 'k_old' };
+  const held: Record<string, (response: Response) => void> = {};
+  serve((call) => {
+    if (call.method === 'GET' && (call.url === WINDOW || call.url === `${WINDOWS}/win-3`)) {
+      return new Promise<Response>((resolve) => { held[call.url] = resolve; });
+    }
+    return lists([OPEN_ROW, SECOND])(call);
+  });
+  await showOpened();
+  await press(/Join: Drops the lead hand/);
+  await press(/Join: An old name/);
+  await act(async () => {
+    held[`${WINDOWS}/win-3`](windowRead(1, [], SECOND));
+  });
+  await act(async () => {
+    held[WINDOW](windowRead(1));
+  });
+  expect(screen.getByText(/^An old name: Ada Reyes/)).toBeInTheDocument();
+  expect(screen.queryByText(/^Drops the lead hand after the jab: Ada Reyes/)).toBeNull();
 });
