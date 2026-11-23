@@ -37,7 +37,7 @@ export const SESSION_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   SESSION_RUN_ATHLETE_NOT_PERMITTED: 'Your account cannot record that athlete here. Nothing was changed.',
   SESSION_RUN_BLOCK_NOT_IN_SCRIPT: 'That block is not part of this session\'s plan, so the session stayed where it was.',
   SESSION_RUN_HAS_NO_SCRIPT: 'This session has no plan, so there are no blocks to move between.',
-  SESSION_RUN_NOT_ON_TV: 'Switch "Show on TV" on for your session first, then send it.',
+  SESSION_RUN_NOT_ON_TV: 'Switch "Allow on a TV" on for your session first, then send it.',
   ROUND_TIMER_RUNNING: 'The rounds are already running.',
   ROUND_TIMER_PAUSED: 'The rounds are paused. Press Resume to carry on.',
   ROUND_TIMER_ENDED: 'Those rounds have ended. Set up the rounds again to start a new set.',

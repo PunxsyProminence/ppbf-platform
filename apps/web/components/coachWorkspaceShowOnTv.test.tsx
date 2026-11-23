@@ -93,11 +93,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+// The "Allow on a TV" switch, in the class screen's words (DR-09). Its state is
+// aria-checked and the On/Off word beside it; the card never claims a TV shows the run.
+const allowSwitch = () => screen.getByRole('switch', { name: 'Allow on a TV' });
+
 test('no live run: no TV switch is offered', async () => {
   await renderWorkspace();
   expect(screen.queryByText('No session in progress.')).not.toBeNull();
-  expect(screen.queryByRole('button', { name: 'Show on TV' })).toBeNull();
-  expect(screen.queryByText('NOT ON THE TV')).toBeNull();
+  expect(screen.queryByRole('switch', { name: 'Allow on a TV' })).toBeNull();
 });
 
 // F-060: the TV has shown sessions since Release 21; the switch alone puts
@@ -105,21 +108,23 @@ test('no live run: no TV switch is offered', async () => {
 test('the line under the switch says how the session reaches a TV, not that TVs cannot show it', async () => {
   await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
 
-  expect(screen.getByText('Switching this on lets you send the session to a gym TV from Gym TVs below.')).toBeTruthy();
+  // The class screen's words (SessionScriptLiveDelivery, #2001), copied exactly (DR-09).
+  expect(screen.getByText('With this on, send the session to a gym TV from Gym TVs below.')).toBeTruthy();
   expect(screen.queryByText(/does not show sessions yet/)).toBeNull();
 });
 
 test('a live run starts off the TV and the switch sends show:true, then shows the server state', async () => {
   const fetchMock = await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
 
-  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
-  expect(screen.queryByText('ON THE TV')).toBeNull();
+  expect(allowSwitch().getAttribute('aria-checked')).toBe('false');
+  expect(screen.queryByText('Off')).not.toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+  fireEvent.click(allowSwitch());
 
-  await waitFor(() => expect(screen.queryByText('ON THE TV')).not.toBeNull());
-  expect(screen.queryByText('NOT ON THE TV')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Take off the TV' })).not.toBeNull();
+  await waitFor(() => expect(allowSwitch().getAttribute('aria-checked')).toBe('true'));
+  expect(screen.queryByText('On')).not.toBeNull();
+  // The switch alone puts nothing on a TV, so nothing here says it is on one.
+  expect(screen.queryByText(/on the tv/i)).toBeNull();
 
   const patch = fetchMock.mock.calls.find(
     (call) => String(call[0]).includes('/api/pilot/session-scripts/runs/run_1') && (call[1] as RequestInit).method === 'PATCH',
@@ -128,60 +133,58 @@ test('a live run starts off the TV and the switch sends show:true, then shows th
   expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({ action: 'show_on_wall', show: true });
 });
 
-test('a run already on the TV offers Take off the TV and sends show:false (never a toggle)', async () => {
+test('a run already allowed on a TV sends show:false when switched (never a toggle)', async () => {
   const fetchMock = await renderWorkspace({
     liveRunGet: () => jsonResponse({ run: liveRunRow({ show_on_wall: true }) }),
   });
-  expect(screen.queryByText('ON THE TV')).not.toBeNull();
+  expect(allowSwitch().getAttribute('aria-checked')).toBe('true');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Take off the TV' }));
-  await waitFor(() => expect(screen.queryByText('NOT ON THE TV')).not.toBeNull());
+  fireEvent.click(allowSwitch());
+  await waitFor(() => expect(allowSwitch().getAttribute('aria-checked')).toBe('false'));
 
   const patch = fetchMock.mock.calls.find((call) => (call[1] as RequestInit | undefined)?.method === 'PATCH');
   expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({ action: 'show_on_wall', show: false });
 });
 
-test('the badge is the server\'s answer, not the tap: a refused switch stays off and says so', async () => {
+test('the switch is the server\'s answer, not the tap: a refused switch stays off and says so', async () => {
   await renderWorkspace({
     liveRunGet: () => jsonResponse({ run: liveRunRow() }),
     runPatch: () => jsonResponse({ error: 'SOME_REFUSAL' }, { ok: false, status: 409 }),
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+  fireEvent.click(allowSwitch());
 
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeNull());
   // Words, never the stored code (UXB-09).
   expect(screen.getByRole('alert').textContent).toBe('That did not go through. Nothing was changed. Try again.');
   expect(screen.getByRole('alert').textContent).not.toContain('SOME_REFUSAL');
-  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
-  expect(screen.queryByText('ON THE TV')).toBeNull();
+  expect(allowSwitch().getAttribute('aria-checked')).toBe('false');
 });
 
-test('the badge is the server answer even on success: asked for true, told false, shows NOT ON THE TV', async () => {
+test('the switch is the server answer even on success: asked for true, told false, stays off', async () => {
   await renderWorkspace({
     liveRunGet: () => jsonResponse({ run: liveRunRow() }),
     runPatch: () => jsonResponse({ run: liveRunRow({ show_on_wall: false }) }),
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+  fireEvent.click(allowSwitch());
 
   // The request completes; the component must take the server's value, not the tap's.
-  await waitFor(() => expect((screen.getByRole('button', { name: 'Show on TV' }) as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
-  expect(screen.queryByText('ON THE TV')).toBeNull();
+  await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false));
+  expect(allowSwitch().getAttribute('aria-checked')).toBe('false');
 });
 
-test('a network failure says the state is unconfirmed and leaves the badge alone', async () => {
+test('a network failure says the state is unconfirmed and leaves the switch alone', async () => {
   const fetchMock = await renderWorkspace({ liveRunGet: () => jsonResponse({ run: liveRunRow() }) });
   fetchMock.mockImplementationOnce(async () => {
     throw new Error('offline');
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+  fireEvent.click(allowSwitch());
 
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeNull());
   expect(screen.getByRole('alert').textContent).toMatch(/could not confirm/i);
-  expect(screen.queryByText('NOT ON THE TV')).not.toBeNull();
+  expect(allowSwitch().getAttribute('aria-checked')).toBe('false');
 });
 
 test('a run the server says is no longer live is re-read, not left showing a stale switch', async () => {
@@ -194,9 +197,9 @@ test('a run the server says is no longer live is re-read, not left showing a sta
     runPatch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, { ok: false, status: 409 }),
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+  fireEvent.click(allowSwitch());
 
   await waitFor(() => expect(screen.queryByText('No session in progress.')).not.toBeNull());
-  expect(screen.queryByRole('button', { name: 'Show on TV' })).toBeNull();
+  expect(screen.queryByRole('switch', { name: 'Allow on a TV' })).toBeNull();
   expect(screen.queryByRole('alert')).toBeNull();
 });

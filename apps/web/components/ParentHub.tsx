@@ -145,15 +145,13 @@ function firstName(name: string | null | undefined): string | null {
   return trimmed.split(/\s+/)[0];
 }
 
-function countsByChild(
+/* Each child's label on the parent tiles, in tile order: first name; full
+   name when two share a first name; "Your child" with no name on file. One
+   rule for the all-children tiles and the selected child's (FAM-12). */
+function childLabels(
   childList: ReadonlyArray<{ id: string; name: string }>,
   allMessages: ReadonlyArray<ParentMessage>,
-  counted: (message: ParentMessage) => boolean,
-): ChildCount[] {
-  const counts = new Map<string, number>();
-  for (const message of allMessages) {
-    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
-  }
+): Array<{ id: string; label: string }> {
   // One list of people for both tiles: the roster's children, each once, then
   // any child only a message names (every message, counted or not, so the two
   // tiles never list different children).
@@ -178,11 +176,23 @@ function countsByChild(
     if (person.first) firstUses.set(person.first, (firstUses.get(person.first) ?? 0) + 1);
   }
   return people.map((person) => ({
+    id: person.id,
     label: person.first
       ? (firstUses.get(person.first) ?? 0) > 1 ? person.full ?? person.first : person.first
       : 'Your child',
-    count: counts.get(person.id) ?? 0,
   }));
+}
+
+function countsByChild(
+  childList: ReadonlyArray<{ id: string; name: string }>,
+  allMessages: ReadonlyArray<ParentMessage>,
+  counted: (message: ParentMessage) => boolean,
+): ChildCount[] {
+  const counts = new Map<string, number>();
+  for (const message of allMessages) {
+    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
+  }
+  return childLabels(childList, allMessages).map(({ id, label }) => ({ label, count: counts.get(id) ?? 0 }));
 }
 
 /* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
@@ -1589,6 +1599,7 @@ export default function ParentHub() {
             missing from the line, or the line would be a bare 0. */}
         <ParentSummaryPanel
           childProgress={progressText}
+          childLabel={activeChildId ? childLabels(children, messages).find((entry) => entry.id === activeChildId)?.label ?? null : null}
           tasksDue={messagesLoaded && rosterAnswered ? countsByChild(children, messages, isOpenTask) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}

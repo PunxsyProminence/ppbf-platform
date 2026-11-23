@@ -844,10 +844,13 @@ describe('Messages tab (#90)', () => {
 // default.
 describe('summary tile honesty', () => {
   function tileValue(label: string): string {
-    // A tile label may also be a tab button; the tile's label is the <p>.
-    const labelElement = screen.getAllByText(label).find((element) => element.tagName === 'P');
+    // A tile label may also be a tab button; the tile's label is the <p>. A tile
+    // that counts the selected child alone names the child after it (FAM-12).
+    const labelElement = screen
+      .getAllByText((_, element) => element?.tagName === 'P' && (element.textContent === label || (element.textContent ?? '').startsWith(`${label} · `)))
+      .find((element) => element.tagName === 'P');
     const tile = labelElement?.parentElement;
-    return tile?.textContent?.replace(label, '').trim() ?? '';
+    return tile?.textContent?.replace(labelElement?.textContent ?? label, '').trim() ?? '';
   }
 
   test('Upcoming counts from the answered schedule read and Parent Floor tasks from the answered messages read (a real zero on both here)', async () => {
