@@ -73,8 +73,10 @@ export function painNoteVerdict(note: string): PainNoteVerdict {
  *   - any earlier note stored admin-only, even if its escalation failed to file; or
  *   - any 'athlete_voice' escalation from ANY channel (SHADOW chat, the Tell us box) that is not
  *     yet resolved: Overwatch Q10 B on #2138, under Jason's Q7 ruling "A: Keep strict" -- a child
- *     who already named staff elsewhere is where keeping it from coaches matters most. "Open" is
- *     read as not resolved, so an acknowledged one still counts.
+ *     who already has an unresolved admin-only safeguarding escalation elsewhere is where keeping
+ *     it from coaches matters most. That includes every safeguarding Tell us submission, not only
+ *     one naming staff (athleteVoice.ts), so it errs toward admins. "Open" is read as not
+ *     resolved, so an acknowledged one still counts.
  * A note that discloses nothing is unaffected.
  */
 export async function painNoteVerdictFor(
