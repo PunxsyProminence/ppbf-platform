@@ -157,10 +157,14 @@ export default function GlobalRoleHeader() {
      is never signed in (it reads with the device cookie), so the TV is
      unchanged. The watch still does nothing on an unmarked device (ATH-10).
 
-     Pinned inline: a direct child of <body> meets globals.css's unlayered
-     `body > * { position: relative; z-index: 2 }`, which beats Tailwind's
-     layered `fixed` (the same reason as TabletIdleSignOut's banner). Under
-     that banner (1000) and its cover (1002), so neither is ever hidden.
+     Pinned inline. Today the plate is NOT a direct child of <body>: it sits in
+     ThemeProvider's <div data-theme-ready> (PlateVariantGround is display:
+     contents), so globals.css's unlayered `body > * { position: relative;
+     z-index: 2 }` does not reach it. The inline style keeps it fixed even if
+     that wrapper goes, which is why TabletIdleSignOut's banner is pinned the
+     same way (review A, NIT 1). Its 900 counts inside the wrapper's stacking
+     context, above the board; the idle banner (1000) and its cover (1002) are
+     appended to <body> itself, so the plate never hides either.
 
      This is placed AFTER every hook above deliberately: an early return before
      useSyncExternalStore would make the hook order depend on the route. */

@@ -577,6 +577,9 @@ describe('/wall: a way out for whoever is signed in, and nothing for the TV', ()
   it('asks the server once per load on the signed-out TV, and marks only the tablet keys', async () => {
     window.localStorage.clear();
     window.localStorage.setItem('ppbf.unrelated', 'kept');
+    // The device mark survives; the last-use clock is cleared (review B NIT).
+    window.localStorage.setItem('ppbf.device.gymTablet', '1');
+    window.localStorage.setItem('ppbf.device.gymTabletLastUse', '123');
     mockLoadAuthoritative.mockResolvedValue({ ok: false, reason: 'unauthenticated', signedOut: true } as never);
     mockSnapshot.mockReturnValue(null);
 
@@ -593,12 +596,18 @@ describe('/wall: a way out for whoever is signed in, and nothing for the TV', ()
     expect(mockLoadAuthoritative.mock.calls[0][0]).toContain('/api/pilot/auth/session');
     expect(mockLoadAuthoritative.mock.calls[0][1]).not.toHaveProperty('method');
     const keys = Object.keys(window.localStorage).sort();
-    expect(keys).toEqual(['ppbf.device.gymTabletSignedOutAt', 'ppbf.unrelated']);
+    expect(keys).toEqual(['ppbf.device.gymTablet', 'ppbf.device.gymTabletSignedOutAt', 'ppbf.unrelated']);
     expect(window.localStorage.getItem('ppbf.unrelated')).toBe('kept');
+    expect(window.localStorage.getItem('ppbf.device.gymTablet')).toBe('1');
   });
 
-  it('renders nothing for the TV when the session check fails', async () => {
-    mockLoadAuthoritative.mockRejectedValueOnce(new Error('offline'));
+  it.each([
+    ['a thrown fetch (offline)', () => mockLoadAuthoritative.mockRejectedValueOnce(new Error('offline'))],
+    ['a 5xx', () => mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'server_error', statusCode: 503 } as never)],
+    ['an unreadable answer (no signedOut)', () => mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'unauthenticated' } as never)],
+  ])('renders nothing for the TV, and marks nothing, on %s', async (_label, arrange) => {
+    window.localStorage.clear();
+    arrange();
     mockSnapshot.mockReturnValue(null);
 
     const { container } = render(<GlobalRoleHeader />);
@@ -607,6 +616,7 @@ describe('/wall: a way out for whoever is signed in, and nothing for the TV', ()
     });
 
     expect(container.innerHTML).toBe('');
+    expect(window.localStorage.getItem('ppbf.device.gymTabletSignedOutAt')).toBeNull();
   });
 
   it('learns a session /wall was opened with, by address, and keeps it', async () => {
@@ -622,6 +632,35 @@ describe('/wall: a way out for whoever is signed in, and nothing for the TV', ()
     await waitFor(() => {
       expect(mockPersistAuthoritative).toHaveBeenCalledWith(expect.objectContaining({ role: 'athlete' }));
     });
+  });
+
+  it('shows the way out once the server answers that someone is signed in (review A, NIT 3)', async () => {
+    // The cache, as the real roleSession would hold it: what is persisted is
+    // what the next snapshot reads.
+    let cached: unknown = null;
+    mockSnapshot.mockImplementation(() => cached as never);
+    mockPersistAuthoritative.mockImplementation((next) => {
+      cached = next;
+      return next;
+    });
+    mockLoadAuthoritative.mockResolvedValueOnce({
+      ok: true,
+      session: { role: 'athlete', expiresAt: Date.now() + 60_000 },
+      destination: '/athlete',
+    } as never);
+
+    const { container, rerender } = render(<GlobalRoleHeader />);
+    expect(container.innerHTML).toBe('');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // subscribeRoleSession is a no-op in this file, so the store's change
+    // notice is stood in for by a re-render.
+    rerender(<GlobalRoleHeader />);
+
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
   });
 
   it('gives a signed-in person Home and Logout, at least 55px, and the idle watch without its plate', () => {
