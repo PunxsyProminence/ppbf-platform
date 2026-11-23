@@ -379,7 +379,7 @@ export const BUILDING: readonly Door[] = [
      admin (cardCatalog.test.tsx asserts a coach never sees that room at all),
      and this one is open to everybody. A member's own record is an office
      record. */
-  { href: '/profile', label: 'Your Corner', room: 'office',
+  { href: '/profile', label: 'Your Profile', room: 'office',
     roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
     keywords: 'profile identity portrait photo ring name nickname corner fight card program programme',
     hint: 'Your portrait, ring name, corner and program.' },
