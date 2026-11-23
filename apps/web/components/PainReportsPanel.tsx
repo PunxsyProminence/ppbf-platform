@@ -147,7 +147,7 @@ function PainReviewControl({ report }: { readonly report: CoachPainReport }) {
         Not reviewed yet
       </p>
       <button type="button" className="btn" disabled={saving} onClick={() => void press()}>
-        {saving ? 'Saving...' : 'Mark reviewed'}
+        {saving ? 'Saving…' : 'Mark reviewed'}
       </button>
       {failed ? (
         <p role="alert" className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">{PAIN_REVIEW_FAILED}</p>

@@ -452,7 +452,7 @@ describe('the note and Mark reviewed (DR-25)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
     await settle();
-    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
     expect(reads).toContain(`POST ${REVIEW}`);
 
     await act(async () => {
