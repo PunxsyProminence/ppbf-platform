@@ -352,3 +352,10 @@ describe('Current Status keeps only what is shown nowhere else (FAM-20)', () => 
     expect(screen.queryByText('Family Commitment')).toBeNull();
   });
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});
