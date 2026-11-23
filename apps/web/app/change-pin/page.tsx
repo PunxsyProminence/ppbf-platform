@@ -13,8 +13,12 @@ const PIN_PATTERN = /^\d{6}$/;
 
 /**
  * Where a signed-in account still flagged must_change_pin lands: the page
- * guard, the two client role gates, /login and /athlete/sign-in all send it
- * here. The server refuses every other route until this is done (see
+ * guard, the two client role gates and /login all send it here
+ * (/athlete/sign-in is a redirect to /login's PIN form since ATH-15, Jason's
+ * Q5 "A"). The page also opens when someone types its address (Overwatch's
+ * staging check, 2026-11-22), so its words name no cause: Jason 2026-11-23,
+ * Q8 "A: New words" (lane SIGNIN-FIX #2143). The server refuses every other
+ * route until this is done (see
  * requirePrincipal), so there is deliberately no way to skip it and no
  * navigation off this page other than completing it or signing out.
  *
@@ -138,8 +142,7 @@ export default function ChangePinPage() {
                 Choose your PIN
               </h1>
               <p className="t-body mt-[var(--s3)]">
-                You are signed in with a PIN your gym set for you, so somebody there knows it. Pick your own before you
-                go any further. Nobody at the gym can see what you choose.
+                Choose a new PIN before you go any further. Nobody at the gym can see what you choose.
               </p>
             </header>
 
@@ -161,7 +164,7 @@ export default function ChangePinPage() {
 
               <div className="field">
                 <label htmlFor="current-pin" className="t-label">
-                  The PIN you were given
+                  Your current PIN
                 </label>
                 {/* Law 5: an athlete does this on a shared tablet with wrapped
                     hands, so every PIN well clears --tap via the kiosk input. */}

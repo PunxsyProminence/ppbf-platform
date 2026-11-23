@@ -73,7 +73,7 @@ describe('/change-pin offers the session bar\'s sign-out', () => {
     render(<ChangePinPage />);
 
     // getByLabelText throws if a field is missing, so three calls are three assertions.
-    const given = screen.getByLabelText('The PIN you were given') as HTMLInputElement;
+    const given = screen.getByLabelText('Your current PIN') as HTMLInputElement;
     const fresh = screen.getByLabelText('Your new PIN') as HTMLInputElement;
     const again = screen.getByLabelText('Type your new PIN again') as HTMLInputElement;
     for (const field of [given, fresh, again]) {
@@ -140,4 +140,18 @@ describe('/change-pin does not call itself a first sign-in', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(container.textContent ?? '').not.toContain('First sign-in');
   });
+});
+
+/* Jason 2026-11-23, Q8 "A: New words" (lane SIGNIN-FIX #2143). The page also
+   opens when someone types its address, and nothing on main sets a PIN for an
+   athlete, so its words name no cause. */
+test('the lead and the first field name no cause: no PIN "your gym set", none "given"', () => {
+  const { container } = render(<ChangePinPage />);
+  const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+  expect(text).toContain('Choose a new PIN before you go any further. Nobody at the gym can see what you choose.');
+  expect(text).not.toContain('your gym set for you');
+  expect(text).not.toContain('somebody there knows it');
+  expect(screen.getByLabelText('Your current PIN')).toBeTruthy();
+  expect(screen.queryByLabelText('The PIN you were given')).toBeNull();
 });
