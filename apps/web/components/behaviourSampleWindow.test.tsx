@@ -613,3 +613,59 @@ test('a tap answered after the coach hid and reopened the screen leaves no word 
   expect(screen.getByRole('status')).not.toHaveTextContent('Saved');
   expect(screen.queryByRole('button', { name: /Change last tap/ })).toBeNull();
 });
+
+// Overwatch 7093381575: "Undo skip", one chance back, offered only while no save has been made since the skip.
+const UNDO = /^Undo skip/;
+
+test('undo skip moves the coach back one chance per skip, sends nothing, and goes once nothing is left to undo', async () => {
+  serve((call) => (call.url === WINDOW ? windowRead(3) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  expect(screen.queryByRole('button', { name: UNDO })).toBeNull();
+  await press(SKIP);
+  await press(SKIP);
+  expect(screen.getByText('Chance 5 of 10')).toBeInTheDocument();
+  const undo = screen.getByRole('button', { name: UNDO });
+  expect(undo).toHaveAccessibleName('Undo skip (back to chance 4)');
+  expect(undo).toHaveClass('btn', 'btn--tap');
+  const before = calls.length;
+  await press(UNDO);
+  expect(calls.length).toBe(before);
+  expect(screen.getByRole('status')).toHaveTextContent('Back to chance 4: the skip is undone.');
+  expect(screen.getByText('Chance 4 of 10')).toBeInTheDocument();
+  await press(UNDO);
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: UNDO })).toBeNull();
+});
+
+test('a save after a skip ends the undo: the skip is no longer offered back', async () => {
+  serve((call) => (call.url === WINDOW ? (call.method === 'GET' ? windowRead(1) : patchEcho(call)) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  await press(SKIP);
+  expect(screen.getByRole('button', { name: UNDO })).toBeInTheDocument();
+  await press(SHOWN);
+  expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 2, polarity: 'occurrence' });
+  expect(screen.queryByRole('button', { name: UNDO })).toBeNull();
+});
+
+test('a stray skip of the last chance can be undone from the full window', async () => {
+  serve((call) => (call.url === WINDOW ? windowRead(10) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  await press(SKIP);
+  expect(screen.getByText('No chances left: the window is full.')).toBeInTheDocument();
+  await press(UNDO);
+  expect(screen.getByText('Chance 10 of 10')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: SHOWN })).toBeEnabled();
+});
+
+test('undo skip is not offered again after the coach hides and reopens the window', async () => {
+  serve((call) => (call.url === WINDOW ? windowRead(3) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  await press(SKIP);
+  await reopen();
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: UNDO })).toBeNull();
+});

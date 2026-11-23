@@ -15,6 +15,9 @@ import { apiBase } from '@/lib/apiBase';
 // Overwatch 7088785576 on #2082) moves this coach's own count on one with no answer saved, for an
 // attempt they missed, so their later taps stay paired with the right attempts. It is held on this
 // screen only: a skip sends nothing, so a coach who comes back starts where the count stands.
+// "Undo skip" (Overwatch 7093381575, inside the same "yes add it") moves back one chance, offered
+// only while this coach has made no save since the skip: a stray skip would otherwise mis-pair every
+// later tap.
 //
 // WHAT IT SHOWS. Only what this coach tapped: x shown of n. No tier, label or bar (Q6, LL-Q2), and
 // nothing of another coach. Staff only, like the routes it calls. Shown and Not shown differ by word
@@ -85,6 +88,8 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
   // is not known which tap is the coach's last (a lost answer, another window, a reload).
   const [lastTap, setLastTap] = useState<Tap | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  // Skips made since this coach's last save, on this screen: what "Undo skip" may take back.
+  const [skips, setSkips] = useState(0);
   const [form, setForm] = useState({ behaviourKey: '', context: 'session', task: 'controlled', chances: '10' });
   // Each opening of the panel is a new generation: an answer for a panel since hidden is dropped.
   const generation = useRef(0);
@@ -137,6 +142,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     generation.current += 1;
     setLastTap(null);
     setConfirmClose(false);
+    setSkips(0);
     setMessage('');
     await readWindow(generation.current, windowId, names);
   };
@@ -150,6 +156,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     // Words and state for this panel only: dropped once the coach has hidden it or chosen again.
     const live = () => seen === generation.current;
     setBusy(true);
+    setSkips(0);
     setMessage('Saving…');
     try {
       const response = await call(WINDOWS, {
@@ -196,6 +203,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     const seen = generation.current;
     const live = () => seen === generation.current;
     setBusy(true);
+    setSkips(0);
     setMessage('Saving…');
     try {
       const response = await call(`${WINDOWS}/${encodeURIComponent(current.window.window_id)}`, { method: 'PATCH', ...jsonBody(body) });
@@ -239,7 +247,17 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     if (view.state !== 'window' || busy) return;
     setConfirmClose(false);
     setMessage(`Skipped chance ${view.next}: nothing saved for it. A skip is kept on this screen only.`);
+    setSkips((count) => count + 1);
     setView({ ...view, next: view.next + 1 });
+  };
+
+  // Back one chance, only over a skip made since this coach's last save (Overwatch 7093381575).
+  const undoSkip = () => {
+    if (view.state !== 'window' || busy || skips === 0) return;
+    setConfirmClose(false);
+    setMessage(`Back to chance ${view.next - 1}: the skip is undone.`);
+    setSkips((count) => count - 1);
+    setView({ ...view, next: view.next - 1 });
   };
 
   const nameOf = (names: BehaviourName[], key: string) => names.find((name) => name.behaviour_key === key)?.label ?? 'A behaviour';
@@ -258,6 +276,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
           generation.current += 1;
           setMessage('');
           setConfirmClose(false);
+          setSkips(0);
           if (view.state === 'closed') void readList(generation.current);
           else setView({ state: 'closed' });
         }}
@@ -358,6 +377,12 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
                   </button>
                 </>
               )}
+              {!working.window.closed_at && skips > 0 ? (
+                <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy} onClick={undoSkip}>
+                  <span aria-hidden="true">↶ </span>Undo skip
+                  <span className="sr-only">{` (back to chance ${working.next - 1})`}</span>
+                </button>
+              ) : null}
               {!working.window.closed_at && lastTap ? (
                 <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy}
                   onClick={() => void send({ action: 'change_last', polarity: lastTap.polarity === 'occurrence' ? 'counterexample' : 'occurrence' }, 'change')}>
