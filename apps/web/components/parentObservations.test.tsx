@@ -322,3 +322,10 @@ describe('the form', () => {
     expect(document.body.textContent).not.toContain('there is no backend feed or entry form for parent observations');
   });
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});

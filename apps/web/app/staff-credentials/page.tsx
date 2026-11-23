@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import BackHome from '@/components/BackHome';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
@@ -154,7 +154,9 @@ function StaffCredentialsBoard() {
         )}
 
         <div className="mt-[var(--s5)]">
-          <Link href="/" className="btn btn--ghost">Back</Link>
+          {/* The reader's own home, not the public front page (app scrub
+              ATH-18; lane AS4-4D4E). */}
+          <BackHome />
         </div>
       </div>
     </main>
