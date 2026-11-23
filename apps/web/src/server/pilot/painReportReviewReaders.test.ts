@@ -182,6 +182,14 @@ describe('pain report note and review: no new reader (DR-25)', () => {
     expect(offending).toEqual([]);
   });
 
+  test('the pain-report trigger is one stored value in the alert and in the review write', () => {
+    const literal = "'athlete_pain_report'";
+    const alert = fs.readFileSync(path.join(repoRoot, 'apps/web/src/server/pilot/formulas/painReportAlert.ts'), 'utf8');
+    const notes = fs.readFileSync(path.join(repoRoot, 'apps/web/src/server/pilot/painReportNotes.ts'), 'utf8');
+    expect(alert).toContain(`const PAIN_REPORT_TRIGGER = ${literal};`);
+    expect(notes).toContain(`export const PAIN_REPORT_NEAR_MISS_TRIGGER = ${literal};`);
+  });
+
   test('the near-misses reader and the SHADOW feed name none of the new columns', () => {
     for (const file of ['apps/web/src/server/pilot/shadowNearMisses.ts', 'apps/web/src/server/pilot/shadowReadModels.ts']) {
       const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
