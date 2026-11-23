@@ -37,7 +37,7 @@ interface RosterAthlete {
   full_name?: string;
 }
 
-type RestrictionState = 'voided' | 'not_started' | 'in_force' | 'release_needed' | 'lifted';
+export type RestrictionState = 'voided' | 'not_started' | 'in_force' | 'release_needed' | 'lifted';
 
 interface StaffRestriction {
   restriction_id: string;
@@ -68,7 +68,7 @@ const LOC_VALUES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'unknown', label: 'Unknown' },
 ];
 
-const STATE_WORDS: Record<RestrictionState, string> = {
+export const STATE_WORDS: Record<RestrictionState, string> = {
   in_force: 'In force',
   release_needed: 'In force — release needed',
   not_started: 'Starts later',
@@ -102,7 +102,7 @@ const KIOSK_TITLE = { fontSize: 'var(--t-md)', lineHeight: 1.25 } as const;
 
 // The states in which the restriction is in force (the gate refuses sparring):
 // these carry the Restricted mark (OD-2026-11-17-009 ruling 5, OW25-38 A).
-const IN_FORCE_STATES: ReadonlySet<RestrictionState> = new Set(['in_force', 'release_needed']);
+export const IN_FORCE_STATES: ReadonlySet<RestrictionState> = new Set(['in_force', 'release_needed']);
 
 /** Rows the server sent that this screen could not show, said as a count (never dropped silently). */
 function hiddenWords(count: number): string {
@@ -114,14 +114,14 @@ function labelFor(options: ReadonlyArray<{ value: string; label: string }>, valu
 }
 
 /** 'YYYY-MM-DD' as M/D/YYYY, read as a calendar day (never through a time zone). */
-function dayWords(day: string | null): string {
+export function dayWords(day: string | null): string {
   if (!day) return '';
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (!match) return day;
   return `${Number(match[2])}/${Number(match[3])}/${match[1]}`;
 }
 
-function isStaffRestriction(value: unknown): value is StaffRestriction {
+export function isStaffRestriction(value: unknown): value is StaffRestriction {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
   return typeof row.restriction_id === 'string'
