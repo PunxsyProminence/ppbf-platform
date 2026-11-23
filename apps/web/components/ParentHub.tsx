@@ -399,7 +399,10 @@ export default function ParentHub() {
          still never moves the page (review on #2130). */
       const button = tabButtonsRef.current.get(activeTab);
       const row = button?.parentElement;
-      if (activeTab !== 'overview' && button && row) row.scrollLeft = Math.max(0, button.offsetLeft - row.offsetLeft);
+      // Measured on screen, so it holds whatever the row's positioning parent is.
+      if (activeTab !== 'overview' && button && row) {
+        row.scrollLeft += button.getBoundingClientRect().left - row.getBoundingClientRect().left;
+      }
       return;
     }
     tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });

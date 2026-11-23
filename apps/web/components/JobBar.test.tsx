@@ -342,3 +342,65 @@ describe('a Parent Hub tab item', () => {
     expect(window.location.search).toBe('');
   });
 });
+
+// Round 2 reviews on #2130: a modified click is left to the browser, and the
+// bar's Home, while on Parent Hub with a tab open, returns to the first tab.
+describe('a same-page job-bar link', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('leaves a Ctrl or Cmd click on a tab item to the browser', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard');
+    render(<JobBar variant="rail" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Messages/ }));
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }]) {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...modifier });
+      link.addEventListener('click', (e) => e.preventDefault(), { once: true }); // keep jsdom from navigating
+      act(() => {
+        link.dispatchEvent(event);
+      });
+      expect(window.location.search).toBe('');
+    }
+  });
+
+  it('Home on Parent Hub with a tab open returns to the first tab, in place', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard?tab=attendance');
+    render(<JobBar variant="rail" />);
+    const home = screen.getByRole('link', { name: 'Home' });
+    expect(home.getAttribute('href')).toBe('/parent/dashboard');
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      home.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.location.search).toBe('');
+  });
+
+  it('leaves a same-page link alone when the address names no tab', () => {
+    signIn('coach');
+    mockPathname.mockReturnValue('/coach/environment/intake-router');
+    window.history.replaceState(null, '', '/coach/environment/intake-router');
+    render(<JobBar variant="rail" />);
+    const home = screen.getByRole('link', { name: 'Home' });
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    let preventedBeforeLink = true;
+    home.addEventListener('click', (e) => {
+      preventedBeforeLink = e.defaultPrevented;
+      e.preventDefault();
+    });
+    act(() => {
+      home.dispatchEvent(event);
+    });
+    expect(preventedBeforeLink).toBe(false);
+  });
+});
+

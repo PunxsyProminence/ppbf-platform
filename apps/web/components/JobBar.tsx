@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
 import { usePathname } from 'next/navigation';
 
 import ChromeLink from './ChromeLink';
@@ -72,6 +72,24 @@ export const PARENT_HUB_OPENS_TAB = true;
 const DOOR_LABEL = new Map(BUILDING.map((door) => [door.href, door.label]));
 
 const drawable = (item: JobItem): boolean => PARENT_HUB_OPENS_TAB || !item.tab;
+
+/* A link to the page the reader is already on, where the address carries a
+   tab (lane AS4-4D4E; reviews on #2130): Next keys a page without its search,
+   so its soft navigation would change only the address and leave the open tab
+   as it was. Such a click opens the named tab, or the page's first tab, in
+   place instead. A plain click only: Ctrl, Cmd, Shift or Alt, or another
+   button, is left to the browser (a new tab or window), as Next's own link
+   leaves it. Runs in the capture phase, before the link's handler, which
+   stands down on a prevented click. */
+function openInPlace(event: ReactMouseEvent, item: JobItem, onOpened: () => void): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (typeof window === 'undefined') return;
+  if (!item.tab && !new URLSearchParams(window.location.search).has('tab')) return;
+  if (openTabHere(itemHref(item))) {
+    event.preventDefault();
+    onOpened();
+  }
+}
 
 function itemHref(item: JobItem): string {
   return item.tab ? `${item.href}?tab=${encodeURIComponent(item.tab)}` : item.href;
@@ -226,7 +244,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
               const item = section.items[0];
               const current = active && !item.tab && item.href === here?.href;
               return (
-                <li key={section.key} className="job-bar__section">
+                <li key={section.key} className="job-bar__section" onClickCapture={(event) => openInPlace(event, item, () => close(false))}>
                   <ChromeLink href={itemHref(item)} className={control} aria-current={current ? 'page' : undefined}>
                     {section.label}
                   </ChromeLink>
@@ -266,25 +284,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
                       {section.items.map((item) => {
                         const current = active && !item.tab && item.href === here?.href;
                         return (
-                          <li
-                            key={itemKey(item)}
-                            /* Already on Parent Hub, a tab item opens the tab in
-                               place: Next keys a page without its search, so the
-                               link's own soft navigation would change only the
-                               address (review on #2130). Capture runs before the
-                               link's handler, which stands down on a prevented
-                               click. */
-                            onClickCapture={
-                              item.tab
-                                ? (event) => {
-                                    if (openTabHere(itemHref(item))) {
-                                      event.preventDefault();
-                                      close(false);
-                                    }
-                                  }
-                                : undefined
-                            }
-                          >
+                          <li key={itemKey(item)} onClickCapture={(event) => openInPlace(event, item, () => close(false))}>
                             <ChromeLink
                               href={itemHref(item)}
                               className={`job-bar__link${current ? ' is-current' : ''}`}
