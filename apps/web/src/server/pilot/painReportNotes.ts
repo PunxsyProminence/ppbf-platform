@@ -214,8 +214,9 @@ export interface PainNoteRead {
  * One pain report's note, for the "Read the note" press on an escalation (Q12 A on #2139). The
  * coach pain list's mask, in SQL, so a held note never leaves the database for a coach; no 7-day
  * window, because the escalation can outlive the list -- but only for a report a pain-note
- * escalation points at, and that the viewer's escalation list shows. Null when the organization
- * has no such report. The caller gates the role and the athlete, as the list does.
+ * escalation points at, and for a coach only one that is not admin-only. Who may read is the pain
+ * list's gate (any coach of the gym, any admin), not the narrower coach escalation list. Null when
+ * the organization has no such report. The caller gates the role and the athlete, as the list does.
  */
 export async function readPainNote(
   organizationId: string,
@@ -229,8 +230,8 @@ export async function readPainNote(
        from pilot.shadow_near_misses n
       where n.organization_id = $1 and n.near_miss_id::text = lower($2) and n.metadata->>'trigger' = $3
         -- THROUGH AN ESCALATION ONLY (Q12 A: "through the escalation's near_miss_id"): a pain-note
-        -- escalation must point at this report, and one the viewer's escalation list shows --
-        -- admins any, a coach never an admin-only ('athlete_voice') one (escalations/route.ts).
+        -- escalation must point at this report: for an admin any, for a coach one that is not
+        -- admin-only ('athlete_voice', which no coach's escalation list shows).
         -- So this is not a way round the pain list's 7-day window (PR 4 reviewer B).
         and exists (
           select 1 from pilot.safety_escalations e
