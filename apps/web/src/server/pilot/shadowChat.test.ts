@@ -755,7 +755,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
 
         const section = result.context.slice(result.context.indexOf(LIMITS_HEADING));
         expect(section).toContain(
-          'say that it is not set and ask the coach to set it on the Athlete Limits page (/coach/athlete-limits)',
+          'say that it is not set and ask the coach to set it in the Athlete Limits section of Sparring and Limits (/coach/sparring-exposure#athlete-limits)',
         );
         expect(section).toContain('Never propose, estimate, assume or default a number or a rule for a limit that is not set.');
         expect(section).toContain('The coach decides.');
@@ -906,7 +906,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.evidenceIds).toEqual([]);
         for (const leaked of [
           LIMITS_HEADING, 'No limit set', 'set by a coach', SUPERVISION_SENTINEL, '23 minutes', '3.5 percent',
-          'Controlled sparring', '/coach/athlete-limits', HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID, '[E:',
+          'Controlled sparring', '/coach/sparring-exposure#athlete-limits', HEAT_ID, CUT_ID, SUPERVISION_ID, CAP_ID, '[E:',
         ]) {
           expect(result.context).not.toContain(leaked);
         }
@@ -1192,9 +1192,9 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       });
 
       test.each([
-        'No heat exposure limit is set for this athlete. Set it on the Athlete Limits page (/coach/athlete-limits) and I will plan inside it. I will not pick a number for you.',
-        'No weight-cut limit is set for this athlete, so I am not going to guess one. Set it on the Athlete Limits page (/coach/athlete-limits). You decide.',
-        'No supervision requirement is set and no contact cap is set. The limits are set on the Athlete Limits page; the contact cap is set on the Sparring Caps page (/coach/sparring-caps).',
+        'No heat exposure limit is set for this athlete. Set it in the Athlete Limits section of Sparring and Limits (/coach/sparring-exposure#athlete-limits) and I will plan inside it. I will not pick a number for you.',
+        'No weight-cut limit is set for this athlete, so I am not going to guess one. Set it in the Athlete Limits section of Sparring and Limits (/coach/sparring-exposure#athlete-limits). You decide.',
+        'No supervision requirement is set and no contact cap is set. The limits are set in the Athlete Limits section; the contact cap is set in the Sparring Caps section (/coach/sparring-exposure#sparring-caps).',
       ])('"not set, please set it" is delivered: %s', (answer) => {
         const result = validateShadowResponse(answer, { allowedEvidenceIds: [] });
         expect(result.filtered).toBe(false);

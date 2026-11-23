@@ -263,10 +263,10 @@ function buildAuthoritySection(userRole: PilotRole): string[] {
  * in pilot.athlete_contact_caps and is read from there (one home per limit).
  * ------------------------------------------------------------------------- */
 
-/** The page a coach sets heat, weight-cut and supervision limits on. */
-export const ATHLETE_LIMITS_PAGE = '/coach/athlete-limits';
-/** The page the contact cap is set on; the limits page shows it read-only. */
-export const SPARRING_CAPS_PAGE = '/coach/sparring-caps';
+/** Where a coach sets heat, weight-cut and supervision limits: the Athlete Limits section of Sparring and Limits (lane AS-5). */
+export const ATHLETE_LIMITS_PAGE = '/coach/sparring-exposure#athlete-limits';
+/** Where the contact cap is set: the Sparring Caps section of the same page; Athlete Limits shows it read-only. */
+export const SPARRING_CAPS_PAGE = '/coach/sparring-exposure#sparring-caps';
 
 /** Said for every limit that is not set, in exactly these words. */
 export const NO_LIMIT_SET = 'No limit set';
@@ -406,7 +406,7 @@ export function buildAthleteLimitsSection(reading: ShadowAthleteLimits): ShadowA
       + 'Every time you state one, give the value as written above and put its id right after it. '
       + `Draft inside every limit that is set. ${PAST_SET_LIMIT_DIRECTIVE} `
       + `When the question depends on a limit marked "${NO_LIMIT_SET}", say that it is not set and ask the coach to set it `
-      + `on the Athlete Limits page (${ATHLETE_LIMITS_PAGE}); the contact cap is set on the Sparring Caps page (${SPARRING_CAPS_PAGE}). `
+      + `in the Athlete Limits section of Sparring and Limits (${ATHLETE_LIMITS_PAGE}); the contact cap is set in its Sparring Caps section (${SPARRING_CAPS_PAGE}). `
       + 'Never propose, estimate, assume or default a number or a rule for a limit that is not set. '
       + 'When a limit is marked UNKNOWN, say the record could not be read and ask the coach to check it on the page it is set on. '
       + 'The coach decides.',
