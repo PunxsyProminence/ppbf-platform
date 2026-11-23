@@ -122,6 +122,7 @@ async function notesIn(organizationId: string): Promise<Record<string, string[]>
         where organization_id = $1 and source_entity_type = 'shadow_question'`,
     ),
     reviews: await read(`select summary as t from pilot.shadow_human_review_queue where organization_id = $1`),
+    painNotes: await read(`select athlete_note as t from pilot.shadow_near_misses where organization_id = $1 and athlete_note is not null`),
   };
 }
 
@@ -178,6 +179,14 @@ async function seedNotes(organizationId: string, staff: string, parent: string |
     `insert into pilot.shadow_human_review_queue (review_id, organization_id, conversation_id, account_id, category, severity, summary)
      values (gen_random_uuid(), $1, $2, $3, 'safeguarding', 'moderate', 'Coach note: Rosa seemed upset after Sam''s session')`,
     [organizationId, conversation, staff],
+  );
+  // DR-25, Overwatch Q6 A on #2135: live Sam's own note on a pain report, naming purged Rosa.
+  await db.query(
+    `insert into pilot.shadow_near_misses
+       (organization_id, athlete_id, description, severity, detected_by, metadata, athlete_note, athlete_note_admin_only)
+     values ($1, $2, 'Athlete reported pain.', 'moderate', 'system', '{"trigger":"athlete_pain_report"}'::jsonb,
+             'Rosa Ortiz landed a hard one on my ribs', false)`,
+    [organizationId, samAthleteId],
   );
 }
 
@@ -317,6 +326,13 @@ beforeAll(async () => {
              'weak', 'LIMITED', 'unverified', $2, 'athlete', jsonb_build_object('asker_athlete_id', $3::text))`,
     [ORG, LOGIN_A, ATHLETE_A],
   );
+  // A live athlete in the other gym, for the pain note seedNotes files there (DR-25).
+  await db.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+       emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, 'ath-elsewhere', 'Elsewhere Athlete', '2012-03-04', 'fly', 'active', 'contact', true, $2, now(), now())`,
+    [OTHER_ORG, OTHER_COACH],
+  );
   await seedNotes(OTHER_ORG, OTHER_COACH, null, 'ath-elsewhere');
 });
 
@@ -345,7 +361,7 @@ afterAll(async () => {
 // staff question and a Library question). A's own question is deleted, not
 // counted; the message naming a living guardian and an email domain is not
 // changed, not counted.
-const EXPECTED = { messages: 3, titles: 1, feedback: 1, flags: 1, research: 4, reviews: 1 };
+const EXPECTED = { messages: 3, titles: 1, feedback: 1, flags: 1, research: 4, reviews: 1, painNotes: 1 };
 
 describe("the retention purge and other people's notes that name a purged person", () => {
   test('a dry run counts what it would scrub and changes nothing', async () => {
@@ -360,6 +376,7 @@ describe("the retention purge and other people's notes that name a purged person
       would_scrub_shadow_review_flag_notes_names: EXPECTED.flags,
       would_scrub_shadow_research_rows_names: EXPECTED.research,
       would_scrub_shadow_review_summaries_names: EXPECTED.reviews,
+      would_scrub_pain_report_notes_names: EXPECTED.painNotes,
     });
     expect(await notesIn(ORG)).toEqual(before);
   });
@@ -377,6 +394,7 @@ describe("the retention purge and other people's notes that name a purged person
       shadow_review_flag_notes_names_scrubbed: EXPECTED.flags,
       shadow_research_rows_names_scrubbed: EXPECTED.research,
       shadow_review_summaries_names_scrubbed: EXPECTED.reviews,
+      pain_report_notes_names_scrubbed: EXPECTED.painNotes,
     });
     const after = await notesIn(ORG);
     const keys = after.keys;
@@ -400,7 +418,14 @@ describe("the retention purge and other people's notes that name a purged person
         'Find evidence for this claim. | Is [name] ready to spar? | Is [name] ready to spar? | Closed: [name] moved away',
       ].sort(),
       reviews: ["Coach note: [name] seemed upset after Sam's session"],
+      painNotes: ['[name] landed a hard one on my ribs'],
     });
+    // The note's verdict is left as it was, and the scrubbed note still meets the note check.
+    const verdict = await db.query(
+      `select athlete_note_admin_only from pilot.shadow_near_misses where organization_id = $1 and athlete_note is not null`,
+      [ORG],
+    );
+    expect(verdict.rows).toEqual([{ athlete_note_admin_only: false }]);
   });
 
   test("the notes keep their authors: the scrub changes text, never whose note it is", async () => {
@@ -429,6 +454,7 @@ describe("the retention purge and other people's notes that name a purged person
     expect(elsewhere.feedback).toEqual(['Rosa needs a simpler answer']);
     expect(elsewhere.flags).toEqual(['Rosa Ortiz was given the wrong round count']);
     expect(elsewhere.reviews).toEqual(["Coach note: Rosa seemed upset after Sam's session"]);
+    expect(elsewhere.painNotes).toEqual(['Rosa Ortiz landed a hard one on my ribs']);
   });
 
   test('the data_purged audit row carries the counts and no name', async () => {

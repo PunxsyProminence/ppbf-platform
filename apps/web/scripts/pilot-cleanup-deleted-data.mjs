@@ -328,7 +328,7 @@ function emptyShadowCounts() {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
     shadowEventsDeleted: 0, behaviourObservations: 0, behaviourObservationsWindows: 0, shadowGymBehaviourNotesScrubbed: 0,
-    shadowGymBehaviourLabelsScrubbed: 0, shadowTelemetryDeleted: 0,
+    shadowGymBehaviourLabelsScrubbed: 0, shadowGymPainNotesScrubbed: 0, shadowTelemetryDeleted: 0,
   };
 }
 
@@ -1161,7 +1161,7 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   const counts = {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowGymBehaviourNotesScrubbed: 0, shadowGymBehaviourLabelsScrubbed: 0,
+    shadowGymBehaviourNotesScrubbed: 0, shadowGymBehaviourLabelsScrubbed: 0, shadowGymPainNotesScrubbed: 0,
   };
   const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
@@ -1193,6 +1193,19 @@ async function scrubGymNotes(client, tables, organizationId, names) {
         where organization_id = $1 and label ~* $2`,
       [organizationId, pattern],
     ))).rowCount ?? 0;
+  }
+  if (tables.painReportNotes) {
+    // An athlete's own note on a pain report that names this person (a
+    // sparring partner, a parent). DR-25, Overwatch Q6 A on #2135. Capped at
+    // the note's 500 and edge-trimmed, so the scrubbed note still meets
+    // pilot_shadow_near_misses_athlete_note_check; its admin-only verdict is
+    // left as it is.
+    counts.shadowGymPainNotesScrubbed = (await client.query(
+      `update pilot.shadow_near_misses
+          set athlete_note = btrim(left(regexp_replace(athlete_note, $2, '[name]', 'gi'), 500), E' \t\r\n')
+        where organization_id = $1 and athlete_note ~* $2`,
+      [organizationId, pattern],
+    )).rowCount ?? 0;
   }
   if (tables.researchRequirements) {
     // The typed text a research row carries: the requirement (a filed
@@ -2232,6 +2245,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
       ['behaviour_observation_notes', shadow.shadowGymBehaviourNotesScrubbed],
       ['behaviour_key_labels', shadow.shadowGymBehaviourLabelsScrubbed],
+      ['pain_report_notes', shadow.shadowGymPainNotesScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
     [`${prefix}shadow_telemetry_events${suffix}`]: shadow.shadowTelemetryDeleted,
@@ -2335,6 +2349,9 @@ async function main() {
                          and column_name = 'deidentified_at') as "deidentifyKeys",
               to_regclass('pilot.behaviour_observations') is not null as "behaviourObservations",
               to_regclass('pilot.behaviour_observations_windows') is not null as "behaviourObservationsWindows",
+              exists (select 1 from information_schema.columns
+                       where table_schema = 'pilot' and table_name = 'shadow_near_misses'
+                         and column_name = 'athlete_note') as "painReportNotes",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];

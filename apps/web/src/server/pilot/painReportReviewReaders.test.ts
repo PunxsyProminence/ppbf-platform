@@ -28,14 +28,17 @@ const repoRoot = path.resolve(__dirname, '../../../../..');
 
 /** Every non-test file naming pilot.shadow_near_misses outside a comment, as of this PR. */
 const NEAR_MISS_FILES: readonly string[] = [
+  'apps/web/app/api/pilot/coach/pain-reports/[nearMissId]/review/route.ts',
   'apps/web/app/api/pilot/coach/pain-reports/route.ts',
   'apps/web/app/api/pilot/shadow/near-misses/route.ts',
   'apps/web/scripts/pilot-apply-pain-report-review-migration.mjs',
   'apps/web/scripts/pilot-apply-shadow-decision-loop-migration.mjs',
   'apps/web/scripts/pilot-apply-shadow-runtime-migration.mjs',
+  'apps/web/scripts/pilot-cleanup-deleted-data.mjs',
   'apps/web/src/server/pilot/athleteInjuries.ts',
   'apps/web/src/server/pilot/escalationLadder.ts',
   'apps/web/src/server/pilot/formulas/painReportAlert.ts',
+  'apps/web/src/server/pilot/painReportNotes.ts',
   'apps/web/src/server/pilot/privacyTiers.ts',
   'apps/web/src/server/pilot/shadowNearMisses.ts',
   'infra/azure/pilot_slice_postgres_athlete_injuries_migration.sql',
@@ -43,9 +46,16 @@ const NEAR_MISS_FILES: readonly string[] = [
   'infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql',
 ];
 
-/** Files allowed to name the new columns: the migration and its runner only, in PR 1 (schema only). */
+/**
+ * Files allowed to name the new columns: the migration and its runner (PR 1); the note's writer,
+ * the review write and the coach pain list's read (painReportNotes.ts, painReportAlert.ts); and
+ * the purge's name scrub (pilot-cleanup-deleted-data.mjs; Overwatch Q6 A on #2135) (PR 2).
+ */
 const NOTE_AND_REVIEW_FILES: readonly string[] = [
   'apps/web/scripts/pilot-apply-pain-report-review-migration.mjs',
+  'apps/web/scripts/pilot-cleanup-deleted-data.mjs',
+  'apps/web/src/server/pilot/formulas/painReportAlert.ts',
+  'apps/web/src/server/pilot/painReportNotes.ts',
   'infra/azure/pilot_slice_postgres_pain_report_review_migration.sql',
 ];
 
