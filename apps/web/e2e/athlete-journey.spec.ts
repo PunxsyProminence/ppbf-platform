@@ -119,10 +119,10 @@ test.describe('Athlete journey', () => {
     await signInAtTheAthleteDoor(page, {
       accountId: ACCOUNT_ID,
       pin: PIN,
-      // Every athlete account is issued a PIN by the gym and must change it on
-      // first use, so this -- not a workspace -- is the first thing an athlete
-      // ever sees after signing in. It is a valid session, not a refusal, and
-      // bouncing it to /login would loop forever.
+      // A session that still owes a PIN change goes to /change-pin, not a
+      // workspace. It is a valid session, not a refusal, and bouncing it to
+      // /login would loop forever. The helper keeps it signed out until the
+      // form has posted, so the form is what gets the athlete there.
       session: { role: 'athlete', athleteId: ATHLETE_ID, mustChangePin: true },
       routes: {
         [LOGIN_ROUTE]: (_url, route) => {
@@ -403,25 +403,31 @@ test.describe('Athlete journey', () => {
   });
 
   test('the athlete door refuses an account that is not an athlete', async ({ page }) => {
-    /* PIN sessions are athlete-only, and this page enforces it on the client
-       as well as the server. It matters in a browser because the refusal has
-       to be VISIBLE: a door that silently declines to move is the same
-       experience as a door that is broken. */
+    /* PIN sign-in is athlete-only, and the SERVER is the guard: a PIN for any
+       other role is refused before a session is minted (auth.ts
+       pinLoginPermitted, 'role_not_pin_eligible'), and the login route then
+       answers "Invalid credentials". The old /athlete/sign-in page also had a
+       client-side copy of the rule; since ATH-15 (Jason 2026-11-23, Q5 "A")
+       that page redirects to /login's PIN form, which has no copy of it.
+       What matters in a browser is still that the refusal is VISIBLE and
+       nobody moves on: a door that silently declines to move is the same
+       experience as a door that is broken.
+
+       The stub answers 200 with no role (installPilotApi fulfils every route
+       200); the form treats that exactly as the server's 401, the same
+       `!response.ok || !result.role` branch. */
     await signInAtTheAthleteDoor(page, {
       accountId: 'coach-account-0001',
       pin: PIN,
-      session: { role: 'coach' },
-      loginResponse: { ok: true, role: 'coach' },
+      session: null,
+      loginResponse: { ok: false, error: 'Invalid credentials' },
     });
 
-    /* Filtered rather than taken whole: Next mounts an empty
-       aria-live route announcer with role="alert" on every page, so a bare
-       getByRole('alert') is always ambiguous in this app. Asking for the
-       alert that carries the refusal keeps both halves of the claim -- the
-       words are there, and they are announced as an alert. */
-    const refusal = page.getByRole('alert').filter({ hasText: 'This sign-in page is for athlete accounts only.' });
+    /* Filtered rather than taken whole: Next mounts an empty aria-live route
+       announcer on every page. The refusal stamp announces as a status. */
+    const refusal = page.getByRole('status').filter({ hasText: 'Invalid credentials' });
     await expect(refusal).toBeVisible();
-    await expect(page).toHaveURL(/\/athlete\/sign-in$/);
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   /* The sparring log gained a "which athlete is this for" picker so that a
