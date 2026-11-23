@@ -36,6 +36,9 @@ function serve(get: () => Response | Promise<Response>, post?: (call: Call) => R
     if (call.url.startsWith('/api/pilot/coach/session-staff-notes')) {
       throw new Error(`the note panel must not read until opened: ${call.url}`);
     }
+    if (call.url.startsWith('/api/pilot/coach/behaviour-')) {
+      throw new Error(`the behaviour window must not read until opened: ${call.url}`);
+    }
     if (call.method === 'GET') {
       gets.push(call);
       return get();
@@ -679,4 +682,14 @@ describe('a tied session also shows the class register', () => {
     expect(rowOf('Ada Reyes').textContent).not.toContain('Present on the class register');
     expect(rowOf('Ben Ortiz').textContent).toContain('Present on the class register, via self check-in.');
   });
+});
+
+test('each athlete marked here, and only those, gets a behaviour window to open (PATTERN-1f, Q5 A); it reads nothing until opened', async () => {
+  serve(() => read([ADA]));
+  await show();
+  const ada = rows().find((row) => row.textContent?.includes('Ada Reyes'));
+  const ben = rows().find((row) => row.textContent?.includes('Ben Ortiz'));
+  expect(within(ada as HTMLElement).getByRole('button', { name: 'Watch a behaviour for Ada Reyes' })).toBeTruthy();
+  expect(within(ben as HTMLElement).queryByRole('button', { name: /Watch a behaviour/ })).toBeNull();
+  expect(gets.every((call) => !call.url.includes('/api/pilot/coach/behaviour-'))).toBe(true);
 });
