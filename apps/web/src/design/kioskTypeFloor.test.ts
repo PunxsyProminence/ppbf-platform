@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss';
 
 /**
@@ -103,7 +106,15 @@ const CSS = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 const SHEET = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
 
 /** Every voice the ruling moves, with the rung it owes. */
-const FLOOR: ReadonlyArray<{ readonly voice: string; readonly rung: string; readonly why: string }> = [
+const FLOOR: ReadonlyArray<{
+  readonly voice: string;
+  readonly rung: string;
+  readonly why: string;
+  /** Class-level weight the takeback sweep holds this voice to. Defaults to
+      20, (0,2,0). A voice whose own desk rule is already compound needs the
+      kiosk rule to out-weigh it, so it states a higher bar. */
+  readonly bar?: number;
+}> = [
   { voice: '.t-eyebrow', rung: '--t-md', why: 'the label over a count, a flag or a reported pain' },
   { voice: '.t-label', rung: '--t-md', why: 'the field legends on a self-report' },
   { voice: '.t-body', rung: '--t-md', why: 'the prose an athlete is asked to act on' },
@@ -118,6 +129,14 @@ const FLOOR: ReadonlyArray<{ readonly voice: string; readonly rung: string; read
   { voice: '.empty-title', rung: '--t-md', why: 'what an empty or failed panel says it is' },
   { voice: '.empty-msg', rung: '--t-md', why: 'the next step an empty panel offers' },
   { voice: '.working', rung: '--t-md', why: 'the line that says a read is still running' },
+  // Kiosk text-size sweep part B (lane KIOSK-SWEEP-B, 2026-11-23).
+  { voice: '.stat-label', rung: '--t-md', why: 'the caption under a count tile: Total Gaps, Active Drills' },
+  { voice: '.gauge-cap', rung: '--t-md', why: 'the caption under a gauge: Completion' },
+  { voice: '.tcard-sub', rung: '--t-md', why: 'the Training Card and Achievements sub-lines: name, since, more to go' },
+  { voice: '.tcard-count span', rung: '--t-md', why: 'the Training Card count caption: sessions logged' },
+  { voice: '.tcard-stamp', rung: '--t-md', why: 'the effort number inside a Training Card stamp' },
+  { voice: '.tcard-seal-slot .tcard-seal-lbl', rung: '--t-md', why: 'the milestone label under a seal', bar: 30 },
+  { voice: '.tcard-legend', rung: '--t-md', why: 'what the stamps on the Training Card mean' },
 ];
 
 /**
@@ -414,7 +433,7 @@ describe('the gym-floor type floor', () => {
        So each token is compared against its own floor, and `weight` counts
        type selectors, which it previously ignored entirely. */
     const FLOOR_WEIGHT = new Map<string, number>();
-    for (const entry of FLOOR) FLOOR_WEIGHT.set(entry.voice.split(' ')[0], 20);
+    for (const entry of FLOOR) FLOOR_WEIGHT.set(entry.voice.split(' ')[0], entry.bar ?? 20);
     for (const entry of CONTROL_FLOOR) FLOOR_WEIGHT.set(entry.selector, 11);
     const tokens = [...FLOOR_WEIGHT.keys()];
     const offenders: string[] = [];
@@ -521,5 +540,22 @@ describe('the gym-floor type floor', () => {
           + 'written and commented as a correction of that exact value, so either the floor is '
           + 'now correcting something else or it is correcting nothing.',
     ).toBe(true);
+  });
+
+  /* THE CLASS FLOOR CANNOT SEE A UTILITY. CoachWorkspace.tsx is served only at
+     /coach/environment/intake-router, whose layout wraps it in KioskSurface, and
+     its small text is Tailwind `text-xs` (the theme maps it to --t-xs, 11.8px,
+     globals.css:168) or a literal `--t-xs`. Neither is a class in the sheet
+     above, so a line put back would pass every test here. Comments are
+     stripped first: the file's own history quotes both spellings. */
+  it.each([
+    'components/CoachWorkspace.tsx',
+    'components/AthleteAchievements.tsx',
+    'components/TrainingCard.tsx',
+  ])('keeps %s free of --t-xs and text-xs, which sit under the 19.1px floor', (file) => {
+    const source = readFileSync(join(__dirname, '..', '..', file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/^\s*\/\/.*$/gm, ' ');
+    expect(source.match(/--t-xs|(?<![\w-])text-xs(?![\w-])/g) ?? []).toEqual([]);
   });
 });
