@@ -67,8 +67,14 @@ export function painNoteVerdict(note: string): PainNoteVerdict {
  * The verdict, and STILL ADMIN-ONLY ONCE STAFF WERE NAMED: the pain-note form of SHADOW chat's
  * conversationAlreadyNamedStaff (shadowDisclosure.ts). "My coach hits me" is admin-only; the
  * same child's next note, "he hit me again", names nobody and would otherwise go to the coach of
- * record, who may be "he". So a disclosing note from an athlete who has any earlier pain-note
- * escalation filed admin-only is admin-only too. A note that discloses nothing is unaffected.
+ * record, who may be "he". So a disclosing note is admin-only too when the athlete has:
+ *   - any earlier pain-note escalation filed admin-only ('athlete_voice'), whatever its status;
+ *   - any earlier note stored admin-only, even if its escalation failed to file; or
+ *   - any 'athlete_voice' escalation from ANY channel (SHADOW chat, the Tell us box) that is not
+ *     yet resolved: Overwatch Q10 B on #2138, under Jason's Q7 ruling "A: Keep strict" -- a child
+ *     who already named staff elsewhere is where keeping it from coaches matters most. "Open" is
+ *     read as not resolved, so an acknowledged one still counts.
+ * A note that discloses nothing is unaffected.
  */
 export async function painNoteVerdictFor(
   note: string,
@@ -87,7 +93,7 @@ export async function painNoteVerdictFor(
       `select (
          exists (select 1 from pilot.safety_escalations
                   where organization_id = $1 and athlete_id = $2 and source_type = 'athlete_voice'
-                    and metadata->>'channel' = 'pain_report_note')
+                    and (metadata->>'channel' = 'pain_report_note' or status <> 'resolved'))
          or exists (select 1 from pilot.shadow_near_misses
                      where organization_id = $1 and athlete_id = $2 and athlete_note_admin_only)
        ) as found`,

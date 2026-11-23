@@ -393,6 +393,43 @@ describe('pain report note (DR-25)', () => {
       .toEqual(['(no note)', '(no note)', 'my knee still hurts']);
   });
 
+  test('an unresolved athlete_voice escalation from SHADOW chat makes a later disclosing note admin-only', async () => {
+    // Q10 B on #2138: the child named staff in SHADOW chat first.
+    await escalationLadder.fileEscalation({
+      organizationId: ORG,
+      sourceType: 'athlete_voice',
+      sourceId: null,
+      athleteId: ATHLETE_ID,
+      severity: 'critical',
+      reason: 'An athlete said something in SHADOW chat that needs a person to follow up.',
+      escalatedToRole: 'organization_admin',
+      triggeredBy: 'system',
+      metadata: { channel: 'shadow_chat', conversation_id: 'conv-1' },
+    });
+    await filePain('he hit me again');
+    expect((await nearMisses()).map((row) => row.athlete_note_admin_only)).toEqual([true]);
+  });
+
+  test('a resolved athlete_voice escalation from another channel, with no pain-note history, is not counted', async () => {
+    const chat = await escalationLadder.fileEscalation({
+      organizationId: ORG,
+      sourceType: 'athlete_voice',
+      sourceId: null,
+      athleteId: ATHLETE_ID,
+      severity: 'high',
+      reason: 'An athlete used the feedback box to say something that needs a person to read it.',
+      escalatedToRole: 'organization_admin',
+      triggeredBy: 'system',
+      metadata: { submission_id: 'sub-1' },
+    });
+    await activeClient!.query(
+      `update pilot.safety_escalations set status = 'resolved', resolved_at = now() where escalation_id = $1`,
+      [chat.escalation_id],
+    );
+    await filePain('he hit me again');
+    expect((await nearMisses()).map((row) => row.athlete_note_admin_only)).toEqual([false]);
+  });
+
   test('an earlier note held for admins counts even when its escalation was never filed', async () => {
     jest.spyOn(escalationLadder, 'fileEscalation').mockRejectedValueOnce(new Error('database went away'));
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
