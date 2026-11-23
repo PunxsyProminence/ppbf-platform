@@ -96,8 +96,8 @@ export default function ClusterNav({ cluster }: { readonly cluster: CoachCluster
             </li>
           ) : (
             <li key={door!.href}>
-              {/* tap-link: 55px on a kiosk surface (app/globals.css; app scrub
-                  CF-17, CS-11). The line sits on gym-floor pages. */}
+              {/* tap-link: 55px where the page is a kiosk surface (app/globals.css;
+                  app scrub CF-17, CS-11). On a desk page it changes nothing. */}
               <ChromeLink href={door!.href} className="tap-link underline">
                 {door!.label}
               </ChromeLink>

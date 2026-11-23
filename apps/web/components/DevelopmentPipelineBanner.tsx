@@ -67,15 +67,18 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
       <ol className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s2)]">
         {pipelineStages.map((stage, index) => {
           const isCurrent = stage.key === currentStage;
-          const stageClass = `inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] py-[var(--s3)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.09em] transition ${
+          const opens = openable.has(stage.href);
+          // A stage that is not a link does not light up or animate under the
+          // pointer, so it does not read as pressable (layout review, #2129).
+          const stageClass = `inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] py-[var(--s3)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.09em]${opens ? ' transition' : ''} ${
             isCurrent
               ? 'mat-leather--raised border-[color:var(--brass-300)] text-[color:var(--bone-100)]'
-              : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
+              : `border-[color:rgb(var(--brass-400-rgb)_/_.28)] text-[color:var(--bone-300)]${opens ? ' hover:border-[color:var(--brass-400)]' : ''}`
           }`;
 
           return (
             <li key={stage.key} className="flex items-center gap-[var(--s2)]">
-              {openable.has(stage.href) ? (
+              {opens ? (
                 <Link href={stage.href} aria-current={isCurrent ? 'page' : undefined} className={stageClass}>
                   {stage.label}
                 </Link>

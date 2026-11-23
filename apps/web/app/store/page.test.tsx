@@ -9,6 +9,8 @@ import { act } from 'react';
 import { render, screen } from '@testing-library/react';
 
 import StoreIndexPage from './page';
+import { backHomeTarget } from '@/components/BackHome';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -45,4 +47,19 @@ test('the store has a way back to the front page', async () => {
   });
 
   expect(screen.getByRole('link', { name: 'Back to the front page' }).getAttribute('href')).toBe('/');
+});
+
+// A signed-in reader goes to their own home, not the public page (layout
+// review on #2129).
+test('a signed-in reader is sent to their own home instead', async () => {
+  const session = createPersistentRoleSession('coach');
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ stores: [] }) })) as unknown as typeof fetch;
+  await act(async () => {
+    render(<StoreIndexPage />);
+  });
+
+  const { href, label } = backHomeTarget(session);
+  expect(screen.getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  expect(screen.queryByRole('link', { name: 'Back to the front page' })).toBeNull();
+  act(() => clearRoleSession());
 });

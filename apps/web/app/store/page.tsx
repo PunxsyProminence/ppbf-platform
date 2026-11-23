@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+
+import BackHome from '@/components/BackHome';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 import { apiBase } from '@/lib/apiBase';
 
@@ -52,13 +55,21 @@ export default function StoreIndexPage() {
     })();
   }, []);
 
+  const signedIn = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null) !== null;
+
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
       <div className="mx-auto max-w-3xl">
-        {/* The store linked nowhere back (app scrub FAM-16; lane AS4-4D4E). */}
-        <Link href="/" className="inline-flex min-h-[44px] items-center text-sm font-bold underline">
-          Back to the front page
-        </Link>
+        {/* The store linked nowhere back (app scrub FAM-16; lane AS4-4D4E). A
+            visitor goes back to the front page; a signed-in reader goes to
+            their own home, not the public page (layout review, #2129). */}
+        {signedIn ? (
+          <BackHome className="inline-flex min-h-[44px] items-center text-sm font-bold underline" />
+        ) : (
+          <Link href="/" className="inline-flex min-h-[44px] items-center text-sm font-bold underline">
+            Back to the front page
+          </Link>
+        )}
         <p className="mt-4 text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Shop</p>
         <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment Store</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">

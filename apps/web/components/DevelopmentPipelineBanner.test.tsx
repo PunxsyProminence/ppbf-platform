@@ -123,6 +123,9 @@ describe('a stage is a link only when its door admits the reader', () => {
     expect(linkNames(container)).toEqual(['Research Inbox', 'Audit Trace']);
     // Every stage is still named, in order, and the count still reads 5.
     expect(screen.getByText('Evidence Review Queue').tagName).toBe('SPAN');
+    // A stage that is not a link does not light up or animate as if pressable.
+    expect(screen.getByText('Evidence Review Queue').className).not.toMatch(/hover:|transition/);
+    expect(screen.getByText('Research Inbox').className).toMatch(/hover:/);
     expect(screen.getByText('Stage 5 of 5: Audit Trace')).toBeTruthy();
   });
 

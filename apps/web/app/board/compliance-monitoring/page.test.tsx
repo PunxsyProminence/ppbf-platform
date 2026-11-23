@@ -179,3 +179,16 @@ test('the way home is in the header, and there is no second exit at the foot', a
   expect(screen.getAllByRole('link').filter((link) => link.getAttribute('href') === href)).toHaveLength(1);
   act(() => clearRoleSession());
 });
+
+// A seat holder's way home is their seat's workspace, which links Board Hub
+// (permissions review NIT on #2129).
+test('a seat holder’s way home is their seat workspace, in the header', async () => {
+  const session = createPersistentRoleSession('board', 'treasurer');
+  await renderPage(summaryFixture());
+
+  const { href, label } = backHomeTarget(session);
+  expect(href).not.toBe('/board');
+  const header = document.querySelector('header') as HTMLElement;
+  expect(within(header).getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  act(() => clearRoleSession());
+});
