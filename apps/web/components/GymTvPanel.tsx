@@ -58,7 +58,8 @@ interface GymTvPanelProps {
   readonly onTvsChanged?: () => void;
   /**
    * Where this screen's own TV switch is, so the panel names a control the coach can see (lane
-   * U2-6a). The coach home's is "Show on TV" under Today's Session (the default); the class
+   * U2-6a). The coach home's is "Allow on a TV" under Today's Session (the default; it was
+   * "Show on TV" until lane FLOOR-FIXES gave it the class screen's words, DR-09); the class
    * screen's is "Allow on a TV", above the panel.
    */
   readonly tvSwitch?: { readonly name: string; readonly place: string };
@@ -89,8 +90,8 @@ const REFUSALS: Record<string, string> = {
 /** The codes a refused send/take-off answers when the run the dashboard holds has gone. */
 const RUN_STALE_CODES = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
 
-/** The coach home's TV switch, which this panel named before the class screen existed. */
-const COACH_HOME_TV_SWITCH = { name: 'Show on TV', place: "under Today's Session" } as const;
+/** The coach home's TV switch: the class screen's "Allow on a TV" since lane FLOOR-FIXES (DR-09). */
+const COACH_HOME_TV_SWITCH = { name: 'Allow on a TV', place: "under Today's Session" } as const;
 
 export function describeRefusal(
   code: string | undefined,

@@ -32,7 +32,7 @@ function renderWith(fieldProvenance: string) {
 it('a literature-grounded draft reads in plain words; the stored value stays in Source and version', () => {
   const [literature] = REQUIRES_FLOOR_VALIDATION_PROVENANCE;
   renderWith(literature);
-  expect(screen.getByText('Content: a draft written from published research. It stays a draft until a coach marks it floor-tested. Current version.')).toBeInTheDocument();
+  expect(screen.getByText('Content: a draft written from published research. The gym adopts it only after a coach marks it floor-tested. Current version.')).toBeInTheDocument();
   expect(screen.getByText('Content status').nextElementSibling).toHaveTextContent(literature);
   expect(screen.queryByText(/^Content: LITERATURE-GROUNDED/)).not.toBeInTheDocument();
 });
@@ -40,7 +40,7 @@ it('a literature-grounded draft reads in plain words; the stored value stays in 
 it('a coaching-craft draft reads in plain words', () => {
   const [, craft] = REQUIRES_FLOOR_VALIDATION_PROVENANCE;
   renderWith(craft);
-  expect(screen.getByText('Content: a draft from coaching experience; no matching research was found. It stays a draft until a coach marks it floor-tested. Current version.')).toBeInTheDocument();
+  expect(screen.getByText('Content: a draft from coaching experience; no matching research was found. The gym adopts it only after a coach marks it floor-tested. Current version.')).toBeInTheDocument();
   expect(screen.queryByText(/^Content: COACHING-CRAFT/)).not.toBeInTheDocument();
 });
 
