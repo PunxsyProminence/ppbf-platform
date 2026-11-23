@@ -16,7 +16,11 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 /**
  * The global session bar has to stand down on /wall: it is four controls on a
  * screen with no pointer attached, and a fixed high-contrast band sitting in
- * the same pixels for twelve hours.
+ * the same pixels for twelve hours. It still does. The one exception is a
+ * person SIGNED IN on /wall (scrub ATH-09, lane SIGNIN-FIX #2145, Overwatch
+ * Q1 = A): they get a corner plate with Home and Logout and nothing else, so a
+ * tablet is never stuck there. The TV is never signed in, so it renders
+ * nothing, as before.
  *
  * The session snapshot is a MODULE-LEVEL CONSTANT, not a fresh object per call.
  * useSyncExternalStore compares snapshots by identity, so a mock that builds a
@@ -36,11 +40,18 @@ jest.mock('next/link', () => ({
 jest.mock('../../components/roleSession', () => {
   const snapshot = { role: 'admin', expiresAt: 4102444800000 };
   return {
-    getRoleSessionSnapshot: () => snapshot,
+    // Signed in or not, per test; the signed-in object is still one constant.
+    getRoleSessionSnapshot: () => (mockSignedIn.current ? snapshot : null),
     subscribeRoleSession: () => () => {},
     clearRoleSession: jest.fn(),
+    // Signed out, the bar asks the server (ATH-09); an answer that never comes
+    // keeps the render exactly what the TV shows before it does.
+    loadAuthoritativeRoleSession: () => new Promise(() => {}),
+    persistAuthoritativeRoleSession: jest.fn(),
   };
 });
+
+const mockSignedIn = { current: true };
 
 const mockPathname = usePathname as unknown as jest.Mock;
 
@@ -212,10 +223,26 @@ describe('the wall reads at distance', () => {
 });
 
 describe('the global header on /wall', () => {
-  it('renders nothing at all', () => {
+  afterEach(() => {
+    mockSignedIn.current = true;
+  });
+
+  it('renders nothing at all for the TV, which nobody is signed in to', () => {
+    mockSignedIn.current = false;
     mockPathname.mockReturnValue('/wall');
     const { container } = render(<GlobalRoleHeader />);
     expect(container.innerHTML).toBe('');
+  });
+
+  it('gives a signed-in person only Home and Logout: no bar, no band', () => {
+    mockPathname.mockReturnValue('/wall');
+    const { container } = render(<GlobalRoleHeader />);
+    expect(container.querySelector('header')).toBeNull();
+    expect(container.children).toHaveLength(1);
+    const plate = container.firstElementChild as HTMLElement;
+    expect(plate.hasAttribute('data-wall-session-exit')).toBe(true);
+    expect([...plate.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Home', '/dashboard']]);
+    expect([...plate.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Logout']);
   });
 
   it('still renders everywhere else', () => {
