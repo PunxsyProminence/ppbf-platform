@@ -775,79 +775,108 @@ the Passbook Gaps door keywords say "stopped coming" while the page says it is
 not that check." Its FUTURE list names "a "who has stopped coming" list
 (CF-14)".
 
+**Answered since (OD-2026-11-21-006; re-sized by lane W4S-REFRESH at `main`
+`a4b420c41a9d10c2e991df9b6290914aed41b126`, 2026-11-23).** Each is Jason's
+answer on the card named:
+
+| Q | Answer | Effect |
+|---|---|---|
+| Q6.1 (OW27-30) | *"A: Gym setting, first value 2 weeks (Recommended)"*. "New option (not in W4_SIZING): a gym setting the organization admin can change; first value 2 weeks. Item 6 needs the setting added to its size." | A gym setting, like the tablet idle time (SC-0a, SC-0b below) |
+| Q6.2 (OW27-31) | *"A: Active members seen at least once (Recommended)"* | Active membership and present at least once before |
+| Q6.3 (OW27-32) | *"A: Yes, on this page only (Recommended)"*. Jason's ruling for this page only: open-gym here marks count as coming on this page; "no attendance figure, report, board or grant figure changes (OD-2026-09-28-008 and CT-13 stand)" | SC-1 reads session marks as well as register marks. This departs from Overwatch's 2026-10-13 note; he ruled it |
+| Q6.4 (OW27-33) | *"B: A, plus mark 'reached out'"*, against the recommendation. The entry: "Adds the 'reached out' mark: a migration and a third PR, about 200 lines more (W4_SIZING)" | The "reached out" mark (SC-3a, SC-3b below) |
+
 **What exists (OBSERVED):**
 
 - **Passbook Gaps is not this check.** The page says it is "not a check on who
-  has stopped coming" (`apps/web/app/coach/passbook-gaps/page.tsx:184`; also
-  `:22`, `:155`).
+  has stopped coming" (`apps/web/app/coach/passbook-gaps/page.tsx:186`; also
+  `:24`, `:157`).
 - **The guard.** A test keeps any door from claiming the words "until a page
-  answers it" (`apps/web/components/buildingMap.test.ts:498-501`). SC2-1
+  answers it" (`apps/web/components/buildingMap.test.ts:499-506`). SC2-1
   (#1981) took the words off the door
-  (`apps/web/components/buildingMap.ts:461-463`).
+  (`apps/web/components/buildingMap.ts:500-502`).
 - **Per-athlete data.** Last present date and days since, over 28 days, from
   `getAttendanceLast28Days`
   (`apps/web/src/server/pilot/attendancePrecedence.ts:241`, `:262`, `:286`).
 - **Membership status.** It is active, lapsed or ended, set by hand
   (`infra/azure/pilot_slice_postgres_program_memberships_migration.sql:28`).
-  A search of `apps/web` for `lapsed`, `stopped coming`, `days_since` and
-  `last_seen` found no query that marks a lapse by itself.
-- **Data gap (INFERRED from `sessionRunAthletes.ts:171`).** A session not tied
-  to a class writes no register mark. An athlete seen only at untied open gym
-  may have no attendance record, and would look as if they had stopped coming.
+  A search of `apps/web` outside tests for `lapsed`, `stopped coming`,
+  `days_since` and `last_seen`, re-run at `a4b420c`, found no query that marks a
+  lapse by itself (the matches are other things: a TV's last-seen time,
+  clearance wording and elapsed clocks).
+- **Open-gym marks (INFERRED from `sessionRunAthletes.ts:171`).** A session not
+  tied to a class writes no register mark, so an athlete seen only at untied
+  open gym has no register record. Q6.3 A makes SC-1 read the session marks
+  (`pilot.session_run_athletes`) for that reason.
+- **A gym setting to copy.** Still the tablet idle time (item 1): a table keyed
+  by organization, GET for members and PUT for the organization admin, a drawer
+  on Customize the Gym. At `a4b420c` a search of `infra/azure` finds no shared
+  gym-settings table: the two policy tables are the tablet idle time and a
+  video policy (`pilot_slice_postgres_organization_tablet_idle_policy_migration.sql`,
+  `pilot_slice_postgres_organization_video_policy_migration.sql`).
+- **Where a new door goes now.** U2's AS-4 is on `main`: U2-4a (`b555d5b8`),
+  4b (`5b28948a`) and 4c (`3580389a`). Search's "All pages" places every door
+  but Home in exactly one of 17 Room Map rooms, and a test enforces it
+  (`apps/web/components/roomPlaces.test.ts:30`; the lists are in
+  `apps/web/components/roomPlaces.ts`). Job bars name items by `href`
+  (`apps/web/components/jobBars.ts`). So SC-2 also edits `roomPlaces.ts`, and
+  maybe `jobBars.ts`. Which room and which bar is Overwatch's call, as AS-4's QT
+  was.
 
-**What is missing:** a gym-wide list of athletes with no present mark for a set
-number of days, looking further back than 28 days. It also needs its page, a
-door, and the guard test turned to require that door.
+**What is missing:** a gym-wide list of athletes with no present mark for the
+gym's chosen number of days, looking further back than 28 days if the gym sets
+more than 28 (see "Not ruled"). It also needs its page, a door, and the guard
+test turned to require that door; the gym setting; and the "reached out" mark.
 
-**PR split (INFERRED):**
+**Not ruled (left to the build, listed so they are not lost):** the setting's
+allowed range (INFERRED: a gym could set more than 28 days, which
+`getAttendanceLast28Days` cannot read); which records count as "present at
+least once before" in Q6.2 A (INFERRED: either source, as Q6.3 A); and what
+"reached out" holds. Sized as who and when, no free text (INFERRED, so that no
+more is written about a minor than the card asks).
+
+**PR split (INFERRED), re-sized under Q6.1 A to Q6.4 B:**
 
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
-| SC-1 | Query and route (coach, admin), reading register marks and, with Q6.3 A, session marks | about 300 | judgement |
-| SC-2 | Page, door, guard test turned | about 250 | judgement |
+| SC-0a | Migration: the gym's "no present mark for" number, one row per gym, first value 2 weeks. Runner. A read for the gym's members and a write for the organization admin, audited | about 410 (may go over) | matched, AS2-a 414 |
+| SC-0b | A "Stopped coming" drawer on Customize the Gym: the number, its default, "Use the default" | about 180 | matched, AS2-c 174 |
+| SC-1 | Query and route (coach, admin): active members, present at least once, with no present mark for the gym's number of days; reads register marks and session marks (Q6.3 A) | about 320 | judgement; the earlier 300 plus the setting read |
+| SC-2 | Page, door, guard test turned; the door's Room Map room (`roomPlaces.ts`) and, if needed, its job bar | about 280 | judgement; the earlier 250 plus the room and bar entries |
+| SC-3a | Migration: the "reached out" mark (who and when, per athlete; audited). Runner. A read and a write route for staff | about 410 (may go over) | matched, AS2-a 414 |
+| SC-3b | The mark on the page: a button, and "reached out by (who) on (date)" on the row | about 120 | judgement |
 
-- **Total:** about 550 lines in 2 PRs.
-- **Migrations:** none (INFERRED), unless Q6.4 is B.
-- **Route:** Opus (minors' data).
-- **G3:** applies.
-- **Dependencies:** the door is in `buildingMap.ts`; sequence with lane U2's
-  AS-4.
-- **File overlap:**
-  - `buildingMap.ts`: U2's AS-4 (not open yet), and #2010 if Overwatch picks
-    its Q11 B.
-  - `apps/web/components/buildingMapCoverage.test.ts`: #2009 (lane BT) changes
-    it, and a new door will likely touch it.
-  - SC-1 shares the registration files with #2013.
+- **Total:** about 1,720 lines in 6 PRs (was about 550 in 2). Judgement and
+  matched as marked.
+  - The cards put the two adds lower: OW27-30 called the setting a "small extra
+    build (INFERRED, not sized)" and OW27-33 gave "about 200 lines more" for the
+    mark. By this file's own method (a table, its runner and two routes are
+    AS2-a's shape, 414 lines) each is about 410 plus its screen. If the cards'
+    figures hold, the total is about 870 (550, a setting of about 120, a mark of
+    about 200). Overwatch can fold the setting and the mark into one migration
+    each with other items' settings (EM-5, RN-1) to cut some of this; not
+    decided here.
+- **Migrations:** 2 (SC-0a and SC-3a).
+- **Route:** Opus (minors' data), all six. SC-0b and SC-2 are the lightest; that
+  is not a ruling.
+- **G3:** applies (SC-1 to SC-3b show minors' attendance; SC-0b is on Gym
+  Office).
+- **Dependencies:** the door is in `buildingMap.ts` and `roomPlaces.ts`, lane
+  U2's files; U2-4a to 4c are merged. SC-0b and EM-6 and RN-4 each add a
+  Customize drawer: one after the other.
+- **File overlap (open PRs listed 2026-11-23: #2039, #2082, #2124, #2126):** none
+  of those read changes `buildingMap.ts`, `roomPlaces.ts`, `jobBars.ts` or the
+  Customize page (#2124 changes only `BehaviourSampleWindow.tsx` and its test;
+  #2126's files unknown; #2039 and #2082 not read). The earlier overlaps, #2009
+  (lane BT, `buildingMapCoverage.test.ts`) and #2010 (lane AS-5), have merged.
+  SC-0a and SC-3a share the registration files with the other migration PRs.
 
-**Owner questions:**
-
-- **Q6.1 How long without coming counts?**
-  - **A (recommended):** 3 weeks with no present mark. INFERRED reason: it
-    catches a member who misses three weekly classes in a row.
-  - **B:** 2 weeks.
-  - **C:** 30 days.
-- **Q6.2 Who is listed?**
-  - **A (recommended):** athletes with an active membership who were present
-    at least once before.
-  - **B:** everyone on the roster.
-- **Q6.3 Does open gym count as coming?** This is an open owner decision.
-  - The session-marks migration says the table is "SESSION DETAIL, NOT
-    ATTENDANCE", and that whether a mark "should ever count toward a
-    participation figure is an owner decision that has not been made".
-  - It quotes Overwatch, 2026-10-13: a mark "feeds NO attendance report,
-    reconciled view, board or grant figure"
-    (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:26-32`).
-  - OD-2026-09-28-008 keeps one system of record for attendance.
-  - **A (recommended):** yes, for this page only. Open-gym "here" marks count
-    as coming, so an athlete seen only at open gym is not listed. SC-1 reads
-    them (in its estimate). No attendance figure changes. This departs from
-    Overwatch's 2026-10-13 note, so it needs Jason's ruling.
-  - **B:** register marks only, as attendance is counted today. The list may
-    then name athletes who come only to open gym. SC-1 is about 250.
-- **Q6.4 What can a coach do on the page?**
-  - **A (recommended):** read the list and open the athlete.
-  - **B:** A, plus mark "reached out". That needs a migration and a third PR
-    (about 200 lines more).
+**Owner questions.** None open. Q6.1 to Q6.4 are answered (the table above); the
+options, as asked, are in OD-2026-11-21-006: Q6.1 A gym setting first value 2
+weeks, B fixed 3 weeks, C fixed 2 weeks, D fixed 30 days; Q6.2 A active members
+seen at least once, B everyone on the roster; Q6.3 A yes on this page only, B
+register marks only; Q6.4 A read the list and open the athlete, B A plus mark
+"reached out".
 
 ## 7. An offline save queue: failed saves are kept and retried
 
