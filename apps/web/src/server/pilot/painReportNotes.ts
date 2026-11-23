@@ -114,7 +114,7 @@ export async function painNoteVerdictFor(
 /** Fixed on purpose: the reason renders on the escalation surface, so it never quotes the note. */
 export const PAIN_NOTE_ESCALATION_REASON =
   'An athlete wrote a note on a pain report that needs a person to read it. '
-  + 'On the Escalations page, press Read the note on this row. If it does not open, speak with the athlete.';
+  + 'Open the Escalations page and press Read the note on this escalation. If it does not open, speak with the athlete.';
 
 /**
  * Stores the note and its verdict on the near miss, inside flagNearMiss's transaction (its
@@ -201,10 +201,7 @@ export interface PainReportReviewResult {
   readonly reviewedByAccountId: string | null;
 }
 
-/**
- * The athlete a pain report is about, or null when the organization has no pain report by that id
- * (a malformed id, another gym's report and a near miss that is not a pain report all answer null).
- */
+/** One pain report's note as the "Read the note" press receives it. */
 export interface PainNoteRead {
   readonly athleteId: string;
   /** Null when there is none, or when a coach reads a note held for admins. */
@@ -236,6 +233,10 @@ export async function readPainNote(
   return { athleteId: row.athlete_id, note: row.athlete_note, adminOnly: row.athlete_note_admin_only };
 }
 
+/**
+ * The athlete a pain report is about, or null when the organization has no pain report by that id
+ * (a malformed id, another gym's report and a near miss that is not a pain report all answer null).
+ */
 export async function painReportAthlete(
   client: PoolClient,
   organizationId: string,

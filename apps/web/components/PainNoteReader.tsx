@@ -9,6 +9,12 @@ import { apiBase } from '@/lib/apiBase';
 export const PAIN_NOTE_READ_FAILED = 'Could not load the note. Try again.';
 
 /**
+ * When the note route answers 404 the note will not open on a retry (the report is gone, or its
+ * athlete is no longer reachable), so the words say what to do instead of "try again".
+ */
+export const PAIN_NOTE_UNAVAILABLE = 'This note can no longer be opened. Speak with the athlete.';
+
+/**
  * Whether an escalation was filed from a pain report's note (painReportNotes.ts
  * filePainNoteEscalation): its metadata carries the channel and the near miss it points at, and
  * nothing of the note itself.
@@ -23,6 +29,7 @@ type ReadState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'failed' }
+  | { kind: 'unavailable' }
   | { kind: 'shown'; note: string | null; adminOnly: boolean };
 
 /**
@@ -40,6 +47,10 @@ export default function PainNoteReader({ nearMissId }: { readonly nearMissId: st
         `${apiBase()}/api/pilot/coach/pain-reports/${encodeURIComponent(nearMissId)}/note`,
         { method: 'GET', credentials: 'include', cache: 'no-store' },
       );
+      if (response.status === 404) {
+        setState({ kind: 'unavailable' });
+        return;
+      }
       if (!response.ok) throw new Error(PAIN_NOTE_READ_FAILED);
       const body = (await response.json().catch(() => null)) as { note?: unknown; noteAdminOnly?: unknown } | null;
       if (
@@ -70,6 +81,14 @@ export default function PainNoteReader({ nearMissId }: { readonly nearMissId: st
           <p className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">{PAIN_NOTE_ADMIN_ONLY_LINE}</p>
         ) : null}
       </div>
+    );
+  }
+
+  if (state.kind === 'unavailable') {
+    return (
+      <p role="alert" className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
+        {PAIN_NOTE_UNAVAILABLE}
+      </p>
     );
   }
 

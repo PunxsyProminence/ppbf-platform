@@ -384,7 +384,7 @@ describe('pain report note (DR-25)', () => {
       expect(escalation.source_id).toBeNull();
       expect(escalation.reason).toBe(
         'An athlete wrote a note on a pain report that needs a person to read it. '
-        + 'On the Escalations page, press Read the note on this row. If it does not open, speak with the athlete.',
+        + 'Open the Escalations page and press Read the note on this escalation. If it does not open, speak with the athlete.',
       );
       expect(escalation.metadata).toEqual({ channel: 'pain_report_note', near_miss_id: rows[index].near_miss_id });
     }

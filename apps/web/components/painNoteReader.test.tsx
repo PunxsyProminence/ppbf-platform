@@ -81,8 +81,17 @@ test('no note reads No note', async () => {
   expect(screen.getByText('No note')).toBeInTheDocument();
 });
 
+test('a 404 says the note can no longer be opened, and offers no retry', async () => {
+  answer = () => json({ error: 'Not found' }, 404);
+  render(<PainNoteReader nearMissId="nm-1" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Read the note' }));
+  await settle();
+  expect(screen.getByRole('alert')).toHaveTextContent('This note can no longer be opened. Speak with the athlete.');
+  expect(screen.queryByRole('button', { name: 'Read the note' })).toBeNull();
+});
+
 test.each([
-  ['a refusal', () => json({ error: 'Not found' }, 404)],
+  ['a server error', () => json({ error: 'Server error' }, 500)],
   ['an unreadable body', () => json({ ok: true, note: 42 })],
   ['a network failure', () => Promise.reject(new Error('offline'))],
 ])('%s shows the reader\'s own words and the button again', async (_label, failing) => {
