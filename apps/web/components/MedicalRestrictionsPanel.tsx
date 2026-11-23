@@ -114,7 +114,7 @@ function labelFor(options: ReadonlyArray<{ value: string; label: string }>, valu
 }
 
 /** 'YYYY-MM-DD' as M/D/YYYY, read as a calendar day (never through a time zone). */
-function dayWords(day: string | null): string {
+export function dayWords(day: string | null): string {
   if (!day) return '';
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (!match) return day;

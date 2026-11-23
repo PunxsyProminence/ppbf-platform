@@ -876,11 +876,33 @@ describe('before a segment: minor, cap, restriction', () => {
     expect(posts).toEqual([]);
   });
 
-  test('records on file but none in force show their own state words, never "no restriction"', async () => {
+  test('records on file but none in force each show their state and dates, never "no restriction"', async () => {
     await renderAndPick({ restrictions: [restriction('lifted'), restriction('not_started', 'r2')] });
-    expect(await status().findByText('Lifted \u2014 release on file; Starts later')).toBeTruthy();
+    const records = await screen.findByTestId('spar-status-records');
+    const lines = within(records).getAllByRole('listitem').map((li) => li.textContent);
+    expect(lines).toEqual([
+      'Lifted \u2014 release on fileFrom 11/1/2026; minimum end date 12/1/2026.',
+      'Starts laterFrom 11/1/2026; minimum end date 12/1/2026.',
+    ]);
     expect(status().queryByText('No medical restriction on file for this member.')).toBeNull();
     expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
+  });
+
+  test('in force comes first, each in force record wears the Restricted mark, and a voided record never reads as in force', async () => {
+    await renderAndPick({
+      restrictions: [restriction('voided', 'r-void'), restriction('not_started', 'r-later'), restriction('release_needed', 'r-in')],
+    });
+    const records = await screen.findByTestId('spar-status-records');
+    const items = within(records).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0].textContent).toContain('In force \u2014 release needed');
+    expect(items[0].textContent).toContain('Restricted');
+    expect(items[1].textContent?.startsWith('Starts later')).toBe(true);
+    expect(items[2].textContent?.startsWith('Marked entered in error')).toBe(true);
+    expect(screen.getAllByTestId('spar-status-restricted')).toHaveLength(1);
+    expect(items[0].getAttribute('data-testid')).toBe('spar-status-restricted');
+    expect(items[2].getAttribute('data-testid')).toBeNull();
+    expect(items[2].textContent).not.toContain('Restricted');
   });
 
   test('a record the screen cannot show is counted, and the line never says none', async () => {

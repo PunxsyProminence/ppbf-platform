@@ -14,7 +14,7 @@ import ContactCapPanel from '@/components/ContactCapPanel';
 import MinorLimitsPanel from '@/components/MinorLimitsPanel';
 import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 import {
-  IN_FORCE_STATES, STATE_WORDS, isStaffRestriction, type RestrictionState,
+  IN_FORCE_STATES, STATE_WORDS, dayWords, isStaffRestriction, type RestrictionState,
 } from '@/components/MedicalRestrictionsPanel';
 import { ATHLETE_SAFETY_PAGE, handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
@@ -71,7 +71,8 @@ type SectionRoster = RosterAthlete[] | 'loading' | 'failed';
  * gate: the restriction gate on Save is the route's, unchanged.
  */
 type MinorRead = 'loading' | 'failed' | { isMinor: boolean };
-type RestrictionRead = 'loading' | 'failed' | { states: RestrictionState[]; hidden: number };
+interface RestrictionRecord { restriction_id: string; state: RestrictionState; start_date: string; minimum_end_date: string }
+type RestrictionRead = 'loading' | 'failed' | { records: RestrictionRecord[]; hidden: number };
 
 async function readMinor(id: string, signal: AbortSignal): Promise<MinorRead> {
   const response = await fetch(
@@ -91,29 +92,44 @@ async function readRestrictions(id: string, signal: AbortSignal): Promise<Restri
   const payload = (await response.json().catch(() => null)) as { restrictions?: unknown } | null;
   if (!response.ok || !payload || !Array.isArray(payload.restrictions)) return 'failed';
   const shown = payload.restrictions.filter(isStaffRestriction);
-  return { states: shown.map((row) => row.state), hidden: payload.restrictions.length - shown.length };
+  const records = shown.map(({ restriction_id, state, start_date, minimum_end_date }) => ({
+    restriction_id, state, start_date, minimum_end_date,
+  }));
+  return { records, hidden: payload.restrictions.length - shown.length };
 }
 
-/** The restriction fact: in force first (with the Restricted mark), else each record's own state words.
-    A record this screen cannot show is never read as none: the panel's failed-read sentence says so. */
+/** The restriction fact, one record per line in the panel's own words and dates (#2136 QR10 = A):
+    in force first, with the Restricted mark; then the rest. A record this screen cannot show is
+    never read as none: the panel's failed-read sentence says so. */
 function RestrictionLine({ read }: { read: RestrictionRead }) {
   if (read === 'loading') return <p className="t-body" role="status">Reading medical restrictions...</p>;
   if (read === 'failed') {
     return <p className="t-body">The medical restrictions could not be read. Nothing is shown as clear because of it.</p>;
   }
-  const inForce = read.states.filter((state) => IN_FORCE_STATES.has(state));
-  const others = [...new Set(read.states.filter((state) => !IN_FORCE_STATES.has(state)))];
+  // In force first; a record marked entered in error last.
+  const ordered = [
+    ...read.records.filter((row) => IN_FORCE_STATES.has(row.state)),
+    ...read.records.filter((row) => !IN_FORCE_STATES.has(row.state) && row.state !== 'voided'),
+    ...read.records.filter((row) => row.state === 'voided'),
+  ];
   return (
     <>
-      {inForce.length > 0 ? (
-        <div className="flex flex-col items-start gap-[var(--s1)]" data-testid="spar-status-restricted">
-          <RestrictedMark />
-          <p className="t-body text-[var(--restricted-ink)]">
-            {STATE_WORDS[inForce.includes('release_needed') ? 'release_needed' : 'in_force']}
-          </p>
-        </div>
-      ) : others.length > 0 ? (
-        <p className="t-body">{others.map((state) => STATE_WORDS[state]).join('; ')}</p>
+      {ordered.length > 0 ? (
+        <ul className="space-y-[var(--s2)]" data-testid="spar-status-records">
+          {ordered.map((row) => {
+            const inForce = IN_FORCE_STATES.has(row.state);
+            return (
+              <li key={row.restriction_id} data-testid={inForce ? 'spar-status-restricted' : undefined}
+                className="flex flex-col items-start gap-[var(--s1)]">
+                {inForce ? <RestrictedMark /> : null}
+                <p className={inForce ? 't-body text-[var(--restricted-ink)]' : 't-body'}>{STATE_WORDS[row.state]}</p>
+                <p className="t-body">
+                  From {dayWords(row.start_date)}; minimum end date {dayWords(row.minimum_end_date)}.
+                </p>
+              </li>
+            );
+          })}
+        </ul>
       ) : read.hidden === 0 ? (
         <p className="t-body">No medical restriction on file for this member.</p>
       ) : null}
