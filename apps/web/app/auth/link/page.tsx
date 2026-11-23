@@ -326,7 +326,8 @@ function LinkPageContent() {
 
   return (
     <main className="mx-auto max-w-[42rem] p-[var(--s6)]">
-      <h1 className="t-h1 mb-[var(--s4)]">The Bell</h1>
+      {/* "Sign In", not The Bell: Jason's Q3 "A: Sign In" (lane SIGNIN-FIX #2143, scrub FAM-15). */}
+      <h1 className="t-h1 mb-[var(--s4)]">Sign In</h1>
       {/* A sign-in link that did not work is an authentication fact, not a
           medical one. This panel wore --locked on its border and the seed red
           itself -- #A81E22, in its rgba spelling -- as its ground: the same

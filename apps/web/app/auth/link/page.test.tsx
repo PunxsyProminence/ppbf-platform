@@ -551,3 +551,14 @@ describe('a link that has already been used', () => {
     expect(screen.queryByRole('heading', { name: 'Make A Password' })).toBeNull();
   });
 });
+
+// Jason's Q3 "A: Sign In" (lane SIGNIN-FIX #2143, scrub FAM-15): the page a
+// parent's first emailed link opens is headed Sign In, not The Bell.
+test('the link page is headed Sign In', async () => {
+  serve('offer');
+  render(<MagicLinkPage />);
+  const h1 = screen.getByRole('heading', { level: 1 });
+  expect(h1.textContent).toBe('Sign In');
+  expect(screen.queryByRole('heading', { name: 'The Bell' })).toBeNull();
+  await screen.findByRole('heading', { name: 'Make A Password' });
+});
