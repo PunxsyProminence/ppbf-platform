@@ -21,6 +21,7 @@ import BackHome from '@/components/BackHome';
 import RoleLink from '@/components/RoleLink';
 import Link from 'next/link';
 import { CLEARANCE_BOARD_PAGE, DECISION_LOOP_PAGE, handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
+import PainNoteReader, { painNoteEscalationTarget } from '@/components/PainNoteReader';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -486,7 +487,14 @@ export default function EscalationsPage() {
                             </Link>
                           </span>
                         </td>
-                        <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">{item.reason}</td>
+                        <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">
+                          {item.reason}
+                          {/* DR-25 (Q12 A on #2139): a pain note's escalation opens its note here. */}
+                          {(() => {
+                            const nearMissId = painNoteEscalationTarget(item.metadata);
+                            return nearMissId ? <PainNoteReader nearMissId={nearMissId} /> : null;
+                          })()}
+                        </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.created_at)}</td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           {item.status === 'open' ? (

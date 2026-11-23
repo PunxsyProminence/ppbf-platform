@@ -75,6 +75,7 @@ jest.mock('./shadowReadiness', () => ({
 import { NextRequest } from 'next/server';
 
 import { GET as painReportsGET } from '@/app/api/pilot/coach/pain-reports/route';
+import { GET as noteGET } from '@/app/api/pilot/coach/pain-reports/[nearMissId]/note/route';
 import { POST as reviewPOST } from '@/app/api/pilot/coach/pain-reports/[nearMissId]/review/route';
 import { POST as observationsPOST } from '@/app/api/pilot/shadow/formulas/observations/route';
 import { getStaffDisplayName } from './achievements';
@@ -193,6 +194,15 @@ async function readPainList(as: PilotPrincipal) {
   mockRequirePrincipal.mockResolvedValue(as);
   const response = await painReportsGET(new NextRequest('http://localhost/api/pilot/coach/pain-reports'));
   return { status: response.status, body: await response.json() as { painReports?: Array<Record<string, unknown>> } };
+}
+
+async function readNote(as: PilotPrincipal, nearMissId: string) {
+  mockRequirePrincipal.mockResolvedValue(as);
+  const response = await noteGET(
+    new NextRequest(`http://localhost/api/pilot/coach/pain-reports/${nearMissId}/note`),
+    { params: Promise.resolve({ nearMissId }) },
+  );
+  return { status: response.status, body: await response.json() as Record<string, unknown> };
 }
 
 async function review(as: PilotPrincipal, nearMissId: string) {
@@ -374,7 +384,7 @@ describe('pain report note (DR-25)', () => {
       expect(escalation.source_id).toBeNull();
       expect(escalation.reason).toBe(
         'An athlete wrote a note on a pain report that needs a person to read it. '
-        + 'Read it on the pain report list; if it is not there, speak with the athlete.',
+        + 'Open the Escalations page and press Read the note on this escalation. If it does not open, speak with the athlete.',
       );
       expect(escalation.metadata).toEqual({ channel: 'pain_report_note', near_miss_id: rows[index].near_miss_id });
     }
@@ -611,5 +621,83 @@ describe('Mark reviewed (DR-25)', () => {
     }
     const [row] = await nearMisses();
     expect(row.reviewed_at).toBeNull();
+  });
+});
+
+// Q12 A on #2139: "Read the note" on a pain-note escalation, through the near miss it points at.
+describe('Read the note (DR-25, Q12 A)', () => {
+  test('an admin reads a held note and is told it is held; a coach gets the same 404 as a missing report', async () => {
+    await filePain(STAFF_DISCLOSURE);
+    const [{ near_miss_id: id }] = await nearMisses();
+
+    const admin = await readNote(AS.orgAdmin(), id as string);
+    expect(admin.status).toBe(200);
+    expect(admin.body).toEqual({ ok: true, note: STAFF_DISCLOSURE, noteAdminOnly: true });
+
+    // The held note's escalation is athlete_voice, which no coach's escalation list shows.
+    const coach = await readNote(AS.coach(), id as string);
+    const missing = await readNote(AS.coach(), '00000000-0000-4000-8000-000000000000');
+    expect(coach.status).toBe(404);
+    expect(coach.body).toEqual(missing.body);
+  });
+
+  test('a note no escalation points at is not readable here, by an admin or a coach', async () => {
+    await filePain('sore after sparring');
+    const [{ near_miss_id: id }] = await nearMisses();
+    expect(await escalations()).toEqual([]);
+    expect((await readNote(AS.orgAdmin(), id as string)).status).toBe(404);
+    expect((await readNote(AS.coach(), id as string)).status).toBe(404);
+  });
+
+  test('a coach reads a note its escalation list shows; the read has no 7-day window', async () => {
+    await filePain(NON_STAFF_DISCLOSURE);
+    const [{ near_miss_id: id }] = await nearMisses();
+    await activeClient!.query(
+      `update pilot.shadow_near_misses set created_at = now() - interval '30 days' where near_miss_id = $1::uuid`,
+      [id],
+    );
+    expect((await readPainList(AS.coach())).body.painReports).toEqual([]);
+    const coach = await readNote(AS.coach(), id as string);
+    expect(coach.body).toEqual({ ok: true, note: NON_STAFF_DISCLOSURE });
+  });
+
+  test('another gym, a deleted athlete, a missing report, a non-pain near miss and a malformed id all get the same 404', async () => {
+    await filePain(NON_STAFF_DISCLOSURE);
+    const [{ near_miss_id: id }] = await nearMisses();
+    // Readable before any of the refusals below.
+    expect((await readNote(AS.orgAdmin(), id as string)).status).toBe(200);
+    const handFlagged = (await activeClient!.query(
+      `insert into pilot.shadow_near_misses (organization_id, athlete_id, description, severity, detected_by, metadata)
+       values ($1, $2, 'Hand-flagged.', 'low', 'human', '{}'::jsonb) returning near_miss_id::text`,
+      [ORG, ATHLETE_ID],
+    )).rows[0].near_miss_id as string;
+
+    const refused = [
+      await readNote(AS.otherGymCoach(), id as string),
+      await readNote(AS.orgAdmin(), '00000000-0000-4000-8000-000000000000'),
+      await readNote(AS.orgAdmin(), handFlagged),
+      await readNote(AS.orgAdmin(), 'not-a-uuid'),
+    ];
+    await activeClient!.query('update pilot.athletes set deleted_at = now() where athlete_id = $1', [ATHLETE_ID]);
+    refused.push(await readNote(AS.orgAdmin(), id as string));
+    for (const answer of refused) {
+      expect(answer.status).toBe(404);
+      expect(answer.body).toEqual(refused[0].body);
+    }
+  });
+
+  test('parent, athlete, board and platform owner are refused by role', async () => {
+    await filePain('sore after sparring');
+    const [{ near_miss_id: id }] = await nearMisses();
+    for (const as of [
+      principal(PARENT, 'parent'),
+      AS.athlete(),
+      principal(BOARD, 'board'),
+      principal('acct-pn-platform', 'platform_owner'),
+    ]) {
+      const answer = await readNote(as, id as string);
+      expect([as.role, answer.status]).toEqual([as.role, 403]);
+      expect(JSON.stringify(answer.body)).not.toContain('sore after sparring');
+    }
   });
 });

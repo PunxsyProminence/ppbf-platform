@@ -28,6 +28,7 @@ const repoRoot = path.resolve(__dirname, '../../../../..');
 
 /** Every non-test file naming pilot.shadow_near_misses outside a comment, as of this PR. */
 const NEAR_MISS_FILES: readonly string[] = [
+  'apps/web/app/api/pilot/coach/pain-reports/[nearMissId]/note/route.ts',
   'apps/web/app/api/pilot/coach/pain-reports/[nearMissId]/review/route.ts',
   'apps/web/app/api/pilot/coach/pain-reports/route.ts',
   'apps/web/app/api/pilot/shadow/near-misses/route.ts',

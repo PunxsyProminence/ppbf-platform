@@ -7014,6 +7014,36 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/pain-reports/[nearMissId]/note/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/pain-reports/[nearMissId]/note",
+    "gate": "requirePrincipal + requireRole(DECISION_LOOP_ROLES) + assertActorCanAccessAthlete on the report's own athlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "DR-25 Read the note on a pain-note escalation (Q12 A on #2139): one pain report's note with the pain list's gate and SQL mask (a coach never receives a note held for admins, nor the key saying one is held), no 7-day window. A malformed id, a missing report, another gym's, a near miss that is not a pain report and a refused athlete all answer the same 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...DECISION_LOOP_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/pain-reports/[nearMissId]/review/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/coach/pain-reports/[nearMissId]/review",
