@@ -20,6 +20,7 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import EscalationsPage from './page';
+import { ARM_SETTLE_MS } from '@/components/ArmedButton';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import {
   CLEARANCE_BOARD_PAGE,
@@ -415,4 +416,29 @@ describe('the queue links Safety Review for an admin only (lane AS-10)', () => {
     await screen.findByRole('link', { name: 'Safety Flags' });
     expect(screen.queryByRole('link', { name: 'Safety Review' })).toBeNull();
   });
+});
+
+// Lane AS5-REST, AS5-4 (app scrub CS-08; #2131 QR6 = A): Acknowledge is the
+// armed second press here too, as F-129 made it on the coach home (Jason's
+// "Small fixes bundle", OWNER_DECISIONS.md:6629). One press only arms it.
+test('Acknowledge is the armed second press: one press arms it, the second sends it', async () => {
+  const harness = mockAdminFetch();
+  let now = Date.parse('2026-11-23T08:00:00Z');
+  const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    render(<EscalationsPage />);
+    const ack = await screen.findByRole('button', { name: 'Acknowledge' });
+    now += ARM_SETTLE_MS;
+    fireEvent.click(ack);
+    expect(harness.posted).toEqual([]);
+    const armed = screen.getByRole('button', { name: /^Press again: acknowledge / });
+    // This page never shows an athlete id, not even on the armed button.
+    expect(armed.textContent).not.toContain('ath-1');
+    now += ARM_SETTLE_MS;
+    fireEvent.click(armed);
+    await waitFor(() => expect(harness.posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc-1' }]));
+    expect(await screen.findByText('Escalation acknowledged.')).toBeTruthy();
+  } finally {
+    clock.mockRestore();
+  }
 });
