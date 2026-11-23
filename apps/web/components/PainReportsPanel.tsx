@@ -160,7 +160,16 @@ export default function PainReportsPanel({
   read,
   boardShown,
   readsEveryTwoMinutes = false,
+  showsNotes = true,
 }: {
+  /**
+   * Whether the cards draw the athlete's note (DR-25). False on the class screen, the gym floor
+   * tablet: a child's words, and above all a note held for admins (an admin can run a class
+   * there), are not drawn where the room can read them. Every card then draws no note field at
+   * all, so a bystander cannot tell which reports have one. Notes are read on the coach home.
+   * (PR 3 reviewer B; put to Overwatch on #2139.)
+   */
+  readonly showsNotes?: boolean;
   readonly read: PainReportsRead;
   /** The coach home's floor board is on screen: "Record what you did" is there, not a link here. */
   readonly boardShown: boolean;
@@ -265,7 +274,7 @@ export default function PainReportsPanel({
                 </div>
               </dl>
 
-              <PainNote report={report} />
+              {showsNotes ? <PainNote report={report} /> : null}
 
               <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                 {PAIN_PROVENANCE[report.reporter]}

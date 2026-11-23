@@ -64,12 +64,12 @@ afterEach(() => {
 // The read as the harness last rendered it, recorded after each render.
 const seen: { read: PainReportsRead | null } = { read: null };
 
-function Harness({ refreshMs, boardShown = false, timed = false }: { refreshMs?: number; boardShown?: boolean; timed?: boolean }) {
+function Harness({ refreshMs, boardShown = false, timed = false, showsNotes }: { refreshMs?: number; boardShown?: boolean; timed?: boolean; showsNotes?: boolean }) {
   const read = usePainReports({ refreshMs });
   useEffect(() => {
     seen.read = read;
   });
-  return <PainReportsPanel read={read} boardShown={boardShown} readsEveryTwoMinutes={timed} />;
+  return <PainReportsPanel read={read} boardShown={boardShown} readsEveryTwoMinutes={timed} showsNotes={showsNotes} />;
 }
 
 async function settle() {
@@ -78,7 +78,7 @@ async function settle() {
   });
 }
 
-async function show(props: { refreshMs?: number; boardShown?: boolean; timed?: boolean } = {}) {
+async function show(props: { refreshMs?: number; boardShown?: boolean; timed?: boolean; showsNotes?: boolean } = {}) {
   await act(async () => {
     render(<Harness {...props} />);
   });
@@ -460,7 +460,8 @@ describe('the note and Mark reviewed (DR-25)', () => {
     });
     await settle();
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
-    expect(screen.getByText(/Reviewed by Rosa Coach,/)).toBeInTheDocument();
+    // The time follows the name.
+    expect(screen.getByText(/Reviewed by Rosa Coach, \S/)).toBeInTheDocument();
     expect(screen.getByText('✓', { exact: false })).toBeInTheDocument();
   });
 
@@ -487,6 +488,26 @@ describe('the note and Mark reviewed (DR-25)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not mark this report reviewed. Try again.');
     expect(screen.getByRole('button', { name: 'Mark reviewed' })).toBeEnabled();
     expect(screen.getByText('Not reviewed yet')).toBeInTheDocument();
+  });
+
+  test("on the floor tablet (showsNotes false) no card draws a note field, not even an admin's held note", async () => {
+    answers = [() => json({
+      ...EMPTY,
+      painReports: [
+        report('n1', { note: 'My coach hits me', noteAdminOnly: true }),
+        report('n2', { note: 'sore after sparring', noteAdminOnly: false }),
+        report('n3'),
+      ],
+    })];
+    await show({ showsNotes: false });
+    expect(screen.getAllByRole('article')).toHaveLength(3);
+    expect(screen.queryByText("Athlete's note")).toBeNull();
+    expect(screen.queryByText('No note')).toBeNull();
+    expect(screen.queryByText('My coach hits me')).toBeNull();
+    expect(screen.queryByText('sore after sparring')).toBeNull();
+    expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
+    // The review control stays.
+    expect(screen.getAllByRole('button', { name: 'Mark reviewed' })).toHaveLength(3);
   });
 
   test('a row whose note or review it cannot read is not drawn, and the list says reports may be missing', async () => {

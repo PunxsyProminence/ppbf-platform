@@ -1243,6 +1243,13 @@ export default function AthleteWorkspace() {
      trusting this, because a disabled button is a courtesy and a guard is a
      guarantee. */
   const painReportIncomplete = currentPainType === null || currentPainSeverity === null;
+  /* DR-25. The note is counted the way the server counts it (painReportNotes.ts):
+     trimmed, in characters (code points), so an emoji is one, not two. A box
+     limit (maxLength) counts differently per browser and could pass a note the
+     server refuses -- which refuses the whole pain report, and no coach is told
+     -- so the limit is checked here and Save waits, with the reason on screen. */
+  const painNoteLength = [...currentPainNote.trim()].length;
+  const painNoteTooLong = painNoteLength > PAIN_NOTE_MAX;
 
   // Goals State - Real API data
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
@@ -2620,7 +2627,7 @@ export default function AthleteWorkspace() {
        entry, no injury flag, no observation, no coach alert. The Save button
        is disabled in the same condition, so this guard is the second lock
        rather than the only one. */
-    if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
+    if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null || painNoteTooLong) {
       return;
     }
     if (painSavingRef.current) {
@@ -4725,8 +4732,8 @@ export default function AthleteWorkspace() {
                   <textarea
                     id="pain-note"
                     value={currentPainNote}
-                    onChange={(event) => setCurrentPainNote(event.target.value)}
-                    maxLength={PAIN_NOTE_MAX}
+                    // A NUL cannot be stored (the server refuses it); it never enters the box.
+                    onChange={(event) => setCurrentPainNote(event.target.value.split('\u0000').join(''))}
                     disabled={isSavingPain}
                     aria-describedby="pain-note-help pain-note-count"
                     className="textarea input--kiosk h-[89px]"
@@ -4735,8 +4742,13 @@ export default function AthleteWorkspace() {
                     Optional. You can leave it empty. It goes to the gym staff with your pain report.
                   </p>
                   <p id="pain-note-count" className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
-                    {currentPainNote.length} of {PAIN_NOTE_MAX}
+                    {painNoteLength} of {PAIN_NOTE_MAX}
                   </p>
+                  {painNoteTooLong ? (
+                    <p className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
+                      Your note is too long. Shorten it to {PAIN_NOTE_MAX} characters or fewer to save.
+                    </p>
+                  ) : null}
                 </div>
               </div>
               {/* A-FIN-07. The failure lives here now, inside the overlay,
@@ -4760,7 +4772,7 @@ export default function AthleteWorkspace() {
               <div className="flex gap-[var(--s3)]">
                 <button
                   onClick={() => void handleSavePainReport()}
-                  disabled={isSavingPain || painReportIncomplete}
+                  disabled={isSavingPain || painReportIncomplete || painNoteTooLong}
                   className="btn btn--kiosk flex-1 disabled:opacity-50 disabled:grayscale"
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
