@@ -903,3 +903,10 @@ describe('summary tile honesty', () => {
     expect(tileValue('New messages')).toBe('First 2 · Second 0');
   });
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});

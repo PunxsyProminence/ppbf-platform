@@ -24,6 +24,7 @@ import { apiBase } from '@/lib/apiBase';
 import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymDateNumeric, formatGymDateTimeShort, formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import { earnedMilestoneKeys } from '@/src/shared/achievementPaths';
+import { useTabParam } from './useTabParam';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -364,8 +365,27 @@ const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
+/* The tab rail, in order. Also the tabs the address may open (`?tab=`; lane
+   AS4-4D4E, AS-4 part 4e): every tab here is drawn for every parent. */
+const PARENT_HUB_TABS: readonly { id: TabID; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'parent-floor', label: 'Parent Floor' },
+  { id: 'home-assignments', label: 'Assignments' },
+  { id: 'observations', label: 'Observations' },
+  { id: 'family-goals', label: 'Family Goals' },
+  { id: 'messages', label: 'Messages' },
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'progress', label: 'Progress' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'shadow', label: 'SHADOW Intel' },
+];
+const ADDRESSABLE_TABS: readonly TabID[] = PARENT_HUB_TABS.map((tab) => tab.id);
+
 export default function ParentHub() {
-  const [activeTab, setActiveTab] = useState<TabID>('overview');
+  /* The open tab is kept in the address (`?tab=`), so "Back to Parent Hub"
+     and the job bar's tab items open the tab, not Overview (app scrub FAM-06;
+     lane AS4-4D4E). No value, or one the rail does not draw, opens Overview. */
+  const [activeTab, setActiveTab] = useTabParam<TabID>(ADDRESSABLE_TABS, 'overview');
   // The tab row scrolls sideways on a phone (AS9-3), so the open tab is
   // brought into view in the row when it changes. Not on first paint, so
   // opening the hub never moves the page.
@@ -1521,18 +1541,7 @@ export default function ParentHub() {
         {/* TAB NAVIGATION */}
         <div className="ge-family__rail mat-paper rounded-[var(--r-md)]">
           <div className="flex flex-nowrap gap-[var(--s2)] overflow-x-auto p-[var(--s3)]">
-            {[
-              { id: 'overview', label: 'Overview' },
-              { id: 'parent-floor', label: 'Parent Floor' },
-              { id: 'home-assignments', label: 'Assignments' },
-              { id: 'observations', label: 'Observations' },
-              { id: 'family-goals', label: 'Family Goals' },
-              { id: 'messages', label: 'Messages' },
-              { id: 'attendance', label: 'Attendance' },
-              { id: 'progress', label: 'Progress' },
-              { id: 'resources', label: 'Resources' },
-              { id: 'shadow', label: 'SHADOW Intel' }
-            ].map(tab => (
+            {PARENT_HUB_TABS.map(tab => (
               <button
                 key={tab.id}
                 ref={(element) => {
@@ -1540,7 +1549,7 @@ export default function ParentHub() {
                   else tabButtonsRef.current.delete(tab.id);
                 }}
                 type="button"
-                onClick={() => setActiveTab(tab.id as TabID)}
+                onClick={() => setActiveTab(tab.id)}
                 aria-pressed={activeTab === tab.id}
                 aria-current={activeTab === tab.id ? 'true' : undefined}
                 className={cx(

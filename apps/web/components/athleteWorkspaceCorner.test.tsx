@@ -308,3 +308,10 @@ describe('where the hold notice stands (lane AS-8)', () => {
     expect(screen.getAllByText(HOLD)).toHaveLength(1);
   });
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});

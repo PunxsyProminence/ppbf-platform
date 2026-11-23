@@ -61,14 +61,12 @@ export const PARENT_HUB_TAB_LABEL: Readonly<Record<string, string>> = {
 };
 
 /**
- * Whether Parent Hub opens a tab from the address (`?tab=`). It does not yet:
- * AS-4's 4e adds that (useTabParam). Until then a tab item would name a place
- * its link does not take you to, and on the hub itself would do nothing (layout
- * review round 1, BLOCKER), so tab items are not drawn; a section of nothing
- * but tabs (the parent's Messages) waits with them. Parent Hub, the parent's
- * Home, still has every tab. 4e sets this to true.
+ * Whether Parent Hub opens a tab from the address (`?tab=`). It does since
+ * AS-4's 4e (useTabParam in ParentHub.tsx), so the parent's tab items are
+ * drawn, and Messages with them. Before 4e a tab item would have named a place
+ * its link did not take you to (layout review round 1 on #2068, BLOCKER).
  */
-export const PARENT_HUB_OPENS_TAB = false;
+export const PARENT_HUB_OPENS_TAB = true;
 
 const DOOR_LABEL = new Map(BUILDING.map((door) => [door.href, door.label]));
 

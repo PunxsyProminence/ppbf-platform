@@ -187,22 +187,25 @@ describe.each(['rail', 'phone'] as const)('the %s bar', (variant) => {
     expect(screen.getByRole('link', { name: 'Safety Status' }).getAttribute('href')).toBe('/parent/safety');
   });
 
-  it('draws no Parent Hub tab item until Parent Hub opens a tab from the address (4e)', () => {
-    // A tab link would open the hub on Overview, and on the hub do nothing
-    // (layout review round 1, BLOCKER). Home is Parent Hub, which has every tab.
-    expect(PARENT_HUB_OPENS_TAB).toBe(false);
+  it('draws the Parent Hub tab items, each opening its tab, since Parent Hub reads the address (4e)', () => {
+    // Lane AS4-4D4E: ParentHub keeps its tab in ?tab= (useTabParam), so a tab
+    // item opens that tab. Messages, a section of tabs only, is drawn again.
+    expect(PARENT_HUB_OPENS_TAB).toBe(true);
     signIn('parent');
     const { container } = render(<JobBar variant={variant} />);
-    const hrefs = everyHref(container);
-    expect(hrefs.some((href) => href.includes('?tab='))).toBe(false);
-    expect(hrefs.filter((href) => href === '/parent/dashboard')).toHaveLength(1);
-    // Messages is all tabs, so it waits for 4e; This week keeps Schedule as one link.
     const nav = screen.getByRole('navigation', { name: 'Your jobs' });
-    expect(within(nav).queryByText('Messages')).toBeNull();
-    expect(screen.getByRole('link', { name: 'This week' }).getAttribute('href')).toBe('/schedule');
+    expect(within(nav).getByText('Messages')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Progress/ }));
     expect(screen.getByRole('link', { name: 'Progress Visibility' })).toBeTruthy();
-    expect(screen.queryByText(/Parent Hub tab/)).toBeNull();
+    expect(screen.getAllByText(/Parent Hub tab/).length).toBeGreaterThan(0);
+    const hrefs = everyHref(container);
+    for (const tab of ['progress', 'home-assignments', 'family-goals', 'observations']) {
+      expect(hrefs).toContain(`/parent/dashboard?tab=${tab}`);
+    }
+    // Every tab a link names is one Parent Hub's rail draws.
+    for (const href of hrefs.filter((h) => h.includes('?tab='))) {
+      expect(Object.keys(PARENT_HUB_TAB_LABEL)).toContain(new URL(href, 'http://x').searchParams.get('tab'));
+    }
   });
 
   it('makes a one-page section a plain link and a longer one a sheet', () => {
