@@ -2828,11 +2828,14 @@ export default function CoachWorkspace() {
                 )}
               >
                 {/* The open tab says so in a glyph and a word, not by fill
-                    alone (app scrub CF-25; Law 3). */}
+                    alone (app scrub CF-25; Law 3). The word takes the tab's
+                    own kiosk size (19.1px from the foundation sheet's kiosk
+                    button rule) instead of --t-xs, and bold, so it is large
+                    text on the brass (research finding F-2, 2026-11-22). */}
                 {activeTab === tab.id ? <span aria-hidden="true">◉</span> : null}
                 {tab.label}
                 {activeTab === tab.id ? (
-                  <span className="text-[length:var(--t-xs)] font-normal normal-case">(open)</span>
+                  <span className="font-bold normal-case">(open)</span>
                 ) : null}
                 {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
                   <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
