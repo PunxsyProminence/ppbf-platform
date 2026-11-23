@@ -104,7 +104,8 @@ test('reads nothing until the coach opens it, then offers the active names, the 
 
 test('opens a window for this athlete in this run, as asked, then shows chance 1 of its chances and no change to make', async () => {
   serve((call) => lists()(call) ?? (call.method === 'POST' && call.url === WINDOWS
-    ? respond({ ok: true, window: { ...OPEN_ROW, task_constraint: 'live', chances: 6 } }, 201) : undefined));
+    ? respond({ ok: true, window: { ...OPEN_ROW, task_constraint: 'live', chances: 6 } }, 201)
+    : call.method === 'GET' && call.url === WINDOW ? windowRead(1, [], { ...OPEN_ROW, task_constraint: 'live', chances: 6 }) : undefined));
   await showOpened();
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'live' } });
@@ -204,7 +205,7 @@ test('a coach joining or coming back starts at the chance the count stands at, n
   // Back when the count is past the last chance: the window is full, whatever this coach tapped.
   current = 11;
   await reopen();
-  expect(screen.getByText('All 10 chances are tapped: the window is full.')).toBeInTheDocument();
+  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: SHOWN })).toBeNull();
 });
 
@@ -215,7 +216,7 @@ test('the last chance takes a tap, and then the window is full', async () => {
   expect(screen.getByText('Chance 10 of 10')).toBeInTheDocument();
   await press(NOT_SHOWN);
   expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 10, polarity: 'counterexample' });
-  expect(screen.getByText('All 10 chances are tapped: the window is full.')).toBeInTheDocument();
+  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: NOT_SHOWN })).toBeNull();
   expect(screen.getByRole('button', { name: 'Close the window' })).toBeInTheDocument();
 });
@@ -334,6 +335,7 @@ test('the gym-floor sizes that apply: every button takes the sheet\'s tap floor,
   for (const button of screen.getAllByRole('button')) expect(button).toHaveClass('btn', 'btn--tap');
   for (const field of [...screen.getAllByRole('combobox'), screen.getByRole('spinbutton')]) expect(field).toHaveClass('input--kiosk');
   await press(/Join:/);
+  expect(screen.getByRole('button', { name: /^Skip this chance/ })).toHaveClass('btn', 'btn--tap');
   for (const name of [SHOWN, NOT_SHOWN]) {
     const button = screen.getByRole('button', { name });
     // Inline, because a utility class cannot beat .btn's own min-height.
@@ -394,6 +396,7 @@ test('a tap answered with a server error forgets the last tap, as a lost one doe
 test('opening a new window forgets the last tap made in another', async () => {
   serve((call) => {
     if (call.url === WINDOW) return call.method === 'GET' ? windowRead(1) : patchEcho(call);
+    if (call.url === `${WINDOWS}/win-2`) return windowRead(1, [], { ...OPEN_ROW, window_id: 'win-2' });
     if (call.method === 'POST') return respond({ ok: true, window: { ...OPEN_ROW, window_id: 'win-2' } }, 201);
     return lists([OPEN_ROW])(call);
   });
@@ -424,4 +427,146 @@ test('a list read that lands after the coach hid the screen does not open it aga
   });
   expect(screen.getByRole('button', { name: 'Watch a behaviour for Ada Reyes' })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.queryByLabelText('Behaviour')).toBeNull();
+});
+
+// PATTERN-2b: "Skip this chance" (Jason 2026-11-22, "yes add it"; Overwatch 7088785576 on #2082).
+const SKIP = /^Skip this chance/;
+
+test('skip this chance moves the coach\'s own count on one and saves nothing; the next tap goes to the chance after', async () => {
+  serve((call) => (call.url === WINDOW ? (call.method === 'GET' ? windowRead(3) : patchEcho(call)) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  expect(screen.getByRole('button', { name: SKIP })).toHaveAccessibleName('Skip this chance (chance 3, nothing saved)');
+  const before = calls.length;
+  await press(SKIP);
+  expect(calls.length).toBe(before);
+  expect(screen.getByRole('status')).toHaveTextContent('Skipped chance 3: nothing saved for it.');
+  expect(screen.getByText('Chance 4 of 10')).toBeInTheDocument();
+  expect(screen.getByText('You: no taps yet')).toBeInTheDocument();
+  await press(SHOWN);
+  expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 4, polarity: 'occurrence' });
+  expect(screen.getByText('Chance 5 of 10')).toBeInTheDocument();
+  expect(screen.getByText('You: 1 shown of 1 tapped')).toBeInTheDocument();
+});
+
+test('change last tap after a skip still flips the coach\'s last tap, not the skipped chance', async () => {
+  serve((call) => (call.url === WINDOW ? (call.method === 'GET' ? windowRead(1) : patchEcho(call)) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  await press(SKIP);
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Change last tap to Not shown/ })).toHaveAccessibleName('Change last tap to Not shown (chance 1)');
+  await press(/Change last tap to Not shown/);
+  expect(calls.at(-1)?.body).toEqual({ action: 'change_last', polarity: 'counterexample' });
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+});
+
+test('skipping the last chance leaves the window full, with no tap and no skip to make', async () => {
+  serve((call) => (call.url === WINDOW ? windowRead(10) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  await press(/Join:/);
+  await press(SKIP);
+  expect(screen.getByText('No chances left: all 10 are tapped or skipped, so the window is full.')).toBeInTheDocument();
+  for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.queryByRole('button', { name })).toBeNull();
+});
+
+test('while a tap is saving, skip is held too, so the count cannot move under the tap', async () => {
+  let release: (response: Response) => void = () => undefined;
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') return windowRead(1);
+    if (call.method === 'PATCH') return new Promise<Response>((resolve) => { release = resolve; });
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  act(() => {
+    fireEvent.click(screen.getByRole('button', { name: SHOWN }));
+  });
+  expect(screen.getByRole('button', { name: SKIP })).toBeDisabled();
+  await act(async () => {
+    release(respond({ ok: true, tap: { chance: 1, polarity: 'occurrence' } }));
+  });
+  expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: SKIP })).toBeEnabled();
+});
+
+test('a re-read after a refused tap keeps the place a skip moved to', async () => {
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') return windowRead(1);
+    if (call.method === 'PATCH') return respond({ ok: false, error: 'That window is closed.' }, 400);
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SKIP);
+  await press(SKIP);
+  await press(SHOWN);
+  expect(calls.at(-1)?.url).toBe(WINDOW);
+  expect(calls.at(-2)?.body).toEqual({ action: 'tap', chance: 3, polarity: 'occurrence' });
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+});
+
+// Overwatch 7091097843 (B1): an open can answer a window another coach opened first (PATTERN-2a).
+test('an open answered with a window already under way reads it, and starts where the count stands with the coach\'s own taps', async () => {
+  serve((call) => {
+    if (call.method === 'POST' && call.url === WINDOWS) return respond({ ok: true, window: OPEN_ROW }, 201);
+    if (call.url === WINDOW) return call.method === 'GET' ? windowRead(6, [{ chance: 2, polarity: 'occurrence' }]) : patchEcho(call);
+    return lists()(call);
+  });
+  await showOpened();
+  await press('Open the window');
+  expect(calls.filter((call) => call.method === 'GET' && call.url === WINDOW)).toHaveLength(1);
+  expect(screen.getByText('Chance 6 of 10')).toBeInTheDocument();
+  expect(screen.getByText('You: 1 shown of 1 tapped')).toBeInTheDocument();
+  await press(NOT_SHOWN);
+  expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 6, polarity: 'counterexample' });
+});
+
+// Codex P1 on #2120 (4660882829).
+test('after a tap with no known answer, the tap and skip buttons stay held until the re-read lands', async () => {
+  let release: (response: Response) => void = () => undefined;
+  let reads = 0;
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') {
+      reads += 1;
+      return reads === 1 ? windowRead(1) : new Promise<Response>((resolve) => { release = resolve; });
+    }
+    if (call.method === 'PATCH') return respond({}, 502);
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  expect(screen.getByRole('status')).toHaveTextContent('It is not known whether the tap was saved (502); reading the window again.');
+  for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.getByRole('button', { name })).toBeDisabled();
+  // The tap did commit: the re-read shows it, and the coach moves on past it.
+  await act(async () => {
+    release(windowRead(2, [{ chance: 1, polarity: 'occurrence' }]));
+  });
+  expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
+  for (const name of [SHOWN, NOT_SHOWN, SKIP]) expect(screen.getByRole('button', { name })).toBeEnabled();
+});
+
+// Codex P2 on #2120 (4660882836).
+test('of two Join taps made before either read lands, the later one wins, whichever answer comes last', async () => {
+  const SECOND = { ...OPEN_ROW, window_id: 'win-3', behaviour_key: 'k_old' };
+  const held: Record<string, (response: Response) => void> = {};
+  serve((call) => {
+    if (call.method === 'GET' && (call.url === WINDOW || call.url === `${WINDOWS}/win-3`)) {
+      return new Promise<Response>((resolve) => { held[call.url] = resolve; });
+    }
+    return lists([OPEN_ROW, SECOND])(call);
+  });
+  await showOpened();
+  await press(/Join: Drops the lead hand/);
+  await press(/Join: An old name/);
+  await act(async () => {
+    held[`${WINDOWS}/win-3`](windowRead(1, [], SECOND));
+  });
+  await act(async () => {
+    held[WINDOW](windowRead(1));
+  });
+  expect(screen.getByText(/^An old name: Ada Reyes/)).toBeInTheDocument();
+  expect(screen.queryByText(/^Drops the lead hand after the jab: Ada Reyes/)).toBeNull();
 });

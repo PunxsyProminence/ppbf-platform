@@ -11,7 +11,10 @@ import { apiBase } from '@/lib/apiBase';
 // (Q3 A); ten chances unless set, closable early (Q7 A); "Change last tap" flips the coach's own
 // last tap, as a revision (Q8 A). A coach who joins, or comes back to, a window starts at the chance
 // the count stands at (Overwatch 7084899452 point 2) and sees no one else's taps (Q2 A); from there
-// each of their taps moves them on one chance.
+// each of their taps moves them on one chance. "Skip this chance" (Jason 2026-11-22, "yes add it";
+// Overwatch 7088785576 on #2082) moves this coach's own count on one with no answer saved, for an
+// attempt they missed, so their later taps stay paired with the right attempts. It is held on this
+// screen only: a skip sends nothing, so a coach who comes back starts where the count stands.
 //
 // WHAT IT SHOWS. Only what this coach tapped: x shown of n. No tier, label or bar (Q6, LL-Q2), and
 // nothing of another coach. Staff only, like the routes it calls. Shown and Not shown differ by word
@@ -129,7 +132,9 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     }
   };
 
+  // Each Join is a new generation, so only the latest choice can land (Codex P2 on #2120).
   const join = async (windowId: string, names: BehaviourName[]) => {
+    generation.current += 1;
     setLastTap(null);
     setConfirmClose(false);
     setMessage('');
@@ -151,24 +156,34 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
         }),
       });
       if (response.ok) {
+        // The answer may be a window another coach opened first, which this coach joins (one open
+        // window per athlete and behaviour, PATTERN-2a): read it as Join does, so the coach starts
+        // where the count stands and sees their own taps, not chance 1.
         const body = (await response.json()) as { window: WindowRow };
         setLastTap(null);
         setConfirmClose(false);
         setMessage('');
-        show(seen, { state: 'window', names: view.names, window: body.window, next: 1, taps: [] });
+        try {
+          await readWindow(seen, body.window.window_id, view.names);
+        } finally {
+          setBusy(false);
+        }
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
         setMessage(`Not opened: ${await reasonOf(response)}`);
+        setBusy(false);
         return;
       }
       setMessage(`It is not known whether the window was opened (${response.status}); reading the list again.`);
     } catch {
       setMessage('It is not known whether the window was opened; reading the list again.');
+    }
+    try {
+      await readList(seen);
     } finally {
       setBusy(false);
     }
-    await readList(seen);
   };
 
   const send = async (body: { action: string; chance?: number; polarity?: Polarity }, what: string) => {
@@ -192,6 +207,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
           const next = body.action === 'tap' ? tap.chance + 1 : current.next;
           show(seen, { ...current, next, taps: [...current.taps.filter((mine) => mine.chance !== tap.chance), tap] });
         }
+        setBusy(false);
         return;
       }
       if (REFUSAL_STATUSES.has(response.status)) {
@@ -203,10 +219,22 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
     } catch {
       setLastTap(null);
       setMessage(`It is not known whether the ${what} was saved; reading the window again.`);
+    }
+    // Held until the re-read settles (Codex P1 on #2120): a tap that did commit must not be sent
+    // again on the old chance while the read is slow.
+    try {
+      await readWindow(seen, current.window.window_id, current.names, current.next);
     } finally {
       setBusy(false);
     }
-    await readWindow(seen, current.window.window_id, current.names, current.next);
+  };
+
+  // No request: the chance gets no answer from this coach, and their place moves on one (2b).
+  const skip = () => {
+    if (view.state !== 'window' || busy) return;
+    setConfirmClose(false);
+    setMessage(`Skipped chance ${view.next}: nothing saved for it.`);
+    setView({ ...view, next: view.next + 1 });
   };
 
   const nameOf = (names: BehaviourName[], key: string) => names.find((name) => name.behaviour_key === key)?.label ?? 'A behaviour';
@@ -303,7 +331,7 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
               {working.window.closed_at ? (
                 <p>This window is closed.</p>
               ) : working.next > working.window.chances ? (
-                <p>{`All ${working.window.chances} chances are tapped: the window is full.`}</p>
+                <p>{`No chances left: all ${working.window.chances} are tapped or skipped, so the window is full.`}</p>
               ) : (
                 <>
                   <p className="font-semibold">{`Chance ${working.next} of ${working.window.chances}`}</p>
@@ -319,6 +347,10 @@ export default function BehaviourSampleWindow({ runId, athleteId, athleteName }:
                       <span className="sr-only">{` for ${athleteName}, chance ${working.next}`}</span>
                     </button>
                   </div>
+                  <button type="button" className={`${BUTTON} btn--ghost`} disabled={busy} aria-busy={busy} onClick={skip}>
+                    <span aria-hidden="true">↷ </span>Skip this chance
+                    <span className="sr-only">{` (chance ${working.next}, nothing saved)`}</span>
+                  </button>
                 </>
               )}
               {!working.window.closed_at && lastTap ? (
