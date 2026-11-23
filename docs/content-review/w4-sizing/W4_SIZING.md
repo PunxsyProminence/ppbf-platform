@@ -315,15 +315,17 @@ gone.
   The athlete sign-in switch is on `main` (#2013). Item 2 reuses EM-1 and EM-3.
   Item 4's parent message, once built, joins the gym's list (OW27-25 A,
   OD-2026-11-21-006; Q1.9).
-- **File overlap (open PR heads read 2026-11-20):** no open lane PR changes
+- **File overlap (open PR heads read 2026-11-20; updated 2026-11-23 below):** no open lane PR changes
   `ProfileSettings.tsx`, the Customize page, `escalationLadder.ts`, `intake.ts`,
   `familyMessageReplies.ts`, `announcements.ts`, `graphMailer.ts`,
   `magicLinkStore.ts`, `instrumentation.ts` or `shadowJobWorker.ts`. EM-2 and
-  AS-8's AS8-4 (in #2020's body, not built; UNVERIFIED in the repo) both list
+  AS-8's AS8-4 (planned in #2020's body; since merged as #2100, `cc29c963`, which
+  did not change `ProfileSettings.tsx`, by `git show --stat`) both listed
   `ProfileSettings.tsx`; EM-6
   and item 9's RN-4 both add a Customize drawer: one after the other in each
-  case. EM-1, EM-3 and EM-5 share the registration files; seven open
-  dependabot PRs and #2035 (lane DEP) change `apps/web/package.json`.
+  case. EM-1, EM-3 and EM-5 share the registration files; on
+  2026-11-23 the dependabot PRs and #2035 are not among the open PRs (#2039,
+  #2082, #2124, #2126), so nothing read there changes `apps/web/package.json`.
 
 **Owner questions.** Q1.1 to Q1.8 are answered (the table above); their options,
 as asked, are in OD-2026-11-20-001. Overwatch answered Q1.9 and Q1.10 on #2050
@@ -589,7 +591,7 @@ sized option.
 | Q | Answer | Effect |
 |---|---|---|
 | Q4.1 (OW27-24) | *"A: A message box on the Parent Hub (Recommended)"* | PM-1 to PM-3 as sized: about 970 lines, 3 PRs, 1 migration |
-| Q4.2 | Ruled earlier. OD-2026-11-21-006's check note lists it as "ruled, batch 1"; the ruling is OD-2026-10-12-024, *"A: No, each sees only their own (Recommended)"*, about a child's two guardians and their replies to the coach | Each guardian sees only their own thread. INFERRED: that ruling is about replies; applying it to a message a parent starts follows its words, "nothing may show one guardian what the other did" |
+| Q4.2 | Ruled earlier. OD-2026-11-21-006's batch summary lists "ruled: Q4.2, Q8.2"; the ruling is OD-2026-10-12-024, *"A: No, each sees only their own (Recommended)"*, about a child's two guardians and their replies to the coach | Each guardian sees only their own thread. INFERRED: that ruling is about replies; applying it to a message a parent starts follows the same line; the entry's "Acted on" records Overwatch's comment that "nothing may show one guardian what the other did" |
 | Q4.3 (OW27-25) | *"A: Yes, the gym can pick it (Recommended)"*, narrowed because OW27-10 A already put the event list in the gym's settings | A parent's new message is one more event the gym can turn on for staff (item 1, Q1.9) |
 | Q4.4 (OW27-26) | *"A: Decision Loop 'From the family' (Recommended)"* | PM-2 is on `/coach/decision-loop`; no coach-home inbox |
 | Q4.5 (OW27-27) | *"A: Child's coach, covering coaches, admins (Recommended)"* | The unread count goes up for the same people a SHADOW safety alert reaches. Other coaches can still read the message |
@@ -767,7 +769,7 @@ the editor adds one form and one picker.
     added to a plan, and a copied block carries its source's contact level.
     - The plan's contact label is computed from its steps (`contactStructure`,
       `sessionScriptAuthoring.ts:113-121`) and shown on Session Plans
-      (`page.tsx:607`).
+      (`page.tsx:636`).
     - Block minutes are checked (`pilot_ssb_window`, migration `:97`).
     - SP-1a and SP-1b must keep both right when blocks are added, copied,
       removed or moved. A text block has `contact_level` `none` (the column's
@@ -918,7 +920,7 @@ register marks only; Q6.4 A read the list and open the athlete, B A plus mark
 
 - OD-2026-09-28-008: "offline storage stays parked".
 - The PARKED row `BACKLOG-offline-write-queue` in `docs/current/ACTIVE_WORK.md`
-  (`:290` on `main` `a4b420c`; it was `:270` at `c27c581`): re-open when "A concrete identity-scoped
+  (`:289` on `main` `a4b420c`; it was `:270` at `c27c581`): re-open when "A concrete identity-scoped
   encrypted/offline storage design is selected".
 - `docs/current/ACTIVE_WORK.md:55`: "online-only writes until the
   offline-storage decision is made".
@@ -1369,8 +1371,8 @@ questions; lane W4R's were 39 PRs, about 11,080 lines.
     Q5.1 = OW27-28, answered by OW27-36 A; Q5.2 = OW27-29 A; Q6.1 = OW27-30 A;
     Q6.2 = OW27-31 A; Q6.3 = OW27-32 A; Q6.4 = OW27-33 B; Q7.1 = OW27-34 A;
     Q7.2 = OW27-35 A.
-  - Q4.2: ruled earlier, OD-2026-10-12-024 (listed as "ruled, batch 1" in
-    OD-2026-11-21-006's check note).
+  - Q4.2: ruled earlier, OD-2026-10-12-024 (listed as "ruled: Q4.2, Q8.2" in
+    OD-2026-11-21-006's batch summary).
   - Against the recommendation (as OD-2026-11-21-006 lists): OW27-17 B, OW27-19
     C, OW27-23 B and OW27-33 B.
   - OD-2026-11-23-001 answers none.
