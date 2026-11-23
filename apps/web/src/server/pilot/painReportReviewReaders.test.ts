@@ -9,79 +9,145 @@ import path from 'node:path';
  * (pilot_slice_postgres_pain_report_review_migration.sql). They are a minor's health information,
  * and the ruled readers are exactly the coach pain list's: coach, organization_admin and admin,
  * per athlete. So:
- *   - only the files listed in NOTE_AND_REVIEW_FILES may name the new columns at all;
- *   - no source may read pilot.shadow_near_misses with a star, which would carry a new column to
- *     whatever reader it feeds without naming it;
+ *   - every non-test file in the repository that names the table, code or SQL, is pinned below:
+ *     a new reader, view or function is a new file in this list, in the diff, where review sees it;
+ *   - only the files in NOTE_AND_REVIEW_FILES may name the new columns at all;
+ *   - no SQL statement that names the table reads a whole row: `select *`, `alias.*`,
+ *     `returning *`, `to_jsonb(alias)` and the like carry a new column to a reader without naming it;
  *   - the near-misses reader (shadowNearMisses.ts) and the SHADOW feed (shadowReadModels.ts),
- *     which athletes and parents reach, name none of them.
- * A later PR that writes or reads the columns adds its file here, in the diff, where review sees it.
+ *     which athletes and parents reach, name none of the new columns.
+ * BLIND SPOT: a table name assembled at run time (`pilot.${name}`) is not seen. The pinned file
+ * list is the backstop: such a file still has to be written, and none of the pinned ones does it.
  */
 
-const webRoot = path.resolve(__dirname, '../../..');
+const repoRoot = path.resolve(__dirname, '../../../../..');
 
-/** Non-test source files allowed to name the new columns. Empty in PR 1 (schema only). */
-const NOTE_AND_REVIEW_FILES: readonly string[] = [];
+/** Every non-test file naming pilot.shadow_near_misses outside a comment, as of this PR. */
+const NEAR_MISS_FILES: readonly string[] = [
+  'apps/web/app/api/pilot/coach/pain-reports/route.ts',
+  'apps/web/app/api/pilot/shadow/near-misses/route.ts',
+  'apps/web/scripts/pilot-apply-pain-report-review-migration.mjs',
+  'apps/web/scripts/pilot-apply-shadow-decision-loop-migration.mjs',
+  'apps/web/scripts/pilot-apply-shadow-runtime-migration.mjs',
+  'apps/web/src/server/pilot/athleteInjuries.ts',
+  'apps/web/src/server/pilot/escalationLadder.ts',
+  'apps/web/src/server/pilot/formulas/painReportAlert.ts',
+  'apps/web/src/server/pilot/privacyTiers.ts',
+  'apps/web/src/server/pilot/shadowNearMisses.ts',
+  'infra/azure/pilot_slice_postgres_athlete_injuries_migration.sql',
+  'infra/azure/pilot_slice_postgres_pain_report_review_migration.sql',
+  'infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql',
+];
 
-const NEW_COLUMN = /\b(athlete_note|athlete_note_admin_only)\b/;
+/** Files allowed to name the new columns: the migration and its runner only, in PR 1 (schema only). */
+const NOTE_AND_REVIEW_FILES: readonly string[] = [
+  'apps/web/scripts/pilot-apply-pain-report-review-migration.mjs',
+  'infra/azure/pilot_slice_postgres_pain_report_review_migration.sql',
+];
+
+const TABLE = /\bshadow_near_misses\b|"shadow_near_misses"/;
+const NOTE_COLUMN = /\b(athlete_note|athlete_note_admin_only|athleteNote|athleteNoteAdminOnly)\b/;
 /** reviewed_at and reviewed_by_account_id are common names; they matter where the near-miss table is named. */
 const REVIEW_COLUMN = /\b(reviewed_by_account_id|reviewed_at)\b/;
-const NEAR_MISS_TABLE = /shadow_near_misses/;
-const STAR_SELECT = /select\s+(?:distinct\s+)?(?:\w+\.)?\*[\s\S]{0,400}?from\s+pilot\.shadow_near_misses/i;
+
+/** Whole-row reads: each carries a new column to its reader without naming it. */
+const WHOLE_ROW: readonly RegExp[] = [
+  /select\s+(?:distinct\s+(?:on\s*\([^)]*\)\s*)?)?\*/i,
+  /\b[a-z_]\w*\.\*(?![\w)])/i,
+  /returning\s+\*/i,
+  /\b(?:to_jsonb?|row_to_json|jsonb?_agg|jsonb?_populate_record|hstore)\s*\(\s*[a-z_]\w*\s*\)/i,
+  /select\s+[a-z_]\w*\s+from\s+pilot\./i,
+];
+
+const SKIP_DIRECTORIES = new Set(['node_modules', '.next', '.git', 'docs', 'coverage', 'dist', 'build']);
+const SOURCE = /\.(ts|tsx|mjs|js|cjs|sql)$/;
+const TEST = /\.(test|spec)\.(ts|tsx|js|mjs)$/;
 
 function sourceFiles(directory: string): string[] {
   const found: string[] = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === '.next') continue;
+    if (SKIP_DIRECTORIES.has(entry.name)) continue;
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       found.push(...sourceFiles(full));
-    } else if (/\.(ts|tsx|mjs)$/.test(entry.name) && !/\.test\.(ts|tsx)$/.test(entry.name)) {
+    } else if (SOURCE.test(entry.name) && !TEST.test(entry.name)) {
       found.push(full);
     }
   }
   return found;
 }
 
-const relative = (file: string) => path.relative(webRoot, file).split(path.sep).join('/');
-const files = ['app', 'components', 'src', 'lib', 'scripts']
-  .map((directory) => path.join(webRoot, directory))
-  .filter((directory) => fs.existsSync(directory))
-  .flatMap(sourceFiles)
-  // The migration's own runner names the columns to check them; it reads no row.
-  .filter((file) => relative(file) !== 'scripts/pilot-apply-pain-report-review-migration.mjs');
+/** Comments removed, so a file that only mentions the table in prose is not a reader. */
+function withoutComments(source: string, file: string): string {
+  if (file.endsWith('.sql')) return source.replace(/--.*$/gm, '');
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+/** SQL statements in the file: the whole file for .sql, every template literal otherwise. */
+function statements(code: string, file: string): string[] {
+  if (file.endsWith('.sql')) return code.split(';');
+  return code.match(/`[^`]*`/g) ?? [];
+}
+
+const relative = (file: string) => path.relative(repoRoot, file).split(path.sep).join('/');
+const files = sourceFiles(repoRoot).map((file) => ({
+  file: relative(file),
+  code: withoutComments(fs.readFileSync(file, 'utf8'), file),
+}));
+const naming = files.filter(({ code }) => TABLE.test(code));
 
 describe('pain report note and review: no new reader (DR-25)', () => {
+  test('every file that names the near-miss table is pinned', () => {
+    expect(naming.map(({ file }) => file).sort()).toEqual([...NEAR_MISS_FILES].sort());
+  });
+
   test('only the allowed files name the note columns', () => {
-    const naming = files.filter((file) => NEW_COLUMN.test(fs.readFileSync(file, 'utf8'))).map(relative);
-    expect(naming.sort()).toEqual([...NOTE_AND_REVIEW_FILES].sort());
+    const noting = files.filter(({ code }) => NOTE_COLUMN.test(code)).map(({ file }) => file);
+    expect(noting.sort()).toEqual([...NOTE_AND_REVIEW_FILES].sort());
   });
 
   test('only the allowed files name the review columns beside the near-miss table', () => {
-    const naming = files
-      .filter((file) => {
-        const source = fs.readFileSync(file, 'utf8');
-        return NEAR_MISS_TABLE.test(source) && REVIEW_COLUMN.test(source);
-      })
-      .map(relative);
-    expect(naming.filter((file) => !NOTE_AND_REVIEW_FILES.includes(file))).toEqual([]);
+    const reviewing = naming.filter(({ code }) => REVIEW_COLUMN.test(code)).map(({ file }) => file);
+    expect(reviewing.filter((file) => !NOTE_AND_REVIEW_FILES.includes(file))).toEqual([]);
   });
 
-  test('nothing reads pilot.shadow_near_misses with a star', () => {
-    const star = files.filter((file) => STAR_SELECT.test(fs.readFileSync(file, 'utf8'))).map(relative);
-    expect(star).toEqual([]);
+  test('no statement that names the near-miss table reads a whole row', () => {
+    const offending: string[] = [];
+    for (const { file, code } of naming) {
+      for (const statement of statements(code, file)) {
+        if (!TABLE.test(statement)) continue;
+        for (const pattern of WHOLE_ROW) {
+          if (pattern.test(statement)) offending.push(`${file}: ${pattern}`);
+        }
+      }
+    }
+    expect(offending).toEqual([]);
   });
 
   test('the near-misses reader and the SHADOW feed name none of the new columns', () => {
-    for (const file of ['src/server/pilot/shadowNearMisses.ts', 'src/server/pilot/shadowReadModels.ts']) {
-      const source = fs.readFileSync(path.join(webRoot, file), 'utf8');
-      expect(source).not.toMatch(NEW_COLUMN);
+    for (const file of ['apps/web/src/server/pilot/shadowNearMisses.ts', 'apps/web/src/server/pilot/shadowReadModels.ts']) {
+      const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+      expect(source).not.toMatch(NOTE_COLUMN);
       expect(source).not.toMatch(/reviewed_by_account_id/);
     }
   });
 
-  test('the star guard would catch a star read', () => {
-    expect(STAR_SELECT.test('select * from pilot.shadow_near_misses where organization_id = $1')).toBe(true);
-    expect(STAR_SELECT.test('select n.* from pilot.shadow_near_misses n')).toBe(true);
-    expect(STAR_SELECT.test('select near_miss_id, severity from pilot.shadow_near_misses')).toBe(false);
+  test('the whole-row patterns catch the reads they are for, and not an explicit column list', () => {
+    const caught = (statement: string) => WHOLE_ROW.some((pattern) => pattern.test(statement));
+    for (const statement of [
+      'select * from pilot.shadow_near_misses where organization_id = $1',
+      'select distinct on (athlete_id) * from pilot.shadow_near_misses',
+      'select n.near_miss_id, n.* from pilot.shadow_near_misses n',
+      'select * from pilot.athletes a join pilot.shadow_near_misses n on true',
+      'update pilot.shadow_near_misses set reviewed_at = now() returning *',
+      'select to_jsonb(n) from pilot.shadow_near_misses n',
+      'select row_to_json(n) from pilot.shadow_near_misses n',
+      'select jsonb_agg(n) from pilot.shadow_near_misses n',
+      'select n from pilot.shadow_near_misses n',
+    ]) {
+      expect([statement, caught(statement)]).toEqual([statement, true]);
+    }
+    expect(caught('select near_miss_id, severity, count(*) from pilot.shadow_near_misses group by 1, 2')).toBe(false);
+    expect(caught("select 1 from pilot.shadow_near_misses where metadata->>'trigger' = $1")).toBe(false);
   });
 });

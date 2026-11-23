@@ -21,12 +21,16 @@ function sslConfig() {
 // pilot.shadow_near_misses so a same-named object elsewhere does not pass.
 // The table first, by itself: it comes from the shadow-decision-loop
 // migration, and when it is missing the operator is told that, not that a
-// column is missing. Then each column by type, nullability and default; each
+// column is missing. Then each column by type, nullability and default (all
+// four nullable with no default: the admin-only verdict fails closed); each
 // check, validated, compared IN FULL against the text Postgres stores for this
 // migration's own check; and the foreign key by shape (column, target table
-// and column, ON DELETE SET NULL). Each is refused on its own
-// (painReportReviewMigration.pg.test.ts).
-const EXPECTED_NOTE_CHECK = 'CHECK (((athlete_note IS NULL) OR (((char_length(athlete_note) >= 1) AND (char_length(athlete_note) <= 500)) AND (athlete_note = btrim(athlete_note)))))';
+// and column, ON DELETE SET NULL, ON UPDATE NO ACTION, not deferrable). Each
+// is refused on its own (painReportReviewMigration.pg.test.ts).
+// A JavaScript string, so the escaped tab, carriage return and line feed below are the
+// real characters Postgres prints back.
+const EXPECTED_NOTE_CHECK = "CHECK (((athlete_note IS NULL) OR (((char_length(athlete_note) >= 1) AND (char_length(athlete_note) <= 500)) AND (athlete_note = btrim(athlete_note, ' \t\r\n'::text)))))";
+const EXPECTED_ADMIN_ONLY_CHECK = 'CHECK (((athlete_note IS NULL) = (athlete_note_admin_only IS NULL)))';
 const EXPECTED_REVIEWED_CHECK = 'CHECK (((reviewed_by_account_id IS NULL) OR (reviewed_at IS NOT NULL)))';
 
 const READINESS_QUERY = `
@@ -42,7 +46,7 @@ const READINESS_QUERY = `
     exists (select 1 from col where attname = 'athlete_note'
               and atttypid = 'text'::regtype and not attnotnull and default_text is null) as athlete_note_ready,
     exists (select 1 from col where attname = 'athlete_note_admin_only'
-              and atttypid = 'boolean'::regtype and attnotnull and default_text = 'false') as athlete_note_admin_only_ready,
+              and atttypid = 'boolean'::regtype and not attnotnull and default_text is null) as athlete_note_admin_only_ready,
     exists (select 1 from col where attname = 'reviewed_by_account_id'
               and atttypid = 'text'::regtype and not attnotnull and default_text is null) as reviewed_by_account_id_ready,
     exists (select 1 from col where attname = 'reviewed_at'
@@ -54,15 +58,20 @@ const READINESS_QUERY = `
     ) as note_check_ready,
     exists (
       select 1 from pg_constraint c, t
-       where c.conrelid = t.oid and c.conname = 'pilot_shadow_near_misses_reviewed_check'
+       where c.conrelid = t.oid and c.conname = 'pilot_shadow_near_misses_athlete_note_admin_only_check'
          and c.contype = 'c' and c.convalidated and pg_get_constraintdef(c.oid) = $2
+    ) as admin_only_check_ready,
+    exists (
+      select 1 from pg_constraint c, t
+       where c.conrelid = t.oid and c.conname = 'pilot_shadow_near_misses_reviewed_check'
+         and c.contype = 'c' and c.convalidated and pg_get_constraintdef(c.oid) = $3
     ) as reviewed_check_ready,
     exists (
       select 1 from pg_constraint c, t
        where c.conrelid = t.oid and c.conname = 'pilot_shadow_near_misses_reviewed_by_fk'
          and c.contype = 'f' and c.convalidated
          and c.confrelid = to_regclass('pilot.accounts')
-         and c.confdeltype = 'n'
+         and c.confdeltype = 'n' and c.confupdtype = 'a' and not c.condeferrable
          and c.conkey = array[(select attnum from pg_attribute where attrelid = t.oid and attname = 'reviewed_by_account_id')]::int2[]
          and c.confkey = array[(select attnum from pg_attribute where attrelid = to_regclass('pilot.accounts') and attname = 'account_id')]::int2[]
     ) as reviewed_by_fk_ready
@@ -85,9 +94,18 @@ export async function applyMigrationTransaction(client, sql) {
     // exclusive: reads go on, writes wait). Rather than queue behind a long
     // transaction already holding one, give up and let the operator re-run in
     // a quieter moment. Nothing is half-applied: it is one transaction.
+    //
+    // pilot.accounts is locked FIRST, the order an account deletion takes
+    // them (it cascades from accounts into shadow_near_misses through
+    // detected_by_account_id). Taking shadow_near_misses first, as the file's
+    // first ALTER would, can deadlock against the nightly cleanup's account
+    // delete (PR 1 reviewer A).
     await client.query("set local lock_timeout = '10s'");
+    await client.query('lock table pilot.accounts in share row exclusive mode');
     await client.query(sql);
-    const readiness = await client.query(READINESS_QUERY, [EXPECTED_NOTE_CHECK, EXPECTED_REVIEWED_CHECK]);
+    const readiness = await client.query(READINESS_QUERY, [
+      EXPECTED_NOTE_CHECK, EXPECTED_ADMIN_ONLY_CHECK, EXPECTED_REVIEWED_CHECK,
+    ]);
     const row = readiness.rows[0];
     const missing = row ? Object.entries(row).filter(([, value]) => value !== true).map(([key]) => key) : ['readiness'];
     if (missing.length > 0) {
