@@ -243,7 +243,8 @@ function ClassScreen() {
                     "Record What You Did" is the panel's link. The read is every two minutes
                     (COACH_TILES_REFRESH_MS), which the panel's line under an empty list says. */}
                 <div className="mt-[var(--s6)]">
-                  <PainReportsPanel read={painRead} boardShown={false} readsEveryTwoMinutes />
+                  {/* The floor tablet: no athlete's note is drawn here (DR-25, PR 3 reviewer B). */}
+                  <PainReportsPanel read={painRead} boardShown={false} readsEveryTwoMinutes showsNotes={false} />
                 </div>
               </>
             )}

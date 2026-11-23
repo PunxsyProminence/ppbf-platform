@@ -54,6 +54,18 @@ export interface CoachPainReport {
   /** Bounded classification from the server. 'unknown' on reports written
    *  before provenance was persisted -- see painReportAlert.ts. */
   reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
+  /** DR-25: the athlete's note, or null when there is none or (for a coach) it is held for admins. */
+  note: string | null;
+  /** Organization admins and admins only: true when the note is held for admins. */
+  noteAdminOnly?: boolean;
+  /** Who marked it reviewed and when; null while nobody has. Never an account id. */
+  reviewed: PainReportReview | null;
+}
+
+export interface PainReportReview {
+  at: string;
+  /** The reviewer's staff name at this gym, or null when they cannot be named. */
+  byName: string | null;
 }
 
 /**
@@ -69,6 +81,12 @@ const REPORTER_KEYS: Record<PainReporter, true> = { athlete: true, coach: true, 
 const SEVERITIES: ReadonlySet<unknown> = new Set(Object.keys(SEVERITY_KEYS));
 const REPORTERS: ReadonlySet<unknown> = new Set(Object.keys(REPORTER_KEYS));
 const textOrNull = (value: unknown) => value === null || typeof value === 'string';
+
+export function isPainReportReview(value: unknown): value is PainReportReview {
+  if (!value || typeof value !== 'object') return false;
+  const r = value as Record<string, unknown>;
+  return typeof r.at === 'string' && r.at !== '' && textOrNull(r.byName);
+}
 
 /**
  * A row the panel can draw: the route's shape (CoachPainReport, painReportAlert.ts). A row that
@@ -92,7 +110,28 @@ export function isPainReportRow(row: unknown): row is CoachPainReport {
     && textOrNull(r.observedAt)
     && textOrNull(r.recordedAt)
     && REPORTERS.has(r.reporter)
+    && textOrNull(r.note)
+    && (r.noteAdminOnly === undefined || typeof r.noteAdminOnly === 'boolean')
+    && (r.reviewed === null || isPainReportReview(r.reviewed))
   );
+}
+
+/** The panel's own words when "Mark reviewed" did not go through; never the browser's. */
+export const PAIN_REVIEW_FAILED = 'Could not mark this report reviewed. Try again.';
+
+/**
+ * "Mark reviewed" on one pain report (DR-25). The server keeps the FIRST review, so the answer may
+ * name someone else who got there first; the caller shows whatever comes back.
+ */
+export async function markPainReportReviewed(nearMissId: string): Promise<PainReportReview> {
+  const response = await fetch(
+    `${apiBase()}/api/pilot/coach/pain-reports/${encodeURIComponent(nearMissId)}/review`,
+    { method: 'POST', credentials: 'include', cache: 'no-store' },
+  );
+  if (!response.ok) throw new Error(PAIN_REVIEW_FAILED);
+  const payload = (await response.json().catch(() => null)) as { reviewed?: unknown } | null;
+  if (!payload || !isPainReportReview(payload.reviewed)) throw new Error(PAIN_REVIEW_FAILED);
+  return payload.reviewed;
 }
 
 export interface PainReportsRead {

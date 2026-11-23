@@ -81,7 +81,7 @@ const PAIN_EMPTY = { ok: true, windowDays: 7, truncated: false, painReports: [] 
 function painRow(id: string, name: string) {
   return {
     nearMissId: id, athleteId: `ath_${id}`, athleteName: name, severity: 'moderate', painScore: 5,
-    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete',
+    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete', note: null, reviewed: null,
   };
 }
 const painReads = (fetchMock: jest.Mock) => fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/coach/pain-reports'));
@@ -424,6 +424,29 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(painReads(fetchMock).map(([url]) => String(url))).toEqual(['/api/pilot/coach/pain-reports?limit=50']);
     // No floor board here: the link to record what was done is the panel's.
     expect(screen.getByRole('link', { name: 'Record What You Did' })).toHaveAttribute('href', '/coach/decision-loop');
+  });
+
+  // DR-25 (PR 3 reviewers A and B): the floor tablet draws no athlete's note and no review control,
+  // even when the read carries an admin's copy of a held note.
+  test('the floor tablet shows no note and no Mark reviewed, even for an admin\'s held note', async () => {
+    serve({
+      live,
+      pain: () => jsonResponse({
+        ...PAIN_EMPTY,
+        painReports: [
+          { ...painRow('n1', 'Casey R.'), note: 'My coach hits me', noteAdminOnly: true },
+          { ...painRow('n2', 'Jordan P.'), note: 'sore after sparring', noteAdminOnly: false },
+        ],
+      }),
+    });
+    await open();
+
+    expect(await screen.findAllByRole('article')).toHaveLength(2);
+    expect(screen.queryByText('My coach hits me')).toBeNull();
+    expect(screen.queryByText('sore after sparring')).toBeNull();
+    expect(screen.queryByText("Athlete's note")).toBeNull();
+    expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
   });
 
   test.each([
