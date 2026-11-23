@@ -43,16 +43,19 @@ function contrast(a: string, b: string): number {
 
 /** The kiosk (non-family) branch of NOTE_CARD. */
 const noteCardKiosk = SRC.match(/function NOTE_CARD[\s\S]*?:\s*'([^']+)';/)?.[1] ?? '';
-/** Kiosk-side ink on the note text lines, the `: '...'` arm after `isFamily`. */
-const noteInks = [
-  ...SRC.slice(SRC.indexOf('recognitions.map')).split('MENTORSHIP')[0]
-    .matchAll(/:\s*'[^']*text-\[color:var\((--[a-z0-9-]+)\)\][^']*'/g),
-].map((m) => m[1]);
+/** Every token ink named by a `text-[color:var(--x)]` utility in the wall (the
+    failed / empty lines and the note card), up to the MENTORSHIP block. The
+    family arms use t-body / t-muted classes, so only the kiosk arms match. */
+const wall = SRC.slice(SRC.indexOf('recognitionFailed ?')).split('MENTORSHIP')[0];
+const noteInks = [...wall.matchAll(/text-\[color:var\((--[a-z0-9-]+)\)\]/g)].map((m) => m[1]);
+/** The .pap--card shell gradient stops (design-system/legacy/ppbf-leather-brass.css
+    .pap--card), the ground under the wall lines that are not on the note card. */
+const SHELL_STOPS = ['#FBF7EA', '#EDE4CC'];
 
 describe('Achievements note card contrast (kiosk side)', () => {
   it('finds the ground and the inks it is meant to check', () => {
     expect(noteCardKiosk).toMatch(/bg-\[var\(--paper\)\]/);
-    expect(noteInks.length).toBeGreaterThanOrEqual(2);
+    expect(noteInks.length).toBeGreaterThanOrEqual(4);
   });
 
   it('the note card ground is an opaque token, not a tint over the shell', () => {
@@ -60,10 +63,12 @@ describe('Achievements note card contrast (kiosk side)', () => {
   });
 
   it('every ink on the note card reads at 4.5:1 or better on its ground', () => {
-    const ground = token('--paper');
+    const grounds = [token('--paper'), ...SHELL_STOPS];
     const inks = new Set([...noteInks, '--card-ink-muted']); // + the .tcard-sub attribution
     for (const ink of inks) {
-      expect({ ink, ratio: contrast(token(ink), ground) >= 4.5 }).toEqual({ ink, ratio: true });
+      for (const ground of grounds) {
+        expect({ ink, ground, ok: contrast(token(ink), ground) >= 4.5 }).toEqual({ ink, ground, ok: true });
+      }
     }
   });
 
