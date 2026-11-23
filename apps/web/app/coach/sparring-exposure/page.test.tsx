@@ -18,6 +18,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import CoachSparringExposurePage, { CONTACT_STAGES } from './page';
+import { ATHLETE_SAFETY_PAGE, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 // The shared ladder (vocabularies.ts imports nothing server-side, so jsdom can load it).
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 
@@ -76,6 +77,10 @@ interface Stubs {
   limitsIds?: string[];
   /** The cap route's accessible_athletes post fails. */
   capsPostFails?: boolean;
+  /** GET medical-restrictions (lane AS-5, AS5-3b): the rows, or a failed read. */
+  restrictions?: unknown[] | 'fail';
+  /** GET athlete-minor-limits fails (AS5-3b status block and the panel alike). */
+  minorFails?: boolean;
 }
 
 let posts: Array<Record<string, unknown>>;
@@ -85,6 +90,7 @@ let limitPosts: Array<{ route: string; body: Record<string, unknown> }>;
 let panelGets: string[];
 /** Cap saves from the Sparring Caps section's panel. */
 let capSavePosts: Array<Record<string, unknown>>;
+let restrictionGets: string[];
 
 function installFetch(stubs: Stubs = {}) {
   posts = [];
@@ -92,6 +98,7 @@ function installFetch(stubs: Stubs = {}) {
   limitPosts = [];
   panelGets = [];
   capSavePosts = [];
+  restrictionGets = [];
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/pilot/coach/athletes')) {
@@ -132,6 +139,11 @@ function installFetch(stubs: Stubs = {}) {
         }),
       } as Response;
     }
+    if (url.includes('/api/pilot/coach/medical-restrictions')) {
+      restrictionGets.push(url);
+      if (stubs.restrictions === 'fail') return { ok: false, status: 500, json: async () => ({}) } as Response;
+      return { ok: true, status: 200, json: async () => ({ restrictions: stubs.restrictions ?? [] }) } as Response;
+    }
     if (url.includes('/api/pilot/athletes/list')) {
       return { ok: stubs.gymOk ?? true, status: stubs.gymOk === false ? 500 : 200, json: async () => ({ items: GYM }) } as Response;
     }
@@ -149,6 +161,7 @@ function installFetch(stubs: Stubs = {}) {
     }
     if (route) {
       panelGets.push(url);
+      if (route === 'limits' && stubs.minorFails) return { ok: false, status: 500, json: async () => ({}) } as Response;
       // After a cap save, the cap route answers with the cap just set.
       const savedCap = capSavePosts.length > 0
         ? {
@@ -231,7 +244,7 @@ describe('coach sparring record screen', () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
     });
     expect(screen.queryByText('Kept hands up.')).toBeNull();
-    expect(screen.getByText('Loading...')).toBeTruthy();
+    expect(within(screen.getByText('Recent sparring').closest('section')!).getByText('Loading...')).toBeTruthy();
   });
 
   test('switching athlete clears what was observed, keeping only the day and gear', async () => {
@@ -671,6 +684,7 @@ describe('Sparring and Limits', () => {
       render(<CoachSparringExposurePage />);
     });
   }
+  const limitsSection = () => within(document.getElementById('athlete-limits')!);
   const rowsOf = (id: string) => Array.from(document.getElementById(id)!.querySelectorAll('li'))
     .map((li) => li.querySelector('span')?.textContent);
 
@@ -681,7 +695,7 @@ describe('Sparring and Limits', () => {
     expect(document.getElementById('sparring-caps')!.querySelector('h2')!.textContent).toBe('Sparring Caps');
     expect(document.getElementById('athlete-limits')!.querySelector('h2')!.textContent).toBe('Athlete Limits');
     // The cap section's link opens the section on this page, not the old address.
-    expect(within(screen.getByTestId('spar-cap')).getByText('Sparring Caps').getAttribute('href')).toBe('#sparring-caps');
+    expect(within(screen.getByTestId('spar-cap')).getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('#sparring-caps');
   });
 
   test('with no athlete picked each section lists every athlete its own route admits, panels closed', async () => {
@@ -716,7 +730,7 @@ describe('Sparring and Limits', () => {
     expect(panelGets.every((url) => url.includes('athlete_id=ath-1'))).toBe(true);
     expect(panelGets.some((url) => url.includes('/athlete-contact-caps?'))).toBe(true);
     expect(panelGets.some((url) => url.includes('/athlete-minor-limits?'))).toBe(true);
-    expect(await screen.findByText('Minor — these limits are the coach’s limits for a child.')).toBeTruthy();
+    expect(await limitsSection().findByText('Minor — these limits are the coach’s limits for a child.')).toBeTruthy();
   });
 
   test('a picked athlete the cap route does not admit is not listed under Sparring Caps', async () => {
@@ -749,14 +763,14 @@ describe('Sparring and Limits', () => {
 
   test('a re-pick shows only the new athlete with their own reading; clearing the pick closes every row', async () => {
     await renderAndPick();
-    expect(await screen.findByText('Minor — these limits are the coach’s limits for a child.')).toBeTruthy();
+    expect(await limitsSection().findByText('Minor — these limits are the coach’s limits for a child.')).toBeTruthy();
     panelGets = [];
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
     });
     expect(rowsOf('athlete-limits')).toEqual(['Marcus Webb']);
-    expect(await screen.findByText('Adult — limits are recorded the same way and labelled adult.')).toBeTruthy();
-    expect(screen.queryByText('Minor — these limits are the coach’s limits for a child.')).toBeNull();
+    expect(await limitsSection().findByText('Adult — limits are recorded the same way and labelled adult.')).toBeTruthy();
+    expect(limitsSection().queryByText('Minor — these limits are the coach’s limits for a child.')).toBeNull();
     expect(panelGets.length).toBeGreaterThan(0);
     expect(panelGets.every((url) => url.includes('athlete_id=ath-2'))).toBe(true);
     panelGets = [];
@@ -764,7 +778,7 @@ describe('Sparring and Limits', () => {
       fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: '' } });
     });
     expect(rowsOf('athlete-limits')).toEqual(['Rosa Delgado', 'Marcus Webb', 'Lee Okafor']);
-    expect(screen.queryByText(/limits are recorded the same way|limits for a child/)).toBeNull();
+    expect(limitsSection().queryByText(/limits are recorded the same way|limits for a child/)).toBeNull();
     expect(panelGets).toEqual([]);
   });
 
@@ -794,7 +808,7 @@ describe('Sparring and Limits', () => {
 
   test('a cap saved below is read again by the Coach-set cap block and by Athlete Limits', async () => {
     await renderAndPick();
-    await screen.findByText('Minor \u2014 these limits are the coach\u2019s limits for a child.');
+    await limitsSection().findByText('Minor \u2014 these limits are the coach\u2019s limits for a child.');
     const getsBefore = gets.length;
     const capReadsBefore = panelGets.filter((url) => url.includes('/athlete-contact-caps?athlete_id=ath-1')).length;
     const caps = within(document.getElementById('sparring-caps')!);
@@ -830,3 +844,80 @@ describe('Sparring and Limits', () => {
   });
 });
 
+// Lane AS-5, AS5-3b (app scrub CS-07): before a segment is entered, the picked
+// athlete's minor status, cap and medical restriction, each under its
+// section's name, in the app's own words.
+describe('before a segment: minor, cap, restriction', () => {
+  function restriction(state: string, id = 'r1') {
+    return {
+      restriction_id: id, athlete_id: 'ath-1', start_date: '2026-11-01', minimum_end_date: '2026-12-01',
+      source: 'training_knockout_or_concussion', loss_of_consciousness: 'none', state,
+    };
+  }
+  const status = () => within(screen.getByTestId('spar-status'));
+
+  test('all three are above the entry form, read for the picked athlete only', async () => {
+    await renderAndPick({ capCheck: { cap_state: 'set', cap: CAP, hard_open_days_in_7: 0, through_day: '2026-10-03' } });
+    const order = [screen.getByTestId('spar-status'), screen.getByTestId('spar-cap'), screen.getByText('One segment')];
+    expect(order[0].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(order[1].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await status().findByText('Minor — these limits are the coach’s limits for a child.')).toBeTruthy();
+    expect(status().getByText('No medical restriction on file for this member.')).toBeTruthy();
+    expect(screen.getByTestId('spar-cap').textContent).toContain('Highest stage: Controlled sparring');
+    expect(restrictionGets).toEqual([expect.stringContaining('/api/pilot/coach/medical-restrictions?athlete_id=ath-1')]);
+    expect(status().getByRole('link', { name: 'Athlete Limits' }).getAttribute('href')).toBe('#athlete-limits');
+  });
+
+  test('a restriction in force carries the Restricted mark and the panel\'s words, before any Save', async () => {
+    await renderAndPick({ restrictions: [restriction('lifted', 'r0'), restriction('release_needed')] });
+    const restricted = await screen.findByTestId('spar-status-restricted');
+    expect(restricted.textContent).toContain('In force \u2014 release needed');
+    expect(restricted.textContent).toContain('Restricted');
+    expect(posts).toEqual([]);
+  });
+
+  test('records on file but none in force show their own state words, never "no restriction"', async () => {
+    await renderAndPick({ restrictions: [restriction('lifted'), restriction('not_started', 'r2')] });
+    expect(await status().findByText('Lifted \u2014 release on file; Starts later')).toBeTruthy();
+    expect(status().queryByText('No medical restriction on file for this member.')).toBeNull();
+    expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
+  });
+
+  test('a record the screen cannot show is counted, and the line never says none', async () => {
+    await renderAndPick({ restrictions: [{ restriction_id: 'bad' }] });
+    expect(await status().findByText('1 record could not be shown.')).toBeTruthy();
+    expect(status().queryByText('No medical restriction on file for this member.')).toBeNull();
+  });
+
+  test('failed reads say so; unknown is never shown as no limit or no restriction', async () => {
+    await renderAndPick({ restrictions: 'fail', minorFails: true });
+    expect(await status().findByText('The medical restrictions could not be read. Nothing is shown as clear because of it.')).toBeTruthy();
+    expect(status().getByText(/This athlete\u2019s limits could not be read just now/)).toBeTruthy();
+    expect(status().queryByText('No medical restriction on file for this member.')).toBeNull();
+    expect(status().queryByText(/^(Minor|Adult) \u2014/)).toBeNull();
+  });
+
+  test('a re-pick never shows the last athlete\'s restriction under the next', async () => {
+    await renderAndPick({ restrictions: [restriction('in_force')] });
+    await screen.findByTestId('spar-status-restricted');
+    installFetch({ restrictions: [] });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect(await status().findByText('No medical restriction on file for this member.')).toBeTruthy();
+    expect(screen.queryByTestId('spar-status-restricted')).toBeNull();
+    expect(restrictionGets).toEqual([expect.stringContaining('athlete_id=ath-2')]);
+  });
+
+  test('Athlete Safety opens on this athlete in page memory, never in the address', async () => {
+    sessionStorage.clear();
+    await renderAndPick();
+    const link = status().getByRole('link', { name: 'Athlete Safety' });
+    expect(link.getAttribute('href')).toBe('/coach/athlete-safety#medical-restrictions');
+    expect(link.getAttribute('href')).not.toContain('ath-1');
+    // A plain click hands Rosa to Athlete Safety (decisionLoopArrival.test.ts
+    // holds that no other page can take it).
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(ATHLETE_SAFETY_PAGE)).toBe('ath-1');
+  });
+});

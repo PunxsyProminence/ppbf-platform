@@ -2,6 +2,8 @@
 
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
+import Link from 'next/link';
+
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/src/lib/apiBase';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
@@ -11,6 +13,10 @@ import ClusterNav from '@/components/ClusterNav';
 import ContactCapPanel from '@/components/ContactCapPanel';
 import MinorLimitsPanel from '@/components/MinorLimitsPanel';
 import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
+import {
+  IN_FORCE_STATES, STATE_WORDS, hiddenWords, isStaffRestriction, type RestrictionState,
+} from '@/components/MedicalRestrictionsPanel';
+import { ATHLETE_SAFETY_PAGE, handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
 /*
  * Coach floor entry for sparring exposure: what the coach SAW during one
@@ -52,6 +58,68 @@ import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 
 interface RosterAthlete { athlete_id: string; full_name?: string }
 type SectionRoster = RosterAthlete[] | 'loading' | 'failed';
+
+/*
+ * BEFORE A SEGMENT IS ENTERED (app scrub CS-07; lane AS-5, #2010 plan section
+ * 2 item 2). For the picked athlete, above the entry form: minor or adult,
+ * the coach-set cap, and any medical restriction, each under its section's
+ * name and linked to it, in words the app already uses. The facts were on
+ * three pages, and a restriction showed only as a refusal after Save. The
+ * reads are the two the approved plan names (GET athlete-minor-limits and GET
+ * medical-restrictions, each behind its route's own access check). A read
+ * that failed says so; an unread value is never shown as none. It adds no
+ * gate: the restriction gate on Save is the route's, unchanged.
+ */
+type MinorRead = 'loading' | 'failed' | { isMinor: boolean };
+type RestrictionRead = 'loading' | 'failed' | { states: RestrictionState[]; hidden: number };
+
+async function readMinor(id: string, signal: AbortSignal): Promise<MinorRead> {
+  const response = await fetch(
+    `${apiBase()}/api/pilot/coach/athlete-minor-limits?athlete_id=${encodeURIComponent(id)}`,
+    { method: 'GET', credentials: 'include', signal },
+  );
+  const payload = (await response.json().catch(() => null)) as { ok?: unknown; athlete_is_minor?: unknown } | null;
+  if (!response.ok || !payload || payload.ok !== true || typeof payload.athlete_is_minor !== 'boolean') return 'failed';
+  return { isMinor: payload.athlete_is_minor };
+}
+
+async function readRestrictions(id: string, signal: AbortSignal): Promise<RestrictionRead> {
+  const response = await fetch(
+    `${apiBase()}/api/pilot/coach/medical-restrictions?athlete_id=${encodeURIComponent(id)}`,
+    { method: 'GET', credentials: 'include', signal },
+  );
+  const payload = (await response.json().catch(() => null)) as { restrictions?: unknown } | null;
+  if (!response.ok || !payload || !Array.isArray(payload.restrictions)) return 'failed';
+  const shown = payload.restrictions.filter(isStaffRestriction);
+  return { states: shown.map((row) => row.state), hidden: payload.restrictions.length - shown.length };
+}
+
+/** The restriction fact: in force first (with the Restricted mark), else each record's own state words. */
+function RestrictionLine({ read }: { read: RestrictionRead }) {
+  if (read === 'loading') return <p className="t-body" role="status">Loading...</p>;
+  if (read === 'failed') {
+    return <p className="t-body">The medical restrictions could not be read. Nothing is shown as clear because of it.</p>;
+  }
+  const inForce = read.states.filter((state) => IN_FORCE_STATES.has(state));
+  const others = [...new Set(read.states.filter((state) => !IN_FORCE_STATES.has(state)))];
+  return (
+    <>
+      {inForce.length > 0 ? (
+        <div className="flex flex-col items-start gap-[var(--s1)]" data-testid="spar-status-restricted">
+          <RestrictedMark />
+          <p className="t-body text-[var(--restricted-ink)]">
+            {STATE_WORDS[inForce.includes('release_needed') ? 'release_needed' : 'in_force']}
+          </p>
+        </div>
+      ) : others.length > 0 ? (
+        <p className="t-body">{others.map((state) => STATE_WORDS[state]).join('; ')}</p>
+      ) : read.hidden === 0 ? (
+        <p className="t-body">No medical restriction on file for this member.</p>
+      ) : null}
+      {read.hidden > 0 && <p className="t-body">{hiddenWords(read.hidden)}</p>}
+    </>
+  );
+}
 
 /** Every athlete in the gym, cut to those the given limits route will open for this person. */
 async function accessibleRoster(all: RosterAthlete[], route: string): Promise<RosterAthlete[]> {
@@ -269,6 +337,9 @@ export default function CoachSparringExposurePage() {
   // Saves made in the Sparring Caps section, per athlete, so the two other
   // places on this page that show that athlete's cap read it again.
   const [capSaves, setCapSaves] = useState<Record<string, number>>({});
+  // The picked athlete's minor status and medical restrictions (CS-07).
+  const [minorRead, setMinorRead] = useState<MinorRead>('loading');
+  const [restrictionRead, setRestrictionRead] = useState<RestrictionRead>('loading');
   // The section an old address asked for (#sparring-caps, #athlete-limits), opened once, by that section.
   const arrivalRef = useRef<string | null | undefined>(undefined);
   const takeArrival = useCallback((id: string) => {
@@ -329,6 +400,22 @@ export default function CoachSparringExposurePage() {
     if (!response.ok) throw new Error('recent');
     return (await response.json()) as Recent;
   }, []);
+
+  // Read on each pick; the abort keeps a slow read for the last athlete from
+  // landing under the next one, and the reset clears the last athlete's facts.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- the reads are the outside system kept in step */
+    setMinorRead('loading');
+    setRestrictionRead('loading');
+    /* eslint-enable react-hooks/set-state-in-effect */
+    if (!athleteId) return;
+    const controller = new AbortController();
+    const landed = (error: unknown) => (error as { name?: string }).name !== 'AbortError';
+    readMinor(athleteId, controller.signal).then(setMinorRead, (error) => { if (landed(error)) setMinorRead('failed'); });
+    readRestrictions(athleteId, controller.signal)
+      .then(setRestrictionRead, (error) => { if (landed(error)) setRestrictionRead('failed'); });
+    return () => controller.abort();
+  }, [athleteId]);
 
   // 'loading' is set by whoever changed the athlete or window; this only
   // lands the answer. The abort keeps a slow read for the previous athlete
@@ -538,9 +625,37 @@ export default function CoachSparringExposurePage() {
           </div>
         )}
 
+        {athleteId && (
+          <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-status">
+            <h3 className="t-eyebrow">Athlete Limits</h3>
+            {minorRead === 'loading' ? (
+              <p className="t-body" role="status">Loading...</p>
+            ) : minorRead === 'failed' ? (
+              <p className="t-body">
+                This athlete’s limits could not be read just now. Unknown is not “no limit set” — check again before training.
+              </p>
+            ) : (
+              <p className="t-body font-semibold" data-athlete-age={minorRead.isMinor ? 'minor' : 'adult'}>
+                {minorRead.isMinor
+                  ? 'Minor — these limits are the coach’s limits for a child.'
+                  : 'Adult — limits are recorded the same way and labelled adult.'}
+              </p>
+            )}
+            <a href="#athlete-limits" className="btn btn--ghost">Athlete Limits</a>
+            <h3 className="t-eyebrow pt-[var(--s3)]">Medical Restrictions</h3>
+            <RestrictionLine read={restrictionRead} />
+            {/* Its section on Athlete Safety, opened on this athlete: the
+                athlete goes in page memory, never the address (#2010 Q3 = A). */}
+            <Link href={`${ATHLETE_SAFETY_PAGE}#medical-restrictions`} className="btn btn--ghost"
+              onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, ATHLETE_SAFETY_PAGE); }}>
+              Athlete Safety
+            </Link>
+          </section>
+        )}
+
         {athleteId && recentState === 'loaded' && recent && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s2)]" data-testid="spar-cap">
-            <h2 className="t-eyebrow">Coach-set cap</h2>
+            <h3 className="t-eyebrow">Sparring Caps</h3>
             {!isCapCheck(recent.cap_check) || recent.cap_check.cap_state === 'unknown' ? (
               <p>This athlete&apos;s cap could not be read just now. Unknown is not &ldquo;no cap&rdquo;.</p>
             ) : recent.cap_check.cap_state === 'none' || !recent.cap_check.cap ? (
