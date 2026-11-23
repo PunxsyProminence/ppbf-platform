@@ -7,7 +7,7 @@
 
 import { act, renderHook } from '@testing-library/react';
 
-import { readTabParam, useTabParam } from './useTabParam';
+import { openTabHere, readTabParam, useTabParam } from './useTabParam';
 
 const TABS = ['overview', 'progress', 'messages'] as const;
 type Tab = (typeof TABS)[number];
@@ -59,6 +59,52 @@ describe('writing the tab to the address', () => {
     act(() => result.current[1]('overview'));
 
     expect(result.current[0]).toBe('overview');
+    expect(window.location.search).toBe('');
+  });
+});
+
+// Review on #2130: a same-page link must reopen the tab in place, the write
+// must carry a null state (so the Next.js router copies the address), and a
+// tab set after leaving the page must not write onto the next page.
+describe('a same-page tab link, the history state, and a late write', () => {
+  test('openTabHere on the same page changes the tab of every reader, in place', () => {
+    at('/parent/dashboard');
+    const { result } = renderHook(() => useTabParam<Tab>(TABS, 'overview'));
+    const before = window.history.length;
+
+    let handled = false;
+    act(() => {
+      handled = openTabHere('/parent/dashboard?tab=messages');
+    });
+
+    expect(handled).toBe(true);
+    expect(result.current[0]).toBe('messages');
+    expect(window.history.length).toBe(before);
+  });
+
+  test('openTabHere for another page leaves the address alone and lets the link navigate', () => {
+    at('/schedule');
+    expect(openTabHere('/parent/dashboard?tab=messages')).toBe(false);
+    expect(window.location.pathname).toBe('/schedule');
+  });
+
+  test('the write carries a null history state', () => {
+    window.history.replaceState({ __NA: true }, '', '/parent/dashboard');
+    const { result } = renderHook(() => useTabParam<Tab>(TABS, 'overview'));
+
+    act(() => result.current[1]('progress'));
+
+    expect(window.history.state).toBeNull();
+  });
+
+  test('a tab set after the reader has left the page writes nothing', () => {
+    at('/athlete/dashboard');
+    const { result } = renderHook(() => useTabParam<Tab>(TABS, 'overview'));
+    at('/athlete/dashboard/sparring');
+
+    act(() => result.current[1]('progress'));
+
+    expect(window.location.pathname).toBe('/athlete/dashboard/sparring');
     expect(window.location.search).toBe('');
   });
 });

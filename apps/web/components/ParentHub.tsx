@@ -394,6 +394,12 @@ export default function ParentHub() {
   useEffect(() => {
     if (!tabShownOnceRef.current) {
       tabShownOnceRef.current = true;
+      /* A tab opened from the address (lane AS4-4D4E) may sit off the side of
+         the row on a phone. The row alone is scrolled to it, so opening the hub
+         still never moves the page (review on #2130). */
+      const button = tabButtonsRef.current.get(activeTab);
+      const row = button?.parentElement;
+      if (activeTab !== 'overview' && button && row) row.scrollLeft = Math.max(0, button.offsetLeft - row.offsetLeft);
       return;
     }
     tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });

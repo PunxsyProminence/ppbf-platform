@@ -10,6 +10,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
+import { openTabHere } from './useTabParam';
 
 function jsonResponse(body: unknown, ok = true): Response {
   return { ok, status: ok ? 200 : 500, json: async () => body } as unknown as Response;
@@ -69,4 +70,18 @@ test('pressing a tab writes it to the address; Overview leaves none', async () =
 
   fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
   expect(window.location.search).toBe('');
+});
+
+// Review on #2130 (BLOCKER): already on Parent Hub, the job bar's tab item
+// does not remount the hub, so the hub must follow the address in place.
+test('a same-page tab link opens the tab on a hub that is already open', async () => {
+  await renderHubAt('/parent/dashboard');
+  expect(pressed('Overview')).toBe('true');
+
+  act(() => {
+    openTabHere('/parent/dashboard?tab=messages');
+  });
+
+  expect(pressed('Messages')).toBe('true');
+  expect(pressed('Overview')).toBe('false');
 });

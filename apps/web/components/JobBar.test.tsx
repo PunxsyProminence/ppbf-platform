@@ -296,3 +296,49 @@ describe('the phone bar keeps the page clear of itself', () => {
     expect(container.querySelector('nav.job-bar--phone')).toBeTruthy();
   });
 });
+
+// Review on #2130 (BLOCKER): on Parent Hub, a tab item opens the tab in place
+// (Next would keep the page and change only the address); elsewhere it is an
+// ordinary link.
+describe('a Parent Hub tab item', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('on Parent Hub, writes the tab to the address in place and closes the sheet', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/parent/dashboard');
+    window.history.replaceState(null, '', '/parent/dashboard');
+    render(<JobBar variant="rail" />);
+    const section = screen.getByRole('button', { name: /^Messages/ });
+    fireEvent.click(section);
+
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      link.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('messages');
+    expect(section.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('on another page, is left to navigate as a link', () => {
+    signIn('parent');
+    mockPathname.mockReturnValue('/schedule');
+    window.history.replaceState(null, '', '/schedule');
+    render(<JobBar variant="rail" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Messages/ }));
+
+    const link = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/parent/dashboard?tab=messages')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.addEventListener('click', (e) => e.preventDefault()); // keep jsdom from navigating
+    act(() => {
+      link.dispatchEvent(event);
+    });
+
+    expect(window.location.pathname).toBe('/schedule');
+    expect(window.location.search).toBe('');
+  });
+});

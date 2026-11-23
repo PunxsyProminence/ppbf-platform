@@ -8,6 +8,7 @@ import { useBoardSession } from './BoardRoleGate';
 import { BUILDING, isRefusalSurface } from './buildingMap';
 import { jobBarFor, type JobItem, type JobSection } from './jobBars';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
+import { openTabHere } from './useTabParam';
 
 /**
  * THE JOB BAR (AS-4, U2-4b): each role's few jobs, on every page.
@@ -44,8 +45,8 @@ export type JobBarVariant = 'rail' | 'phone';
 
 /**
  * Parent Hub's tab headings, by tab id, as ParentHub.tsx draws its tab rail
- * (JobBar.test.tsx reads that file and checks each pair). Until AS-4's 4e
- * reads `?tab=` there, the link opens Parent Hub, and the item says so.
+ * (JobBar.test.tsx reads that file and checks each pair). The link opens
+ * Parent Hub on that tab (useTabParam), and the item says it is a tab.
  */
 export const PARENT_HUB_TAB_LABEL: Readonly<Record<string, string>> = {
   overview: 'Overview',
@@ -265,7 +266,25 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
                       {section.items.map((item) => {
                         const current = active && !item.tab && item.href === here?.href;
                         return (
-                          <li key={itemKey(item)}>
+                          <li
+                            key={itemKey(item)}
+                            /* Already on Parent Hub, a tab item opens the tab in
+                               place: Next keys a page without its search, so the
+                               link's own soft navigation would change only the
+                               address (review on #2130). Capture runs before the
+                               link's handler, which stands down on a prevented
+                               click. */
+                            onClickCapture={
+                              item.tab
+                                ? (event) => {
+                                    if (openTabHere(itemHref(item))) {
+                                      event.preventDefault();
+                                      close(false);
+                                    }
+                                  }
+                                : undefined
+                            }
+                          >
                             <ChromeLink
                               href={itemHref(item)}
                               className={`job-bar__link${current ? ' is-current' : ''}`}
