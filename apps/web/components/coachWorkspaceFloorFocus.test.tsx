@@ -158,7 +158,7 @@ test('a pain report the coach home cannot draw marks the pain feed failed, never
       ok: true, windowDays: 14, truncated: false,
       painReports: [{
         nearMissId: 'nm_9', athleteId: 'ath_9', athleteName: 'Casey R.', severity: 'moderate', painScore: 4,
-        location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'parent',
+        location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'parent', note: null, reviewed: null,
       }],
     }),
   });
@@ -246,7 +246,7 @@ test('every open escalation, pain report and barrier report the panels hold is o
       truncated: false,
       painReports: [{
         nearMissId: 'nm_1', athleteId: 'ath_1', athleteName: 'Jordan P.', severity: 'moderate', painScore: 5,
-        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete',
+        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete', note: null, reviewed: null,
       }],
     }),
     barrierReports: () => jsonResponse({
@@ -297,7 +297,7 @@ test('on the Dashboard each report action is on the strip only, and the full lis
       truncated: false,
       painReports: [{
         nearMissId: 'nm_1', athleteId: 'ath_1', athleteName: 'Jordan P.', severity: 'moderate', painScore: 5,
-        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete',
+        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete', note: null, reviewed: null,
       }],
     }),
     barrierReports: () => jsonResponse({
@@ -484,7 +484,7 @@ test('the floor shows a pain report as its number only (#1528)', async () => {
       truncated: false,
       painReports: [{
         nearMissId: 'nm_1', athleteId: 'ath_1', athleteName: 'Jordan P.', severity: 'high', painScore: 6,
-        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete',
+        location: 'Left shoulder', painType: null, observedAt: null, recordedAt: '2026-08-14T18:00:00.000Z', reporter: 'athlete', note: null, reviewed: null,
       }],
     }),
   });

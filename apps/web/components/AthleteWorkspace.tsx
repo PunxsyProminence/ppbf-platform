@@ -10,6 +10,7 @@ import AthleteCheckInPanel, { type AthleteCheckInDraft, type AthleteCheckInRecor
 import AthleteCyclePanel from './AthleteCyclePanel';
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { ENJOYMENT_LEVELS, ENJOYMENT_QUESTION, type EnjoymentLevel, enjoymentLabel } from '@/src/shared/enjoyment';
+import { PAIN_NOTE_MAX } from '@/src/shared/painNote';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import SparringSymptomCheck from './SparringSymptomCheck';
 import Chalkboard from './Chalkboard';
@@ -1230,6 +1231,9 @@ export default function AthleteWorkspace() {
      refusing it here, where the athlete can still see the form. */
   const [currentPainType, setCurrentPainType] = useState<PainType | null>(null);
   const [currentPainSeverity, setCurrentPainSeverity] = useState<number | null>(null);
+  /* DR-25 (Jason 2026-11-23, DR-25 A): the athlete's optional note. Empty
+     until the athlete writes in it; an empty or blank note sends nothing. */
+  const [currentPainNote, setCurrentPainNote] = useState('');
   const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
   const [isSavingPain, setIsSavingPain] = useState(false);
   const [painSaveMessage, setPainSaveMessage] = useState('');
@@ -2606,6 +2610,7 @@ export default function AthleteWorkspace() {
     location: string;
     type: string;
     severity: number;
+    note: string;
   } | null>(null);
 
   const handleSavePainReport = async () => {
@@ -2624,10 +2629,12 @@ export default function AthleteWorkspace() {
     painSavingRef.current = true;
 
     const pending = pendingPainReportRef.current;
+    const painNote = currentPainNote.trim();
     const report = pending
       && pending.location === selectedPainLocation
       && pending.type === currentPainType
       && pending.severity === currentPainSeverity
+      && pending.note === painNote
       ? pending
       : {
         id: `pain_${Date.now()}`,
@@ -2635,6 +2642,7 @@ export default function AthleteWorkspace() {
         location: selectedPainLocation,
         type: currentPainType,
         severity: currentPainSeverity,
+        note: painNote,
       };
     pendingPainReportRef.current = report;
     const newPainLogEntry: PainLogEntry = {
@@ -2683,6 +2691,8 @@ export default function AthleteWorkspace() {
           },
           observedAt: report.observedAt,
           idempotencyKey: `${newPainLogEntry.id}-pain_report`,
+          // DR-25: the note travels on its own, never in dimensions; none is sent when it is empty.
+          ...(report.note ? { note: report.note } : {}),
         }),
       });
 
@@ -2753,6 +2763,7 @@ export default function AthleteWorkspace() {
          because the numbers were genuinely theirs once. */
       setCurrentPainType(null);
       setCurrentPainSeverity(null);
+      setCurrentPainNote('');
     } catch (error) {
       /* A-FIN-07. The modal deliberately stays open. This message renders
          inside it (role="alert"); it used to render only in the card behind
@@ -3504,6 +3515,7 @@ export default function AthleteWorkspace() {
                              covers both ways out of the modal. */
                           setCurrentPainType(null);
                           setCurrentPainSeverity(null);
+                          setCurrentPainNote('');
                           setPainSaveMessage('');
                           setShowPainModal(true);
                         }}
@@ -4701,6 +4713,31 @@ export default function AthleteWorkspace() {
                     </p>
                   ) : null}
                 </fieldset>
+                {/* DR-25 (Jason 2026-11-23, DR-25 A; words approved by
+                    Overwatch on #2133). Optional and empty until the athlete
+                    writes in it. The help line says "the gym staff", not "your
+                    coaches": a note the safety check holds for admins is not
+                    shown to coaches, and the box must not promise otherwise. */}
+                <div className="field">
+                  <label className="t-label block mb-[var(--s2)]" htmlFor="pain-note">
+                    Anything else your coach should know? (optional)
+                  </label>
+                  <textarea
+                    id="pain-note"
+                    value={currentPainNote}
+                    onChange={(event) => setCurrentPainNote(event.target.value)}
+                    maxLength={PAIN_NOTE_MAX}
+                    disabled={isSavingPain}
+                    aria-describedby="pain-note-help pain-note-count"
+                    className="textarea input--kiosk h-[89px]"
+                  />
+                  <p id="pain-note-help" className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
+                    Optional. You can leave it empty. It goes to the gym staff with your pain report.
+                  </p>
+                  <p id="pain-note-count" className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
+                    {currentPainNote.length} of {PAIN_NOTE_MAX}
+                  </p>
+                </div>
               </div>
               {/* A-FIN-07. The failure lives here now, inside the overlay,
                   and assertively -- role="alert" rather than the card's

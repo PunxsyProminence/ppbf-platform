@@ -1,8 +1,16 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 
-import { PAIN_READ_FAILED, type CoachPainReport, type PainReportsRead } from '@/components/usePainReports';
+import {
+  PAIN_READ_FAILED,
+  PAIN_REVIEW_FAILED,
+  markPainReportReviewed,
+  type CoachPainReport,
+  type PainReportReview,
+  type PainReportsRead,
+} from '@/components/usePainReports';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { painScoreLabel } from '@/src/shared/painScoreLabel';
 
@@ -71,6 +79,80 @@ function PainBadge({ tone, label }: { readonly tone: 'restricted' | 'monitor'; r
       <i>{tone === 'restricted' ? '▲' : '◉'}</i>
       {label}
     </span>
+  );
+}
+
+/** The words under an admin-only note, on an admin's screen (Overwatch on #2138). */
+export const PAIN_NOTE_ADMIN_ONLY_LINE = "Only admins see this note. A coach's review does not cover it.";
+
+/**
+ * The athlete's note (DR-25). A coach's copy of a note the safety check held for admins arrives
+ * as no note at all, so it reads "No note" like any report without one; only an admin's copy
+ * carries noteAdminOnly, and says so under the words.
+ */
+function PainNote({ report }: { readonly report: CoachPainReport }) {
+  return (
+    <div>
+      <p className="font-mono uppercase tracking-[0.08em] text-[length:var(--t-md)] text-[color:var(--brass-300)]">
+        Athlete&apos;s note
+      </p>
+      {report.note ? (
+        <p className="whitespace-pre-wrap break-words text-[length:var(--t-md)] text-[color:var(--bone-200)]">{report.note}</p>
+      ) : (
+        <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">No note</p>
+      )}
+      {report.note && report.noteAdminOnly ? (
+        <p className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">{PAIN_NOTE_ADMIN_ONLY_LINE}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Mark reviewed" (DR-25): a word and a glyph for each state, never colour alone. The server keeps
+ * the first review, so after a press the line names whoever it answers with -- which may be a
+ * colleague who got there first. A fresh read that carries a review replaces the local answer.
+ */
+function PainReviewControl({ report }: { readonly report: CoachPainReport }) {
+  const [answered, setAnswered] = useState<PainReportReview | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const review = report.reviewed ?? answered;
+
+  if (review) {
+    return (
+      <p className="text-[length:var(--t-md)] text-[color:var(--bone-200)]">
+        <span aria-hidden="true">✓ </span>
+        Reviewed by {review.byName ?? 'a staff member'}, {painReportTime(review.at)}
+      </p>
+    );
+  }
+
+  const press = async () => {
+    setSaving(true);
+    setFailed(false);
+    try {
+      setAnswered(await markPainReportReviewed(report.nearMissId));
+    } catch {
+      setFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-[var(--s3)]">
+      <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
+        <span aria-hidden="true">○ </span>
+        Not reviewed yet
+      </p>
+      <button type="button" className="btn" disabled={saving} onClick={() => void press()}>
+        {saving ? 'Saving...' : 'Mark reviewed'}
+      </button>
+      {failed ? (
+        <p role="alert" className="text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">{PAIN_REVIEW_FAILED}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -183,9 +265,13 @@ export default function PainReportsPanel({
                 </div>
               </dl>
 
+              <PainNote report={report} />
+
               <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                 {PAIN_PROVENANCE[report.reporter]}
               </p>
+
+              <PainReviewControl report={report} />
             </article>
           ))}
 

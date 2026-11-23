@@ -81,7 +81,7 @@ const PAIN_EMPTY = { ok: true, windowDays: 7, truncated: false, painReports: [] 
 function painRow(id: string, name: string) {
   return {
     nearMissId: id, athleteId: `ath_${id}`, athleteName: name, severity: 'moderate', painScore: 5,
-    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete',
+    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete', note: null, reviewed: null,
   };
 }
 const painReads = (fetchMock: jest.Mock) => fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/coach/pain-reports'));

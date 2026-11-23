@@ -17,7 +17,8 @@ import { writeShadowAuditEntry } from './shadowAuditEntries';
  */
 
 /** The longest note, in characters; the database check holds the same limit. */
-export const PAIN_NOTE_MAX = 500;
+export { PAIN_NOTE_MAX } from '@/src/shared/painNote';
+import { PAIN_NOTE_MAX } from '@/src/shared/painNote';
 
 /** Characters btrim strips in the database check: space, tab, carriage return, line feed. */
 const EDGE_WHITESPACE = /^[ \t\r\n]+|[ \t\r\n]+$/g;
