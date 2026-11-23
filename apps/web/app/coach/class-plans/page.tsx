@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
+import ClusterNav from '@/components/ClusterNav';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -149,6 +150,7 @@ function ClassPlans() {
       <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
         <p className="t-eyebrow">Coach Workspace</p>
         <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Class plans</h1>
+        <ClusterNav cluster="planning" />
         <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
           What the gym runs, class by class: each plan is a run of weeks, each week a set of days, each day
           one workout template. Open a day to see its template and issue it from there. This page only reads.

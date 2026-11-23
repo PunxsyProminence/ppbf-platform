@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
 import { usePathname } from 'next/navigation';
 
 import ChromeLink from './ChromeLink';
@@ -8,6 +8,7 @@ import { useBoardSession } from './BoardRoleGate';
 import { BUILDING, isRefusalSurface } from './buildingMap';
 import { jobBarFor, type JobItem, type JobSection } from './jobBars';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
+import { openTabHere } from './useTabParam';
 
 /**
  * THE JOB BAR (AS-4, U2-4b): each role's few jobs, on every page.
@@ -44,8 +45,8 @@ export type JobBarVariant = 'rail' | 'phone';
 
 /**
  * Parent Hub's tab headings, by tab id, as ParentHub.tsx draws its tab rail
- * (JobBar.test.tsx reads that file and checks each pair). Until AS-4's 4e
- * reads `?tab=` there, the link opens Parent Hub, and the item says so.
+ * (JobBar.test.tsx reads that file and checks each pair). The link opens
+ * Parent Hub on that tab (useTabParam), and the item says it is a tab.
  */
 export const PARENT_HUB_TAB_LABEL: Readonly<Record<string, string>> = {
   overview: 'Overview',
@@ -61,18 +62,34 @@ export const PARENT_HUB_TAB_LABEL: Readonly<Record<string, string>> = {
 };
 
 /**
- * Whether Parent Hub opens a tab from the address (`?tab=`). It does not yet:
- * AS-4's 4e adds that (useTabParam). Until then a tab item would name a place
- * its link does not take you to, and on the hub itself would do nothing (layout
- * review round 1, BLOCKER), so tab items are not drawn; a section of nothing
- * but tabs (the parent's Messages) waits with them. Parent Hub, the parent's
- * Home, still has every tab. 4e sets this to true.
+ * Whether Parent Hub opens a tab from the address (`?tab=`). It does since
+ * AS-4's 4e (useTabParam in ParentHub.tsx), so the parent's tab items are
+ * drawn, and Messages with them. Before 4e a tab item would have named a place
+ * its link did not take you to (layout review round 1 on #2068, BLOCKER).
  */
-export const PARENT_HUB_OPENS_TAB = false;
+export const PARENT_HUB_OPENS_TAB = true;
 
 const DOOR_LABEL = new Map(BUILDING.map((door) => [door.href, door.label]));
 
 const drawable = (item: JobItem): boolean => PARENT_HUB_OPENS_TAB || !item.tab;
+
+/* A link to the page the reader is already on, where the address carries a
+   tab (lane AS4-4D4E; reviews on #2130): Next keys a page without its search,
+   so its soft navigation would change only the address and leave the open tab
+   as it was. Such a click opens the named tab, or the page's first tab, in
+   place instead. A plain click only: Ctrl, Cmd, Shift or Alt, or another
+   button, is left to the browser (a new tab or window), as Next's own link
+   leaves it. Runs in the capture phase, before the link's handler, which
+   stands down on a prevented click. */
+function openInPlace(event: ReactMouseEvent, item: JobItem, onOpened: () => void): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (typeof window === 'undefined') return;
+  if (!item.tab && !new URLSearchParams(window.location.search).has('tab')) return;
+  if (openTabHere(itemHref(item))) {
+    event.preventDefault();
+    onOpened();
+  }
+}
 
 function itemHref(item: JobItem): string {
   return item.tab ? `${item.href}?tab=${encodeURIComponent(item.tab)}` : item.href;
@@ -227,7 +244,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
               const item = section.items[0];
               const current = active && !item.tab && item.href === here?.href;
               return (
-                <li key={section.key} className="job-bar__section">
+                <li key={section.key} className="job-bar__section" onClickCapture={(event) => openInPlace(event, item, () => close(false))}>
                   <ChromeLink href={itemHref(item)} className={control} aria-current={current ? 'page' : undefined}>
                     {section.label}
                   </ChromeLink>
@@ -267,7 +284,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
                       {section.items.map((item) => {
                         const current = active && !item.tab && item.href === here?.href;
                         return (
-                          <li key={itemKey(item)}>
+                          <li key={itemKey(item)} onClickCapture={(event) => openInPlace(event, item, () => close(false))}>
                             <ChromeLink
                               href={itemHref(item)}
                               className={`job-bar__link${current ? ' is-current' : ''}`}

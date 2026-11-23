@@ -303,3 +303,10 @@ test('the Messages tab shows "Sent to your athlete" with what staff wrote to the
   await within(section).findByText('Great work on the jab.');
   expect(within(section).getByText('To Second Child')).toBeInTheDocument();
 });
+
+// useTabParam keeps the open tab in the address (lane AS4-4D4E, AS-4 part 4e),
+// and jsdom keeps the address from one test to the next, so each test starts
+// from a clean one.
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});

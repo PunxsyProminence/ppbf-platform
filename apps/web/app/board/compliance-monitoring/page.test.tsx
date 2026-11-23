@@ -11,6 +11,8 @@ import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import BoardComplianceMonitoringPage from './page';
+import { backHomeTarget } from '@/components/BackHome';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -162,4 +164,31 @@ test('does not claim an empty register while a status filter is applied', async 
   expect(screen.queryByText(/No compliance violation has ever been filed/)).toBeNull();
   expect(screen.getByText(/No violation with the selected status has been filed/)).toBeTruthy();
   expect(within(tile('Critical')).getByText(/Nothing with this status has been filed/)).toBeTruthy();
+});
+
+// Lane AS4-4D4E (app scrub BOA-21): the only exit was "Back to Board Hub" at
+// the foot of the page. The way home is at the top now, as on its siblings.
+test('the way home is in the header, and there is no second exit at the foot', async () => {
+  const session = createPersistentRoleSession('board');
+  await renderPage(summaryFixture());
+
+  const { href, label } = backHomeTarget(session);
+  const header = document.querySelector('header');
+  expect(header).not.toBeNull();
+  expect(within(header as HTMLElement).getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  expect(screen.getAllByRole('link').filter((link) => link.getAttribute('href') === href)).toHaveLength(1);
+  act(() => clearRoleSession());
+});
+
+// A seat holder's way home is their seat's workspace, which links Board Hub
+// (permissions review NIT on #2129).
+test('a seat holder’s way home is their seat workspace, in the header', async () => {
+  const session = createPersistentRoleSession('board', 'treasurer');
+  await renderPage(summaryFixture());
+
+  const { href, label } = backHomeTarget(session);
+  expect(href).not.toBe('/board');
+  const header = document.querySelector('header') as HTMLElement;
+  expect(within(header).getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  act(() => clearRoleSession());
 });
