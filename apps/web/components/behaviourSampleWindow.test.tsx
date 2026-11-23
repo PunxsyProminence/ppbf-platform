@@ -341,3 +341,87 @@ test('the gym-floor sizes that apply: every button takes the sheet\'s tap floor,
     expect(button.style.minWidth).toBe('160px');
   }
 });
+
+test('mid-window, a re-read after an error keeps the coach\'s place, moved past a tap of theirs it finds saved; it does not jump to the count', async () => {
+  let patches = 0;
+  let mine: unknown[] = [];
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') return windowRead(patches === 0 ? 1 : 7, mine);
+    if (call.method === 'PATCH') {
+      patches += 1;
+      if (patches === 1) {
+        mine = [{ chance: 1, polarity: 'occurrence' }];
+        return patchEcho(call);
+      }
+      if (patches === 2) return respond({ ok: false, error: 'That window is closed.' }, 409);
+      // Saved, but the answer is lost: the re-read finds chance 2 among this coach's taps.
+      mine = [{ chance: 1, polarity: 'occurrence' }, { chance: 2, polarity: 'counterexample' }];
+      throw new Error('network');
+    }
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
+  // Refused, and the count has moved on to 7: this coach stays at their own place.
+  await press(NOT_SHOWN);
+  expect(screen.getByText('Chance 2 of 10')).toBeInTheDocument();
+  // Lost: the read shows chance 2 saved, so the coach moves on to 3 rather than tapping 2 again.
+  await press(NOT_SHOWN);
+  expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
+});
+
+test('a tap answered with a server error forgets the last tap, as a lost one does', async () => {
+  let patches = 0;
+  serve((call) => {
+    if (call.url === WINDOW && call.method === 'GET') return windowRead(1);
+    if (call.method === 'PATCH') {
+      patches += 1;
+      return patches === 1 ? patchEcho(call) : respond({}, 500);
+    }
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  expect(screen.getByRole('button', { name: /Change last tap/ })).toBeInTheDocument();
+  await press(SHOWN);
+  expect(screen.getByRole('status')).toHaveTextContent('It is not known whether the tap was saved (500); reading the window again.');
+  expect(screen.queryByRole('button', { name: /Change last tap/ })).toBeNull();
+});
+
+test('opening a new window forgets the last tap made in another', async () => {
+  serve((call) => {
+    if (call.url === WINDOW) return call.method === 'GET' ? windowRead(1) : patchEcho(call);
+    if (call.method === 'POST') return respond({ ok: true, window: { ...OPEN_ROW, window_id: 'win-2' } }, 201);
+    return lists([OPEN_ROW])(call);
+  });
+  await showOpened();
+  await press(/Join:/);
+  await press(SHOWN);
+  expect(screen.getByRole('button', { name: /Change last tap/ })).toBeInTheDocument();
+  await press(/^Hide/);
+  await press(/Watch a behaviour/);
+  await press('Open the window');
+  expect(screen.getByText('Chance 1 of 10')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Change last tap/ })).toBeNull();
+});
+
+test('a list read that lands after the coach hid the screen does not open it again', async () => {
+  let release: (response: Response) => void = () => undefined;
+  serve((call) => {
+    if (call.url === KEYS) return new Promise<Response>((resolve) => { release = resolve; });
+    return lists()(call);
+  });
+  await act(async () => {
+    render(<BehaviourSampleWindow runId="run 1" athleteId="ath-1" athleteName="Ada Reyes" />);
+  });
+  await press(/Watch a behaviour/);
+  await press(/^Hide/);
+  await act(async () => {
+    release(respond({ ok: true, keys: NAMES }));
+  });
+  expect(screen.getByRole('button', { name: 'Watch a behaviour for Ada Reyes' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByLabelText('Behaviour')).toBeNull();
+});
