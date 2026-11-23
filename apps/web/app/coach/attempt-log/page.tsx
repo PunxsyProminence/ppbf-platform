@@ -230,7 +230,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
         </p>
       )}
       {attempt.review_state === 'disputed' && (
-        <p className="alert-title mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }} role="status">
+        <p className="alert-title mt-[var(--s2)]" role="status">
           Coach disputed this attempt{attempt.review_reason ? ` — ${attempt.review_reason}` : ''}
         </p>
       )}

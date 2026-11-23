@@ -112,6 +112,12 @@ const FLOOR: ReadonlyArray<{ readonly voice: string; readonly rung: string; read
   { voice: '.badge i', rung: '--t-md', why: "the badge's non-colour channel, which Law 3 requires" },
   { voice: '.t-data', rung: '--t-lg', why: 'the figure itself' },
   { voice: '.t-data--xl', rung: '--t-xl', why: 'the largest sanctioned figure, held at its own rung' },
+  // Kiosk text-size sweep part A (research findings F-3, F-4, A-1 to A-3, 2026-11-22).
+  { voice: '.alert-title', rung: '--t-md', why: 'the headline of a failed load or a warning' },
+  { voice: '.alert-msg', rung: '--t-md', why: 'what the warning asks the reader to do' },
+  { voice: '.empty-title', rung: '--t-md', why: 'what an empty or failed panel says it is' },
+  { voice: '.empty-msg', rung: '--t-md', why: 'the next step an empty panel offers' },
+  { voice: '.working', rung: '--t-md', why: 'the line that says a read is still running' },
 ];
 
 /**
@@ -242,7 +248,14 @@ function weight(selectorList: readonly string[]): number {
     0,
     ...selectorList.map((selector) => {
       const ids = (selector.match(/#[\w-]+/g) ?? []).length;
-      const classes = (selector.match(/\.[\w-]+|\[[^\]]*\]|:(?!:)[\w-]+/g) ?? []).length;
+      /* `(?<!:)`: a PSEUDO-ELEMENT (`::before`) is type-level in the cascade,
+         not class-level. Without the look-behind the second colon of `::before`
+         matched as a pseudo-class, so `.working::before` weighed (0,2,0) and
+         was reported as taking back the `.working` floor -- a rule that sizes
+         only its own generated glyph (kiosk sweep part A, 2026-11-23). It is
+         counted below with the types instead. */
+      const classes = (selector.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):(?!:)[\w-]+/g) ?? []).length;
+      const pseudoElements = (selector.match(/::[\w-]+/g) ?? []).length;
       /* TYPE SELECTORS COUNT, and leaving them out is what let a later rule
          tie the control floor unseen. Strip the class-level parts first so
          `button` is counted once and the `button` inside `[type="button"]`
@@ -255,7 +268,7 @@ function weight(selectorList: readonly string[]): number {
           .replace(/::?[\w-]+(\([^)]*\))?/g, ' ')
           .match(/\b[a-z][a-z0-9]*\b/gi) ?? []
       ).length;
-      return ids * 100 + classes * 10 + types;
+      return ids * 100 + classes * 10 + types + pseudoElements;
     }),
   );
 }
@@ -447,6 +460,31 @@ describe('the gym-floor type floor', () => {
           + 'them under [data-surface="kiosk"] too, or record them in EXEMPT with the reason:'
           + `\n  ${offenders.join('\n  ')}`,
     ).toBe(true);
+  });
+
+  /* A PSEUDO-ELEMENT IS ITS OWN BOX. weight() counts `::before` at type level,
+     as the cascade does, so a rule like `.working::before { font-size: 13px }`
+     is not a takeback of the `.working` floor above -- but the floor does not
+     reach the glyph either, and it stays small on the tablet. So every
+     pseudo-element that sets a size on a floored voice needs a kiosk twin of
+     its own, at the floor or above (review of kiosk sweep part A, 2026-11-23). */
+  it('sizes the glyph a floored voice draws, so a pseudo-element cannot stay small', () => {
+    const voices = FLOOR.map((entry) => entry.voice.split(' ')[0]);
+    const atOrAbove = /var\(\s*--t-(md|lg|xl|2xl|3xl|4xl|5xl)\s*\)/;
+    const missing: string[] = [];
+    for (const rule of RULES) {
+      if (rule.selectors.join(', ').includes('[data-surface="kiosk"]')) continue;
+      if (sizeDeclarations(rule.body).length === 0) continue;
+      for (const selector of rule.selectors) {
+        if (!selector.includes('::')) continue;
+        if (!voices.some((voice) => reaches(selector, voice))) continue;
+        const twin = ruleBody(scoped(selector));
+        if (!twin || !sizeDeclarations(twin).every((declaration) => atOrAbove.test(declaration))) {
+          missing.push(selector);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it('changes nothing off a gym-floor surface', () => {

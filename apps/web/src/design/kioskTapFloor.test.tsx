@@ -74,6 +74,27 @@ describe('kiosk tap floor', () => {
     expect(ppbf).not.toMatch(/@layer[^{]*\{[^}]*\[data-surface="kiosk"\]\s+\.btn/);
   });
 
+  it('floors the tab plaques, whose min-h-[44px] utility beat the layered floor (sweep N-1)', () => {
+    // uiStyles.tabButtonBase carries min-h-[44px]; a utility on the element
+    // outranks the @layer base kiosk rule, so the coach home tabs sat at 44px.
+    const ppbf = readDesignSystemCss(PPBF);
+    const rule = ppbf.match(/\[data-surface="kiosk"\]\s+\.tab-rail\s+button\s*\{([^}]*)\}/);
+
+    expect(rule).not.toBeNull();
+    expect(rule?.[1]).toContain('min-height: var(--tap)');
+    expect(ppbf).not.toMatch(/@layer[^{]*\{[^}]*\[data-surface="kiosk"\]\s+\.tab-rail/);
+  });
+
+  it('keeps the class screen at the kiosk floors (sweep P-1, P-2)', () => {
+    const source = readFileSync(path.resolve(__dirname, '../../components/SessionRunPresence.tsx'), 'utf8');
+    // P-2: every .input on this gym-floor screen wears input--kiosk (55px).
+    const inputs = [...source.matchAll(/className="(input[^"]*)"/g)].map((match) => match[1]);
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const classes of inputs) expect(classes.split(/\s+/)).toContain('input--kiosk');
+    // P-1: no inline 11.8px size beating the kiosk .t-body floor.
+    expect(source).not.toMatch(/fontSize:\s*['"]var\(--t-xs\)/);
+  });
+
   it('floors .btn anchors, which the element-list rule cannot reach', () => {
     // globals.css lists `button`, `select`, `input[...]` -- never `a`. Half the
     // athlete floor's tap targets are router Links carrying `.btn`, so a rule

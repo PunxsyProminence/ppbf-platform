@@ -330,8 +330,8 @@ export default function GuardianSafetyPage() {
             /* Names what is loading and says it can take a few seconds (parent
                walk 2026-10-19 item 13: a bare "Loading…" stood for 2 to 5
                seconds). A status region. The sheet's
-               `.working` cue is not used: it pins 11px and this is a kiosk
-               page with a 19.1px type floor. Wording PROPOSED. */
+               `.working` cue is not used: it pinned 11px when this was written
+               (the kiosk floor now raises it, kiosk sweep part A, 2026-11-23). Wording PROPOSED. */
             <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty" role="status">
                 <div className="empty-glyph" aria-hidden="true">◌</div>

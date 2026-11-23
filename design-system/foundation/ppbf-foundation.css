@@ -249,6 +249,53 @@
    this paragraph is the note that says so. */
 [data-surface="kiosk"] .t-data--xl { font-size: var(--t-xl); }
 
+/* THE STATE VOICES, kiosk text-size sweep part A (research findings F-3, F-4,
+   A-1, A-2, A-3, 2026-11-22; re-checked at fce92a04, 2026-11-23). The alert,
+   empty-state and working voices pin desk sizes in the legacy sheet --
+   .alert-title 12px, .alert-msg and .empty-msg --t-sm (15px), .empty-title
+   14px, .working 11px -- and no kiosk rule reached them. They are what a
+   failed load, an empty list or a slow read SAYS on the floor tablet: the
+   parent Safety Status panels, the athlete home's "Could not load" alerts and
+   SafeSport box, My Film's alerts and "Loading...". Same weight and same
+   unlayered placement as the voices above; kioskTypeFloor.test.ts guards them.
+   .stat-label and .gauge-cap are left for part B: they sit inside gauges and
+   stat tiles whose layout needs a look on a screen first. */
+[data-surface="kiosk"] .alert-title {
+  font-size: var(--t-md);
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+}
+[data-surface="kiosk"] .alert-msg {
+  font-size: var(--t-md);
+  line-height: 1.5;
+}
+[data-surface="kiosk"] .empty-title {
+  font-size: var(--t-md);
+  line-height: 1.3;
+}
+[data-surface="kiosk"] .empty-msg {
+  font-size: var(--t-md);
+  line-height: 1.5;
+}
+[data-surface="kiosk"] .working {
+  font-size: var(--t-md);
+}
+/* The ◴ mark before "Loading..." is pinned at 13px by the legacy sheet's
+   `.working::before`; on the tablet it grows with the line it leads.
+   (0,2,1) here beats that (0,1,1) whatever the order. */
+[data-surface="kiosk"] .working::before {
+  font-size: var(--t-md);
+}
+
+/* THE TAB PLAQUES, kiosk text-size sweep part A (finding N-1, 2026-11-23).
+   uiStyles.tabButtonBase carries min-h-[44px]; the 55px kiosk floor for bare
+   buttons lives in @layer base (apps/web/app/globals.css), where a utility on
+   the element outranks it, so the coach home tabs stayed at about 44px.
+   Unlayered and kiosk-scoped like the type floor: desk tab rows keep 44px. */
+[data-surface="kiosk"] .tab-rail button {
+  min-height: var(--tap);
+}
+
 /* ---------------------------------------------------------------------------
    THE SAME FLOOR, ON THE CONTROLS.
 
