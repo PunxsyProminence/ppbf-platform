@@ -5,6 +5,8 @@
 import { act, render, screen } from '@testing-library/react';
 
 import StaffCredentialsPage from './page';
+import { backHomeTarget } from '@/components/BackHome';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -79,4 +81,22 @@ describe.each([
     expect(await screen.findByText(/staff credentials could not be loaded/i)).toBeTruthy();
     expect(screen.queryByText(/no staff credential records yet/i)).toBeNull();
   });
+});
+
+// Lane AS4-4D4E (app scrub ATH-18): "Back" went to the public front page.
+// It goes to the reader's own home now.
+test('the way back goes to the home of the reader, not the public front page', async () => {
+  global.fetch = mockFetch();
+  const session = createPersistentRoleSession('parent');
+
+  await act(async () => {
+    render(<StaffCredentialsPage />);
+  });
+  await screen.findByText('Jane Okafor');
+
+  const { href, label } = backHomeTarget(session);
+  expect(href).not.toBe('/');
+  expect(screen.getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+  expect(screen.queryByRole('link', { name: 'Back' })).toBeNull();
+  act(() => clearRoleSession());
 });

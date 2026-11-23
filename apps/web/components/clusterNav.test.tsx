@@ -21,7 +21,9 @@ let mockPath = '/coach/intelligence';
 jest.mock('next/navigation', () => ({ usePathname: () => mockPath }));
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => <a href={href}>{children}</a>,
+  default: ({ children, href, className }: { readonly children: ReactNode; readonly href: string; readonly className?: string }) => (
+    <a href={href} className={className}>{children}</a>
+  ),
 }));
 
 afterEach(() => clearRoleSession());
@@ -126,6 +128,65 @@ describe('the cluster lines', () => {
       ({ container } = render(<ClusterNav cluster={cluster} />));
     });
     expect(container!.innerHTML).toBe('');
+  });
+});
+
+// Lane AS4-4D4E (AS-4 part 4d; GO on #2128, Q3 = A, Q4 = A).
+describe('the planning, film and Teach Shadow lines (app scrub CF-10, CS-13) and their tap size (CF-17, CS-11)', () => {
+  test('Teach Shadow is its own line, and Film names no Teach Shadow page', () => {
+    expect(COACH_CLUSTERS['teach-shadow']).toEqual([
+      '/teach-shadow',
+      '/teach-shadow/capture',
+      '/teach-shadow/cut',
+      '/teach-shadow/annotation',
+      '/teach-shadow/agreement',
+    ]);
+    expect(COACH_CLUSTERS.film.some((href) => href.startsWith('/teach-shadow'))).toBe(false);
+  });
+
+  test('a coach on Teach Shadow sees the Teach Shadow line, not the Film Study pages', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/teach-shadow/cut';
+    await act(async () => {
+      render(<ClusterNav cluster="teach-shadow" />);
+    });
+    expect(screen.getByRole('navigation', { name: 'Teach Shadow' })).toBeTruthy();
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/teach-shadow', '/teach-shadow/capture', '/teach-shadow/annotation', '/teach-shadow/agreement']);
+    expect(hrefs.some((href) => href!.startsWith('/coach/video'))).toBe(false);
+  });
+
+  test('a coach on Class plans sees the planning line with Library and Workout Templates', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/class-plans';
+    await act(async () => {
+      render(<ClusterNav cluster="planning" />);
+    });
+    expect(screen.getByText('Class plans').getAttribute('aria-current')).toBe('page');
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/coach/library');
+    expect(hrefs).toContain('/coach/workout-templates');
+    expect(hrefs).not.toContain('/coach/class-plans');
+  });
+
+  test('every link in a line carries the tap-link class', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/workout-templates';
+    await act(async () => {
+      render(<ClusterNav cluster="planning" />);
+    });
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThan(1);
+    for (const link of links) expect(link.className.split(/\s+/)).toContain('tap-link');
+  });
+
+  test('globals.css lifts a tap-link to the 55px tap size on a kiosk surface only', () => {
+    const css = fs.readFileSync(path.join(WEB, 'app', 'globals.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/\[data-surface="kiosk"\]\s+\.tap-link\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toMatch(/min-height:\s*var\(--tap\)/);
+    // Opt-in by class: no bare link rule stretches links inside sentences.
+    expect(css).not.toMatch(/\[data-surface="kiosk"\]\s+a\s*[,{]/);
   });
 });
 

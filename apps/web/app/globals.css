@@ -373,6 +373,15 @@ input:not([type]) {
 [data-surface="kiosk"] input:not([type]) {
   min-height: var(--tap);
 }
+
+/* A navigation link on a gym-floor surface (a sub-nav line) reaches the same
+   55px (app scrub CF-17, CS-11; lane AS4-4D4E). Opt-in by class, not every
+   <a>: a blanket rule would stretch links inside sentences. */
+[data-surface="kiosk"] .tap-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
 }
 /* ^ closes @layer base for the interactive-target floor. Both rules live in
    the layer together so the kiosk 55px still outranks the 44px default by

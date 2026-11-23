@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import BackHome from '@/components/BackHome';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import BoardOnlyNotice from '../BoardOnlyNotice';
 import { apiBase } from '@/lib/apiBase';
@@ -167,6 +167,10 @@ function BoardComplianceMonitoringContent() {
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
             <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>
             <h1 className="font-display text-[length:var(--t-2xl)] font-black text-[color:var(--bone-100)]">Hand-Filed Compliance Register</h1>
+            {/* The way home sits at the top, as on Program Aggregates and
+                Escalation Monitoring; it was only at the page's foot (app
+                scrub BOA-21; lane AS4-4D4E). */}
+            <div className="mt-[var(--s3)]"><BackHome /></div>
             <p className="t-body max-w-[80ch]">
               Aggregate counts of compliance violations that staff have filed by hand, with escalation status. The
               platform runs no violation detector and no screen files into this register, so these figures track
@@ -303,12 +307,6 @@ function BoardComplianceMonitoringContent() {
               count plus a date identifies the athlete behind it. {FILED_BY_HAND_NOTE}
             </p>
           </section>
-
-          <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/board" className="btn btn--ghost">
-              Back to Board Hub
-            </Link>
-          </div>
         </div>
       </main>
     </>
