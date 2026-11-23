@@ -356,7 +356,7 @@ export default function AthleteAchievements({
   if (state === 'unavailable') {
     return (
       <section className={SHELL(isFamily)} aria-label="Achievements">
-        <p className={isFamily ? 't-body' : 'text-[length:var(--t-sm)] text-[color:var(--bone-300)]'} role="alert">
+        <p className={isFamily ? 't-body' : 'text-[length:var(--t-md)] text-[color:var(--bone-300)]'} role="alert">
           This did not load. It is a connection problem, not an empty record —
           nothing already earned has gone anywhere.
         </p>
@@ -411,11 +411,11 @@ export default function AthleteAchievements({
         </h4>
 
         {recognitionFailed ? (
-          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}`}>
+          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--bone-400)]'}`}>
             The coaches’ notes could not be loaded just now.
           </p>
         ) : recognitions.length === 0 ? (
-          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}`}>
+          <p className={`mt-[var(--s3)] ${isFamily ? 't-muted' : 'text-[length:var(--t-md)] text-[color:var(--bone-400)]'}`}>
             {isFamily
               ? 'Nothing here yet. Coaches write these when they catch somebody doing well.'
               : 'Nothing here yet. This fills up when a coach catches you doing something right.'}
@@ -443,7 +443,7 @@ export default function AthleteAchievements({
                     <p
                       className={isFamily
                         ? 't-body mt-[var(--s2)]'
-                        : 'mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]'}
+                        : 'mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-200)]'}
                       style={{ fontFamily: 'var(--font-hand)' }}
                     >
                       “{item.note}”
@@ -478,7 +478,7 @@ export default function AthleteAchievements({
                   key={link.mentorship_id}
                   className={isFamily
                     ? 't-body rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]'
-                    : 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]'}
+                    : 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-200)]'}
                 >
                   {line}
                   {/* A closed pairing is history, never a failure — the copy
@@ -542,7 +542,7 @@ export default function AthleteAchievements({
                 disabled={savingProgram}
                 aria-pressed={program === option}
                 className={
-                  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)] '
+                  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-md)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)] '
                   + (program === option
                     ? 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]'
                     : 'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)]')
@@ -643,7 +643,7 @@ function TrackPanel({
             className={
               (isFamily
                 ? 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] bg-[var(--paper)] px-[var(--s4)] py-[var(--s3)] t-body'
-                : 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-600)] bg-[rgba(0,0,0,.3)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]')
+                : 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-600)] bg-[rgba(0,0,0,.3)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-100)]')
               + (pressedKey === milestone.key ? ' tcard-seal-slot--pressed' : '')
             }
           >
@@ -659,7 +659,7 @@ function TrackPanel({
             key={milestone.key}
             className={isFamily
               ? 'rounded-[var(--r-md)] border border-dashed border-[color:rgba(0,0,0,.24)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)] t-muted'
-              : 'rounded-[var(--r-md)] border border-dashed border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.18)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-400)]'}
+              : 'rounded-[var(--r-md)] border border-dashed border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.18)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-400)]'}
           >
             {/* "Ahead", never "locked". No unearned milestone anywhere states a
                 reason it is unearned, so its absence cannot be read backwards

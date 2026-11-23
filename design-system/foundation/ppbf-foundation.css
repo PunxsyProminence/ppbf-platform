@@ -296,6 +296,44 @@
   min-height: var(--tap);
 }
 
+/* THE CAPTIONS AND THE TRAINING CARD, kiosk text-size sweep part B (lane
+   KIOSK-SWEEP-B, 2026-11-23). Part A left these: .stat-label and .gauge-cap
+   are --t-xs (11.8px, legacy sheet :1171 and :1230), and the Training Card
+   pins literal px through `font:` shorthands -- .tcard-sub 11px (:2745),
+   .tcard-count span 9.5px (:2750), .tcard-stamp 10px (:2760),
+   .tcard-seal-lbl 9px (:2792), .tcard-legend 10.5px (:2867). The card's empty
+   state wears .empty-title / .empty-msg and is already floored by part A.
+   Same placement and weight as the voices above: unlayered, kiosk-scoped,
+   (0,2,0) against their (0,1,0), so the shorthand's size is replaced and its
+   family and weight are not. Tracking comes in with the size, as on
+   .t-eyebrow, because wide tracking costs line length the tablet lacks.
+   kioskTypeFloor.test.ts guards each of these. */
+[data-surface="kiosk"] .stat-label,
+[data-surface="kiosk"] .gauge-cap {
+  font-size: var(--t-md);
+  line-height: 1.25;
+  letter-spacing: 0.05em;
+}
+[data-surface="kiosk"] .tcard-sub {
+  font-size: var(--t-md);
+  letter-spacing: 0.04em;
+}
+[data-surface="kiosk"] .tcard-count span {
+  font-size: var(--t-md);
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+}
+[data-surface="kiosk"] .tcard-stamp {
+  font-size: var(--t-md);
+}
+[data-surface="kiosk"] .tcard-seal-slot .tcard-seal-lbl {
+  font-size: var(--t-md);
+  letter-spacing: 0.05em;
+}
+[data-surface="kiosk"] .tcard-legend {
+  font-size: var(--t-md);
+}
+
 /* ---------------------------------------------------------------------------
    THE SAME FLOOR, ON THE CONTROLS.
 
