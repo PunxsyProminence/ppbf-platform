@@ -113,7 +113,7 @@ test('an empty note produces no confirmation at all', async () => {
 // Release 11 walk-through: a signed-in parent saw a "SHADOW (Admin)" link in
 // the Library's navigation. /admin/shadow is for administrators and the
 // platform owner, so anyone else was offered a door that bounces them.
-describe('the SHADOW (Admin) link', () => {
+describe('the SHADOW Admin Console link', () => {
   afterEach(() => {
     act(() => clearRoleSession());
   });
@@ -122,24 +122,24 @@ describe('the SHADOW (Admin) link', () => {
     createPersistentRoleSession(role);
     await renderPage();
 
-    expect(screen.queryByRole('link', { name: 'SHADOW (Admin)' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'SHADOW Admin Console' })).toBeNull();
     // The rest of the navigation is untouched (Evidence Review has its own
     // door check, below).
-    expect(screen.getByRole('link', { name: 'Research Intake' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Research Inbox' })).toBeTruthy();
   });
 
   test('is not offered before the session is known', async () => {
     clearRoleSession();
     await renderPage();
 
-    expect(screen.queryByRole('link', { name: 'SHADOW (Admin)' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'SHADOW Admin Console' })).toBeNull();
   });
 
   test.each(['admin', 'platform_owner'] as const)('is still offered to a %s', async (role) => {
     createPersistentRoleSession(role);
     await renderPage();
 
-    expect(screen.getByRole('link', { name: 'SHADOW (Admin)' }).getAttribute('href')).toBe('/admin/shadow');
+    expect(screen.getByRole('link', { name: 'SHADOW Admin Console' }).getAttribute('href')).toBe('/admin/shadow');
   });
 });
 
@@ -155,22 +155,22 @@ describe('the Evidence Review link', () => {
     createPersistentRoleSession(role);
     await renderPage();
 
-    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Research Intake' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Evidence Review Queue' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Research Inbox' })).toBeTruthy();
   });
 
   test('is not offered before the session is known', async () => {
     clearRoleSession();
     await renderPage();
 
-    expect(screen.queryByRole('link', { name: 'Evidence Review' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Evidence Review Queue' })).toBeNull();
   });
 
   test.each(['admin', 'platform_owner'] as const)('is offered to a %s', async (role) => {
     createPersistentRoleSession(role);
     await renderPage();
 
-    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
+    expect(screen.getByRole('link', { name: 'Evidence Review Queue' }).getAttribute('href')).toBe('/evidence');
   });
 });
 

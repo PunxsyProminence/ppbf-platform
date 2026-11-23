@@ -120,7 +120,7 @@ describe('the lab desks are offered to the admin desks only', () => {
     await renderPage(role);
 
     expect(screen.getByRole('heading', { name: 'OTHER DESKS' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Research Intake' }).getAttribute('href')).toBe('/research');
+    expect(screen.getByRole('link', { name: 'Research Inbox' }).getAttribute('href')).toBe('/research');
     expect(screen.getByRole('heading', { name: 'SHADOW Monitoring' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Scenario Simulation' })).toBeTruthy();
   });
@@ -157,7 +157,7 @@ describe('every link is drawn only when its door admits the reader', () => {
     // Doors that admit it stay links.
     expect(screen.getByRole('link', { name: 'Evidence Review Queue' }).getAttribute('href')).toBe('/evidence');
     expect(screen.getByRole('link', { name: 'Notices & Motivation' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open the after-hours room' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'SHADOW Admin Console' })).toBeTruthy();
   });
 
   test('every link offered to the platform owner opens a page its door admits', async () => {
@@ -229,7 +229,7 @@ test('exactly one door leads to the after-hours room, and it says so', async () 
     .filter((link) => link.getAttribute('href') === '/admin/shadow');
 
   expect(nightDoors).toHaveLength(1);
-  expect(nightDoors[0].textContent).toBe('Open the after-hours room');
+  expect(nightDoors[0].textContent).toBe('SHADOW Admin Console');
   // The removed second door was labelled "The Office" and opened After Hours.
   expect(screen.queryByRole('link', { name: 'The Office' })).toBeNull();
 });

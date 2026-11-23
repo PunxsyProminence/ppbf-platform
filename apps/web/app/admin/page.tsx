@@ -2550,10 +2550,10 @@ function CapabilityRoomWrongRoleNotice() {
         </p>
         <div className="flex flex-wrap items-center justify-center gap-[var(--s3)]">
           <Link href="/admin/platform" className="btn">
-            Platform Desk
+            Omega
           </Link>
           <Link href="/admin/organizations" className="btn btn--ghost">
-            Organization Provisioning
+            Get Your Gym Online
           </Link>
           <Link href="/admin/system" className="btn btn--ghost">
             System
