@@ -574,9 +574,6 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/mental-skills', label: 'Mental Skills', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'mental skills self-talk cue imagery visualisation visualization athlete log',
     hint: 'An athlete’s self-talk cue and imagery sessions, in their words. Read-only.' },
-  { href: '/coach/sparring-exposure', label: 'Sparring Record', room: 'floor', roles: ['coach', 'admin'],
-    keywords: 'sparring exposure head contact time under impact rounds stop rule after sparring presentation',
-    hint: 'What you saw in a sparring segment, for one athlete. Counts only, no score; shows the coach-set cap and warns when a segment goes over it.' },
   { href: '/coach/development', label: 'Your Coaching Growth', room: 'floor',
     roles: ['coach', 'admin', 'staff', 'volunteer'],
     keywords: 'coach development goal own growth course clinic workshop training record education topic mentorship professional learning',
@@ -734,12 +731,15 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/athlete-safety', label: 'Athlete Safety', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'injury injuries sprain strain fracture cut head time lost return reported clinician usa boxing medical restriction affidavit knockout release physician lbc sparring family',
     hint: "Record what an athlete, parent, coach or clinician reported about an injury, and link its hold or return plan. Record a USA Boxing medical restriction, the date the physician's release was signed, and the LBC date." },
-  { href: '/coach/sparring-caps', label: 'Sparring Caps', room: 'clinic', roles: ['coach', 'admin'],
-    keywords: 'sparring cap caps limit contact stage open controlled hard sessions week youth',
-    hint: 'Set each athlete\'s highest sparring stage and most hard or open sessions in 7 days. Never blocks; the coach decides.' },
-  { href: '/coach/athlete-limits', label: 'Athlete Limits', room: 'clinic', roles: ['coach', 'admin'],
-    keywords: 'limits minor child heat exposure minutes weight cut percent body weight supervision coach-set',
-    hint: 'Set each athlete\'s heat exposure, weight-cut and supervision limits. The app never picks one; the coach decides.' },
+  // Sparring Record, Sparring Caps and Athlete Limits are one page now (lane
+  // AS-5, S2-3 A), in the clinic (#2131 QR2 = A). The three doors' words are kept.
+  { href: '/coach/sparring-exposure', label: 'Sparring and Limits', room: 'clinic', roles: ['coach', 'admin'],
+    keywords: 'sparring exposure head contact time under impact rounds stop rule after sparring presentation'
+      + ' cap caps limit contact stage open controlled hard sessions week youth'
+      + ' limits minor child heat exposure minutes weight cut percent body weight supervision coach-set',
+    hint: 'What you saw in a sparring segment, for one athlete. Counts only, no score; shows the coach-set cap and warns when a segment goes over it.'
+      + ' Set each athlete\'s highest sparring stage and most hard or open sessions in 7 days, and their heat exposure, weight-cut and supervision limits.'
+      + ' The app never picks one; the coach decides.' },
   { href: '/admin/compliance-center', label: 'Compliance Center', room: 'clinic', roles: ['admin'],
     keywords: 'compliance safeguarding policy certification safety' },
 

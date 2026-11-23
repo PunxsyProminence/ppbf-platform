@@ -477,8 +477,8 @@ describe('SHADOW Context Builder', () => {
       const directive = section.lines[section.lines.length - 1];
       expect(directive).toContain(ATHLETE_LIMITS_PAGE);
       expect(directive).toContain(SPARRING_CAPS_PAGE);
-      expect(ATHLETE_LIMITS_PAGE).toBe('/coach/athlete-limits');
-      expect(SPARRING_CAPS_PAGE).toBe('/coach/sparring-caps');
+      expect(ATHLETE_LIMITS_PAGE).toBe('/coach/sparring-exposure#athlete-limits');
+      expect(SPARRING_CAPS_PAGE).toBe('/coach/sparring-exposure#sparring-caps');
     });
 
     test('past a set limit: the wording that ships is pinned, word for word, and it is in the section once', () => {

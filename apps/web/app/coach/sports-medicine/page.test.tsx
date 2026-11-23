@@ -134,7 +134,7 @@ test('sparring caps are linked from the board, never shown on it (2026-08-15 rul
   render(<SportsMedicinePage />);
 
   await screen.findByText('Jordan Doe');
-  expect(screen.getByRole('link', { name: 'Sparring Caps' }).getAttribute('href')).toBe('/coach/sparring-caps');
+  expect(screen.getByRole('link', { name: 'Sparring and Limits' }).getAttribute('href')).toBe('/coach/sparring-exposure#sparring-caps');
   expect(screen.queryByRole('button', { name: 'Sparring cap' })).toBeNull();
   const urls = (fetchMock as unknown as jest.Mock).mock.calls.map(([input]) => String(input));
   expect(urls.some((url) => url.includes('athlete-contact-caps'))).toBe(false);
@@ -2968,7 +2968,7 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     global.fetch = mockFetch();
     render(<SportsMedicinePage />);
     const name = await screen.findByText('Jordan Doe');
-    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
+    for (const label of ['Injury Record', 'Sparring and Limits', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
       const link = screen.getByRole('link', { name: label });
       expect(link.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
