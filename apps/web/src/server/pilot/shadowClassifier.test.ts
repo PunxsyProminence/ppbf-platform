@@ -285,3 +285,19 @@ describe('SHADOW Classifier', () => {
     });
   });
 });
+
+// Codex P1 on PR #2152: an invisible character inside a high-risk word no longer drops the request
+// from the Heavy Bag path its plain spelling takes.
+describe('invisible characters inside a high-risk word', () => {
+  test.each([
+    ['what is sur\u200Bgery', 'what is surgery'],
+    ['what is concu\u200Bssion', 'what is concussion'],
+    ['what is medical\u200Bclearance', 'what is medical clearance'],
+    ['how do I cut\u2800weight', 'how do I cut weight'],
+  ])('%j is classified as %j is', (hidden, plain) => {
+    const plainAnswer = classifyRequest(plain, 'athlete');
+    expect(plainAnswer.tier).toBe('heavy_bag');
+    expect(classifyRequest(hidden, 'athlete').tier).toBe(plainAnswer.tier);
+    expect(classifyRequest(hidden, 'athlete').complexity).toBeCloseTo(plainAnswer.complexity, 10);
+  });
+});

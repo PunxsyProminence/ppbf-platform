@@ -4,6 +4,7 @@
 // Heavy Bag: Deep reasoning, asynchronous (async-default + sync-on-demand)
 
 import type { PilotRole } from './contracts';
+import { scanForms } from './feedbackSafetyScan';
 
 export type ShadowTier = 'quick_round' | 'heavy_bag';
 
@@ -73,7 +74,10 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
   score += Math.min(matchedKeywords * 0.05, 0.3);
 
   // 3. High-risk topics (elevated to Heavy Bag baseline)
-  if (HIGH_RISK_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+  //    Read in every form (scanForms: as typed, and with each run of invisible characters removed
+  //    or read as a space), so "sur[U+200B]gery" reaches the Heavy Bag path its plain spelling
+  //    does (Codex P1 on PR #2152: the request check saw it, this classifier did not).
+  if (scanForms(message).some((form) => HIGH_RISK_MESSAGE_PATTERNS.some((pattern) => pattern.test(form)))) {
     score += 0.6;
   }
 
