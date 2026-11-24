@@ -439,6 +439,15 @@ is the account, not the session. Do not cite it as proof that a particular
 session did or did not act; the authorizing instruction and the session's own
 record are what attribute it.
 
+### 30-minute check and question board (procedure of 2026-11-24)
+
+Owner rule, 2026-11-24: "everyone should have a 30 min check, and if Ais have qestions they should post it and who they go to so that they can be answered". This replaces any older check cadence or question route you were given.
+
+- **Check about every 30 minutes while you have work open.** Read your own channel: your PR's STATUS line, every comment (Overwatch's and the review bots', including inline review comments), and CI. Answer or act on what you find; report only what changed. If your session cannot schedule itself, say so once in your PR (CAN'T, with evidence); Overwatch's own check will wake you.
+- **Post every question; never leave it in a chat.** First line: `QUESTION FOR <who>: <one line>`, then the official form (options, recommended one first), plain English, and `Checked, not answered in: <sources>` (OWNER_DECISIONS, docs/research, your brief, the PR's comments). Do not re-ask a question in a new form.
+- **Who answers, and where.** A build session asks Overwatch in its own PR. Questions for the owner go through Overwatch, which first checks they are not already ruled and then asks him once. The research thread and Overwatch use their shared inbox files outside this repository.
+- **On your first check under this procedure,** post `ACK PROCEDURE 2026-11-24` once in your PR, so Overwatch can see who follows it.
+
 ### A question is not an instruction
 
 Asking what a change would involve is a request for a finding, not for the
