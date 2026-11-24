@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-24-001 | 2026-11-24 | Every AI runs a 30-minute check and posts its questions to a named recipient | PRIMARY |  |  |
 | OD-2026-11-23-006 | 2026-11-23 | An athlete's pain-report note does not show on the class screen (PAIN-NOTES Q11) | PRIMARY |  |  |
 | OD-2026-11-23-005 | 2026-11-23 | Start the next lanes once production is live | PRIMARY |  |  |
 | OD-2026-11-23-004 | 2026-11-23 | Release of main `b5bfc1119f712bcd3b3678faefe06106442b00f6` to production | PRIMARY |  |  |
@@ -653,6 +654,26 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-24-001 -- Every AI runs a 30-minute check and posts its questions to a named recipient
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-24; the UTC times are from that session's transcript, read by App Overwatch. New; edits no earlier entry.
+
+**Jason (2026-11-24 18:03:58 UTC, PRIMARY), asked whether App Overwatch's 30-minute check should run again while the release is open:** *"Yes, every 30 min"*
+
+**Jason (2026-11-24 18:04:38 UTC, PRIMARY):** *"everyone should have a 30 min check, and if Ais have qestions they should post it and who they go to so that they can be answered"*
+
+**Jason (2026-11-24 18:05:19 UTC, PRIMARY):** *"how do we get this to all the AIs to make sure that they will do it and follow this proceduure and not an old one"*
+
+**Jason (2026-11-24 18:11:47 UTC, PRIMARY), asked whether to add a one-line reminder of the rule to the prompt hook on his PC:** *"Yes, add it"*
+
+**Ruling:** every AI working on PPBF checks its own channel about every 30 minutes while it has work open, and posts every question where its recipient reads it, naming that recipient.
+
+**Applied (Overwatch, not his words):** the procedure in AGENT_KERNEL.md (section "30-minute check and question board"), in the workspace rules on his PC, in the cloud lane protocol, in the research thread's instructions, and in the prompt hook on his PC; each AI posts `ACK PROCEDURE 2026-11-24` once. Questions for Jason from a lane stay in that lane, as OD-2026-10-03-018 rules; Overwatch only makes sure they reach him and are not already ruled. ChatGPT gets the text by Jason's paste.
+
+**Status:** recorded 2026-11-24 by PR.
 
 ---
 
