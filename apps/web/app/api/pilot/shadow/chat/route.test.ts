@@ -477,7 +477,9 @@ describe('the athlete\'s own words survive normalisation', () => {
     // The typed form is always validated, first, whatever else is.
     const entry = readFileSync(join(__dirname, '../../../../../src/server/pilot/shadowRequestForms.ts'), 'utf8');
     expect(entry.match(/validateShadowRequest\([^)]*\)/g)).toEqual(['validateShadowRequest(form, userRole, organizationId)']);
-    expect(entry).toContain('scanForms(message).map((form) => validateShadowRequest(form, userRole, organizationId))');
+    expect(entry).toContain('const forms = scanForms(message);');
+    expect(entry).toContain('const readings = forms.length > 1 ? [...forms, ');
+    expect(entry).toContain('readings.map((form) => validateShadowRequest(form, userRole, organizationId))');
     // A const, so it cannot be assigned again.
     expect(source.match(/\b(?:const|let|var)\s+message\b[^;]*;/g)).toEqual(['const message = rawMessage.trim();']);
   });

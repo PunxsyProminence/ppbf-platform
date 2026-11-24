@@ -27,6 +27,18 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(answer.classification).toBe('urgent_personal_symptom');
   });
 
+  // The Q14 delta reviewer: an invisible character IN PLACE of a space joins the words when removed,
+  // so it is also read as a space.
+  test.each([
+    ["I can't\u200Bbreathe", "I can't breathe"],
+    ['I have chest\u200Bpain', 'I have chest pain'],
+    ['my friend passed\u200Bout at practice', 'my friend passed out at practice'],
+  ])('%j, an invisible character in place of a space, gets the answer %j gets', (hidden, plain) => {
+    const answer = check(hidden);
+    expect(answer).toEqual(validateShadowRequest(plain, 'athlete', 'org-test'));
+    expect(answer.classification).toBe('urgent_personal_symptom');
+  });
+
   test('a message withheld only in its typed form stays withheld', () => {
     // Stripped, "myshoulder hurts" is not personal to any pattern; typed, it is withheld.
     expect(validateShadowRequest('myshoulder hurts', 'athlete', 'org-test').valid).toBe(true);
