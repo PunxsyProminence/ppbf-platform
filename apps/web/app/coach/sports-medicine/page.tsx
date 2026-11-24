@@ -744,7 +744,7 @@ export default function SportsMedicinePage() {
               Progression Intelligence
             </Link>
             <Link href="/coach/performance-analytics" className="btn btn--ghost">
-              Performance Analytics
+              Who to See First
             </Link>
           </div>
 

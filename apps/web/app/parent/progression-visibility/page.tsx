@@ -400,7 +400,7 @@ export default function ParentProgressionVisibilityPage() {
             {/* The door's name for this record (FAM-18; AS-9 Q13 = A). */}
             <p className="t-eyebrow">Progress Visibility</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
-              {activeChild ? `${activeChild.full_name || 'Your Athlete'}'s Progression` : 'Parent Progression Visibility'}
+              {activeChild ? `${activeChild.full_name || 'Your Athlete'}'s Progression` : 'Progress Visibility'}
             </h1>
             <p className="t-body mt-[var(--s3)]">
               The gaps your child&rsquo;s coaches have identified, the drills assigned to close them, and how the

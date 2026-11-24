@@ -341,14 +341,14 @@ function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string
   if (mode === 'scoped' && isFamilyFacingRole(role)) {
     return FAMILY_SHADOW_WELCOME;
   }
-  const { scopeSummary } = buildHeading(mode, subject);
+  const { heading, scopeSummary } = buildHeading(mode, subject);
+  // Staff open with the page heading (AS-13 CS-16b): no role code, and no
+  // "Scout" -- what that word names is not ruled, so it is not repeated here.
   const opening = mode === 'omega'
     ? 'OMEGA ONLINE.'
     : mode === 'master'
       ? 'ARCHITECT ONLINE.'
-      : subject
-        ? 'SCOUT ONLINE.'
-        : `SCOUT ONLINE FOR ${role || 'CURRENT ROLE'}.`;
+      : `${heading}.`;
   const base = `${opening} ${scopeSummary}`;
   return context ? `${base} Entered from ${context}.` : base;
 }
@@ -1567,7 +1567,7 @@ function ShadowChatPageContent() {
           </div>
           <div>
             <p className="t-eyebrow">When Evidence Is Weak</p>
-            <p className="t-body mt-[var(--s2)]">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
+            <p className="t-body mt-[var(--s2)]">Use The Library and Research Inbox. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
         )}

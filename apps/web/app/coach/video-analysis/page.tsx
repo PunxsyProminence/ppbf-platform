@@ -890,7 +890,7 @@ export default function CoachVideoAnalysisPage() {
         </div>
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-          <h2 className="t-eyebrow">Video Library</h2>
+          <h2 className="t-eyebrow">Session footage</h2>
           {videoError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{videoError}</p> : null}
           {!videoError && videos.length === 0 ? (
             <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">No videos uploaded yet.</p>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSyncExternalStore, type ReactNode } from 'react';
 import RoleSessionGate from './RoleSessionGate';
 import ShadowChatButton from './ShadowChatButton';
+import { BUILDING } from './buildingMap';
 import { canUseOperationsHub } from './operationsAccess';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
@@ -315,7 +316,7 @@ export default function RoleStandaloneView({
 
         <section className="mx-auto w-full max-w-[1600px] p-[var(--s4)] sm:p-[var(--s5)] md:p-[var(--s6)]">
           <div className="mb-[var(--s4)] flex justify-end sm:mb-[var(--s5)]">
-            <ShadowChatButton context={`${roleLabel} ${routeLabel}`} />
+            <ShadowChatButton context={BUILDING.find((door) => door.href === routeLabel)?.label ?? roleLabel} />
           </div>
           {children}
         </section>
