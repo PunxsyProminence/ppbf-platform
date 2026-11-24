@@ -20,7 +20,12 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-24-004 | 2026-11-24 | Release of main `7a0d2da4ce906eac3a1b1a2ee0f50bd489169d0c` to production; App Overwatch approves the gate when Jason's click does not register within 60 seconds | PRIMARY |  |  |
+| OD-2026-11-24-003 | 2026-11-24 | The SHADOW chat hidden-topic gap is fixed before the release goes to production | PRIMARY |  |  |
+| OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY |  |  |
 | OD-2026-11-24-001 | 2026-11-24 | Every AI runs a 30-minute check and posts its questions to a named recipient | PRIMARY |  |  |
+| OD-2026-11-23-008 | 2026-11-23 | The next release waits for the sign-in work, with four add-ons | PRIMARY |  |  |
+| OD-2026-11-23-007 | 2026-11-23 | The sign-in page: parents first, "Sign In" heading, password label, one PIN form, Microsoft errors say where, change-PIN words (SIGNIN-FIX Q2 to Q8) | PRIMARY |  |  |
 | OD-2026-11-23-006 | 2026-11-23 | An athlete's pain-report note does not show on the class screen (PAIN-NOTES Q11) | PRIMARY |  |  |
 | OD-2026-11-23-005 | 2026-11-23 | Start the next lanes once production is live | PRIMARY |  |  |
 | OD-2026-11-23-004 | 2026-11-23 | Release of main `b5bfc1119f712bcd3b3678faefe06106442b00f6` to production | PRIMARY |  |  |
@@ -657,6 +662,56 @@ and should not try to.
 
 ---
 
+## OD-2026-11-24-004 -- Release of main `7a0d2da4ce906eac3a1b1a2ee0f50bd489169d0c` to production; App Overwatch approves the gate when Jason's click does not register within 60 seconds
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-24 19:29:38 UTC, PRIMARY), after the staged release was checked on staging:** *"Release to production"*
+
+**Jason (2026-11-24, PRIMARY), after Overwatch dispatched run 45470829927 and asked him to approve its gate:** *"Approved"*
+
+**Jason (2026-11-24, PRIMARY), while the gate still showed no approval:** *"future refrences if i dont click with approval in 60 secs yo can assume i do and proceed"*
+
+**Ruling:** release main `7a0d2da4` to production. From now on, once Jason has said to release a specific run and has been asked to approve its gate, if GitHub shows no approval 60 seconds later App Overwatch approves that run's gate itself.
+
+**Applied (Overwatch, not his words):** deploy-production run 45470829927, release digest `sha256:f6e5f3f6e27435ed8598063d9bef1d469c919db26b323243c2b0dc4a737eafa4` (the staging artifact of deploy-staging run 45458331627), no migration in `b5bfc111..7a0d2da4`. GitHub showed 0 approvals about two minutes after his "Approved"; Overwatch checked the pending gate was environment 19006343562 "production" on branch main at `7a0d2da4` and approved it as PunxsyProminence, with a gate comment quoting his words. Live: revision `app-ppbf-production--0000215` at 100% traffic on that digest; www returned 200. The 60-second rule covers only a run Jason has already said to release; it never starts a release. Overwatch's signed-in staging check before release (in the browsers, on "lets sign you into the browsers to run the checks like before") passed every item it could reach; the admin note reader had no held note on staging to open.
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
+## OD-2026-11-24-003 -- The SHADOW chat hidden-topic gap is fixed before the release goes to production
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-24, after Codex posted a P1 on merged #2151: a SHADOW chat question with an invisible character inside a high-risk topic word was not treated as high-risk):** "Fix the SHADOW chat gap before this release goes to production?" Options: "Yes, fix it first"; "Release as is".
+
+**Jason (2026-11-24 17:50:23 UTC, PRIMARY):** *"Yes, fix it first"*
+
+**Ruling:** the gap is fixed before production.
+
+**Applied (Overwatch, not his words):** #2152 (`86c3a431`) fixed it and went out in release `7a0d2da4` (OD-2026-11-24-004). Its reviewers and Codex found more cases of the same kind, all already in production before this release; Overwatch fixed them in #2154 (`e90475d9`, merged after the release, not yet live) under "A: Keep strict" (OD-2026-11-23-003).
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
+## OD-2026-11-24-002 -- Account roles from 2026-11-24, and no new lanes
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) that ran 2026-11-22 to 2026-11-24; the UTC times are from that session's transcript, read by App Overwatch on 2026-11-24. New; edits no earlier entry.
+
+**Jason (2026-11-24 15:07:01 UTC, PRIMARY):** *"lets get all the cloude lanes wor finished, do not start any new lanes,  we have some sage resets so we will be reassigning role, neeko@ will stay as claude science, my personal pro accout will replace the desktop app and this accont Admin@will become the claude clode in app"*
+
+**Jason (2026-11-24 15:35:01 UTC, PRIMARY), answering Overwatch's "Is the role reading right: Gmail on the desktop app, admin@ on claude.ai/code, neeko@ on Claude Science?":** *"admin@ will be browser base,"*
+
+**Ruling:** finish the cloud lanes and start no new ones; the desktop app (App Overwatch) moves to Jason's personal account, admin@ becomes the browser-based Claude Code (claude.ai/code), and neeko@ stays on Claude Science.
+
+**Applied (Overwatch, not his words):** written into the workspace rules on his PC (CLAUDE ACCOUNTS). Which login "my personal pro accout" is was read as his gmail account (INFERRED from his 2026-10-10 and 2026-11-21 words); the desktop session confirms its own login. Observed 2026-11-24 about 18:00 UTC: the desktop App Overwatch session was still signed in as admin@, so the switch was not yet made.
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
 ## OD-2026-11-24-001 -- Every AI runs a 30-minute check and posts its questions to a named recipient
 
 **Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-24; the UTC times are from that session's transcript, read by App Overwatch. New; edits no earlier entry.
@@ -672,6 +727,48 @@ and should not try to.
 **Ruling:** every AI working on PPBF checks its own channel about every 30 minutes while it has work open, and posts every question where its recipient reads it, naming that recipient.
 
 **Applied (Overwatch, not his words):** the procedure in AGENT_KERNEL.md (section "30-minute check and question board"), in the workspace rules on his PC, in the cloud lane protocol, in the research thread's instructions, and in the prompt hook on his PC; each AI posts `ACK PROCEDURE 2026-11-24` once. Questions for Jason from a lane stay in that lane, as OD-2026-10-03-018 rules; Overwatch only makes sure they reach him and are not already ruled. ChatGPT gets the text by Jason's paste.
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
+## OD-2026-11-23-008 -- The next release waits for the sign-in work, with four add-ons
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) that ran 2026-11-22 to 2026-11-24; the UTC times are from that session's transcript, read by App Overwatch on 2026-11-24. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-23, about 18:51 UTC):** release what is on main now (pain notes, AS12-3, the build-memory fix, records), or wait for sign-in PRs 1 and 2 and release everything together with one staging check ("After sign-in (recommended)").
+
+**Jason (2026-11-23 18:52:43 UTC, PRIMARY):** *"we will wait what else can we add on to that"*
+
+**Question as App Overwatch put it (2026-11-23, about 19:06 UTC):** "Add the other three items to this release too, or just sign-in PR 3?" Options: "All four"; "Just PR 3". The three were SWEEP-B-FINISH (kiosk sweep part B and the Achievements card colours), W3-WINDOWS and WORDS-1123.
+
+**Jason (2026-11-23 19:06:43 UTC, PRIMARY):** *"All four"*
+
+**Ruling:** wait, and release the sign-in work together with the three add-ons in one release.
+
+**Applied (Overwatch, not his words):** all four merged (#2149, #2126, #2148, #2147) and shipped in release `7a0d2da4` (OD-2026-11-24-004).
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
+## OD-2026-11-23-007 -- The sign-in page: parents first, "Sign In" heading, password label, one PIN form, Microsoft errors say where, change-PIN words (SIGNIN-FIX Q2 to Q8)
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) that ran 2026-11-22 to 2026-11-24; the UTC times are from that session's transcript, read by App Overwatch on 2026-11-24. Overwatch posted each ruling on PR #2143 or #2146 as it came. New; edits no earlier entry.
+
+**Q2, the order of the ways in on /login (plan #2143). Jason (2026-11-23 18:25:10 UTC, PRIMARY):** *"C: Parents first"*. Email Link first, then Account ID & PIN, then Microsoft, with the lead sentences that go with it. This reverses Overwatch's AS-9 plan answer Q10 = B.
+
+**Q3, "Q3: change the sign-in page heading from \"The Bell\" to \"Sign In\"?" (options "A: Sign In", "B: Keep The Bell"). Jason (2026-11-23 18:26:40 UTC, PRIMARY):** *"A: Sign In"*. The bell drawing stays, and "The Bell" stays the room's name everywhere else.
+
+**Q4, "Q4: what should the password box label say?" (A "Password (If You Made One)", recommended; B "Parent Password (If You Made One)"; C keep "Password (Parents)"), and Q5, the athlete PIN forms (A, recommended: one form, on /login). Jason (2026-11-23 18:30:08 UTC, PRIMARY):** *"both A"*. This reverses Overwatch's AS-8 plan answers Q14 A and Q-BACK A.
+
+**Q6, "Q6: should the Microsoft error messages say the button is the last way below?" (options "A: Say where", "B: Keep words"). Jason (2026-11-23 18:45:24 UTC, PRIMARY):** *"A: Say where"*
+
+**Q8, "Q8: change the change-PIN page line to \"Choose a new PIN before you go any further\"?" (options "A: New words", "B: Keep it"). Jason (2026-11-23 19:06:10 UTC, PRIMARY):** *"A: New words"*
+
+**Ruling:** as answered: parents first; "Sign In"; "Password (If You Made One)"; one athlete PIN form on /login (the old /athlete/sign-in address redirects there); the two Microsoft error messages name the button as the last way below; the change-PIN lead reads "Choose a new PIN before you go any further. Nobody at the gym can see what you choose." and its field "Your current PIN".
+
+**Applied (Overwatch, not his words):** built in #2146 (`a74323e3`) and #2149 (`4380b2b8`), shipped in release `7a0d2da4` (OD-2026-11-24-004); checked signed out on staging before the release.
 
 **Status:** recorded 2026-11-24 by PR.
 
