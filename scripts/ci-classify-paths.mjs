@@ -185,7 +185,8 @@ const isBoardE2ePath = (file) => {
       'apps/web/e2e/board-governance',
       /* The sign-in door. Every one of this suite's three tests is an
          unauthenticated redirect check that lands on /login and asserts the
-         'The Bell' heading is visible, and SignInPanel is the only thing that
+         'Sign In' h1 is visible (it read 'The Bell' until FAM-15, Jason's
+         Q3 "A: Sign In", #2146), and SignInPanel is the only thing that
          renders it. So the front door is a surface this suite covers, and it
          reached only the homepage and signed-in predicates before. Narrower
          than isSignedInJourneyPath on purpose: this suite never signs in, so
@@ -402,10 +403,13 @@ const isGuardianE2ePath = (file) => {
    What IS on it, and why each is here:
 
      * /activate and its route -- the journey itself.
-     * /athlete/sign-in -- the door the athlete lands on and the only place
-       linking to /activate. A change that drops that link strands them again,
-       which is the defect this suite was written for, so the suite has to run
-       on it.
+     * /login and SignInPanel -- since ATH-15 (Jason 2026-11-23, Q5 "A") the
+       one athlete PIN form is /login's, and its "Set up your sign-in" link is
+       how an athlete holding a code reaches /activate. A change that drops
+       that link strands them again, which is the defect this suite was
+       written for, so the suite has to run on it.
+     * /athlete/sign-in -- now a redirect to that form; the suite walks it
+       first, as an old bookmark would.
      * pinPolicy -- the refusals the journey types into the form, and the
        sentence PIN_RULE_SUMMARY shows before they type. The suite asserts the
        sentence names the shapes the policy refuses.
@@ -421,6 +425,8 @@ const isActivationE2ePath = (file) =>
   startsWithAny(file, [
     'apps/web/app/activate/',
     'apps/web/app/athlete/sign-in/',
+    'apps/web/app/login/',
+    'apps/web/components/SignInPanel',
     'apps/web/app/api/pilot/auth/activate/',
     'apps/web/src/server/pilot/activation',
     'apps/web/src/server/pilot/pinPolicy',

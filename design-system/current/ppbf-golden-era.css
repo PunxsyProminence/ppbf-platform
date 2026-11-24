@@ -4677,7 +4677,9 @@
   padding: clamp(var(--s6), 4.5vw, var(--s8)) !important;
 }
 
-/* "The Bell": the reference sets it huge, upright, mixed-case, near-black --
+/* The sign-in page's h1 (it read "The Bell", the room's name, until FAM-15,
+   Jason's Q3 "A: Sign In"; it now reads "Sign In"): the reference sets it
+   huge, upright, mixed-case, near-black --
    the poster over the door. Alfa Slab One (the DS --font-stencil) is that heavy
    slab, so this only drops the stencil stamp's uppercase + rotation and lifts
    the scale and ink weight to the reference's presence. The decorative bell

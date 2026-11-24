@@ -13,7 +13,8 @@ import { installPilotApi, signInAtTheAthleteDoor, LOGIN_ROUTE } from './support/
    the genuine article.
 
    THE ATHLETE'S DOOR IS ITS OWN DOOR, AND THAT IS A SAFETY BOUNDARY.
-   /athlete/sign-in takes an Account ID and a six-digit PIN, and PIN sessions
+   /login's PIN form takes an Account ID and a six-digit PIN (the one athlete
+   PIN form since ATH-15, Q5 "A"; /athlete/sign-in redirects to it), and PIN sessions
    are athlete-only by design (credentialPolicy.usesPin, and
    resolveAuthoritativeRoleSession's `privileged_auth_required`). No identity
    provider is involved, so unlike the coach and guardian journeys this one is
@@ -118,10 +119,10 @@ test.describe('Athlete journey', () => {
     await signInAtTheAthleteDoor(page, {
       accountId: ACCOUNT_ID,
       pin: PIN,
-      // Every athlete account is issued a PIN by the gym and must change it on
-      // first use, so this -- not a workspace -- is the first thing an athlete
-      // ever sees after signing in. It is a valid session, not a refusal, and
-      // bouncing it to /login would loop forever.
+      // A session that still owes a PIN change goes to /change-pin, not a
+      // workspace. It is a valid session, not a refusal, and bouncing it to
+      // /login would loop forever. The helper keeps it signed out until the
+      // form has posted, so the form is what gets the athlete there.
       session: { role: 'athlete', athleteId: ATHLETE_ID, mustChangePin: true },
       routes: {
         [LOGIN_ROUTE]: (_url, route) => {
@@ -402,25 +403,31 @@ test.describe('Athlete journey', () => {
   });
 
   test('the athlete door refuses an account that is not an athlete', async ({ page }) => {
-    /* PIN sessions are athlete-only, and this page enforces it on the client
-       as well as the server. It matters in a browser because the refusal has
-       to be VISIBLE: a door that silently declines to move is the same
-       experience as a door that is broken. */
+    /* PIN sign-in is athlete-only, and the SERVER is the guard: a PIN for any
+       other role is refused before a session is minted (auth.ts
+       pinLoginPermitted, 'role_not_pin_eligible'), and the login route then
+       answers "Invalid credentials". The old /athlete/sign-in page also had a
+       client-side copy of the rule; since ATH-15 (Jason 2026-11-23, Q5 "A")
+       that page redirects to /login's PIN form, which has no copy of it.
+       What matters in a browser is still that the refusal is VISIBLE and
+       nobody moves on: a door that silently declines to move is the same
+       experience as a door that is broken.
+
+       The stub answers 200 with no role (installPilotApi fulfils every route
+       200); the form treats that exactly as the server's 401, the same
+       `!response.ok || !result.role` branch. */
     await signInAtTheAthleteDoor(page, {
       accountId: 'coach-account-0001',
       pin: PIN,
-      session: { role: 'coach' },
-      loginResponse: { ok: true, role: 'coach' },
+      session: null,
+      loginResponse: { ok: false, error: 'Invalid credentials' },
     });
 
-    /* Filtered rather than taken whole: Next mounts an empty
-       aria-live route announcer with role="alert" on every page, so a bare
-       getByRole('alert') is always ambiguous in this app. Asking for the
-       alert that carries the refusal keeps both halves of the claim -- the
-       words are there, and they are announced as an alert. */
-    const refusal = page.getByRole('alert').filter({ hasText: 'This sign-in page is for athlete accounts only.' });
+    /* Filtered rather than taken whole: Next mounts an empty aria-live route
+       announcer on every page. The refusal stamp announces as a status. */
+    const refusal = page.getByRole('status').filter({ hasText: 'Invalid credentials' });
     await expect(refusal).toBeVisible();
-    await expect(page).toHaveURL(/\/athlete\/sign-in$/);
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   /* The sparring log gained a "which athlete is this for" picker so that a
@@ -723,9 +730,10 @@ interface LoginAttempt {
  * positively identified. Everything else raises.
  */
 async function openAthleteWorkspace(page: Page): Promise<boolean> {
-  await page.goto('/athlete/sign-in');
-  await page.getByLabel(/Athlete Account ID/i).fill(OFFLINE_ATHLETE_ACCOUNT);
-  await page.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
+  await page.goto('/login');
+  const pinForm = page.getByRole('form', { name: 'Account ID & PIN' });
+  await pinForm.getByLabel('Account ID', { exact: true }).fill(OFFLINE_ATHLETE_ACCOUNT);
+  await pinForm.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
 
   /* Armed BEFORE the click, because a response cannot be waited for after it
      has already arrived. A transport failure is recorded separately: it
@@ -740,7 +748,7 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
     .waitForResponse((response) => new URL(response.url()).pathname === LOGIN_ROUTE, { timeout: 25000 })
     .catch(() => null);
 
-  await page.getByRole('button', { name: /Sign In/i }).click();
+  await pinForm.getByRole('button', { name: 'Sign In', exact: true }).click();
   const response = await pendingLogin;
   const login: LoginAttempt = {
     transportFailed: attempt.transportFailed,
@@ -784,12 +792,23 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
   /* The login itself succeeded, so the remaining question is only whether the
      page guard can resolve the cookie it set. */
   const deadline = Date.now() + 25000;
+  let leftLogin = false;
   for (;;) {
     const path = new URL(page.url()).pathname;
     if (path === '/athlete/dashboard') return true;
-    // requirePageRole could not resolve the session it was just handed, which
-    // is the documented no-database behaviour of a SERVER_GUARDED_ROUTE.
-    if (path === '/login') return false;
+    if (path !== '/login') leftLogin = true;
+    /* requirePageRole could not resolve the session it was just handed, which
+       is the documented no-database behaviour of a SERVER_GUARDED_ROUTE, and
+       the guard sends the browser to /login.
+
+       Since ATH-15 (Jason 2026-11-23, Q5 "A") the athlete signs in ON /login,
+       so being there right after the click is where the athlete starts, not
+       a bounce: the client's router.replace to /athlete/dashboard has not run
+       yet. Reading it as a bounce failed every A-FIN-10 proof in about 0.7 s
+       (#2149, job 137948488095). /login is a bounce only once the browser has
+       left it and come back, or is still there at the deadline (a soft move
+       to a guarded route can be redirected without the URL ever changing). */
+    if (path === '/login' && (leftLogin || Date.now() > deadline)) return false;
     if (Date.now() > deadline) {
       const body = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
       throw new Error(

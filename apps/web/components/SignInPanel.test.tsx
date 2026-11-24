@@ -143,10 +143,28 @@ describe('every way in still works', () => {
     expect(container.textContent ?? '').not.toContain('Set up your account');
   });
 
-  test('someone who has forgotten a PIN is not left without a door', async () => {
+  /* ATH-15, Jason 2026-11-23 Q5 "A" (lane SIGNIN-FIX #2143): one athlete PIN
+     form, here. The link to a second "simple" PIN page is gone (that address
+     now redirects to this form), and the form is a gym-floor surface, so the
+     kiosk floor lifts its labels to 19.1px and its controls to 55px. */
+  test('there is one athlete PIN form: no link to a second one, and it is a gym-floor surface', async () => {
     const { container } = await renderPanel();
 
-    expect(container.querySelector('a[href="/athlete/sign-in"]')).toBeTruthy();
+    expect(container.querySelector('a[href="/athlete/sign-in"]')).toBeNull();
+    expect(screen.queryByText(/Simple Athlete PIN Sign-In/i)).toBeNull();
+    const pinForm = screen.getByRole('form', { name: 'Account ID & PIN' });
+    expect(pinForm.getAttribute('data-surface')).toBe('kiosk');
+    expect(pinForm.querySelector('#signin-pin-heading')).toBeTruthy();
+    // Only the PIN form: the parents' and staff's ways keep the desk sizes.
+    expect(container.querySelectorAll('[data-surface="kiosk"]')).toHaveLength(1);
+  });
+
+  test('someone who has forgotten a PIN is sent to the gym office', async () => {
+    const { container } = await renderPanel();
+
+    expect((container.textContent ?? '').replace(/\s+/g, ' ')).toContain(
+      'If you do not have an Account ID or PIN, or if you have forgotten your PIN, ask the gym office.',
+    );
   });
 
   /* OW25-46 A (Jason: the gym office). Creating an account, issuing an
@@ -692,7 +710,8 @@ describe('a refused sign-in wears the right kind of "no"', () => {
       param: 'privileged_auth_required',
       kind: 'wrong_door',
       label: 'WRONG DOOR',
-      sentence: 'That area requires a Microsoft sign-in. Please continue with Microsoft.',
+      // Q6 "A: Say where" (Jason 2026-11-23): Microsoft is the last way below.
+      sentence: 'That area requires a Microsoft sign-in. Please use Continue With Microsoft, the last way below.',
     },
     {
       param: 'unsupported_role',
@@ -706,7 +725,7 @@ describe('a refused sign-in wears the right kind of "no"', () => {
       param: 'something-nobody-has-written-yet',
       kind: 'cannot_be_done',
       label: 'CANNOT BE DONE',
-      sentence: 'Microsoft sign-in failed. Please try again.',
+      sentence: 'Microsoft sign-in failed. Please try again with Continue With Microsoft, the last way below.',
     },
   ] as const;
 

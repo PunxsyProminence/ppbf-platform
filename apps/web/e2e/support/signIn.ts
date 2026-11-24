@@ -157,6 +157,12 @@ export interface InstallPilotApiOptions {
   /** null means "nobody is signed in" -- the session route answers 401 and
       every gate bounces to /login, which is the correct negative case. */
   readonly session: PilotSessionStub | null;
+  /** The session route answers 401 until the login route has been called.
+      /login asks who is signed in as it loads and moves a signed-in person on
+      at once, so a journey that signs in THROUGH its form must start signed
+      out, or the form is skipped and the test proves nothing (lane
+      SIGNIN-FIX #2149, review B). */
+  readonly signedInOnlyAfterLogin?: boolean;
   readonly routes?: PilotApiStubs;
   /** Every pilot path the page asked for that had no explicit stub. A journey
       can read this to see what a surface actually reaches for. */
@@ -182,13 +188,15 @@ export interface InstallPilotApiOptions {
 export async function installPilotApi(page: Page, options: InstallPilotApiOptions): Promise<string[]> {
   const { session, routes = {} } = options;
   const unstubbed = options.unstubbed ?? [];
+  let loginCalled = false;
 
   await page.route('**/api/pilot/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    if (path === LOGIN_ROUTE) loginCalled = true;
 
     if (path === SESSION_ROUTE) {
-      if (!session) {
+      if (!session || (options.signedInOnlyAfterLogin && !loginCalled)) {
         await fulfillJson(route, { authenticated: false }, 401);
         return;
       }
@@ -259,6 +267,7 @@ export async function signInAtTheAthleteDoor(
 ): Promise<void> {
   await installPilotApi(page, {
     ...options,
+    signedInOnlyAfterLogin: true,
     routes: {
       [LOGIN_ROUTE]: options.loginResponse ?? {
         ok: true,
@@ -269,10 +278,13 @@ export async function signInAtTheAthleteDoor(
     },
   });
 
-  await page.goto('/athlete/sign-in');
-  await page.getByLabel(/Athlete Account ID/i).fill(options.accountId);
-  await page.getByLabel(/^PIN/i).fill(options.pin);
-  await page.getByRole('button', { name: /Sign In/i }).click();
+  // One athlete PIN form, on /login (scrub ATH-15; Jason 2026-11-23, Q5 "A").
+  // Scoped to that form: /login also has the parents' "Sign In With Password".
+  await page.goto('/login');
+  const pinForm = page.getByRole('form', { name: 'Account ID & PIN' });
+  await pinForm.getByLabel('Account ID', { exact: true }).fill(options.accountId);
+  await pinForm.getByLabel(/^PIN/i).fill(options.pin);
+  await pinForm.getByRole('button', { name: 'Sign In', exact: true }).click();
 }
 
 /** Navigate to a client-gated surface with the session already installed.

@@ -91,7 +91,9 @@ const AUTH_ERROR_REFUSALS: Readonly<
   // allowed in, just not through the door they used or into that room.
   privileged_auth_required: {
     kind: 'wrong_door',
-    message: 'That area requires a Microsoft sign-in. Please continue with Microsoft.',
+    // Jason 2026-11-23, Q6 "A: Say where" (lane SIGNIN-FIX #2143): Microsoft
+    // is the last way on the page (Q2 "C: Parents first"), so the line says so.
+    message: 'That area requires a Microsoft sign-in. Please use Continue With Microsoft, the last way below.',
   },
   unsupported_role: {
     kind: 'wrong_door',
@@ -109,7 +111,8 @@ const UNKNOWN_AUTH_ERROR_REFUSAL: {
   readonly message: string;
 } = {
   kind: 'cannot_be_done',
-  message: 'Microsoft sign-in failed. Please try again.',
+  // Q6 "A: Say where", as above.
+  message: 'Microsoft sign-in failed. Please try again with Continue With Microsoft, the last way below.',
 };
 
 /**
@@ -674,6 +677,14 @@ export default function SignInPanel({
 
         <form
           aria-labelledby="signin-pin-heading"
+          /* THE ONE ATHLETE PIN FORM (scrub ATH-15; Jason 2026-11-23, Q5 "A",
+             lane SIGNIN-FIX #2143). /athlete/sign-in now redirects here, to
+             this form's heading. A child signs in here at the gym tablet, so
+             the form is a gym-floor surface: the design system's kiosk floor
+             (ppbf-foundation.css, [data-surface="kiosk"]) lifts its labels and
+             body text to 19.1px and every control to 55px, as the old athlete
+             page did by hand. */
+          data-surface="kiosk"
           onSubmit={(e) => {
             e.preventDefault();
             void loginWithPin();
@@ -840,9 +851,10 @@ export default function SignInPanel({
 
       {/* Help and gym notices sit outside the frame: the framed paper is the
           thing you fill in, and this is what's tacked up next to it. Kept in
-          both contexts (embedded or standalone) -- forgetting a PIN, or
-          needing the athlete door, is exactly as real from the popover as
-          from the standalone page. */}
+          both contexts (embedded or standalone) -- forgetting a PIN is exactly
+          as real from the popover as from the standalone page. The link to a
+          second, "simple" athlete PIN form is gone: there is one PIN form,
+          above (ATH-15, Q5 "A"). */}
       <section className="mt-[var(--s6)] grid gap-[var(--s5)] md:grid-cols-[var(--split-major)_var(--split-minor)]">
         <div>
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
@@ -855,9 +867,6 @@ export default function SignInPanel({
             If you do not have an Account ID or PIN, or if you have forgotten your PIN, ask the gym office. The
             office can create a new account or reset your PIN.
           </p>
-          <Link href="/athlete/sign-in" className="btn btn--ghost mt-[var(--s4)]">
-            Open Simple Athlete PIN Sign-In
-          </Link>
         </div>
         <div>
           <h2 className="t-label mb-[var(--s3)]">Gym Notice</h2>
