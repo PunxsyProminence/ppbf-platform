@@ -2444,6 +2444,18 @@ describe('invisible characters inside a word', () => {
     expect(scanForms('thanks coach \u2764\uFE0F the app')).toEqual(['thanks coach \u2764\uFE0F the app', 'thanks coach \u2764 the app']);
   });
 
+  // PR #2154 delta reviewer: a narrow space in a time or a grouped number does not use up the
+  // combinations, and a hidden character after a curly apostrophe still counts.
+  test('times and grouped numbers do not use up the combinations', () => {
+    const times = ' at 5:00\u202FPM'.repeat(5) + ' and 1\u202F000';
+    expect(scanForSafetyLanguage('he says its our\u200Bse\u200Bcret' + times).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each(['\u2018', '\u00B4', '`'])('a run after the apostrophe look-alike %j still counts', (mark) => {
+    // "don[mark][U+200B]t[U+200B]tell": the first run must be removed and the second read as a space.
+    expect(scanForSafetyLanguage(`he said don${mark}\u200Bt\u200Btell anyone`).cues).toContain('secrecy');
+  });
+
   test('a long message gets fewer combined runs', () => {
     const long = 'x'.repeat(12000) + ' ' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].join('\u200B');
     const forms = scanForms(long);
@@ -2463,10 +2475,11 @@ describe('invisible characters inside a word', () => {
   });
 
   test('a message with more runs than the cap is read three ways, not in every combination', () => {
-    // n runs sit between n + 1 words.
-    const many = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 2 }, (_, i) => `w${i}`).join('\u200B');
+    // n runs sit between n + 1 words (letters only: a run that touches a digit does not count).
+    const word = (i: number) => String.fromCharCode(97 + i).repeat(2);
+    const many = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 2 }, (_, i) => word(i)).join('\u200B');
     expect(scanForms(many)).toEqual([many, many.replace(/\u200B/g, ''), many.replace(/\u200B/g, ' ')]);
-    const few = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 1 }, (_, i) => `w${i}`).join('\u200B');
+    const few = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 1 }, (_, i) => word(i)).join('\u200B');
     expect(scanForms(few)).toHaveLength(1 + 2 ** MAX_COMBINED_INVISIBLE_RUNS);
   });
 });

@@ -75,27 +75,31 @@ export function normalizeForSafetyScan(body: string): string {
  */
 export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u2009\u200A\u202F]/gu;
 
-/** One run of invisible characters: a run is one place where the text may be joined or split. */
-const INVISIBLE_RUN = new RegExp(`${INVISIBLE_FORMAT.source}+`, 'gu');
-
-/** A run can hide a word only between two word characters (letters, digits, an apostrophe). */
-const WORD_CHARACTER = /[\p{L}\p{N}'\u2019\u02BC]/u;
+/** One run of invisible characters, kept by the split so a run can be put back as typed. */
+const INVISIBLE_RUN_KEPT = new RegExp(`(${INVISIBLE_FORMAT.source}+)`, 'u');
 
 /**
- * The most such runs read in every combination: 6 give 64 readings. Runs that are not between two
- * word characters (an emoji's variation selector or joiner, a mark before a space) are only
- * removed and do not count (PR #2154 reviewers: six hearts switched the combinations off).
+ * A run can join or split a word only between two letters or apostrophes (every look-alike the
+ * normal form folds). A run that touches a digit, a space, punctuation or an emoji does not count:
+ * "5:00[U+202F]PM", "1[U+202F]000", a heart's variation selector (PR #2154 reviewers: each of
+ * these used up the combinations and switched them off).
+ */
+const WORD_CHARACTER = new RegExp(`\\p{L}|${APOSTROPHE_LIKE.source}`, 'u');
+
+/**
+ * The most counted runs read in every combination: 6 give 64 readings. A run that does not count
+ * is read as typed in every combination (and removed in the all-removed form).
  */
 export const MAX_COMBINED_INVISIBLE_RUNS = 6;
 
 /**
  * The combinations times the message length stay under this many characters, so a long message
- * gets fewer combined runs: about 6 runs up to 2,000 characters, 3 at 12,000 (the SHADOW chat
- * limit). PR #2154 reviewer measured detectShadowDisclosure at about 0.6 s for a 12,000-character
- * message read 65 ways; this keeps it near a tenth of that. Over the cap a message is read as
- * typed, with every run removed, and with every word-character run a space.
+ * gets fewer combined runs: 5 up to 2,000 characters, 2 at 12,000 (the SHADOW chat limit). PR #2154
+ * reviewers measured about 0.2 s per call near a 128,000 budget (and 0.6 s with no budget); this
+ * halves it. Over the cap a message is read as typed, with every run removed, and with every
+ * counted run a space.
  */
-const COMBINATION_BUDGET = 128_000;
+const COMBINATION_BUDGET = 64_000;
 
 /**
  * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;
@@ -117,26 +121,34 @@ export function scanForms(body: string): readonly string[] {
   // reviewer). So each run is read both ways, in every combination up to the cap. The first form
   // is the text as typed and the second the text with every run removed, as before; the rest
   // only ever add a reading.
-  const segments = body.split(INVISIBLE_RUN);
-  if (segments.length === 1) return [body];
-  // The runs that sit between two word characters, by run index; only these may be read as spaces.
-  const wordRuns = segments.slice(0, -1).flatMap((segment, run) => {
-    const before = [...segment].pop() ?? '';
+  // split with a capture group: text, run, text, run, ... text.
+  const parts = body.split(new RegExp(INVISIBLE_RUN_KEPT.source, 'gu'));
+  if (parts.length === 1) return [body];
+  const segments = parts.filter((_, index) => index % 2 === 0);
+  const runText = parts.filter((_, index) => index % 2 === 1);
+  // The runs that sit between two letters or apostrophes, by run index; only these may be read as spaces.
+  const wordRuns = runText.flatMap((_, run) => {
+    const before = [...segments[run]].pop() ?? '';
     const after = [...segments[run + 1]][0] ?? '';
     return WORD_CHARACTER.test(before) && WORD_CHARACTER.test(after) ? [run] : [];
   });
-  const joined = (spaced: ReadonlySet<number>) => segments
-    .reduce((text, segment, index) => (index === 0 ? segment : text + (spaced.has(index - 1) ? ' ' : '') + segment), '');
+  const counted = new Set(wordRuns);
+  // A counted run is removed or a space; a run that does not count stays as typed.
+  const joined = (spaced: ReadonlySet<number>) => segments.reduce((text, segment, index) => {
+    if (index === 0) return segment;
+    const run = index - 1;
+    const between = counted.has(run) ? (spaced.has(run) ? ' ' : '') : runText[run];
+    return text + between + segment;
+  }, '');
   let cap = MAX_COMBINED_INVISIBLE_RUNS;
   while (cap > 0 && 2 ** cap * Math.max(body.length, 1) > COMBINATION_BUDGET) cap -= 1;
-  const forms = new Set<string>();
+  const forms = new Set<string>([segments.join('')]);
   if (wordRuns.length <= cap) {
     for (let mask = 0; mask < 2 ** wordRuns.length; mask += 1) {
       forms.add(joined(new Set(wordRuns.filter((_, bit) => ((mask >> bit) & 1) === 1))));
     }
   } else {
-    forms.add(joined(new Set()));
-    forms.add(joined(new Set(wordRuns)));
+    forms.add(joined(counted));
   }
   forms.delete(body);
   return [body, ...forms];

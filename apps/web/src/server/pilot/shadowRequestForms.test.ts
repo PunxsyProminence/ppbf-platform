@@ -88,6 +88,11 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(answer.valid).toBe(false);
   });
 
+  test('times with a narrow space do not switch off the combined readings', () => {
+    const answer = check("I can't\u200Bbre\u200Bathe after that hit" + ' at 5:00\u202FPM'.repeat(5));
+    expect(answer.classification).toBe('urgent_personal_symptom');
+  });
+
   test("CRITICAL_REVIEW_TOPICS is the chat route's own critical list", () => {
     const route = readFileSync(join(__dirname, '../../../app/api/pilot/shadow/chat/route.ts'), 'utf8');
     const list = /const reviewIsCritical = \[([^\]]*)\]/.exec(route)?.[1] ?? '';
