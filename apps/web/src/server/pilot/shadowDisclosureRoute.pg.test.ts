@@ -143,6 +143,9 @@ const SENTENCES: ReadonlyArray<{ message: string; staff: boolean }> = [
   { message: 'my coach makes me stay behind after everyone leaves', staff: true },
   { message: 'My dad hits me', staff: false },
   { message: 'I want to kill myself', staff: false },
+  // Codex P1 on #2138 / Claude Science F4 (2026-11-24): a zero-width space inside "coach"
+  // must not hide the staff word; the message files admin-only as the plain one does.
+  { message: 'My co\u200Bach hits me and I am scared to go to the gym', staff: true },
 ];
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);

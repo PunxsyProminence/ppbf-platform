@@ -524,3 +524,36 @@ describe('HF12b: the spelled-out reading only adds routing evidence', () => {
     expect(detectShadowDisclosure('he hits me when we s p a r', 'athlete')).not.toBeNull();
   });
 });
+
+// Codex P1 on #2138, Claude Science F4 (reopened PAIN-NOTES lane, 2026-11-24): an invisible
+// character inside "coach" hid the staff word, so a SHADOW chat message (and a pain note, which
+// uses this same check) about a coach was not filed admin-only. OD-2026-11-23-003 "A: Keep strict".
+describe('invisible characters inside a staff word (SHADOW chat and pain notes)', () => {
+  test.each(['\u200B', '\u200C', '\u200D', '\u2060', '\u00AD', '\uFEFF'])(
+    'U+%s inside "coach" is still a staff disclosure, filed admin-only',
+    (mark) => {
+      const disclosure = detectShadowDisclosure(`My co${mark}ach hits me and I am scared to go to the gym`, 'athlete');
+      expect(disclosure).not.toBeNull();
+      expect(disclosure?.namesGymStaff).toBe(true);
+      expect(disclosure?.adminOnly).toBe(true);
+      expect(namesGymStaff(`my co${mark}ach`)).toBe(true);
+    },
+  );
+
+  test('an invisible character as the only gap before "coach" still names the coach', () => {
+    expect(detectShadowDisclosure('my\u200Bcoach hits me', 'athlete')?.adminOnly).toBe(true);
+  });
+
+  test('a routine pain note naming a coach, with a hidden character, is held as the plain one is (Q7)', () => {
+    const plain = detectShadowDisclosure('hurt my wrist on the heavy bag, coach wrapped it', 'athlete');
+    const hidden = detectShadowDisclosure('hurt my wrist on the heavy bag, co\u200Bach wrapped it', 'athlete');
+    expect(plain?.adminOnly).toBe(true);
+    expect(hidden?.adminOnly).toBe(true);
+  });
+
+  test('ordinary messages get the same verdict as before', () => {
+    expect(detectShadowDisclosure('my knee hurts since practice', 'athlete')).toBeNull();
+    expect(detectShadowDisclosure('how do I keep my guard up when sparring', 'athlete')).toBeNull();
+    expect(detectShadowDisclosure('My dad hits me', 'athlete')?.adminOnly).toBe(false);
+  });
+});

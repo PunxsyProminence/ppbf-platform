@@ -190,9 +190,9 @@ async function filePain(note: unknown, options: { as?: PilotPrincipal; value?: n
   return { status: response.status, body: await response.json() as Record<string, unknown> };
 }
 
-async function readPainList(as: PilotPrincipal) {
+async function readPainList(as: PilotPrincipal, query = '') {
   mockRequirePrincipal.mockResolvedValue(as);
-  const response = await painReportsGET(new NextRequest('http://localhost/api/pilot/coach/pain-reports'));
+  const response = await painReportsGET(new NextRequest(`http://localhost/api/pilot/coach/pain-reports${query}`));
   return { status: response.status, body: await response.json() as { painReports?: Array<Record<string, unknown>> } };
 }
 
@@ -625,6 +625,61 @@ describe('Mark reviewed (DR-25)', () => {
 });
 
 // Q12 A on #2139: "Read the note" on a pain-note escalation, through the near miss it points at.
+// Codex P1 on #2138, Claude Science F4 (reopened lane, 2026-11-24): a zero-width character inside
+// a staff word no longer hides it. The note is held for admins (OD-2026-11-23-003, "A: Keep
+// strict") and stored exactly as the athlete typed it.
+// Jason's Q11, OD-2026-11-23-006, "A: Keep them off" (reopened lane, R2): the class screen's read
+// (notes=none) receives no note text and no admin-only marker; the coach home's read keeps both.
+describe('the floor tablet read carries no notes (R2)', () => {
+  test('notes=none: no note key, no admin-only key and no note words, for an admin and a coach', async () => {
+    await filePain(STAFF_DISCLOSURE);
+    await filePain('sore after sparring');
+
+    for (const as of [AS.orgAdmin(), AS.coach()]) {
+      const floor = await readPainList(as, '?notes=none');
+      expect(floor.status).toBe(200);
+      expect(floor.body.painReports).toHaveLength(2);
+      for (const report of floor.body.painReports!) {
+        expect(report).not.toHaveProperty('note');
+        expect(report).not.toHaveProperty('noteAdminOnly');
+        // The rest of the report is unchanged: the review state still travels.
+        expect(report).toHaveProperty('reviewed', null);
+        expect(report).toHaveProperty('painScore', 3);
+      }
+      const text = JSON.stringify(floor.body);
+      expect(text).not.toContain('hits me');
+      expect(text).not.toContain('sore after sparring');
+    }
+
+    // The coach home keeps them.
+    const home = await readPainList(AS.orgAdmin());
+    expect(home.body.painReports!.map((report) => [report.note, report.noteAdminOnly]).sort()).toEqual([
+      [STAFF_DISCLOSURE, true],
+      ['sore after sparring', false],
+    ]);
+  });
+
+  test('any other notes value is refused', async () => {
+    expect((await readPainList(AS.coach(), '?notes=all')).status).toBe(400);
+  });
+});
+
+describe('a note with an invisible character inside a staff word (R1)', () => {
+  test.each(['\u200B', '\u00AD', '\uFEFF'])('U+%s inside "coach": held for admins, escalated admin-only, stored as typed', async (mark) => {
+    const typed = `My co${mark}ach hits me`;
+    expect((await filePain(typed)).status).toBe(200);
+
+    const [row] = await nearMisses();
+    expect(row.athlete_note).toBe(typed);
+    expect(row.athlete_note_admin_only).toBe(true);
+    expect((await escalations()).map((escalation) => escalation.source_type)).toEqual(['athlete_voice']);
+
+    const coach = await readPainList(AS.coach());
+    expect(coach.body.painReports!.map((report) => report.note)).toEqual([null]);
+    expect(JSON.stringify(coach.body)).not.toContain('hits me');
+  });
+});
+
 describe('Read the note (DR-25, Q12 A)', () => {
   test('an admin reads a held note and is told it is held; a coach gets the same 404 as a missing report', async () => {
     await filePain(STAFF_DISCLOSURE);

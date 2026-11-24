@@ -63,6 +63,32 @@ export function normalizeForSafetyScan(body: string): string {
 }
 
 /**
+ * Invisible characters that change no word a reader sees: every Unicode format character
+ * (category Cf -- zero-width space U+200B, zero-width non-joiner and joiner U+200C/D, word
+ * joiner U+2060, soft hyphen U+00AD, byte-order mark U+FEFF, direction marks and isolates, tag
+ * characters) plus the variation selectors (U+FE00-FE0F, U+E0100-E01EF).
+ */
+const INVISIBLE_FORMAT = /[\p{Cf}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu;
+
+/**
+ * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;
+ * the reopened PAIN-NOTES lane, 2026-11-24).
+ *
+ * The normal form turns every character that is not a letter or digit into a space, so one
+ * invisible character inside a word split it: "co[U+200B]ach" read as "co ach", and a note
+ * naming a coach was not held for admins (OD-2026-11-23-003, "A: Keep strict"); "se[U+200B]cret"
+ * and "hu[U+200D]rts" lost their cues altogether, in every channel. Stripping alone would break
+ * the opposite case -- "my[U+200B]coach" relies on the character reading as a space -- so both
+ * forms are read: the text as typed (each invisible character a space, as before) and the text
+ * with them removed. A cue or a staff word found in either counts; the second form only ever adds
+ * a match. Nothing is rewritten in what is stored: this is the scan's reading, not the record.
+ */
+export function scanForms(body: string): readonly string[] {
+  const stripped = body.replace(INVISIBLE_FORMAT, '');
+  return stripped === body ? [body] : [body, stripped];
+}
+
+/**
  * The same normal form with HF12b's rewrites (spelled-out words joined, the
  * sexual-assault abbreviation spelled out, "ur self"): an extra reading,
  * never a replacement. The cues read both, and the SHADOW
@@ -422,9 +448,13 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   // happened to hold the key.
   // The spelled-out reading is added, never substituted, so every cue main's
   // normal form gave is still given.
-  const normalized = normalizeForSafetyScan(body);
-  const spelled = spelledOutReading(body);
-  const readings = [...new Set([normalized, collapseFully(normalized), spelled, collapseFully(spelled, true)])];
+  // Each form of the text (scanForms: as typed, and with invisible characters removed) gives
+  // its four readings.
+  const readings = [...new Set(scanForms(body).flatMap((form) => {
+    const normalized = normalizeForSafetyScan(form);
+    const spelled = spelledOutReading(form);
+    return [normalized, collapseFully(normalized), spelled, collapseFully(spelled, true)];
+  }))];
   const cues = SAFETY_CUES
     .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);

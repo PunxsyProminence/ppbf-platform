@@ -81,7 +81,7 @@ const PAIN_EMPTY = { ok: true, windowDays: 7, truncated: false, painReports: [] 
 function painRow(id: string, name: string) {
   return {
     nearMissId: id, athleteId: `ath_${id}`, athleteName: name, severity: 'moderate', painScore: 5,
-    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete', note: null, reviewed: null,
+    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete', reviewed: null,
   };
 }
 const painReads = (fetchMock: jest.Mock) => fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/coach/pain-reports'));
@@ -421,32 +421,35 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(screen.getAllByRole('article')).toHaveLength(2);
     expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
     // One read, with limit=50, for both.
-    expect(painReads(fetchMock).map(([url]) => String(url))).toEqual(['/api/pilot/coach/pain-reports?limit=50']);
+    expect(painReads(fetchMock).map(([url]) => String(url))).toEqual(['/api/pilot/coach/pain-reports?limit=50&notes=none']);
     // No floor board here: the link to record what was done is the panel's.
     expect(screen.getByRole('link', { name: 'Record What You Did' })).toHaveAttribute('href', '/coach/decision-loop');
   });
 
-  // DR-25 (PR 3 reviewers A and B): the floor tablet draws no athlete's note and no review control,
-  // even when the read carries an admin's copy of a held note.
-  test('the floor tablet shows no note and no Mark reviewed, even for an admin\'s held note', async () => {
-    serve({
+  // DR-25 (PR 3 reviewers A and B; Jason's Q11, OD-2026-11-23-006, "A: Keep them off"; the
+  // reopened lane's R2): the floor tablet asks for its pain read without notes, draws no note and
+  // no review control, and a row that arrives with a note anyway is not drawn.
+  test('the floor tablet asks for no notes, shows no note or Mark reviewed, and does not draw a row that carries one', async () => {
+    const { fetchMock } = serve({
       live,
       pain: () => jsonResponse({
         ...PAIN_EMPTY,
         painReports: [
-          { ...painRow('n1', 'Casey R.'), note: 'My coach hits me', noteAdminOnly: true },
-          { ...painRow('n2', 'Jordan P.'), note: 'sore after sparring', noteAdminOnly: false },
+          painRow('n1', 'Casey R.'),
+          { ...painRow('n2', 'Jordan P.'), note: 'My coach hits me', noteAdminOnly: true },
         ],
       }),
     });
     await open();
 
-    expect(await screen.findAllByRole('article')).toHaveLength(2);
+    expect(await screen.findAllByRole('article')).toHaveLength(1);
+    expect(painReads(fetchMock).map(([url]) => String(url))[0]).toBe('/api/pilot/coach/pain-reports?limit=50&notes=none');
     expect(screen.queryByText('My coach hits me')).toBeNull();
-    expect(screen.queryByText('sore after sparring')).toBeNull();
     expect(screen.queryByText("Athlete's note")).toBeNull();
     expect(screen.queryByText("Only admins see this note. A coach's review does not cover it.")).toBeNull();
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
+    // The row it could not draw says so, never a quiet short list.
+    expect(screen.getByText(/Pain reports may exist that are not shown here\./)).toBeInTheDocument();
   });
 
   test.each([

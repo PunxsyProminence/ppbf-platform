@@ -5,7 +5,7 @@ import {
   type SafetyEscalationRow,
   type SafetyEscalationSourceType,
 } from './escalationLadder';
-import { normalizeForSafetyScan, scanForSafetyLanguage, spelledOutReading } from './feedbackSafetyScan';
+import { normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
 import type { ShadowValidationResult } from './shadowChat';
 
 /**
@@ -123,7 +123,9 @@ function foldForStaffMatch(normalized: string): string {
  * reading only ever adds a match to what the normal form gave.
  */
 function readingsOf(message: string): readonly string[] {
-  return [normalizeForSafetyScan(message), spelledOutReading(message)];
+  // Each form of the message (scanForms: as typed, and with invisible characters removed, so
+  // "co[U+200B]ach" is still a coach) gives both readings.
+  return scanForms(message).flatMap((form) => [normalizeForSafetyScan(form), spelledOutReading(form)]);
 }
 
 function matchesStaffForm(message: string, pattern: RegExp): boolean {
