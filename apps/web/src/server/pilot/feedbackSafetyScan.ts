@@ -68,9 +68,38 @@ export function normalizeForSafetyScan(body: string): string {
  * joiner U+2060, soft hyphen U+00AD, byte-order mark U+FEFF, direction marks and isolates, tag
  * characters) and every default-ignorable code point (which adds the variation selectors, the
  * combining grapheme joiner U+034F, and the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0 --
- * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A).
+ * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A) -- and
+ * U+2800, the Braille blank, which draws as an empty cell and is used the same way, and the
+ * near-invisible thin, hair and narrow no-break spaces U+2009, U+200A and U+202F (PR #2152 and
+ * #2154 reviewers: none is a format character, and no pattern's whitespace class matched them).
  */
-export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u2009\u200A\u202F]/gu;
+
+/** One run of invisible characters, kept by the split so a run can be put back as typed. */
+const INVISIBLE_RUN_KEPT = new RegExp(`(${INVISIBLE_FORMAT.source}+)`, 'u');
+
+/**
+ * A run can join or split a word only between two letters or apostrophes (every look-alike the
+ * normal form folds). A run that touches a digit, a space, punctuation or an emoji does not count:
+ * "5:00[U+202F]PM", "1[U+202F]000", a heart's variation selector (PR #2154 reviewers: each of
+ * these used up the combinations and switched them off).
+ */
+const WORD_CHARACTER = new RegExp(`\\p{L}|${APOSTROPHE_LIKE.source}`, 'u');
+
+/**
+ * The most counted runs read in every combination: 6 give 64 readings. A run that does not count
+ * is read as typed in every combination (and removed in the all-removed form).
+ */
+export const MAX_COMBINED_INVISIBLE_RUNS = 6;
+
+/**
+ * The combinations times the message length stay under this many characters, so a long message
+ * gets fewer combined runs: 5 up to 2,000 characters, 2 at 12,000 (the SHADOW chat limit). PR #2154
+ * reviewers measured about 0.2 s per call near a 128,000 budget (and 0.6 s with no budget); this
+ * halves it. Over the cap a message is read as typed, with every run removed, and with every
+ * counted run a space.
+ */
+const COMBINATION_BUDGET = 64_000;
 
 /**
  * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;
@@ -86,8 +115,52 @@ export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
  * a match. Nothing is rewritten in what is stored: this is the scan's reading, not the record.
  */
 export function scanForms(body: string): readonly string[] {
-  const stripped = body.replace(INVISIBLE_FORMAT, '');
-  return stripped === body ? [body] : [body, stripped];
+  // Each run of invisible characters may sit inside a word ("bre[U+200B]athe": remove it) or in
+  // place of a space ("can't[U+200B]breathe": read it as one), and one message can hold both:
+  // "can't[U+200B]bre[U+200B]athe" read only all-removed or all-space hid the emergency (PR #2152
+  // reviewer). So each run is read both ways, in every combination up to the cap. The first form
+  // is the text as typed and the second the text with every run removed, as before; the rest
+  // only ever add a reading.
+  // split with a capture group: text, run, text, run, ... text.
+  const parts = body.split(new RegExp(INVISIBLE_RUN_KEPT.source, 'gu'));
+  if (parts.length === 1) return [body];
+  const segments = parts.filter((_, index) => index % 2 === 0);
+  const runText = parts.filter((_, index) => index % 2 === 1);
+  // The runs that sit between two letters or apostrophes, by run index; only these may be read as spaces.
+  const wordRuns = runText.flatMap((_, run) => {
+    const before = [...segments[run]].pop() ?? '';
+    const after = [...segments[run + 1]][0] ?? '';
+    return WORD_CHARACTER.test(before) && WORD_CHARACTER.test(after) ? [run] : [];
+  });
+  const counted = new Set(wordRuns);
+  // A counted run is removed or a space; a run that does not count stays as typed.
+  const joined = (spaced: ReadonlySet<number>) => segments.reduce((text, segment, index) => {
+    if (index === 0) return segment;
+    const run = index - 1;
+    const between = counted.has(run) ? (spaced.has(run) ? ' ' : '') : runText[run];
+    return text + between + segment;
+  }, '');
+  let cap = MAX_COMBINED_INVISIBLE_RUNS;
+  while (cap > 0 && 2 ** cap * Math.max(body.length, 1) > COMBINATION_BUDGET) cap -= 1;
+  const forms = new Set<string>([segments.join('')]);
+  if (wordRuns.length <= cap) {
+    for (let mask = 0; mask < 2 ** wordRuns.length; mask += 1) {
+      forms.add(joined(new Set(wordRuns.filter((_, bit) => ((mask >> bit) & 1) === 1))));
+    }
+  } else {
+    forms.add(joined(counted));
+    // Over the cap, each counted run is also read the other way round on its own (only it a
+    // space; only it removed), while the budget allows: a long message with a hidden emergency
+    // and another hidden character elsewhere still has a reading with each run read right
+    // (PR #2154 delta reviewer).
+    for (const run of wordRuns) {
+      if ((forms.size + 2) * Math.max(body.length, 1) > COMBINATION_BUDGET) break;
+      forms.add(joined(new Set([run])));
+      forms.add(joined(new Set(wordRuns.filter((other) => other !== run))));
+    }
+  }
+  forms.delete(body);
+  return [body, ...forms];
 }
 
 /**

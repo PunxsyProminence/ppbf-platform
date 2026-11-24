@@ -3,7 +3,9 @@
 // its plain spelling gets, and plain text keeps validateShadowRequest's own answer.
 
 import { classifyHighRiskTopic, validateShadowRequest } from './shadowChat';
-import { validateShadowRequestInEveryForm } from './shadowRequestForms';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CRITICAL_REVIEW_TOPICS, HIGH_RISK_TOPIC_ORDER, validateShadowRequestInEveryForm } from './shadowRequestForms';
 
 const check = (message: string) => validateShadowRequestInEveryForm(message, 'athlete', 'org-test');
 
@@ -53,6 +55,75 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(validateShadowRequest(hidden, 'athlete', 'org-test').highRisk).not.toBe(true);
 
     expect(check(hidden)).toEqual(plainAnswer);
+  });
+
+  // PR #2152 reviewers: two invisible characters doing different jobs, and two topics.
+  test.each([
+    ["I can't\u200Bbre\u200Bathe after that hit", "I can't breathe after that hit"],
+    ["I can\u200B't\u200Bbreathe after that hit", "I can't breathe after that hit"],
+    ['what is ch\u200Best\u200Bpain', 'what is chest pain'],
+    ['what is ch\u200Best pain and surgery', 'what is chest pain and surgery'],
+    ["I can't\u2800breathe after that hit", "I can't breathe after that hit"],
+    ["I can't bre\u200Aathe after that hit", "I can't breathe after that hit"],
+    ["I can't bre\u2009athe after that hit", "I can't breathe after that hit"],
+  ])('%j gets the answer %j gets', (hidden, plain) => {
+    expect(check(hidden)).toEqual(validateShadowRequest(plain, 'athlete', 'org-test'));
+  });
+
+  // PR #2154 safety reviewer: a topic the route files as critical ranks first, so a hidden topic
+  // never drops the review row from critical to high (main gave chest_pain for both).
+  test.each([
+    'what is chest pain and con\u200Bcussion',
+    'what is con\u200Bcussion and chest pain',
+  ])('%j keeps the critical topic', (hidden) => {
+    const answer = check(hidden);
+    expect(answer.highRisk).toBe(true);
+    expect(answer.topic).toBe('chest_pain');
+  });
+
+  // PR #2154 reviewers: emoji (variation selectors, joiners) do not use up the combinations.
+  test('six emoji hearts do not switch off the combined readings', () => {
+    const answer = check("I can't\u200Bbre\u200Bathe after that hit " + '\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F');
+    expect(answer.classification).toBe('urgent_personal_symptom');
+    expect(answer.valid).toBe(false);
+  });
+
+  test('times with a narrow space do not switch off the combined readings', () => {
+    const answer = check("I can't\u200Bbre\u200Bathe after that hit" + ' at 5:00\u202FPM'.repeat(5));
+    expect(answer.classification).toBe('urgent_personal_symptom');
+  });
+
+  test('a long message over the cap still reads each run the other way on its own', () => {
+    const padding = ' that was in\u00ADcredible' + ' and we kept training hard'.repeat(340);
+    const message = "I can't\u200Bbre\u200Bathe after that hit" + padding;
+    expect(message.length).toBeGreaterThan(8000);
+    expect(check(message).classification).toBe('urgent_personal_symptom');
+  });
+
+  test("CRITICAL_REVIEW_TOPICS is the chat route's own critical list", () => {
+    const route = readFileSync(join(__dirname, '../../../app/api/pilot/shadow/chat/route.ts'), 'utf8');
+    const list = /const reviewIsCritical = \[([^\]]*)\]/.exec(route)?.[1] ?? '';
+    const topics = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(topics.filter((t) => t !== 'urgent_personal_symptom').sort()).toEqual([...CRITICAL_REVIEW_TOPICS].sort());
+  });
+
+  test("HIGH_RISK_TOPIC_ORDER is classifyHighRiskTopic's own order", () => {
+    const probe: Record<string, string> = {
+      concussion: 'concussion', head_trauma: 'head injury', loss_of_consciousness: 'passed out',
+      dizziness: 'dizziness', dehydration: 'dehydration', weight_cutting: 'cut weight',
+      rapid_weight_loss: 'fast weight loss', chest_pain: 'chest pain', fainting: 'fainting',
+      medication: 'taking medication', prescription: 'prescription', surgery: 'surgery',
+      injection: 'injection', return_to_play: 'return to play', medical_clearance: 'medical clearance',
+      youth_safety: 'child safety', urgent_symptom: 'headache',
+    };
+    expect(Object.keys(probe).sort()).toEqual([...HIGH_RISK_TOPIC_ORDER].sort());
+    for (const topic of HIGH_RISK_TOPIC_ORDER) {
+      expect(classifyHighRiskTopic(`what is ${probe[topic]}`).topic).toBe(topic);
+    }
+    for (let i = 0; i + 1 < HIGH_RISK_TOPIC_ORDER.length; i += 1) {
+      const [first, next] = [HIGH_RISK_TOPIC_ORDER[i], HIGH_RISK_TOPIC_ORDER[i + 1]];
+      expect(classifyHighRiskTopic(`what is ${probe[next]} and ${probe[first]}`).topic).toBe(first);
+    }
   });
 
   test('a message withheld only in its typed form stays withheld', () => {

@@ -30,6 +30,33 @@ import { type ShadowValidationResult, validateShadowRequest } from './shadowChat
  * them statement for statement equal to main's but for the apostrophe fold, and that proof stays
  * whole when they are left as they are.
  */
+/**
+ * The topics whose review row the chat route files as critical (route.ts, reviewIsCritical; pinned
+ * to the route's source by shadowRequestForms.test.ts). They rank first, so a hidden topic can
+ * never drop a row from critical to high: "what is chest pain and con[U+200B]cussion" keeps
+ * chest_pain, as main gave it (PR #2154 safety reviewer).
+ */
+export const CRITICAL_REVIEW_TOPICS: readonly string[] = ['chest_pain', 'fainting', 'loss_of_consciousness'];
+
+/**
+ * After those, classifyHighRiskTopic's own order (shadowChat.ts): the first pattern that matches a
+ * message gives its topic, so this is the topic the plain spelling gets. shadowRequestForms.test.ts
+ * pins it to the classifier, pair by pair. ("what is ch[U+200B]est pain and surgery": as typed,
+ * surgery; removed, chest pain; PR #2152 reviewer.)
+ */
+export const HIGH_RISK_TOPIC_ORDER: readonly string[] = [
+  'concussion', 'head_trauma', 'loss_of_consciousness', 'dizziness', 'dehydration', 'weight_cutting',
+  'rapid_weight_loss', 'chest_pain', 'fainting', 'medication', 'prescription', 'surgery', 'injection',
+  'return_to_play', 'medical_clearance', 'youth_safety', 'urgent_symptom',
+];
+
+const topicRank = (topic: string | undefined): number => {
+  const critical = CRITICAL_REVIEW_TOPICS.indexOf(topic ?? '');
+  if (critical >= 0) return critical;
+  const rank = HIGH_RISK_TOPIC_ORDER.indexOf(topic ?? '');
+  return CRITICAL_REVIEW_TOPICS.length + (rank < 0 ? HIGH_RISK_TOPIC_ORDER.length : rank);
+};
+
 export function validateShadowRequestInEveryForm(
   message: string,
   userRole: string,
@@ -40,6 +67,6 @@ export function validateShadowRequestInEveryForm(
   const results = readings.map((form) => validateShadowRequest(form, userRole, organizationId));
   return results.find((result) => result.classification === 'urgent_personal_symptom')
     ?? results.find((result) => !result.valid)
-    ?? results.find((result) => result.highRisk === true)
+    ?? results.filter((result) => result.highRisk === true).sort((a, b) => topicRank(a.topic) - topicRank(b.topic))[0]
     ?? results[0];
 }

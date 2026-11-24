@@ -9,7 +9,7 @@
 // "routes to a human" list is long and forgiving, and the "stays product" list
 // holds only sentences that are plainly about the software.
 
-import { normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
+import { MAX_COMBINED_INVISIBLE_RUNS, normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
 import { decideFeedbackRoute } from './feedback';
 
 describe('language that must reach a person', () => {
@@ -2413,13 +2413,77 @@ describe('invisible characters inside a word', () => {
 
   test('ordinary text that does have a second form (emoji with a variation selector or a joiner) keeps its verdict', () => {
     for (const text of ['thanks coach \u2764\uFE0F the app is great', 'our family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} loves the gym']) {
-      expect(scanForms(text)).toHaveLength(2);
+      const forms = scanForms(text);
+      expect(forms[0]).toBe(text);
+      expect(forms.length).toBeGreaterThan(1);
       expect(scanForSafetyLanguage(text)).toEqual({ safeguarding: false, cues: [] });
       expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('product');
     }
   });
 
-  test('the forms are the text as typed and the text with invisible characters removed', () => {
-    expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach']);
+  test('the forms are the text as typed, the text with invisible characters removed, then each run read as a space', () => {
+    expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach', 'co ach']);
+    // A run of several invisible characters is one place, read once each way.
+    expect(scanForms('co\u200B\u200Dach')).toEqual(['co\u200B\u200Dach', 'coach', 'co ach']);
+  });
+
+  // PR #2152 reviewer: one invisible character inside a word and another in place of a space, in
+  // the same message, hid a disclosure from both the all-removed and the all-space reading.
+  test.each([
+    ['he says its our\u200Bse\u200Bcret', 'grooming_or_isolation'],
+    ['my\u200Bcoach hu\u200Brts me', null],
+  ])('%j, with invisible characters doing two different jobs, still reaches a person', (text, cue) => {
+    expect(scanForms(text)).toContain(text.replace(/\u200B/, ' ').replace(/\u200B/, ''));
+    if (cue) expect(scanForSafetyLanguage(text).cues).toContain(cue);
+    else expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('safeguarding');
+  });
+
+  test('emoji (a variation selector, a joiner) do not use up the combinations', () => {
+    expect(scanForSafetyLanguage('he says its our\u200Bse\u200Bcret ' + '\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F').cues).toContain('grooming_or_isolation');
+    // A run not between two word characters is only removed: one form beyond the text as typed.
+    expect(scanForms('thanks coach \u2764\uFE0F the app')).toEqual(['thanks coach \u2764\uFE0F the app', 'thanks coach \u2764 the app']);
+  });
+
+  // PR #2154 delta reviewer: a narrow space in a time or a grouped number does not use up the
+  // combinations, and a hidden character after a curly apostrophe still counts.
+  test('times and grouped numbers do not use up the combinations', () => {
+    const times = ' at 5:00\u202FPM'.repeat(5) + ' and 1\u202F000';
+    expect(scanForSafetyLanguage('he says its our\u200Bse\u200Bcret' + times).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each(['\u2018', '\u00B4', '`'])('a run after the apostrophe look-alike %j still counts', (mark) => {
+    // "don[mark][U+200B]t[U+200B]tell": the first run must be removed and the second read as a space.
+    expect(scanForSafetyLanguage(`he said don${mark}\u200Bt\u200Btell anyone`).cues).toContain('secrecy');
+  });
+
+  test('a long message gets fewer combined runs', () => {
+    const long = 'x'.repeat(12000) + ' ' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].join('\u200B');
+    const forms = scanForms(long);
+    expect(forms.length).toBeLessThanOrEqual(1 + 2 ** 3);
+    expect(forms[1]).toBe(long.replace(/\u200B/g, ''));
+  });
+
+  test('the near-invisible thin, hair and narrow spaces are read past too', () => {
+    for (const mark of ['\u2009', '\u200A', '\u202F']) {
+      expect(scanForSafetyLanguage(`he says its our se${mark}cret`).cues).toContain('grooming_or_isolation');
+    }
+  });
+
+  test('U+2800, the Braille blank, is read past like the other invisible characters', () => {
+    expect(scanForms('se\u2800cret')).toEqual(['se\u2800cret', 'secret', 'se cret']);
+    expect(scanForSafetyLanguage('he says its our se\u2800cret').cues).toContain('grooming_or_isolation');
+  });
+
+  test('a message with more runs than the cap is read three ways, not in every combination', () => {
+    // n runs sit between n + 1 words (letters only: a run that touches a digit does not count).
+    const word = (i: number) => String.fromCharCode(97 + i).repeat(2);
+    const many = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 2 }, (_, i) => word(i)).join('\u200B');
+    const overCap = scanForms(many);
+    // As typed, all removed, all spaces, then each run the other way round on its own.
+    expect(overCap.slice(0, 3)).toEqual([many, many.replace(/\u200B/g, ''), many.replace(/\u200B/g, ' ')]);
+    expect(overCap.length).toBeLessThanOrEqual(3 + 2 * (MAX_COMBINED_INVISIBLE_RUNS + 1));
+    expect(overCap).toContain(many.replace('\u200B', ' ').replace(/\u200B/g, ''));
+    const few = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 1 }, (_, i) => word(i)).join('\u200B');
+    expect(scanForms(few)).toHaveLength(1 + 2 ** MAX_COMBINED_INVISIBLE_RUNS);
   });
 });
