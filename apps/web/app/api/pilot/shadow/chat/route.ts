@@ -17,11 +17,11 @@ import {
 } from '@/src/server/pilot/shadowDisclosure';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
-  validateShadowRequest,
   validateShadowResponse,
   retrieveShadowContext,
   composeShadowSystemPrompt,
 } from '@/src/server/pilot/shadowChat';
+import { validateShadowRequestInEveryForm } from '@/src/server/pilot/shadowRequestForms';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { isPlatformLibraryOrganization } from '@/src/server/pilot/platformLibraryScope';
@@ -735,7 +735,9 @@ async function handleShadowChat(
     // same path (F-093), and only the emergency return stays ahead of it --
     // see markShadowDisclosure in shadowDisclosure.ts.
     const shadowDisclosure = detectShadowDisclosure(message, userRole);
-    const baseRequestValidation = validateShadowRequest(message, userRole, organizationId);
+    // Both forms of the message, as typed and with invisible characters removed
+    // (Overwatch Q14 A on PR #2151): see shadowRequestForms.ts.
+    const baseRequestValidation = validateShadowRequestInEveryForm(message, userRole, organizationId);
     const requestValidation = markShadowDisclosure(baseRequestValidation, shadowDisclosure);
     const disclosureMarked = requestValidation !== baseRequestValidation;
 

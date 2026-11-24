@@ -447,13 +447,18 @@ describe('the athlete\'s own words survive normalisation', () => {
   // WHAT REACHES THE CLASSIFIER IS WHAT WAS TYPED, TRIMMED.
   //
   // The route trims the message (as it does on main) and hands it to
-  // validateShadowRequest. Anything else done to it on the way -- normalised,
-  // truncated, spaces collapsed, invisible characters stripped -- changes
-  // what the classifier's patterns see without touching the classifier, and
-  // none of the classifier's own guards would notice.
+  // validateShadowRequestInEveryForm (Overwatch Q14 A on PR #2151), which runs
+  // validateShadowRequest on the message AS TYPED and, when it has invisible
+  // characters, also with them removed (shadowRequestForms.ts). The typed form
+  // is always one of the two -- the test below asserts it -- so nothing done
+  // there can take a pattern away from what was typed. Anything else done to
+  // the message on the way -- normalised, truncated, spaces collapsed --
+  // changes what the classifier's patterns see without touching the
+  // classifier, and none of the classifier's own guards would notice.
   //
   // So the text of route.ts is checked for two things: it contains exactly
-  // one `validateShadowRequest(...)`, spelled with `message` as its first
+  // one `validateShadowRequestInEveryForm(...)` and no bare
+  // `validateShadowRequest(...)`, spelled with `message` as its first
   // argument, and exactly one declaration of `message`, as a const equal to
   // the trimmed raw message.
   //
@@ -463,14 +468,34 @@ describe('the athlete\'s own words survive normalisation', () => {
   // called through an alias or a wrapper, a `message` re-declared by
   // destructuring in an inner scope, or the verdict being overridden after
   // the call. Those are not covered by any test here.
-  test('route.ts spells one call, validateShadowRequest(message, ...), and declares message once, as the trimmed raw message', () => {
+  test('route.ts spells one call, validateShadowRequestInEveryForm(message, ...), and declares message once, as the trimmed raw message', () => {
     const source = readFileSync(join(__dirname, 'route.ts'), 'utf8');
 
-    expect(source.match(/validateShadowRequest\([^)]*\)/g)).toEqual([
-      'validateShadowRequest(message, userRole, organizationId)',
+    expect(source.match(/validateShadowRequest(?:InEveryForm)?\([^)]*\)/g)).toEqual([
+      'validateShadowRequestInEveryForm(message, userRole, organizationId)',
     ]);
+    // The typed form is always validated, first, whatever else is.
+    const entry = readFileSync(join(__dirname, '../../../../../src/server/pilot/shadowRequestForms.ts'), 'utf8');
+    expect(entry.match(/validateShadowRequest\([^)]*\)/g)).toEqual(['validateShadowRequest(form, userRole, organizationId)']);
+    expect(entry).toContain('scanForms(message).map((form) => validateShadowRequest(form, userRole, organizationId))');
     // A const, so it cannot be assigned again.
     expect(source.match(/\b(?:const|let|var)\s+message\b[^;]*;/g)).toEqual(['const message = rawMessage.trim();']);
+  });
+
+  // Q14 A on #2151, run through the route: a zero-width character inside
+  // "can't" no longer hides the emergency.
+  test('a zero-width character inside a word does not hide an emergency', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'I can\u200B\u2019t breathe after that hit' }));
+    const body = await response.json();
+
+    expect(body.response).toBe('Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      metadata: expect.objectContaining({ validationClassification: 'urgent_personal_symptom' }),
+    }));
   });
 
   // The same thing, run, for the one kind of tidying that has a sentence to

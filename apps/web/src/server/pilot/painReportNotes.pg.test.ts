@@ -75,6 +75,7 @@ jest.mock('./shadowReadiness', () => ({
 import { NextRequest } from 'next/server';
 
 import { GET as painReportsGET } from '@/app/api/pilot/coach/pain-reports/route';
+import { GET as escalationsGET } from '@/app/api/pilot/escalations/route';
 import { GET as noteGET } from '@/app/api/pilot/coach/pain-reports/[nearMissId]/note/route';
 import { POST as reviewPOST } from '@/app/api/pilot/coach/pain-reports/[nearMissId]/review/route';
 import { POST as observationsPOST } from '@/app/api/pilot/shadow/formulas/observations/route';
@@ -194,6 +195,12 @@ async function readPainList(as: PilotPrincipal, query = '') {
   mockRequirePrincipal.mockResolvedValue(as);
   const response = await painReportsGET(new NextRequest(`http://localhost/api/pilot/coach/pain-reports${query}`));
   return { status: response.status, body: await response.json() as { painReports?: Array<Record<string, unknown>> } };
+}
+
+async function readEscalationList(as: PilotPrincipal, query = '') {
+  mockRequirePrincipal.mockResolvedValue(as);
+  const response = await escalationsGET(new NextRequest(`http://localhost/api/pilot/escalations${query}`));
+  return { status: response.status, body: await response.json() as { escalations?: Array<Record<string, unknown>> } };
 }
 
 async function readNote(as: PilotPrincipal, nearMissId: string) {
@@ -657,6 +664,39 @@ describe('the floor tablet read carries no notes (R2)', () => {
 
   test('any other notes value is refused', async () => {
     expect((await readPainList(AS.coach(), '?notes=all')).status).toBe(400);
+  });
+
+  // Overwatch Q13 A on #2151, under OD-2026-11-23-006: the class screen's escalations tile read
+  // (pain_notes=none) gets no pain-note escalation; the coach home and /admin/escalations keep them.
+  test('pain_notes=none: the escalations read leaves out pain-note rows and nothing else', async () => {
+    // The non-staff note first, so it is the coach-visible kind (shadow_disclosure); the staff
+    // note is held for admins (athlete_voice). A coach's full read has one, an admin's both.
+    await filePain(NON_STAFF_DISCLOSURE);
+    await filePain(STAFF_DISCLOSURE);
+    expect((await escalations()).map((row) => row.source_type)).toEqual(['shadow_disclosure', 'athlete_voice']);
+    const channels = (rows: Array<Record<string, unknown>> | undefined) =>
+      (rows ?? []).map((row) => (row.metadata as { channel?: unknown } | null)?.channel ?? null);
+
+    for (const as of [AS.orgAdmin(), AS.coach()]) {
+      const full = await readEscalationList(as, '?status=open');
+      const floor = await readEscalationList(as, '?status=open&pain_notes=none');
+      expect(full.status).toBe(200);
+      expect(floor.status).toBe(200);
+      expect(channels(full.body.escalations)).toContain('pain_report_note');
+      expect(channels(floor.body.escalations)).not.toContain('pain_report_note');
+      // Every other row is the same, in the same order.
+      expect(floor.body.escalations).toEqual(
+        full.body.escalations!.filter((row) => (row.metadata as { channel?: unknown } | null)?.channel !== 'pain_report_note'),
+      );
+      expect(JSON.stringify(floor.body)).not.toContain('Read the note');
+    }
+    // The admin's full read holds both notes, the held one included.
+    expect(channels((await readEscalationList(AS.orgAdmin(), '?status=open')).body.escalations)
+      .filter((channel) => channel === 'pain_report_note')).toHaveLength(2);
+  });
+
+  test('any other pain_notes value is refused', async () => {
+    expect((await readEscalationList(AS.coach(), '?pain_notes=all')).status).toBe(400);
   });
 });
 

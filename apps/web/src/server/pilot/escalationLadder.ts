@@ -385,6 +385,13 @@ export interface EscalationListFilters {
    * rows are admin-surface only.
    */
   excludeAthleteVoice?: boolean;
+  /**
+   * The class screen's tile read sets this (pain_notes=none): rows whose metadata.channel is
+   * 'pain_report_note' -- a pain note that needs a person to read it -- stay off the floor tablet
+   * (Jason's Q11, OD-2026-11-23-006, "A: Keep them off"; Overwatch Q13 A on PR #2151). Every
+   * other caller leaves it unset and gets the same rows as before.
+   */
+  excludePainNotes?: boolean;
 }
 
 /**
@@ -410,11 +417,18 @@ export async function listEscalations(
        and ($2::text is null or status = $2)
        and ($3::text[] is null or athlete_id = any($3))
        and ($4::boolean is not true or source_type <> 'athlete_voice')
+       and ($5::boolean is not true or metadata->>'channel' is distinct from 'pain_report_note')
        and (status <> 'resolved' or ${athleteNotDeletedSql('pilot.safety_escalations')})
      order by
        case severity when 'critical' then 0 when 'high' then 1 when 'moderate' then 2 else 3 end asc,
        created_at desc`,
-    [organizationId, filters.status ?? null, filters.athleteIds ?? null, filters.excludeAthleteVoice ?? null],
+    [
+      organizationId,
+      filters.status ?? null,
+      filters.athleteIds ?? null,
+      filters.excludeAthleteVoice ?? null,
+      filters.excludePainNotes ?? null,
+    ],
   );
 }
 
