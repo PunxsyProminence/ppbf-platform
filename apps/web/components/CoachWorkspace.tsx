@@ -4306,7 +4306,7 @@ export default function CoachWorkspace() {
                   </p>
 
                   <Link href="/coach/development" className="btn">
-                    Your development
+                    Your Coaching Growth
                   </Link>
                 </div>
               </div>
@@ -4637,7 +4637,7 @@ export default function CoachWorkspace() {
               </p>
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/coach/video-analysis" className="btn">
-                  Open Video Analysis Surface
+                  Open Video Analysis
                 </Link>
               </div>
               <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
@@ -4823,7 +4823,7 @@ export default function CoachWorkspace() {
                   them -- the platform never decides this for you.
                 </p>
                 <Link href="/coach/progression-intelligence" className="btn btn--ghost mt-[var(--s3)]">
-                  Open Progression Intelligence Surface
+                  Open Progression Intelligence
                 </Link>
               </div>
             </div>

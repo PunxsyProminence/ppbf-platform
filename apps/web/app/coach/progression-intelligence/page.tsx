@@ -967,7 +967,7 @@ export default function CoachProgressionIntelligencePage() {
               <input
                 id="athlete-select"
                 type="text"
-                placeholder="Enter athlete ID (e.g., ath-001)"
+                placeholder="Type the athlete's ID."
                 value={selectedAthlete}
                 onChange={(e) => chooseAthlete(e.target.value)}
                 className="input"

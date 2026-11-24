@@ -32,7 +32,6 @@ const TITLE_NOT_LITERAL: Record<string, string> = {
   '/athlete/dashboard': 'AthleteWorkspace prints the open tab group as the h1',
   '/coach/environment/intake-router': 'the shell prints roleLabel "Coach Workspace" as the h1',
   '/workspace': 'the h1 is "<role> Workspace", built from the session role',
-  '/profile': 'the shell prints roleLabel "Your Profile" as the h1',
   '/wall': 'the gym TV wall; its heading comes from the wall read',
   '/parent/progression-visibility': "the h1 is <child>'s Progression, built from the chosen child",
   '/parent/video': "the h1 is <child>'s Film (or Your Athlete's Film), built from the chosen child",
@@ -66,12 +65,20 @@ function importedComponents(file: string, source: string): string[] {
   return found;
 }
 
+/** Pages whose h1 is the shell's roleLabel, a literal prop on the page (RoleStandaloneView prints it as the h1). */
+const SHELL_H1_FROM_ROLE_LABEL = new Set(['/profile']);
+
+function roleLabelH1s(source: string): string[] {
+  return [...source.matchAll(/\broleLabel="([^"]+)"/g)].map((m) => m[1]);
+}
+
 function titlesFor(href: string): string[] | null {
   const file = path.join(WEB, 'app', ...href.split('/').filter(Boolean), 'page.tsx');
   if (!fs.existsSync(file)) return null;
   const source = fs.readFileSync(file, 'utf8');
   const titles = [
     ...literalH1s(source),
+    ...(SHELL_H1_FROM_ROLE_LABEL.has(href) ? roleLabelH1s(source) : []),
     ...importedComponents(file, source).flatMap((component) => literalH1s(fs.readFileSync(component, 'utf8'))),
   ];
   return titles.length > 0 ? titles : null;

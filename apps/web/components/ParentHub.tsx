@@ -1663,7 +1663,7 @@ export default function ParentHub() {
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
                   <Link href="/schedule" className="btn w-full">
-                    Open Scheduler
+                    Open Schedule
                   </Link>
                 </div>
               </section>

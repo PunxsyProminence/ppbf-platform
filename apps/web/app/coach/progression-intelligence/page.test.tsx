@@ -97,7 +97,7 @@ async function renderWithAthlete(fetchMock: jest.Mock) {
     render(<CoachProgressionIntelligencePage />);
   });
   await act(async () => {
-    fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), {
+    fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), {
       target: { value: 'athlete-001' },
     });
   });
@@ -228,7 +228,7 @@ describe('request ordering when the coach changes athlete', () => {
 
   async function selectAthlete(id: string) {
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+      fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), { target: { value: id } });
     });
   }
 
@@ -653,7 +653,7 @@ describe('arriving from a link (lane AS-11)', () => {
       render(<CoachProgressionIntelligencePage />);
     });
     await act(async () => {});
-    expect((screen.getByPlaceholderText(/Enter athlete ID/) as HTMLInputElement).value).toBe('');
+    expect((screen.getByPlaceholderText(/Type the athlete/) as HTMLInputElement).value).toBe('');
     expect(gapReads(mock)).toEqual([]);
   });
 
@@ -665,7 +665,7 @@ describe('arriving from a link (lane AS-11)', () => {
       render(<CoachProgressionIntelligencePage />);
     });
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: 'ath-0f3c9a21' } });
+      fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), { target: { value: 'ath-0f3c9a21' } });
     });
     await act(async () => {
       answerRoster({ ok: true, json: async () => ({ items: ROSTER }) } as Response);
@@ -690,7 +690,7 @@ describe('arriving from a link (lane AS-11)', () => {
 describe('a hold read nobody could complete is not the absence of a hold', () => {
   async function selectAthlete(id: string) {
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+      fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), { target: { value: id } });
     });
   }
 
@@ -2162,7 +2162,7 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
 
   async function selectAthlete(id: string) {
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+      fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), { target: { value: id } });
     });
   }
 
@@ -2606,7 +2606,7 @@ describe('a progression read that failed is not an athlete with no gaps or drill
 
     fail = true;
     await act(async () => {
-      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: 'athlete-002' } });
+      fireEvent.change(screen.getByPlaceholderText(/Type the athlete/), { target: { value: 'athlete-002' } });
     });
 
     expect(await screen.findByTestId('gaps-unreadable')).toBeTruthy();

@@ -7,7 +7,7 @@
  *
  * - The Overview opens on Safety & Consent (FAM-02; Q5 = A). The order itself
  *   is held in parentHubPhoneLayout.test.tsx.
- * - Quick Actions keeps one action, Open Scheduler. The four buttons that only
+ * - Quick Actions keeps one action, Open Schedule. The four buttons that only
  *   switched to a tab, and "SHADOW Chat", are gone (FAM-04, FAM-05; Q3 = A).
  * - The film link leaves the Safety & Consent card, and four record pages
  *   (Progress Visibility, the film, Their Development Plan and Mental Skills)
@@ -90,12 +90,12 @@ async function renderHub() {
 }
 
 describe('Quick Actions (FAM-04, FAM-05)', () => {
-  test('keeps Open Scheduler and drops the tab switches and the second SHADOW button', async () => {
+  test('keeps Open Schedule and drops the tab switches and the second SHADOW button', async () => {
     installFetch();
     await renderHub();
 
     const quick = screen.getByText('Quick Actions').closest('section') as HTMLElement;
-    expect(within(quick).getByRole('link', { name: 'Open Scheduler' })).toHaveAttribute('href', '/schedule');
+    expect(within(quick).getByRole('link', { name: 'Open Schedule' })).toHaveAttribute('href', '/schedule');
     expect(within(quick).getAllByRole('link')).toHaveLength(1);
     expect(within(quick).queryAllByRole('button')).toHaveLength(0);
     for (const gone of ['Open Assignments', 'Check Attendance', 'View Messages from the Coaches', 'Open SHADOW Intel', 'SHADOW Chat']) {

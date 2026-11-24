@@ -638,7 +638,7 @@ describe('Film Study names the human workflow that exists and the machine one th
 
     expect(screen.queryByText(/FRONT-END PLACEHOLDER/i)).toBeNull();
     expect(screen.queryByText(/Coming soon: Video upload/i)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Video Analysis Surface' }).getAttribute('href'))
+    expect(screen.getByRole('link', { name: 'Open Video Analysis' }).getAttribute('href'))
       .toBe('/coach/video-analysis');
   });
 
@@ -675,7 +675,7 @@ describe('the Athlete Reviews tab does not call progression intelligence a place
     expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
     expect(screen.queryByText(/Closed-Loop Progression Intelligence - Planned/i)).toBeNull();
     expect(screen.queryByText(/until a coach confirms or dismisses/i)).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Progression Intelligence Surface' }).getAttribute('href'))
+    expect(screen.getByRole('link', { name: 'Open Progression Intelligence' }).getAttribute('href'))
       .toBe('/coach/progression-intelligence');
   });
 });

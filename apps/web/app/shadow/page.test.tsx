@@ -216,6 +216,12 @@ describe('what sits at the top of the room', () => {
     expect(screen.getByText('Authority Boundary')).toBeTruthy();
     expect(screen.getByText(/Context: coach floor/)).toBeTruthy();
     expect(screen.queryByText(PLAIN)).toBeNull();
+    // AS-13 CS-16a/b: the welcome opens with the page heading, no role code,
+    // and the weak-evidence line names both pages as links.
+    expect(document.body.textContent).toMatch(/SHADOW\. Role-scoped view\./);
+    expect(document.body.textContent).not.toMatch(/SCOUT ONLINE/);
+    expect(screen.getByRole('link', { name: 'The Library' }).getAttribute('href')).toBe('/research/chat');
+    expect(screen.getByRole('link', { name: 'Research Inbox' }).getAttribute('href')).toBe('/research');
   });
 });
 

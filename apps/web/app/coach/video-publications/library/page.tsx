@@ -122,7 +122,7 @@ export default function VideoLibraryPage() {
           <ClusterNav cluster="film" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-            Every clip published to the gym&apos;s library, newest first.
+            Every clip published to the gym&apos;s library, newest first. This page has no player.
           </p>
         </header>
 

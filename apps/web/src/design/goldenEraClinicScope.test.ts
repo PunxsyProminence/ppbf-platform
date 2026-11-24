@@ -334,7 +334,7 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     'Set clearance status',
     'Set Status',
     'Progression Intelligence',
-    'Performance Analytics',
+    'Who to See First',
   ] as const;
 
   /** Sections, states and copy the reference omits and that must not vanish. */
