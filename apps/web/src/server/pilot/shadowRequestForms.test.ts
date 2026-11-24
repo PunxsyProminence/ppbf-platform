@@ -93,6 +93,13 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(answer.classification).toBe('urgent_personal_symptom');
   });
 
+  test('a long message over the cap still reads each run the other way on its own', () => {
+    const padding = ' that was in\u00ADcredible' + ' and we kept training hard'.repeat(340);
+    const message = "I can't\u200Bbre\u200Bathe after that hit" + padding;
+    expect(message.length).toBeGreaterThan(8000);
+    expect(check(message).classification).toBe('urgent_personal_symptom');
+  });
+
   test("CRITICAL_REVIEW_TOPICS is the chat route's own critical list", () => {
     const route = readFileSync(join(__dirname, '../../../app/api/pilot/shadow/chat/route.ts'), 'utf8');
     const list = /const reviewIsCritical = \[([^\]]*)\]/.exec(route)?.[1] ?? '';

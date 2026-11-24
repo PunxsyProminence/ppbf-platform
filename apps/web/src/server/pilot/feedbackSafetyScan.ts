@@ -149,6 +149,15 @@ export function scanForms(body: string): readonly string[] {
     }
   } else {
     forms.add(joined(counted));
+    // Over the cap, each counted run is also read the other way round on its own (only it a
+    // space; only it removed), while the budget allows: a long message with a hidden emergency
+    // and another hidden character elsewhere still has a reading with each run read right
+    // (PR #2154 delta reviewer).
+    for (const run of wordRuns) {
+      if ((forms.size + 2) * Math.max(body.length, 1) > COMBINATION_BUDGET) break;
+      forms.add(joined(new Set([run])));
+      forms.add(joined(new Set(wordRuns.filter((other) => other !== run))));
+    }
   }
   forms.delete(body);
   return [body, ...forms];

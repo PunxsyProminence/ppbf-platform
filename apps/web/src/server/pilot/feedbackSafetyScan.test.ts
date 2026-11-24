@@ -2478,7 +2478,11 @@ describe('invisible characters inside a word', () => {
     // n runs sit between n + 1 words (letters only: a run that touches a digit does not count).
     const word = (i: number) => String.fromCharCode(97 + i).repeat(2);
     const many = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 2 }, (_, i) => word(i)).join('\u200B');
-    expect(scanForms(many)).toEqual([many, many.replace(/\u200B/g, ''), many.replace(/\u200B/g, ' ')]);
+    const overCap = scanForms(many);
+    // As typed, all removed, all spaces, then each run the other way round on its own.
+    expect(overCap.slice(0, 3)).toEqual([many, many.replace(/\u200B/g, ''), many.replace(/\u200B/g, ' ')]);
+    expect(overCap.length).toBeLessThanOrEqual(3 + 2 * (MAX_COMBINED_INVISIBLE_RUNS + 1));
+    expect(overCap).toContain(many.replace('\u200B', ' ').replace(/\u200B/g, ''));
     const few = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 1 }, (_, i) => word(i)).join('\u200B');
     expect(scanForms(few)).toHaveLength(1 + 2 ** MAX_COMBINED_INVISIBLE_RUNS);
   });
