@@ -31,11 +31,18 @@ import { type ShadowValidationResult, validateShadowRequest } from './shadowChat
  * whole when they are left as they are.
  */
 /**
- * classifyHighRiskTopic's own order (shadowChat.ts): the first pattern that matches a message gives
- * its topic. shadowRequestForms.test.ts pins this list to the classifier, pair by pair. When two
- * readings find different topics ("what is ch[U+200B]est pain and surgery": as typed, surgery;
- * removed, chest pain), the high-risk step takes the topic the plain spelling would get, the one
- * ranked first (PR #2152 reviewer: the other could drop the review row from critical to high).
+ * The topics whose review row the chat route files as critical (route.ts, reviewIsCritical; pinned
+ * to the route's source by shadowRequestForms.test.ts). They rank first, so a hidden topic can
+ * never drop a row from critical to high: "what is chest pain and con[U+200B]cussion" keeps
+ * chest_pain, as main gave it (PR #2154 safety reviewer).
+ */
+export const CRITICAL_REVIEW_TOPICS: readonly string[] = ['chest_pain', 'fainting', 'loss_of_consciousness'];
+
+/**
+ * After those, classifyHighRiskTopic's own order (shadowChat.ts): the first pattern that matches a
+ * message gives its topic, so this is the topic the plain spelling gets. shadowRequestForms.test.ts
+ * pins it to the classifier, pair by pair. ("what is ch[U+200B]est pain and surgery": as typed,
+ * surgery; removed, chest pain; PR #2152 reviewer.)
  */
 export const HIGH_RISK_TOPIC_ORDER: readonly string[] = [
   'concussion', 'head_trauma', 'loss_of_consciousness', 'dizziness', 'dehydration', 'weight_cutting',
@@ -44,8 +51,10 @@ export const HIGH_RISK_TOPIC_ORDER: readonly string[] = [
 ];
 
 const topicRank = (topic: string | undefined): number => {
+  const critical = CRITICAL_REVIEW_TOPICS.indexOf(topic ?? '');
+  if (critical >= 0) return critical;
   const rank = HIGH_RISK_TOPIC_ORDER.indexOf(topic ?? '');
-  return rank < 0 ? HIGH_RISK_TOPIC_ORDER.length : rank;
+  return CRITICAL_REVIEW_TOPICS.length + (rank < 0 ? HIGH_RISK_TOPIC_ORDER.length : rank);
 };
 
 export function validateShadowRequestInEveryForm(

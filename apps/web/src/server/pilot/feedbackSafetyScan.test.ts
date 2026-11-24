@@ -2438,6 +2438,25 @@ describe('invisible characters inside a word', () => {
     else expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('safeguarding');
   });
 
+  test('emoji (a variation selector, a joiner) do not use up the combinations', () => {
+    expect(scanForSafetyLanguage('he says its our\u200Bse\u200Bcret ' + '\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F').cues).toContain('grooming_or_isolation');
+    // A run not between two word characters is only removed: one form beyond the text as typed.
+    expect(scanForms('thanks coach \u2764\uFE0F the app')).toEqual(['thanks coach \u2764\uFE0F the app', 'thanks coach \u2764 the app']);
+  });
+
+  test('a long message gets fewer combined runs', () => {
+    const long = 'x'.repeat(12000) + ' ' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].join('\u200B');
+    const forms = scanForms(long);
+    expect(forms.length).toBeLessThanOrEqual(1 + 2 ** 3);
+    expect(forms[1]).toBe(long.replace(/\u200B/g, ''));
+  });
+
+  test('the near-invisible thin, hair and narrow spaces are read past too', () => {
+    for (const mark of ['\u2009', '\u200A', '\u202F']) {
+      expect(scanForSafetyLanguage(`he says its our se${mark}cret`).cues).toContain('grooming_or_isolation');
+    }
+  });
+
   test('U+2800, the Braille blank, is read past like the other invisible characters', () => {
     expect(scanForms('se\u2800cret')).toEqual(['se\u2800cret', 'secret', 'se cret']);
     expect(scanForSafetyLanguage('he says its our se\u2800cret').cues).toContain('grooming_or_isolation');

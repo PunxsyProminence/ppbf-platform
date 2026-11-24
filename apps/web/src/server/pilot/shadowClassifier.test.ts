@@ -294,6 +294,7 @@ describe('invisible characters inside a high-risk word', () => {
     ['what is concu\u200Bssion', 'what is concussion'],
     ['what is medical\u200Bclearance', 'what is medical clearance'],
     ['how do I cut\u2800weight', 'how do I cut weight'],
+    ['what is medical\u200Bclear\u200Bance \u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F', 'what is medical clearance'],
   ])('%j is classified as %j is', (hidden, plain) => {
     const plainAnswer = classifyRequest(plain, 'athlete');
     expect(plainAnswer.tier).toBe('heavy_bag');

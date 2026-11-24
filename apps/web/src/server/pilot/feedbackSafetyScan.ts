@@ -69,21 +69,33 @@ export function normalizeForSafetyScan(body: string): string {
  * characters) and every default-ignorable code point (which adds the variation selectors, the
  * combining grapheme joiner U+034F, and the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0 --
  * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A) -- and
- * U+2800, the Braille blank, which draws as an empty cell and is used the same way (PR #2152
- * reviewer; it is not a format character and no pattern's whitespace class matched it).
+ * U+2800, the Braille blank, which draws as an empty cell and is used the same way, and the
+ * near-invisible thin, hair and narrow no-break spaces U+2009, U+200A and U+202F (PR #2152 and
+ * #2154 reviewers: none is a format character, and no pattern's whitespace class matched them).
  */
-export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800]/gu;
+export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u2009\u200A\u202F]/gu;
 
 /** One run of invisible characters: a run is one place where the text may be joined or split. */
 const INVISIBLE_RUN = new RegExp(`${INVISIBLE_FORMAT.source}+`, 'gu');
 
+/** A run can hide a word only between two word characters (letters, digits, an apostrophe). */
+const WORD_CHARACTER = /[\p{L}\p{N}'\u2019\u02BC]/u;
+
 /**
- * The most separate runs read in every combination. 6 runs give 64 readings; a message with more
- * is read as typed, with every run removed, and with every run a space (the readings before
- * PR #2152's follow-up). Chosen so a long Tell us message cannot multiply the scan's work without
- * bound; INFERRED: real messages carry one or two runs (an emoji joiner, a pasted word).
+ * The most such runs read in every combination: 6 give 64 readings. Runs that are not between two
+ * word characters (an emoji's variation selector or joiner, a mark before a space) are only
+ * removed and do not count (PR #2154 reviewers: six hearts switched the combinations off).
  */
 export const MAX_COMBINED_INVISIBLE_RUNS = 6;
+
+/**
+ * The combinations times the message length stay under this many characters, so a long message
+ * gets fewer combined runs: about 6 runs up to 2,000 characters, 3 at 12,000 (the SHADOW chat
+ * limit). PR #2154 reviewer measured detectShadowDisclosure at about 0.6 s for a 12,000-character
+ * message read 65 ways; this keeps it near a tenth of that. Over the cap a message is read as
+ * typed, with every run removed, and with every word-character run a space.
+ */
+const COMBINATION_BUDGET = 128_000;
 
 /**
  * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;
@@ -107,15 +119,24 @@ export function scanForms(body: string): readonly string[] {
   // only ever add a reading.
   const segments = body.split(INVISIBLE_RUN);
   if (segments.length === 1) return [body];
-  const runs = segments.length - 1;
-  const joined = (spaceAt: (run: number) => boolean) => segments
-    .reduce((text, segment, index) => (index === 0 ? segment : text + (spaceAt(index - 1) ? ' ' : '') + segment), '');
+  // The runs that sit between two word characters, by run index; only these may be read as spaces.
+  const wordRuns = segments.slice(0, -1).flatMap((segment, run) => {
+    const before = [...segment].pop() ?? '';
+    const after = [...segments[run + 1]][0] ?? '';
+    return WORD_CHARACTER.test(before) && WORD_CHARACTER.test(after) ? [run] : [];
+  });
+  const joined = (spaced: ReadonlySet<number>) => segments
+    .reduce((text, segment, index) => (index === 0 ? segment : text + (spaced.has(index - 1) ? ' ' : '') + segment), '');
+  let cap = MAX_COMBINED_INVISIBLE_RUNS;
+  while (cap > 0 && 2 ** cap * Math.max(body.length, 1) > COMBINATION_BUDGET) cap -= 1;
   const forms = new Set<string>();
-  if (runs <= MAX_COMBINED_INVISIBLE_RUNS) {
-    for (let mask = 0; mask < 2 ** runs; mask += 1) forms.add(joined((run) => ((mask >> run) & 1) === 1));
+  if (wordRuns.length <= cap) {
+    for (let mask = 0; mask < 2 ** wordRuns.length; mask += 1) {
+      forms.add(joined(new Set(wordRuns.filter((_, bit) => ((mask >> bit) & 1) === 1))));
+    }
   } else {
-    forms.add(joined(() => false));
-    forms.add(joined(() => true));
+    forms.add(joined(new Set()));
+    forms.add(joined(new Set(wordRuns)));
   }
   forms.delete(body);
   return [body, ...forms];

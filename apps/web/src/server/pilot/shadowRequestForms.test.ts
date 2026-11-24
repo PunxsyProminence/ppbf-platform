@@ -3,7 +3,9 @@
 // its plain spelling gets, and plain text keeps validateShadowRequest's own answer.
 
 import { classifyHighRiskTopic, validateShadowRequest } from './shadowChat';
-import { HIGH_RISK_TOPIC_ORDER, validateShadowRequestInEveryForm } from './shadowRequestForms';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CRITICAL_REVIEW_TOPICS, HIGH_RISK_TOPIC_ORDER, validateShadowRequestInEveryForm } from './shadowRequestForms';
 
 const check = (message: string) => validateShadowRequestInEveryForm(message, 'athlete', 'org-test');
 
@@ -61,10 +63,36 @@ describe('invisible characters inside a word (Q14)', () => {
     ["I can\u200B't\u200Bbreathe after that hit", "I can't breathe after that hit"],
     ['what is ch\u200Best\u200Bpain', 'what is chest pain'],
     ['what is ch\u200Best pain and surgery', 'what is chest pain and surgery'],
-    ['what is con\u200Bcussion and chest pain', 'what is concussion and chest pain'],
     ["I can't\u2800breathe after that hit", "I can't breathe after that hit"],
+    ["I can't bre\u200Aathe after that hit", "I can't breathe after that hit"],
+    ["I can't bre\u2009athe after that hit", "I can't breathe after that hit"],
   ])('%j gets the answer %j gets', (hidden, plain) => {
     expect(check(hidden)).toEqual(validateShadowRequest(plain, 'athlete', 'org-test'));
+  });
+
+  // PR #2154 safety reviewer: a topic the route files as critical ranks first, so a hidden topic
+  // never drops the review row from critical to high (main gave chest_pain for both).
+  test.each([
+    'what is chest pain and con\u200Bcussion',
+    'what is con\u200Bcussion and chest pain',
+  ])('%j keeps the critical topic', (hidden) => {
+    const answer = check(hidden);
+    expect(answer.highRisk).toBe(true);
+    expect(answer.topic).toBe('chest_pain');
+  });
+
+  // PR #2154 reviewers: emoji (variation selectors, joiners) do not use up the combinations.
+  test('six emoji hearts do not switch off the combined readings', () => {
+    const answer = check("I can't\u200Bbre\u200Bathe after that hit " + '\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F\u2764\uFE0F');
+    expect(answer.classification).toBe('urgent_personal_symptom');
+    expect(answer.valid).toBe(false);
+  });
+
+  test("CRITICAL_REVIEW_TOPICS is the chat route's own critical list", () => {
+    const route = readFileSync(join(__dirname, '../../../app/api/pilot/shadow/chat/route.ts'), 'utf8');
+    const list = /const reviewIsCritical = \[([^\]]*)\]/.exec(route)?.[1] ?? '';
+    const topics = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(topics.filter((t) => t !== 'urgent_personal_symptom').sort()).toEqual([...CRITICAL_REVIEW_TOPICS].sort());
   });
 
   test("HIGH_RISK_TOPIC_ORDER is classifyHighRiskTopic's own order", () => {
