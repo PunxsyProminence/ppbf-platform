@@ -289,17 +289,28 @@ export async function closeIdleSessionRuns(
 // 7085598624 point 1): a window left open on a finished class would stay joinable, and its taps
 // would stay out of the reports route and the tier engine with no end. The window table's guard
 // stamps the close. Skipped where that table is not yet applied, so settling never fails on it.
-async function closeRunWindows(client: PoolClient, organizationId: string, runIds: string[]): Promise<void> {
-  if (runIds.length === 0) return;
+// With an athlete id, only that athlete's windows: a presence mark taken back closes the athlete's
+// open windows on that run, in the take-back's transaction (W3-WINDOWS; Overwatch 7091097843,
+// 7111507024 Q1 A). Returns the ids it closed, sorted.
+export async function closeRunWindows(
+  client: PoolClient,
+  organizationId: string,
+  runIds: string[],
+  athleteId: string | null = null,
+): Promise<string[]> {
+  if (runIds.length === 0) return [];
   const table = await client.query<{ present: boolean }>(
     `select to_regclass('pilot.behaviour_observations_windows') is not null as present`,
   );
-  if (!table.rows[0]?.present) return;
-  await client.query(
+  if (!table.rows[0]?.present) return [];
+  const closed = await client.query<{ window_id: string }>(
     `update pilot.behaviour_observations_windows set closed_at = now()
-      where organization_id = $1 and run_id = any($2::text[]) and closed_at is null`,
-    [organizationId, runIds],
+      where organization_id = $1 and run_id = any($2::text[]) and closed_at is null
+        and ($3::text is null or athlete_id = $3)
+      returning window_id::text as window_id`,
+    [organizationId, runIds, athleteId],
   );
+  return closed.rows.map((row) => row.window_id).sort();
 }
 
 // The readers' form. A sweep that fails must not take the coach's screen or the TV down with it:
