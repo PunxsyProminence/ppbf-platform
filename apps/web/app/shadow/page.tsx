@@ -1567,7 +1567,7 @@ function ShadowChatPageContent() {
           </div>
           <div>
             <p className="t-eyebrow">When Evidence Is Weak</p>
-            <p className="t-body mt-[var(--s2)]">Use <Link href="/research/chat" className="underline">The Library</Link> and <Link href="/research" className="underline">Research Inbox</Link>. Unknowns should become research requirements, not fake certainty.</p>
+            <p className="t-body mt-[var(--s2)]">Use The Library and Research Inbox. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
         )}
