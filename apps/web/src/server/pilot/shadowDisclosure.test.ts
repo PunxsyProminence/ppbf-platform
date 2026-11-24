@@ -551,6 +551,19 @@ describe('invisible characters inside a staff word (SHADOW chat and pain notes)'
     expect(hidden?.adminOnly).toBe(true);
   });
 
+  test('a hidden character that would split a word into a boxing phrase cannot drop a disclosure', () => {
+    expect(detectShadowDisclosure('My guardian hits me', 'athlete')).not.toBeNull();
+    expect(detectShadowDisclosure('My guard\u200Bian hits me', 'athlete')).not.toBeNull();
+    expect(detectShadowDisclosure('My guard\u00ADian hits me', 'athlete')).not.toBeNull();
+    // Real boxing talk is still suppressed in every form.
+    expect(detectShadowDisclosure('how do I keep my guard up when sparring', 'athlete')).toBeNull();
+  });
+
+  test('ordinary messages that have a second form (emoji) keep their verdict', () => {
+    expect(detectShadowDisclosure('my knee hurts since practice \u{1F622}\uFE0F', 'athlete')).toBeNull();
+    expect(detectShadowDisclosure('My dad hits me \u{1F622}\uFE0F', 'athlete')?.adminOnly).toBe(false);
+  });
+
   test('ordinary messages get the same verdict as before', () => {
     expect(detectShadowDisclosure('my knee hurts since practice', 'athlete')).toBeNull();
     expect(detectShadowDisclosure('how do I keep my guard up when sparring', 'athlete')).toBeNull();

@@ -624,10 +624,6 @@ describe('Mark reviewed (DR-25)', () => {
   });
 });
 
-// Q12 A on #2139: "Read the note" on a pain-note escalation, through the near miss it points at.
-// Codex P1 on #2138, Claude Science F4 (reopened lane, 2026-11-24): a zero-width character inside
-// a staff word no longer hides it. The note is held for admins (OD-2026-11-23-003, "A: Keep
-// strict") and stored exactly as the athlete typed it.
 // Jason's Q11, OD-2026-11-23-006, "A: Keep them off" (reopened lane, R2): the class screen's read
 // (notes=none) receives no note text and no admin-only marker; the coach home's read keeps both.
 describe('the floor tablet read carries no notes (R2)', () => {
@@ -664,6 +660,9 @@ describe('the floor tablet read carries no notes (R2)', () => {
   });
 });
 
+// Codex P1 on #2138, Claude Science F4 (reopened lane, 2026-11-24): a zero-width character inside
+// a staff word no longer hides it. The note is held for admins (OD-2026-11-23-003, "A: Keep
+// strict") and stored exactly as the athlete typed it.
 describe('a note with an invisible character inside a staff word (R1)', () => {
   test.each(['\u200B', '\u00AD', '\uFEFF'])('U+%s inside "coach": held for admins, escalated admin-only, stored as typed', async (mark) => {
     const typed = `My co${mark}ach hits me`;
@@ -680,6 +679,7 @@ describe('a note with an invisible character inside a staff word (R1)', () => {
   });
 });
 
+// Q12 A on #2139: "Read the note" on a pain-note escalation, through the near miss it points at.
 describe('Read the note (DR-25, Q12 A)', () => {
   test('an admin reads a held note and is told it is held; a coach gets the same 404 as a missing report', async () => {
     await filePain(STAFF_DISCLOSURE);

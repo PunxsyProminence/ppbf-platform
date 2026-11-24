@@ -104,7 +104,7 @@ export function isPainReportReview(value: unknown): value is PainReportReview {
  * (the class screen), the row must carry no note and no admin-only marker at all -- a row that does
  * is a server answer this screen cannot trust, so it is not drawn and the list says so.
  */
-export function isPainReportRow(row: unknown, withNotes = true): row is CoachPainReport {
+export function isPainReportRow(row: unknown, withNotes: boolean): row is CoachPainReport {
   if (!row || typeof row !== 'object') return false;
   const r = row as Record<string, unknown>;
   return (

@@ -53,7 +53,8 @@ const ESCALATIONS = {
   ],
 };
 const QUEUE = { ok: true, queue: [], total: 7 };
-const PAIN_FEED = '/api/pilot/coach/pain-reports?limit=50';
+// The tile's own read counts only, so it asks for no notes (Jason's Q11, OD-2026-11-23-006).
+const PAIN_FEED = '/api/pilot/coach/pain-reports?limit=50&notes=none';
 // The route's row (CoachPainReport, painReportAlert.ts): named and identifiable, so none of it may
 // reach the tile.
 function painRow(id: string) {

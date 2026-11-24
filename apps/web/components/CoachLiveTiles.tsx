@@ -253,7 +253,8 @@ export default function CoachLiveTiles({ painFeed }: { painFeed?: PainTileRead }
       setQueue,
     );
     if (readsOwnPain) {
-      settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
+      // Counts only, so it asks for no notes (Jason's Q11, OD-2026-11-23-006; PR #2151 reviewer B).
+      settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}&notes=none`), painReportCount, setPain);
     }
   }, [readsOwnPain]);
 

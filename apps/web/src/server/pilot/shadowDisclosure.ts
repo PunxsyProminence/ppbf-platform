@@ -253,14 +253,18 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
   if (!SCANNED_ROLES.has(role)) return null;
   const scan = scanForSafetyLanguage(message);
   if (!scan.safeguarding) return null;
-  const normalized = normalizeForSafetyScan(message);
   const readings = readingsOf(message);
   const inAnyReading = (pattern: RegExp) => readings.some((reading) => pattern.test(reading));
   const person = namesGymPerson(message);
   if (!person && scan.cues.every((cue) => MEDICAL_ONLY.has(cue))) return null;
-  // Boxing context, which only ever suppresses, reads the normal form alone,
-  // as on main; the overrides read every reading.
-  if (BOXING_CONTEXT_PATTERN.test(normalized)) {
+  // Boxing context only ever suppresses, so it must hold in EVERY form of the
+  // message (scanForms): an invisible character that splits a word into a
+  // boxing phrase -- "guard[U+200B]ian" read as "guard ian", so "my guard" --
+  // can no longer drop a disclosure (PR #2151 reviewer A). The overrides read
+  // every reading.
+  const boxingContext = scanForms(message)
+    .every((form) => BOXING_CONTEXT_PATTERN.test(normalizeForSafetyScan(form)));
+  if (boxingContext) {
     const overridden = scan.cues.some((cue) => OVERRIDE_CUES.has(cue))
       || (person && scan.cues.some((cue) => STAFF_HARM_CUES.has(cue)))
       || inAnyReading(SPARRING_INTENT_PATTERN)

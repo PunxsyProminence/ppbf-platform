@@ -2403,6 +2403,22 @@ describe('invisible characters inside a word', () => {
     expect(normalizeForSafetyScan('My coach hits me')).toBe('my coach hits me');
   });
 
+  test.each(['\u034F', '\u115F', '\u1160', '\u3164', '\uFFA0', '\u180B', '\u17B4'])(
+    'default-ignorable U+%s inside a word is read past too',
+    (mark) => {
+      expect(scanForSafetyLanguage(`he says its our se${mark}cret`).cues).toContain('grooming_or_isolation');
+      expect(decideFeedbackRoute({ role: 'athlete', body: `my coach hu${mark}rts me` })).toBe('safeguarding');
+    },
+  );
+
+  test('ordinary text that does have a second form (emoji with a variation selector or a joiner) keeps its verdict', () => {
+    for (const text of ['thanks coach \u2764\uFE0F the app is great', 'our family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} loves the gym']) {
+      expect(scanForms(text)).toHaveLength(2);
+      expect(scanForSafetyLanguage(text)).toEqual({ safeguarding: false, cues: [] });
+      expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('product');
+    }
+  });
+
   test('the forms are the text as typed and the text with invisible characters removed', () => {
     expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach']);
   });

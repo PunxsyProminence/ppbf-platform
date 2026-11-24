@@ -66,9 +66,11 @@ export function normalizeForSafetyScan(body: string): string {
  * Invisible characters that change no word a reader sees: every Unicode format character
  * (category Cf -- zero-width space U+200B, zero-width non-joiner and joiner U+200C/D, word
  * joiner U+2060, soft hyphen U+00AD, byte-order mark U+FEFF, direction marks and isolates, tag
- * characters) plus the variation selectors (U+FE00-FE0F, U+E0100-E01EF).
+ * characters) and every default-ignorable code point (which adds the variation selectors, the
+ * combining grapheme joiner U+034F, and the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0 --
+ * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A).
  */
-const INVISIBLE_FORMAT = /[\p{Cf}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu;
+export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
 
 /**
  * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;

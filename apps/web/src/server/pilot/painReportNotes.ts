@@ -4,6 +4,7 @@ import { athleteVoiceSeverity } from './athleteVoice';
 import { queryOne, withTransaction } from './db';
 import { NotFoundError } from './errors';
 import { fileEscalation, type SafetyEscalationSourceType } from './escalationLadder';
+import { INVISIBLE_FORMAT } from './feedbackSafetyScan';
 import { detectShadowDisclosure, type ShadowDisclosure } from './shadowDisclosure';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
@@ -23,8 +24,8 @@ import { PAIN_NOTE_MAX } from '@/src/shared/painNote';
 /** Characters btrim strips in the database check: space, tab, carriage return, line feed. */
 const EDGE_WHITESPACE = /^[ \t\r\n]+|[ \t\r\n]+$/g;
 
-/** Invisible format characters (zero-width space and joiners, BOM, direction marks). */
-const FORMAT_CHARACTERS = /\p{Cf}/gu;
+/** The scanner's own invisible class (feedbackSafetyScan.ts), so the two cannot drift apart. */
+const FORMAT_CHARACTERS = INVISIBLE_FORMAT;
 
 /**
  * The note as it will be stored: trimmed, and null when nothing visible is left (whitespace and
