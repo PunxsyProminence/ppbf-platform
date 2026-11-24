@@ -9,7 +9,7 @@
 // "routes to a human" list is long and forgiving, and the "stays product" list
 // holds only sentences that are plainly about the software.
 
-import { normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
+import { MAX_COMBINED_INVISIBLE_RUNS, normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
 import { decideFeedbackRoute } from './feedback';
 
 describe('language that must reach a person', () => {
@@ -2413,13 +2413,41 @@ describe('invisible characters inside a word', () => {
 
   test('ordinary text that does have a second form (emoji with a variation selector or a joiner) keeps its verdict', () => {
     for (const text of ['thanks coach \u2764\uFE0F the app is great', 'our family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} loves the gym']) {
-      expect(scanForms(text)).toHaveLength(2);
+      const forms = scanForms(text);
+      expect(forms[0]).toBe(text);
+      expect(forms.length).toBeGreaterThan(1);
       expect(scanForSafetyLanguage(text)).toEqual({ safeguarding: false, cues: [] });
       expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('product');
     }
   });
 
-  test('the forms are the text as typed and the text with invisible characters removed', () => {
-    expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach']);
+  test('the forms are the text as typed, the text with invisible characters removed, then each run read as a space', () => {
+    expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach', 'co ach']);
+    // A run of several invisible characters is one place, read once each way.
+    expect(scanForms('co\u200B\u200Dach')).toEqual(['co\u200B\u200Dach', 'coach', 'co ach']);
+  });
+
+  // PR #2152 reviewer: one invisible character inside a word and another in place of a space, in
+  // the same message, hid a disclosure from both the all-removed and the all-space reading.
+  test.each([
+    ['he says its our\u200Bse\u200Bcret', 'grooming_or_isolation'],
+    ['my\u200Bcoach hu\u200Brts me', null],
+  ])('%j, with invisible characters doing two different jobs, still reaches a person', (text, cue) => {
+    expect(scanForms(text)).toContain(text.replace(/\u200B/, ' ').replace(/\u200B/, ''));
+    if (cue) expect(scanForSafetyLanguage(text).cues).toContain(cue);
+    else expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('safeguarding');
+  });
+
+  test('U+2800, the Braille blank, is read past like the other invisible characters', () => {
+    expect(scanForms('se\u2800cret')).toEqual(['se\u2800cret', 'secret', 'se cret']);
+    expect(scanForSafetyLanguage('he says its our se\u2800cret').cues).toContain('grooming_or_isolation');
+  });
+
+  test('a message with more runs than the cap is read three ways, not in every combination', () => {
+    // n runs sit between n + 1 words.
+    const many = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 2 }, (_, i) => `w${i}`).join('\u200B');
+    expect(scanForms(many)).toEqual([many, many.replace(/\u200B/g, ''), many.replace(/\u200B/g, ' ')]);
+    const few = Array.from({ length: MAX_COMBINED_INVISIBLE_RUNS + 1 }, (_, i) => `w${i}`).join('\u200B');
+    expect(scanForms(few)).toHaveLength(1 + 2 ** MAX_COMBINED_INVISIBLE_RUNS);
   });
 });

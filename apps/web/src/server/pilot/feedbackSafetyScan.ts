@@ -68,9 +68,22 @@ export function normalizeForSafetyScan(body: string): string {
  * joiner U+2060, soft hyphen U+00AD, byte-order mark U+FEFF, direction marks and isolates, tag
  * characters) and every default-ignorable code point (which adds the variation selectors, the
  * combining grapheme joiner U+034F, and the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0 --
- * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A).
+ * U+3164 is the "invisible name" character children use in games; PR #2151 reviewer A) -- and
+ * U+2800, the Braille blank, which draws as an empty cell and is used the same way (PR #2152
+ * reviewer; it is not a format character and no pattern's whitespace class matched it).
  */
-export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800]/gu;
+
+/** One run of invisible characters: a run is one place where the text may be joined or split. */
+const INVISIBLE_RUN = new RegExp(`${INVISIBLE_FORMAT.source}+`, 'gu');
+
+/**
+ * The most separate runs read in every combination. 6 runs give 64 readings; a message with more
+ * is read as typed, with every run removed, and with every run a space (the readings before
+ * PR #2152's follow-up). Chosen so a long Tell us message cannot multiply the scan's work without
+ * bound; INFERRED: real messages carry one or two runs (an emoji joiner, a pasted word).
+ */
+export const MAX_COMBINED_INVISIBLE_RUNS = 6;
 
 /**
  * The text as the scanners should read it, once or twice (Codex P1 on #2138; Claude Science F4;
@@ -86,8 +99,26 @@ export const INVISIBLE_FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
  * a match. Nothing is rewritten in what is stored: this is the scan's reading, not the record.
  */
 export function scanForms(body: string): readonly string[] {
-  const stripped = body.replace(INVISIBLE_FORMAT, '');
-  return stripped === body ? [body] : [body, stripped];
+  // Each run of invisible characters may sit inside a word ("bre[U+200B]athe": remove it) or in
+  // place of a space ("can't[U+200B]breathe": read it as one), and one message can hold both:
+  // "can't[U+200B]bre[U+200B]athe" read only all-removed or all-space hid the emergency (PR #2152
+  // reviewer). So each run is read both ways, in every combination up to the cap. The first form
+  // is the text as typed and the second the text with every run removed, as before; the rest
+  // only ever add a reading.
+  const segments = body.split(INVISIBLE_RUN);
+  if (segments.length === 1) return [body];
+  const runs = segments.length - 1;
+  const joined = (spaceAt: (run: number) => boolean) => segments
+    .reduce((text, segment, index) => (index === 0 ? segment : text + (spaceAt(index - 1) ? ' ' : '') + segment), '');
+  const forms = new Set<string>();
+  if (runs <= MAX_COMBINED_INVISIBLE_RUNS) {
+    for (let mask = 0; mask < 2 ** runs; mask += 1) forms.add(joined((run) => ((mask >> run) & 1) === 1));
+  } else {
+    forms.add(joined(() => false));
+    forms.add(joined(() => true));
+  }
+  forms.delete(body);
+  return [body, ...forms];
 }
 
 /**

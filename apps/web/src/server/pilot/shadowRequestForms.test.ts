@@ -3,7 +3,7 @@
 // its plain spelling gets, and plain text keeps validateShadowRequest's own answer.
 
 import { classifyHighRiskTopic, validateShadowRequest } from './shadowChat';
-import { validateShadowRequestInEveryForm } from './shadowRequestForms';
+import { HIGH_RISK_TOPIC_ORDER, validateShadowRequestInEveryForm } from './shadowRequestForms';
 
 const check = (message: string) => validateShadowRequestInEveryForm(message, 'athlete', 'org-test');
 
@@ -53,6 +53,37 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(validateShadowRequest(hidden, 'athlete', 'org-test').highRisk).not.toBe(true);
 
     expect(check(hidden)).toEqual(plainAnswer);
+  });
+
+  // PR #2152 reviewers: two invisible characters doing different jobs, and two topics.
+  test.each([
+    ["I can't\u200Bbre\u200Bathe after that hit", "I can't breathe after that hit"],
+    ["I can\u200B't\u200Bbreathe after that hit", "I can't breathe after that hit"],
+    ['what is ch\u200Best\u200Bpain', 'what is chest pain'],
+    ['what is ch\u200Best pain and surgery', 'what is chest pain and surgery'],
+    ['what is con\u200Bcussion and chest pain', 'what is concussion and chest pain'],
+    ["I can't\u2800breathe after that hit", "I can't breathe after that hit"],
+  ])('%j gets the answer %j gets', (hidden, plain) => {
+    expect(check(hidden)).toEqual(validateShadowRequest(plain, 'athlete', 'org-test'));
+  });
+
+  test("HIGH_RISK_TOPIC_ORDER is classifyHighRiskTopic's own order", () => {
+    const probe: Record<string, string> = {
+      concussion: 'concussion', head_trauma: 'head injury', loss_of_consciousness: 'passed out',
+      dizziness: 'dizziness', dehydration: 'dehydration', weight_cutting: 'cut weight',
+      rapid_weight_loss: 'fast weight loss', chest_pain: 'chest pain', fainting: 'fainting',
+      medication: 'taking medication', prescription: 'prescription', surgery: 'surgery',
+      injection: 'injection', return_to_play: 'return to play', medical_clearance: 'medical clearance',
+      youth_safety: 'child safety', urgent_symptom: 'headache',
+    };
+    expect(Object.keys(probe).sort()).toEqual([...HIGH_RISK_TOPIC_ORDER].sort());
+    for (const topic of HIGH_RISK_TOPIC_ORDER) {
+      expect(classifyHighRiskTopic(`what is ${probe[topic]}`).topic).toBe(topic);
+    }
+    for (let i = 0; i + 1 < HIGH_RISK_TOPIC_ORDER.length; i += 1) {
+      const [first, next] = [HIGH_RISK_TOPIC_ORDER[i], HIGH_RISK_TOPIC_ORDER[i + 1]];
+      expect(classifyHighRiskTopic(`what is ${probe[next]} and ${probe[first]}`).topic).toBe(first);
+    }
   });
 
   test('a message withheld only in its typed form stays withheld', () => {

@@ -30,6 +30,24 @@ import { type ShadowValidationResult, validateShadowRequest } from './shadowChat
  * them statement for statement equal to main's but for the apostrophe fold, and that proof stays
  * whole when they are left as they are.
  */
+/**
+ * classifyHighRiskTopic's own order (shadowChat.ts): the first pattern that matches a message gives
+ * its topic. shadowRequestForms.test.ts pins this list to the classifier, pair by pair. When two
+ * readings find different topics ("what is ch[U+200B]est pain and surgery": as typed, surgery;
+ * removed, chest pain), the high-risk step takes the topic the plain spelling would get, the one
+ * ranked first (PR #2152 reviewer: the other could drop the review row from critical to high).
+ */
+export const HIGH_RISK_TOPIC_ORDER: readonly string[] = [
+  'concussion', 'head_trauma', 'loss_of_consciousness', 'dizziness', 'dehydration', 'weight_cutting',
+  'rapid_weight_loss', 'chest_pain', 'fainting', 'medication', 'prescription', 'surgery', 'injection',
+  'return_to_play', 'medical_clearance', 'youth_safety', 'urgent_symptom',
+];
+
+const topicRank = (topic: string | undefined): number => {
+  const rank = HIGH_RISK_TOPIC_ORDER.indexOf(topic ?? '');
+  return rank < 0 ? HIGH_RISK_TOPIC_ORDER.length : rank;
+};
+
 export function validateShadowRequestInEveryForm(
   message: string,
   userRole: string,
@@ -40,6 +58,6 @@ export function validateShadowRequestInEveryForm(
   const results = readings.map((form) => validateShadowRequest(form, userRole, organizationId));
   return results.find((result) => result.classification === 'urgent_personal_symptom')
     ?? results.find((result) => !result.valid)
-    ?? results.find((result) => result.highRisk === true)
+    ?? results.filter((result) => result.highRisk === true).sort((a, b) => topicRank(a.topic) - topicRank(b.topic))[0]
     ?? results[0];
 }
