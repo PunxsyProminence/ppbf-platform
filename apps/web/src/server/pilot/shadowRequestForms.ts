@@ -18,7 +18,10 @@ import { type ShadowValidationResult, validateShadowRequest } from './shadowChat
  * Q14 delta reviewer; same principle as Q14 A).
  *
  * The answer: the emergency one if any form has it; otherwise the first form that withholds;
- * otherwise the typed form's. Reading the typed form too, rather than only the stripped one, keeps
+ * otherwise the first form that reads a high-risk topic; otherwise the typed form's. The high-risk
+ * step keeps "what is ch[U+200B]est pain" on the high-risk path (the human-review probe and the
+ * high-risk flags in app/api/pilot/shadow/chat/route.ts): its stripped form is a valid educational
+ * question with highRisk true, and its typed form an ordinary one (Codex P1 on PR #2151). Reading the typed form too, rather than only the stripped one, keeps
  * "my[U+200B]shoulder hurts" withheld: stripped it is "myshoulder hurts", which no pattern reads
  * as personal, but the typed form still withholds it. A message with no invisible character has
  * one form, so its answer is validateShadowRequest's, unchanged.
@@ -37,5 +40,6 @@ export function validateShadowRequestInEveryForm(
   const results = readings.map((form) => validateShadowRequest(form, userRole, organizationId));
   return results.find((result) => result.classification === 'urgent_personal_symptom')
     ?? results.find((result) => !result.valid)
+    ?? results.find((result) => result.highRisk === true)
     ?? results[0];
 }

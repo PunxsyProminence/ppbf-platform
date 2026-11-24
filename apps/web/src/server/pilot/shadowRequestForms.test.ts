@@ -39,6 +39,22 @@ describe('invisible characters inside a word (Q14)', () => {
     expect(answer.classification).toBe('urgent_personal_symptom');
   });
 
+  // Codex P1 on PR #2151: an educational question with a hidden high-risk topic is valid in every
+  // form, so neither the emergency step nor the withhold step picks it. It must still come back
+  // high-risk, as its plain spelling does, so the chat route takes the high-risk path.
+  test.each([
+    ['what is ch\u200Best pain', 'what is chest pain'],
+    ['what is chest\u200Bpain', 'what is chest pain'],
+  ])('%j, a hidden high-risk topic in a question, gets the answer %j gets', (hidden, plain) => {
+    const plainAnswer = validateShadowRequest(plain, 'athlete', 'org-test');
+    expect(plainAnswer.valid).toBe(true);
+    expect(plainAnswer.highRisk).toBe(true);
+    // The typed form alone does not read the topic (the gap this closes).
+    expect(validateShadowRequest(hidden, 'athlete', 'org-test').highRisk).not.toBe(true);
+
+    expect(check(hidden)).toEqual(plainAnswer);
+  });
+
   test('a message withheld only in its typed form stays withheld', () => {
     // Stripped, "myshoulder hurts" is not personal to any pattern; typed, it is withheld.
     expect(validateShadowRequest('myshoulder hurts', 'athlete', 'org-test').valid).toBe(true);
