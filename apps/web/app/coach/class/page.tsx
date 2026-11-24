@@ -40,7 +40,9 @@ const CLASS_SCREEN_TV_SWITCH = { name: 'Allow on a TV', place: 'above' } as cons
 
 /** The one pain read, made only while a session is live (it mounts with the console). */
 function LiveSessionPainRead({ children }: { children: (read: PainReportsRead) => ReactNode }) {
-  const read = usePainReports({ refreshMs: COACH_TILES_REFRESH_MS });
+  // The gym floor tablet: the read asks for no notes, so no note text or admin-only marker
+  // reaches this screen at all (Jason's Q11, OD-2026-11-23-006, "A: Keep them off").
+  const read = usePainReports({ refreshMs: COACH_TILES_REFRESH_MS, withNotes: false });
   return <>{children(read)}</>;
 }
 

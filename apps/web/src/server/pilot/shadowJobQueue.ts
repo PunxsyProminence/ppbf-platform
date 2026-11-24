@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 50;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 51;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -200,6 +200,12 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 50;
 // withinTransaction hook for a pain report's note. What goes into
 // authorizedContext is unchanged; bumped because a listed file moved. A v49
 // job still queued at deploy is refused as STALE.
+// 51: PR #2151 (Overwatch Q14 A): the SHADOW chat route checks a request
+// through validateShadowRequestInEveryForm (shadowRequestForms.ts), which runs
+// validateShadowRequest on the message as typed and with invisible characters
+// removed, so a zero-width character inside a word no longer hides an
+// emergency. What goes into authorizedContext is unchanged; bumped because a
+// listed file moved. A v50 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -308,6 +314,8 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   // Lane PAIN-NOTES, DR-25 PR 2: shadowNearMisses.ts flagNearMiss gains a withinTransaction hook
   // (the pain note); what SHADOW context reads from near misses is unchanged.
   { version: 50, sha256: '4178b98a9498fa68970ba8ae05c50a4b80e94b73168d4c19ee9b581cbd417a2e' },
+  // Q14 A on #2151: the chat route's request check reads both forms of the message.
+  { version: 51, sha256: 'b579b669d216fb3e9592bb0c7168223e0bd47cc9f8a1eb609fa6431d2a671ae5' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

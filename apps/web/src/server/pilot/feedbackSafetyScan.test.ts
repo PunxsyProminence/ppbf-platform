@@ -9,7 +9,8 @@
 // "routes to a human" list is long and forgiving, and the "stays product" list
 // holds only sentences that are plainly about the software.
 
-import { normalizeForSafetyScan, scanForSafetyLanguage, spelledOutReading } from './feedbackSafetyScan';
+import { normalizeForSafetyScan, scanForSafetyLanguage, scanForms, spelledOutReading } from './feedbackSafetyScan';
+import { decideFeedbackRoute } from './feedback';
 
 describe('language that must reach a person', () => {
   test.each([
@@ -2371,5 +2372,54 @@ describe('HF12b twelfth delta review (81ed7ee..b6f70d8): blocking findings', () 
     'the adult class page on insta asked for pics from our class',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+// Codex P1 on #2138, Claude Science F4 (reopened PAIN-NOTES lane, 2026-11-24): one invisible
+// character inside a word split it ("se[U+200B]cret" read as "se cret"), so the cue was lost in
+// every channel that scans. Both forms are read now: as typed, and with invisible characters out.
+describe('invisible characters inside a word', () => {
+  const INVISIBLE = ['\u200B', '\u200C', '\u200D', '\u2060', '\u00AD', '\uFEFF', '\u200E', '\uFE0F'];
+
+  test.each(INVISIBLE)('U+%s inside a cue word still finds the cue', (mark) => {
+    expect(scanForSafetyLanguage(`he says its our se${mark}cret`).cues).toContain('grooming_or_isolation');
+    expect(scanForSafetyLanguage(`my coach hu${mark}rts me`).cues).toContain('someone_is_hurting_me');
+  });
+
+  test('an invisible character used as the only gap between words still reads as a gap', () => {
+    expect(scanForSafetyLanguage('he says its our\u200Bsecret').cues).toContain('grooming_or_isolation');
+  });
+
+  test('the Tell us box routes such a message to safeguarding, as it does the plain one', () => {
+    expect(decideFeedbackRoute({ role: 'athlete', body: 'he says its our secret' })).toBe('safeguarding');
+    expect(decideFeedbackRoute({ role: 'athlete', body: 'he says its our se\u200Bcret' })).toBe('safeguarding');
+  });
+
+  test('ordinary text has one form and reads exactly as before', () => {
+    for (const text of ['my knee hurts since practice', 'the app is slow when I log in', 'Coach Rosa is great']) {
+      expect(scanForms(text)).toEqual([text]);
+    }
+    expect(scanForSafetyLanguage('the app is slow when I log in')).toEqual({ safeguarding: false, cues: [] });
+    expect(normalizeForSafetyScan('My coach hits me')).toBe('my coach hits me');
+  });
+
+  test.each(['\u034F', '\u115F', '\u1160', '\u3164', '\uFFA0', '\u180B', '\u17B4'])(
+    'default-ignorable U+%s inside a word is read past too',
+    (mark) => {
+      expect(scanForSafetyLanguage(`he says its our se${mark}cret`).cues).toContain('grooming_or_isolation');
+      expect(decideFeedbackRoute({ role: 'athlete', body: `my coach hu${mark}rts me` })).toBe('safeguarding');
+    },
+  );
+
+  test('ordinary text that does have a second form (emoji with a variation selector or a joiner) keeps its verdict', () => {
+    for (const text of ['thanks coach \u2764\uFE0F the app is great', 'our family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} loves the gym']) {
+      expect(scanForms(text)).toHaveLength(2);
+      expect(scanForSafetyLanguage(text)).toEqual({ safeguarding: false, cues: [] });
+      expect(decideFeedbackRoute({ role: 'athlete', body: text })).toBe('product');
+    }
+  });
+
+  test('the forms are the text as typed and the text with invisible characters removed', () => {
+    expect(scanForms('co\u200Bach')).toEqual(['co\u200Bach', 'coach']);
   });
 });

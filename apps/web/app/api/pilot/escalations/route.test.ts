@@ -115,6 +115,25 @@ describe('GET /api/pilot/escalations', () => {
     expect(mockCloseEndedHoldNotices).not.toHaveBeenCalled();
   });
 
+  test('pain_notes=none asks the list to leave out pain-note escalations; without it nothing changes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockResolvedValueOnce([]);
+    await GET(request('/api/pilot/escalations?status=open&pain_notes=none'));
+    expect(mockList.mock.calls[0][1]).toEqual({ status: 'open', athleteIds: undefined, excludeAthleteVoice: undefined, excludePainNotes: true });
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockResolvedValueOnce([]);
+    await GET(request('/api/pilot/escalations?status=open'));
+    expect(mockList.mock.calls[1][1]).not.toHaveProperty('excludePainNotes');
+  });
+
+  test('any other pain_notes value is a 400', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const response = await GET(request('/api/pilot/escalations?pain_notes=all'));
+    expect(response.status).toBe(400);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
   test('an invalid status filter is a 400', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 

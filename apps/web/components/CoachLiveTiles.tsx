@@ -17,10 +17,13 @@ import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
  *               absence, so the athletes without one are counted as "Not
  *               marked", never as absent. It is the gym day, not this session,
  *               and the tiles say "today".
- *   attention   GET  /api/pilot/escalations?status=open -- open escalations on
- *               the coach's OWN athletes (the route scopes a coach to them), by
- *               their own severity. A pain-report escalation is skipped here, so
- *               a 7/10 report stored as critical is never counted as "Critical".
+ *   attention   GET  /api/pilot/escalations?status=open&pain_notes=none -- open
+ *               escalations on the coach's OWN athletes (the route scopes a coach
+ *               to them), by their own severity. A pain-report escalation is
+ *               skipped here, so a 7/10 report stored as critical is never
+ *               counted as "Critical". pain_notes=none keeps pain-note
+ *               escalations off the floor tablet altogether (OD-2026-11-23-006;
+ *               Overwatch Q13 A on PR #2151).
  *   pain        GET  /api/pilot/coach/pain-reports -- the feed the coach home's
  *               pain list reads (lane U2-6b, Overwatch's 6b ruling: "the tile and
  *               the panel read one feed ... over one stated window"). The tile
@@ -241,7 +244,7 @@ export default function CoachLiveTiles({ painFeed }: { painFeed?: PainTileRead }
         });
     }
     settle('attendance', readJson(`${base}/api/pilot/coach/attendance-today`), attendanceCounts, setAttendance);
-    settle('attention', readJson(`${base}/api/pilot/escalations?status=open`), attentionCounts, setAttention);
+    settle('attention', readJson(`${base}/api/pilot/escalations?status=open&pain_notes=none`), attentionCounts, setAttention);
     settle(
       'queue',
       readJson(`${base}/api/pilot/shadow/review-projection`, {
@@ -253,7 +256,8 @@ export default function CoachLiveTiles({ painFeed }: { painFeed?: PainTileRead }
       setQueue,
     );
     if (readsOwnPain) {
-      settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
+      // Counts only, so it asks for no notes (Jason's Q11, OD-2026-11-23-006; PR #2151 reviewer B).
+      settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}&notes=none`), painReportCount, setPain);
     }
   }, [readsOwnPain]);
 

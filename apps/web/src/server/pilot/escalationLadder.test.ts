@@ -298,7 +298,7 @@ describe('listEscalations', () => {
     await listEscalations('org-1');
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', null, null, null]);
+    expect(params).toEqual(['org-1', null, null, null, null]);
   });
 
   test('scopes to specific athlete ids for a coach', async () => {
@@ -307,7 +307,7 @@ describe('listEscalations', () => {
     await listEscalations('org-1', { status: 'open', athleteIds: ['ATH-1', 'ATH-2'] });
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', 'open', ['ATH-1', 'ATH-2'], null]);
+    expect(params).toEqual(['org-1', 'open', ['ATH-1', 'ATH-2'], null, null]);
   });
 
   // #198: the coach-scoped list must never carry athlete_voice rows -- the
@@ -320,7 +320,19 @@ describe('listEscalations', () => {
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain("source_type <> 'athlete_voice'");
-    expect(params).toEqual(['org-1', null, ['ATH-1'], true]);
+    expect(params).toEqual(['org-1', null, ['ATH-1'], true, null]);
+  });
+
+  // Overwatch Q13 A on #2151 (OD-2026-11-23-006): the class screen's tile read leaves out
+  // pain-note escalations; every other caller leaves the flag unset ($5 null).
+  test('excludePainNotes reaches the SQL as a real predicate on metadata.channel', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await listEscalations('org-1', { status: 'open', excludePainNotes: true });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("($5::boolean is not true or metadata->>'channel' is distinct from 'pain_report_note')");
+    expect(params).toEqual(['org-1', 'open', null, null, true]);
   });
 });
 

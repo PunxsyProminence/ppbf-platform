@@ -41,6 +41,13 @@ export async function GET(request: NextRequest) {
       throw new Error('Unsupported status: must be open, acknowledged, or resolved');
     }
     const status = (statusParam ?? undefined) as SafetyEscalationStatus | undefined;
+    // pain_notes=none is the class screen's tile read: pain-note escalations stay off the floor
+    // tablet (OD-2026-11-23-006, "A: Keep them off"; Overwatch Q13 A on PR #2151). Absent, the
+    // list is what it always was.
+    const painNotesParam = request.nextUrl.searchParams.get('pain_notes');
+    if (painNotesParam !== null && painNotesParam !== 'none') {
+      throw new Error('Unsupported pain_notes: must be none');
+    }
 
     const athleteIds = isCoach ? await athleteIdsForCoach(principal.organizationId, principal.accountId) : undefined;
     // A hold notice whose hold has ended is closed before the list is read
@@ -52,6 +59,7 @@ export async function GET(request: NextRequest) {
       status,
       athleteIds,
       excludeAthleteVoice: isCoach ? true : undefined,
+      ...(painNotesParam === 'none' ? { excludePainNotes: true } : {}),
     });
 
     return NextResponse.json({ ok: true, escalations });

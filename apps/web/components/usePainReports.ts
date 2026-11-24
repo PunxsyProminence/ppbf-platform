@@ -54,8 +54,11 @@ export interface CoachPainReport {
   /** Bounded classification from the server. 'unknown' on reports written
    *  before provenance was persisted -- see painReportAlert.ts. */
   reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
-  /** DR-25: the athlete's note, or null when there is none or (for a coach) it is held for admins. */
-  note: string | null;
+  /**
+   * DR-25: the athlete's note, or null when there is none or (for a coach) it is held for admins.
+   * Absent on a read made without notes (the class screen: Jason's Q11, "A: Keep them off").
+   */
+  note?: string | null;
   /** Organization admins and admins only: true when the note is held for admins. */
   noteAdminOnly?: boolean;
   /** Who marked it reviewed and when; null while nobody has. Never an account id. */
@@ -96,7 +99,12 @@ export function isPainReportReview(value: unknown): value is PainReportReview {
  * pain" line, the coach home's floor board marks the pain feed failed, and the tile still counts
  * the feed's rows (Q3 = A).
  */
-export function isPainReportRow(row: unknown): row is CoachPainReport {
+/**
+ * A row this screen can draw. With notes (the coach home), `note` must be text or null; without
+ * (the class screen), the row must carry no note and no admin-only marker at all -- a row that does
+ * is a server answer this screen cannot trust, so it is not drawn and the list says so.
+ */
+export function isPainReportRow(row: unknown, withNotes: boolean): row is CoachPainReport {
   if (!row || typeof row !== 'object') return false;
   const r = row as Record<string, unknown>;
   return (
@@ -110,8 +118,9 @@ export function isPainReportRow(row: unknown): row is CoachPainReport {
     && textOrNull(r.observedAt)
     && textOrNull(r.recordedAt)
     && REPORTERS.has(r.reporter)
-    && textOrNull(r.note)
-    && (r.noteAdminOnly === undefined || typeof r.noteAdminOnly === 'boolean')
+    && (withNotes
+      ? textOrNull(r.note) && (r.noteAdminOnly === undefined || typeof r.noteAdminOnly === 'boolean')
+      : r.note === undefined && r.noteAdminOnly === undefined)
     && (r.reviewed === null || isPainReportReview(r.reviewed))
   );
 }
@@ -153,8 +162,9 @@ export interface PainReportsRead {
   reload: () => void;
 }
 
-async function readPainFeed(): Promise<{ reports: CoachPainReport[]; count: PainReportCount }> {
-  const response = await fetch(`${apiBase()}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`, {
+async function readPainFeed(withNotes: boolean): Promise<{ reports: CoachPainReport[]; count: PainReportCount }> {
+  const notes = withNotes ? '' : '&notes=none';
+  const response = await fetch(`${apiBase()}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}${notes}`, {
     method: 'GET',
     credentials: 'include',
     cache: 'no-store',
@@ -163,11 +173,20 @@ async function readPainFeed(): Promise<{ reports: CoachPainReport[]; count: Pain
   const payload: unknown = await response.json();
   const count = painReportCount(payload);
   if (!count) throw new Error(PAIN_READ_FAILED);
-  return { reports: (payload as { painReports: unknown[] }).painReports.filter(isPainReportRow), count };
+  const rows = (payload as { painReports: unknown[] }).painReports;
+  return { reports: rows.filter((row): row is CoachPainReport => isPainReportRow(row, withNotes)), count };
 }
 
-export function usePainReports(options: { refreshMs?: number } = {}): PainReportsRead {
-  const { refreshMs } = options;
+export function usePainReports(options: {
+  refreshMs?: number;
+  /**
+   * False on the class screen (the gym floor tablet): the read asks for no notes, and the server
+   * sends no note text and no admin-only marker (Jason's Q11, OD-2026-11-23-006, "A: Keep them
+   * off"). Default true (the coach home).
+   */
+  withNotes?: boolean;
+} = {}): PainReportsRead {
+  const { refreshMs, withNotes = true } = options;
   const [state, setState] = useState<Omit<PainReportsRead, 'reload'>>({
     loading: true,
     answered: false,
@@ -192,7 +211,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
   // Sets no state until the read answers, so it can run from an effect.
   const read = useCallback(() => {
     const mine = ++sequence.current;
-    void readPainFeed().then(
+    void readPainFeed(withNotes).then(
       ({ reports, count }) => {
         if (!mounted.current || mine <= shown.current) return;
         shown.current = mine;
@@ -225,7 +244,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
         }));
       },
     );
-  }, []);
+  }, [withNotes]);
 
   // A refresh or a retry the coach asked for: says a read is out, then reads.
   const reload = useCallback(() => {

@@ -33,6 +33,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'limit is invalid.' }, { status: 400 });
     }
 
+    // notes=none: the class screen's read (the gym floor tablet). Jason's Q11,
+    // OD-2026-11-23-006, "A: Keep them off": no note text and no admin-only
+    // marker are sent to it at all. Absent: the coach home's read, with notes.
+    const notesParam = request.nextUrl.searchParams.get('notes');
+    if (notesParam !== null && notesParam !== 'none') {
+      return NextResponse.json({ ok: false, error: 'notes is invalid.' }, { status: 400 });
+    }
+    const includeNotes = notesParam === null;
+
     await assertShadowRuntimeReadiness({ requiredTables: REQUIRED_TABLES });
 
     const candidates = await listAthletesWithRecentPainReports(
@@ -67,6 +76,7 @@ export async function GET(request: NextRequest) {
       // DR-25 Q3 A: a note held for admins reaches organization admins and
       // admins only; a coach's read never fetches it.
       viewerReadsAdminOnlyNotes: isOrganizationAdminRole(principal.role),
+      includeNotes,
     });
 
     return NextResponse.json(

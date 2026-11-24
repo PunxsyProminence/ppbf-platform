@@ -53,7 +53,8 @@ const ESCALATIONS = {
   ],
 };
 const QUEUE = { ok: true, queue: [], total: 7 };
-const PAIN_FEED = '/api/pilot/coach/pain-reports?limit=50';
+// The tile's own read counts only, so it asks for no notes (Jason's Q11, OD-2026-11-23-006).
+const PAIN_FEED = '/api/pilot/coach/pain-reports?limit=50&notes=none';
 // The route's row (CoachPainReport, painReportAlert.ts): named and identifiable, so none of it may
 // reach the tile.
 function painRow(id: string) {
@@ -78,7 +79,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   routes = {
     '/api/pilot/coach/attendance-today': () => json(ATTENDANCE),
-    '/api/pilot/escalations?status=open': () => json(ESCALATIONS),
+    '/api/pilot/escalations?status=open&pain_notes=none': () => json(ESCALATIONS),
     '/api/pilot/shadow/review-projection': () => json(QUEUE),
     [PAIN_FEED]: () => json(PAIN),
   };
@@ -188,7 +189,7 @@ describe('the tiles', () => {
   });
 
   test('a read that fails says "Could not read" and shows no number at all', async () => {
-    routes['/api/pilot/escalations?status=open'] = () => json({ error: 'boom' }, 500);
+    routes['/api/pilot/escalations?status=open&pain_notes=none'] = () => json({ error: 'boom' }, 500);
     routes['/api/pilot/shadow/review-projection'] = () => {
       throw new Error('network');
     };
@@ -209,7 +210,7 @@ describe('the tiles', () => {
     expect(calls().sort()).toEqual([
       '/api/pilot/coach/attendance-today',
       PAIN_FEED,
-      '/api/pilot/escalations?status=open',
+      '/api/pilot/escalations?status=open&pain_notes=none',
       '/api/pilot/shadow/review-projection',
     ]);
     await act(async () => {
@@ -227,7 +228,7 @@ describe('the tiles', () => {
   test('carries no names: whatever else the reads carry, only counts reach the tiles', async () => {
     routes['/api/pilot/coach/attendance-today'] = () =>
       json({ ...ATTENDANCE, marks: ATTENDANCE.marks.map((mark) => ({ ...mark, full_name: 'Jordan Fixture' })) });
-    routes['/api/pilot/escalations?status=open'] = () =>
+    routes['/api/pilot/escalations?status=open&pain_notes=none'] = () =>
       json({ ok: true, escalations: [{ severity: 'high', athlete_id: 'a1', reason: 'Jordan Fixture reported a fall' }] });
     render(<CoachLiveTiles />);
     await settle();
@@ -245,7 +246,7 @@ describe('the pain tile (lane U2-6b)', () => {
   // ruling). An older open pain escalation still shows on the escalations page; the tile no longer
   // counts it (Q3 = A).
   test('counts the feed\'s rows, not the open pain escalations', async () => {
-    routes['/api/pilot/escalations?status=open'] = () =>
+    routes['/api/pilot/escalations?status=open&pain_notes=none'] = () =>
       json({
         ok: true,
         escalations: [

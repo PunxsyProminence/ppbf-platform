@@ -226,3 +226,29 @@ test.each([
     expect.objectContaining({ viewerReadsAdminOnlyNotes: expected }),
   );
 });
+
+// Jason's Q11, OD-2026-11-23-006, "A: Keep them off" (reopened PAIN-NOTES lane, R2): the class
+// screen's read asks for notes=none, and the list is then read with no notes at all.
+test.each([
+  ['', true],
+  ['&notes=none', false],
+] as const)('notes%s reads with includeNotes %s', async (query, includeNotes) => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+  mockListAthletes.mockResolvedValueOnce(['athlete-1']);
+  mockListReports.mockResolvedValueOnce({ reports: [], truncated: false });
+
+  const response = await get(`http://localhost/api/pilot/coach/pain-reports?limit=10${query}`);
+
+  expect(response.status).toBe(200);
+  expect(mockListReports).toHaveBeenLastCalledWith('org-1', ['athlete-1'], expect.objectContaining({ includeNotes }));
+});
+
+test('any other notes value is refused before anything is read', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+  const response = await get('http://localhost/api/pilot/coach/pain-reports?notes=all');
+
+  expect(response.status).toBe(400);
+  expect(mockListAthletes).not.toHaveBeenCalled();
+  expect(mockListReports).not.toHaveBeenCalled();
+});

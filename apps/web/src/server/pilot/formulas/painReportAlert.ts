@@ -344,8 +344,11 @@ export interface CoachPainReport {
    * The athlete's own note (DR-25), or null when there is none -- and null for
    * a coach when the note's safety scan held it for admins, with nothing else
    * on the report saying a note exists (Overwatch GO on #2133, Q3 A).
+   * ABSENT from a read made without notes (the class screen, the gym floor
+   * tablet: Jason's Q11, OD-2026-11-23-006, "A: Keep them off"), as is
+   * noteAdminOnly.
    */
-  readonly note: string | null;
+  readonly note?: string | null;
   /**
    * Present only for an organization admin or admin: true when the note is
    * held for admins. A coach's report never carries the key.
@@ -395,6 +398,7 @@ function isoText(value: unknown): string | null {
 function toCoachPainReport(
   row: CoachPainReportRow,
   viewerReadsAdminOnlyNotes: boolean,
+  includeNotes: boolean,
   reviewerNames: ReadonlyMap<string, string | null>,
 ): CoachPainReport {
   const metadata = row.metadata ?? {};
@@ -402,8 +406,10 @@ function toCoachPainReport(
   const reviewedAt = isoText(row.reviewed_at);
 
   return {
-    note: typeof row.athlete_note === 'string' && row.athlete_note.length > 0 ? row.athlete_note : null,
-    ...(viewerReadsAdminOnlyNotes ? { noteAdminOnly: row.athlete_note_admin_only === true } : {}),
+    ...(includeNotes
+      ? { note: typeof row.athlete_note === 'string' && row.athlete_note.length > 0 ? row.athlete_note : null }
+      : {}),
+    ...(includeNotes && viewerReadsAdminOnlyNotes ? { noteAdminOnly: row.athlete_note_admin_only === true } : {}),
     reviewed: reviewedAt === null
       ? null
       : {
@@ -476,6 +482,13 @@ export async function listPainReportsForAthletes(
      * an admin-only note never leaves the database (the CASE below).
      */
     viewerReadsAdminOnlyNotes: boolean;
+    /**
+     * False for the class screen's read (the gym floor tablet; Jason's Q11,
+     * OD-2026-11-23-006, "A: Keep them off"): no note text and no admin-only
+     * marker leave the database for it -- the CASEs below select NULL -- and
+     * the reports carry neither key. Default true (the coach home).
+     */
+    includeNotes?: boolean;
   },
 ): Promise<CoachPainReportPage> {
   if (athleteIds.length === 0) {
@@ -483,6 +496,7 @@ export async function listPainReportsForAthletes(
   }
 
   const windowDays = options.windowDays ?? PAIN_REPORT_ALERT_WINDOW_DAYS;
+  const includeNotes = options.includeNotes ?? true;
   const rows = await query<CoachPainReportRow>(
     `select n.near_miss_id,
             n.athlete_id,
@@ -490,8 +504,10 @@ export async function listPainReportsForAthletes(
             n.severity,
             n.metadata,
             n.created_at,
-            case when n.athlete_note_admin_only and not $6::boolean then null else n.athlete_note end as athlete_note,
-            case when $6::boolean then n.athlete_note_admin_only else null end as athlete_note_admin_only,
+            case when not $7::boolean then null
+                 when n.athlete_note_admin_only and not $6::boolean then null
+                 else n.athlete_note end as athlete_note,
+            case when $6::boolean and $7::boolean then n.athlete_note_admin_only else null end as athlete_note_admin_only,
             n.reviewed_by_account_id,
             n.reviewed_at
      from pilot.shadow_near_misses n
@@ -512,7 +528,7 @@ export async function listPainReportsForAthletes(
      limit $5`,
     [
       organizationId, [...athleteIds], PAIN_REPORT_TRIGGER, windowDays, options.limit + 1,
-      options.viewerReadsAdminOnlyNotes,
+      options.viewerReadsAdminOnlyNotes, includeNotes,
     ],
   );
 
@@ -525,7 +541,7 @@ export async function listPainReportsForAthletes(
   ));
 
   return {
-    reports: page.map((row) => toCoachPainReport(row, options.viewerReadsAdminOnlyNotes, reviewerNames)),
+    reports: page.map((row) => toCoachPainReport(row, options.viewerReadsAdminOnlyNotes, includeNotes, reviewerNames)),
     truncated: rows.length > options.limit,
   };
 }
