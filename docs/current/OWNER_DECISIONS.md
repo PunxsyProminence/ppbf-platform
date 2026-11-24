@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-24-006 | 2026-11-24 | Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging | PRIMARY |  |  |
+| OD-2026-11-24-005 | 2026-11-24 | Delete the earlier GitHub edit-history revisions of the texts rewritten in general terms | PRIMARY |  |  |
 | OD-2026-11-24-004 | 2026-11-24 | Release of main `7a0d2da4ce906eac3a1b1a2ee0f50bd489169d0c` to production; App Overwatch approves the gate when Jason's click does not register within 60 seconds | PRIMARY |  |  |
 | OD-2026-11-24-003 | 2026-11-24 | The SHADOW chat hidden-topic gap is fixed before the release goes to production | PRIMARY |  |  |
 | OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY |  |  |
@@ -659,6 +661,42 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-24-006 -- Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-24 20:24:15 UTC, PRIMARY):** *"release 2154 to production"*
+
+**Jason (2026-11-24 20:30:57 UTC, PRIMARY), while the staging deploy was re-running:** *"just send it to prodction to get it live we have to test that via the live app"*
+
+**Question as App Overwatch put it (2026-11-24, after the release went live):** "Should I run the live SHADOW test myself as ppbf@?" Options: "Yes, you run it"; "I'll test it".
+
+**Jason (2026-11-24 20:59:06 UTC, PRIMARY):** *"Yes, you run it"*
+
+**Ruling:** release main `d6b2f407` (#2154 and the records PR #2155) to production without the signed-in staging check, and check the fix on the live app; App Overwatch runs that live check as ppbf@.
+
+**Applied (Overwatch, not his words):** no migration in `7a0d2da4..d6b2f407`. deploy-staging run 45480542755: the first attempt stopped before any database step because GitHub placed it on a runner outside Azure, which the staging database firewall does not admit; the re-run passed, image `sha256:ce999a24e8bf2e6990cb41e146b7e08f9a0907ece72e51f6a311265e34351e2d`. deploy-production run 45482055349: GitHub showed 0 approvals 60 seconds after Overwatch asked Jason to approve, so Overwatch checked the pending gate was environment 19006343562 "production" on branch main at `d6b2f407` and approved it as PunxsyProminence under the 60-second rule (OD-2026-11-24-004), with a gate comment quoting his words. Live: revision `app-ppbf-production--0000216` at 100% traffic on that image; www returned 200. Live check, signed in as ppbf@ (organization_admin) in the browser pane: one SHADOW question with a blank Braille character (U+2800) inside a high-risk topic word got the high-risk answer, ending in "Talk to someone about this". It left one SHADOW conversation on that account.
+
+**Status:** recorded 2026-11-24 by PR.
+
+---
+
+## OD-2026-11-24-005 -- Delete the earlier GitHub edit-history revisions of the texts rewritten in general terms
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-24, after the records PR #2155 merged):** "Delete the old GitHub edit-history revisions now?" Options: "I'll sign in now"; "Later". Context: earlier on 2026-11-24 Overwatch rewrote 10 public GitHub texts in general terms (the bodies of PRs #2151, #2152 and #2154, four of its own PR comments and three Codex review comments), and GitHub keeps every earlier version in each text's edit history.
+
+**Jason (2026-11-24 20:12:39 UTC, PRIMARY):** *"you can do it"*
+
+**Ruling:** App Overwatch deletes the earlier revisions from those texts' edit histories.
+
+**Applied (Overwatch, not his words):** Jason signed in to github.com as PunxsyProminence in the browser pane. Overwatch deleted 18 earlier revisions and kept each text's newest one; a GitHub GraphQL read afterwards showed every older revision of the 10 texts deleted by PunxsyProminence and every newest revision unchanged. Deleting a revision cannot be undone.
+
+**Status:** recorded 2026-11-24 by PR.
 
 ---
 
