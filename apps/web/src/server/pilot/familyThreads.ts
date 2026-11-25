@@ -79,12 +79,13 @@ function refusedByGuard(error: unknown, constraints: string[]): boolean {
 
 /**
  * A guardian's write and the check that allows it, as ONE statement (Codex P2 on #2179, after
- * the read in listOwnFamilyThreads). `sql` writes only from a row that holds the guardian link
- * and the child's live record in the statement's own snapshot, and returns that child's date of
- * birth from the same snapshot. The age is guardianAccess's one rule (guardianLinkEnded) on that
- * date of birth; an adult child throws, and the transaction takes the write back. A link that
- * ends, a child deleted or a date of birth corrected to an adult's is then either seen by the
- * write or comes after it, never between a check and the write.
+ * the read in listOwnFamilyThreads). `sql` writes only from a row that holds the guardian's whole
+ * standing (guardianLinkedPredicateSql) and the child's live record in the statement's own
+ * snapshot, and returns that child's date of birth from the same snapshot. The age is
+ * guardianAccess's one rule (guardianLinkEnded) on that date of birth; an adult child throws, and
+ * the transaction takes the write back. There is no earlier check to go stale: a change committed
+ * before the statement starts is seen by it; one committed after its snapshot (or still
+ * uncommitted then) does not block it, and the write counts as made before that change.
  */
 async function writeWhileLinked<T extends QueryResultRow & { athlete_dob: string | null }>(
   sql: string,
