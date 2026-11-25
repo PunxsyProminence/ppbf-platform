@@ -52,16 +52,14 @@ import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staf
 
 const NOT_PERMITTED = 'This account may not record this athlete as present.';
 
-// 'superseded': a tap or take-back sent late, with its tap time, that a change made AFTER it on the
-// same mark already overrode (a take-back since the tap, or a tap since the take-back). Nothing is
-// written: the newer change stands (W4 item 7; the rule of OD-2026-10-21-004 ruling 1, "a later
-// change still wins", applied to the session mark itself).
-export type RunAthleteOutcome = 'marked' | 'unmarked' | 'unchanged' | 'superseded';
+export type RunAthleteOutcome = 'marked' | 'unmarked' | 'unchanged';
 
 interface RunOwnership {
   delivered_by_account_id: string;
   run_state: string | null;
   class_id: string | null;
+  /** The run's start, in epoch milliseconds (float8, so no text date format is parsed here). */
+  started_ms: number;
 }
 
 /**
@@ -74,9 +72,12 @@ interface RunOwnership {
  *     made later copies it as a tap made then;
  *   - on a tied session it goes to the register as a tap made earlier, so an Absent or Excused set
  *     there after the tap is a later register change and wins (OD-2026-10-21-004 ruling 1, "a
- *     later register change still wins"; Overwatch condition 1 on #2158);
- *   - a tap that a take-back made after it already overrode, or a take-back that a tap made after
- *     it already overrode, writes nothing ('superseded'): a stale resend never undoes a newer change.
+ *     later register change still wins"; Overwatch condition 1 on #2158).
+ * A tap time is never earlier than the run's start: a count off by a network delay cannot date a
+ * mark before the run existed. The order of two changes to one mark is the order they arrive, as
+ * before: the page sends its kept saves one at a time, in order, and two tap times worked out from
+ * two requests are each off by that request's delay, so comparing them could turn a quick
+ * correction around (review of #2165).
  */
 export async function setRunAthletePresent(input: {
   actor: ActorIdentity;
@@ -102,7 +103,8 @@ export async function setRunAthletePresent(input: {
     }
     // Read under a row lock, so a finish cannot land between this check and the write.
     const run = await client.query<RunOwnership>(
-      `select delivered_by_account_id, run_state, class_id
+      `select delivered_by_account_id, run_state, class_id,
+              (extract(epoch from started_at) * 1000)::float8 as started_ms
          from pilot.session_script_runs
         where organization_id = $1 and run_id = $2
           for update`,
@@ -122,14 +124,17 @@ export async function setRunAthletePresent(input: {
       throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
     }
 
+    // Not before the run began (see above).
+    const tappedAt = input.tappedAt === undefined
+      ? null
+      : new Date(Math.max(Date.parse(input.tappedAt), Number(owned.started_ms))).toISOString();
     let outcome: RunAthleteOutcome;
     let remarked = false;
     let closedWindowIds: string[] = [];
     let pointer: { register_class_id: string | null; register_written_at: string | null } | null = null;
     if (input.present) {
-      // A first mark inserts. A mark that was taken back is cleared and re-stamped, unless a tap
-      // sent late was made before that take-back. A standing mark matches neither arm (the
-      // conflict's WHERE is false), returns no row, and is left alone.
+      // A first mark inserts. A mark that was taken back is cleared and re-stamped. A standing
+      // mark matches neither arm (the conflict's WHERE is false), returns no row, and is left alone.
       const written = await client.query<{ inserted: boolean }>(
         `insert into pilot.session_run_athletes as m
            (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role, marked_at)
@@ -141,46 +146,29 @@ export async function setRunAthletePresent(input: {
                marked_by_role = excluded.marked_by_role,
                marked_at = excluded.marked_at
            where m.removed_at is not null
-             and ($6::timestamptz is null or m.removed_at <= $6::timestamptz)
          returning (xmax = 0) as inserted`,
-        [actor.organizationId, runId, athleteId, actor.accountId, role, input.tappedAt ?? null],
+        [actor.organizationId, runId, athleteId, actor.accountId, role, tappedAt],
       );
       outcome = written.rows[0] ? 'marked' : 'unchanged';
       remarked = written.rows[0] ? !written.rows[0].inserted : false;
-      if (outcome === 'unchanged' && input.tappedAt) {
-        // No row: a standing mark, or one taken back after this tap. The conflict locked the row.
-        const after = await client.query<{ removed: boolean }>(
-          `select removed_at is not null as removed from pilot.session_run_athletes
-            where organization_id = $1 and run_id = $2 and athlete_id = $3`,
-          [actor.organizationId, runId, athleteId],
-        );
-        if (after.rows[0]?.removed) outcome = 'superseded';
-      }
     } else {
       // The register mark this mark created (if any), read under the mark's lock before the
       // take-back clears it: the session no longer claims a register mark it has let go of.
-      const standing = await client.query<{ register_class_id: string | null; register_written_at: string | null; newer: boolean }>(
-        `select register_class_id, register_written_at::text,
-                ($4::timestamptz is not null and marked_at > $4::timestamptz) as newer
-           from pilot.session_run_athletes
+      const standing = await client.query<{ register_class_id: string | null; register_written_at: string | null }>(
+        `select register_class_id, register_written_at::text from pilot.session_run_athletes
           where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null
             for update`,
-        [actor.organizationId, runId, athleteId, input.tappedAt ?? null],
+        [actor.organizationId, runId, athleteId],
       );
-      if (standing.rows[0]?.newer) {
-        // A take-back sent late, made before the mark that stands now: the newer mark stays.
-        outcome = 'superseded';
-      } else {
-        pointer = standing.rows[0] ?? null;
-        const removed = await client.query(
-          `update pilot.session_run_athletes
-              set removed_at = coalesce($5::timestamptz, clock_timestamp()), removed_by_account_id = $4,
-                  register_class_id = null, register_written_at = null
-            where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null`,
-          [actor.organizationId, runId, athleteId, actor.accountId, input.tappedAt ?? null],
-        );
-        outcome = removed.rowCount === 1 ? 'unmarked' : 'unchanged';
-      }
+      pointer = standing.rows[0] ?? null;
+      const removed = await client.query(
+        `update pilot.session_run_athletes
+            set removed_at = coalesce($5::timestamptz, clock_timestamp()), removed_by_account_id = $4,
+                register_class_id = null, register_written_at = null
+          where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null`,
+        [actor.organizationId, runId, athleteId, actor.accountId, tappedAt],
+      );
+      outcome = removed.rowCount === 1 ? 'unmarked' : 'unchanged';
       // A child marked not there can no longer be tapped in a window on this run, so the athlete's
       // open windows here close now, in this transaction (W3-WINDOWS; Overwatch 7091097843): none is
       // left open to block a window elsewhere (STALE_WINDOW). The close MUST stay after the mark's lock
@@ -192,7 +180,7 @@ export async function setRunAthletePresent(input: {
       }
     }
 
-    if (outcome === 'marked' || outcome === 'unmarked') {
+    if (outcome !== 'unchanged') {
       await writePilotAuditEvent(
         {
           event_type: outcome === 'marked' && !remarked ? 'create' : 'update',
@@ -204,7 +192,7 @@ export async function setRunAthletePresent(input: {
           details: {
             run_id: runId, athlete_id: athleteId, present: input.present, ...(remarked ? { remarked: true } : {}),
             // A tap sent late records when it was made (W4 item 7).
-            ...(input.tappedAt ? { tapped_at: input.tappedAt } : {}),
+            ...(tappedAt ? { tapped_at: tappedAt } : {}),
             // Which windows this take-back ended (7111507024 Q2 A); the window table records no closer.
             ...(closedWindowIds.length > 0 ? { closed_window_ids: closedWindowIds } : {}),
           },
@@ -218,7 +206,7 @@ export async function setRunAthletePresent(input: {
     // register). A standing mark asked again writes nothing, so a later register change wins.
     const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
     if (outcome === 'marked' && owned.class_id) {
-      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, input.tappedAt) };
+      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined) };
     }
     if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
       return {
