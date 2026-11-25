@@ -609,19 +609,25 @@ describe('emailAlertSwitches.ts on a real database', () => {
       const save = setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW);
       save.then(() => { settled = true; }, () => { settled = true; });
       // Wait until the save is held on the row the office holds (or has finished).
+      let waited = false;
       for (let i = 0; i < 200 && !settled; i += 1) {
         const { rows } = await client.query(
           `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
         );
-        if (rows[0].n > 0) break;
+        if (rows[0].n > 0) {
+          waited = true;
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
+      // The save really was held by the office's row, not finished before it.
+      expect(waited).toBe(true);
       await office.query('COMMIT');
       await expect(save).rejects.toMatchObject({ status: 403 });
       expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false })]);
       expect((await auditRows(client)).map((row) => (row.details as { switched_on: boolean }).switched_on)).not.toContain(true);
     } finally {
-      office.release();
+      office.release(true);
       await client.end();
     }
   });
@@ -632,6 +638,11 @@ describe('emailAlertSwitches.ts on a real database', () => {
     activePool = new Pool({ connectionString: connectionStringFor('emailsw_delete_order'), max: 4 });
     const office = await activePool.connect();
     try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
       // deleteAthleteRecord's order (dataDeletion.ts): the athlete row, then its account.
       await office.query('BEGIN');
       await office.query('select 1 from pilot.athletes where athlete_id = $1 and organization_id = $2 for update', [ADULT_ATHLETE, ORG_ID]);
@@ -639,13 +650,19 @@ describe('emailAlertSwitches.ts on a real database', () => {
       let settled = false;
       const save = setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW);
       save.then(() => { settled = true; }, () => { settled = true; });
+      let waited = false;
       for (let i = 0; i < 200 && !settled; i += 1) {
         const { rows } = await client.query(
           `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
         );
-        if (rows[0].n > 0) break;
+        if (rows[0].n > 0) {
+          waited = true;
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
+      // The save really was held by the office's row, not finished before it.
+      expect(waited).toBe(true);
       await office.query(
         `update pilot.accounts set deleted_at = now(), active_flag = false
           where organization_id = $1 and athlete_id = $2 and role = 'athlete'`,
@@ -653,9 +670,9 @@ describe('emailAlertSwitches.ts on a real database', () => {
       );
       await office.query('COMMIT');
       await expect(save).rejects.toMatchObject({ status: 403 });
-      expect(await switchRows(client)).toEqual([]);
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false })]);
     } finally {
-      office.release();
+      office.release(true);
       await client.end();
     }
   });
