@@ -500,6 +500,7 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
 
   // Each fact a guardian's write or read relies on (Overwatch on #2179: every check-then-write path), as a
   // committed change and its undo: the store's link and child checks, and what the session gate checked.
+  // A change made inside the list test's own transaction is rolled back there; the write test undoes it.
   const FACT_CHANGES: Array<[string, (db: Client) => Promise<unknown>, (db: Client) => Promise<unknown>]> = [
     ['the link removed',
       (db) => db.query(
@@ -516,9 +517,23 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     ['the date of birth corrected to an adult',
       (db) => db.query(`update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB]),
       (db) => db.query(`update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, MINOR_DOB])],
+    // Ended here while the same account is still an active parent member of another gym: only this gym's counts.
     ['the membership in this gym ended',
-      (db) => db.query(`update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG]),
-      (db) => db.query(`update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG])],
+      async (db) => {
+        await db.query(`update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG]);
+        await db.query(
+          `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'parent', true)`,
+          [GUARDIAN, OTHER_ORG],
+        );
+      },
+      async (db) => {
+        await db.query(`delete from pilot.organization_memberships where account_id = $1 and organization_id = $2`, [GUARDIAN, OTHER_ORG]);
+        await db.query(`update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG]);
+      }],
+    // requireRole(parent) reads the role on this gym's membership.
+    ['the membership in this gym no longer a parent one',
+      (db) => db.query(`update pilot.organization_memberships set role = 'coach' where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG]),
+      (db) => db.query(`update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG])],
     ['the account deactivated',
       (db) => db.query(`update pilot.accounts set active_flag = false where account_id = $1`, [GUARDIAN]),
       (db) => db.query(`update pilot.accounts set active_flag = true where account_id = $1`, [GUARDIAN])],
