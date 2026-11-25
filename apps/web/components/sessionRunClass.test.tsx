@@ -5,8 +5,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import SessionClassPicker from './SessionClassPicker';
-import SessionRunClass, { tieSummary } from './SessionRunClass';
-import SaveQueueNotice from './SaveQueueNotice';
+import SessionRunClass, { tieSummary, unknownOffPage } from './SessionRunClass';
+import SaveQueueNotice, { UNKNOWN_WORDS } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
@@ -290,6 +290,51 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(screen.getByText('Tie the session to Youth boxing: That class cannot be tied now.')).toBeTruthy();
+  });
+
+  test('a tie whose outcome is not known while a kept finish waits is listed apart, with where to check', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    let reads = 0;
+    serveTie('run-1', [], () => null);
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409);
+      }
+      // The landed check cannot read the run.
+      if (String(input).endsWith('/api/pilot/session-scripts/runs') && (init as RequestInit | undefined)?.signal) {
+        reads += 1;
+        return json({}, 500);
+      }
+      return base(input, init);
+    });
+    prepareSaveQueue();
+    await act(async () => {
+      render(
+        <>
+          <SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={jest.fn()} isFinishWaiting={() => true} />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tie to a class...' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Tie to this class' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(reads).toBeGreaterThan(0);
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeTruthy();
+    expect(screen.getByText(`Tie the session to Youth boxing: ${unknownOffPage('Check which class the session is tied to before tying it again.')}`)).toBeTruthy();
   });
 
   test('signing out drops a kept tie: its waiting words go', async () => {

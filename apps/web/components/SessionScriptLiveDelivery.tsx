@@ -538,10 +538,13 @@ export default function SessionScriptLiveDelivery({
   // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
   // whose key could not be made (no randomUUID); then none is sent, as before.
   const logRequestKeys = useRef(new Map<string, string | null>());
-  // Each pair key belongs to the account whose kept log first sent it. The server answers a repeated
-  // key within the organization, so another account's tap of the same pair (someone else signed in
-  // on this page) sends its own key: it never replays the last person's log as theirs.
+  // Each pair key belongs to the account whose kept log first sent it, or whose log the server says
+  // it wrote. The server answers a repeated key within the organization, so another account's tap of
+  // the same pair (someone else signed in on this page) sends its own key, one per pair key and
+  // account: it never replays the last person's log as theirs, and their own second tap is still one
+  // log. A landed log retires its pair key, so a later tap of the pair gets new keys altogether.
   const pairKeyAccounts = useRef(new Map<string, string>());
+  const accountPairKeys = useRef(new Map<string, string>());
 
   // A protocol authored for one specific athlete never applies to another --
   // the server enforces this too (startExecution), but narrowing the list
@@ -589,6 +592,8 @@ export default function SessionScriptLiveDelivery({
     ): KeptSave => {
       let refusal: { error?: string; code?: string } = {};
       let landedItem: { execution_id: string; created_at: string } | null = null;
+      // Who sent it last, and under which key.
+      let sent: { by: string; key: string } | null = null;
       const label = `Intervention log: ${protocolTitle}`;
       const settleOnce = () => {
         resolved.done = true;
@@ -606,9 +611,18 @@ export default function SessionScriptLiveDelivery({
         // No athlete name: the line can outlive the log panel on a shared floor screen.
         label,
         send: ({ signal, requestKey, madeByAccountId }) => {
-          const owner = pairKey ? pairKeyAccounts.current.get(pairKey) : undefined;
-          if (pairKey && owner === undefined) pairKeyAccounts.current.set(pairKey, madeByAccountId);
-          const key = pairKey && (owner === undefined || owner === madeByAccountId) ? pairKey : requestKey;
+          let key = requestKey;
+          if (pairKey) {
+            const owner = pairKeyAccounts.current.get(pairKey);
+            if (owner === undefined) pairKeyAccounts.current.set(pairKey, madeByAccountId);
+            if (owner === undefined || owner === madeByAccountId) key = pairKey;
+            else {
+              const slot = `${pairKey} ${madeByAccountId}`;
+              key = accountPairKeys.current.get(slot) ?? requestKey;
+              accountPairKeys.current.set(slot, key);
+            }
+          }
+          sent = { by: madeByAccountId, key };
           return fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
             method: 'POST',
             credentials: 'include',
@@ -626,10 +640,23 @@ export default function SessionScriptLiveDelivery({
           });
         },
         answerOf: async (response) => {
-          const payload = (await response.clone().json().catch(() => ({}))) as { item?: unknown; error?: string; code?: string };
+          const payload = (await response.clone().json().catch(() => ({}))) as {
+            item?: { recorded_by_account_id?: unknown };
+            replayed?: unknown;
+            error?: string;
+            code?: string;
+          };
           if (isRefusal(response.status) && response.status !== 408 && response.status !== 429) {
             refusal = payload;
             return 'refused';
+          }
+          // The pair's key wrote another account's log (a key first sent on today's path, then someone
+          // else signed in): this log is not written. The key is theirs; this one goes again under its own.
+          const recordedBy = payload.item?.recorded_by_account_id;
+          if (response.ok && payload.replayed === true && pairKey && sent?.key === pairKey
+            && typeof recordedBy === 'string' && recordedBy !== sent.by) {
+            pairKeyAccounts.current.set(pairKey, recordedBy);
+            return 'unknown';
           }
           return response.ok && payload.item ? 'saved' : 'unknown';
         },
@@ -944,8 +971,8 @@ export default function SessionScriptLiveDelivery({
           // A refused resend that could not be checked: whether an earlier send landed is not known.
           const reason = describeRunError(refusal.error, response.status);
           // Off the page, the page's list says it, after the save's own name.
-          // The finish's own refusal is said here: the console stays.
-          if (!onPage.current || (finishKeptNow.current && body.action !== 'finish')) {
+          // A finish's own refusal is said here: its release above has cleared the flag, and the console stays.
+          if (!onPage.current || finishKeptNow.current) {
             return landed === null ? unknownOffPage('Check the session on the class screen before doing it again.') : reason;
           }
           setActionError(landed === null ? unknownOutcomeWords(label) : reason);
