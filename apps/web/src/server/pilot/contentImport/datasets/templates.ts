@@ -35,6 +35,17 @@ import { childFile, versionedDatasetEngine } from './templateScriptVersions';
 
 const dataset = datasetSpec('workout-templates');
 
+/** An item's details cell as an object, or undefined for a blank or unparsable cell (the validator refuses bad JSON). */
+function detailsOf(cell: string | undefined): Record<string, unknown> | undefined {
+  if (!cell) return undefined;
+  try {
+    const value: unknown = JSON.parse(cell);
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const workoutTemplatesEngine: DatasetEngine = versionedDatasetEngine({
   dataset,
   table: 'workout_templates',
@@ -47,6 +58,17 @@ export const workoutTemplatesEngine: DatasetEngine = versionedDatasetEngine({
       table: 'workout_template_items',
       idColumn: 'item_id',
       mintId: (templateId, row) => MINT.templateItem(templateId, isIntegerText(row.ordinal) ? integerText(row.ordinal) : row.ordinal),
+      // An owner's step placed inside another names it by item id in details.within_item_id (D-PK73-3;
+      // issued straight after it, workoutTemplates.ts issueOrder). A new version re-mints every item id,
+      // so the link follows its parent to the new id (App Overwatch on #2205, comment 7176799374).
+      siblingLink: {
+        read: (cells) => {
+          const parent = detailsOf(cells.details)?.within_item_id;
+          return typeof parent === 'string' && parent !== '' ? parent : undefined;
+        },
+        write: (cells, value) => ({ ...cells, details: JSON.stringify({ ...detailsOf(cells.details), within_item_id: value }) }),
+        key: (cells) => cells.ordinal ?? '',
+      },
     },
   ],
   holdsName: (row) => row.active === true,

@@ -83,6 +83,17 @@ export interface ChildTable {
   idColumn: string;
   /** The id a child row gets under the version id `parentId` (the ids.ts formula). */
   mintId(parentId: string, row: RowValues): string;
+  /**
+   * A cell that names a sibling row of the same unit by its id (workout template items:
+   * details.within_item_id, an owner's step placed inside another; lane W4-8 TL-ORD). Child ids are
+   * re-minted for every new version, so a link is written as its sibling's new id, and is hashed as its
+   * sibling's key, so that a stored version and the file it came from still compare equal.
+   */
+  siblingLink?: {
+    read(cells: Readonly<Record<string, string>>): string | undefined;
+    write(cells: Readonly<Record<string, string>>, value: string): Record<string, string>;
+    key(cells: Readonly<Record<string, string>>): string;
+  };
 }
 
 /** The current version of a lineage, as stored. */
@@ -389,7 +400,31 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
   function unitHash(root: Cells, children: Map<FileSpec, Cells[]>): string {
     return unitContentHash(hashDataset, {
       root,
-      children: Object.fromEntries(config.children.map((child) => [child.spec.file, children.get(child.spec) ?? []])),
+      children: Object.fromEntries(config.children.map((child) => [child.spec.file, linksByKey(child, children.get(child.spec) ?? [])])),
+    });
+  }
+
+  /** A child's sibling links (ChildTable.siblingLink) read as their sibling's key: ids differ per version, keys do not. */
+  function linksByKey(child: ChildTable, rows: Cells[]): Cells[] {
+    const link = child.siblingLink;
+    if (!link) return rows;
+    const keyOf = new Map(rows.filter((cells) => cells[child.idColumn]).map((cells) => [cells[child.idColumn], link.key(cells)]));
+    return rows.map((cells) => {
+      const value = link.read(cells);
+      const key = value === undefined ? undefined : keyOf.get(value);
+      return key === undefined ? cells : link.write(cells, `key:${key}`);
+    });
+  }
+
+  /** A child's sibling links moved to the ids its rows are written under (`ids`, index for index with `rows`). */
+  function linksToIds(child: ChildTable, rows: Cells[], ids: readonly string[]): Cells[] {
+    const link = child.siblingLink;
+    if (!link) return rows;
+    const idOf = new Map(rows.flatMap((cells, index) => (cells[child.idColumn] ? [[cells[child.idColumn], ids[index]] as const] : [])));
+    return rows.map((cells) => {
+      const value = link.read(cells);
+      const id = value === undefined ? undefined : idOf.get(value);
+      return id === undefined || id === value ? cells : link.write(cells, id);
     });
   }
 
@@ -770,7 +805,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           const parentColumn = ident(child.spec.parent?.column ?? '');
           const drill = drillColumnOf(child.spec);
           const ids = childIds.get(child.spec) ?? [];
-          for (const [index, cells] of (children.get(child.spec) ?? []).entries()) {
+          for (const [index, cells] of linksToIds(child, children.get(child.spec) ?? [], ids).entries()) {
             // The id the plan checked was free (assignWriteIds, refuseTakenChildIds).
             const childId = ids[index];
             const row = new Map<string, unknown>([

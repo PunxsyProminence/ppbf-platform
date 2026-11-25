@@ -44,6 +44,7 @@ import { hex14, MINT } from './contentImport/ids';
 import { sessionScriptLineageHeads } from './contentImport/lineage';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { ContentImportRefusal } from './contentImport/refusal';
+import { issueOrder } from './workoutTemplates';
 import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
@@ -720,6 +721,64 @@ describe('workout templates', () => {
       [MINT.templateItem(v3, '1'), jabV2, null],
       [MINT.templateItem(v3, '2'), cross, 'Rear hand back to the chin.'],
     ]);
+  });
+
+  it("a step an owner placed inside another follows its parent to each version's ids; the same files again are unchanged (TL-ORD)", async () => {
+    // details.within_item_id names the item a step sits inside (D-PK73-3), by the id the file gives it;
+    // issueOrder (workoutTemplates.ts) issues it straight after that item.
+    const admin = await createGymWithDisciplines('gym_nested');
+    const jab = fixtureDrillId('nested:jab');
+    const cross = fixtureDrillId('nested:cross');
+    await insertDrill('gym_nested', jab);
+    await insertDrill('gym_nested', cross);
+    const template = `wtp_${hex14('fixture template:nested')}`;
+    const [first, second] = [MINT.templateItem(template, '1'), MINT.templateItem(template, '2')];
+    const nestedIn = (parent: string) => JSON.stringify({ timing: 'after the first round', within_item_id: parent });
+    const items = [
+      itemRow(template, 1, jab, { item_id: first }),
+      itemRow(template, 2, cross, { item_id: second }),
+      itemRow(template, 3, cross, { item_id: MINT.templateItem(template, '3'), details: nestedIn(first) }),
+    ];
+    const stored = async (templateId: string) =>
+      (
+        await observer.query<{ item_id: string; ordinal: number; details: Record<string, unknown> | null }>(
+          `select item_id, ordinal, details from pilot.workout_template_items
+            where organization_id = 'gym_nested' and template_id = $1 order by ordinal`,
+          [templateId],
+        )
+      ).rows;
+
+    await applyCommitted('gym_nested', admin, templatePackage([templateRow(template)], items));
+    expect((await stored(template))[2].details).toEqual({ timing: 'after the first round', within_item_id: first });
+    const firstAgain = await plan('gym_nested', admin, templatePackage([templateRow(template)], items));
+    expect(firstAgain.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: 1, absent: 0, reject: 0 });
+
+    // A change elsewhere makes v2: the file still names v1's ids, and the link is written as v2's own.
+    const revised = templatePackage([templateRow(template, { intent: 'The check sits inside the first round.' })], items);
+    await applyCommitted('gym_nested', admin, revised);
+    const v2 = versionId('wtp', template, 2);
+    const v2Items = await stored(v2);
+    expect(v2Items.map((item) => item.item_id)).toEqual(['1', '2', '3'].map((ordinal) => MINT.templateItem(v2, ordinal)));
+    expect(v2Items[2].details).toEqual({ timing: 'after the first round', within_item_id: MINT.templateItem(v2, '1') });
+    expect(issueOrder(v2Items).map((item) => item.ordinal)).toEqual([1, 3, 2]);
+    // v1 is history, untouched.
+    expect((await stored(template))[2].details).toEqual({ timing: 'after the first round', within_item_id: first });
+
+    // The same files again: v2 holds the same link under its own ids, so nothing to do.
+    const again = await plan('gym_nested', admin, revised);
+    expect(again.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: 1, absent: 0, reject: 0 });
+
+    // A file that moves the step inside the second item is a change: v3, linked to v3's second item.
+    const moved = templatePackage(
+      [templateRow(template, { intent: 'The check sits inside the first round.' })],
+      [items[0], items[1], { ...items[2], details: nestedIn(second) }],
+    );
+    const third = await applyCommitted('gym_nested', admin, moved);
+    expect(third.plan.counts['workout-templates']).toEqual({ new: 0, new_version: 1, unchanged: 0, absent: 0, reject: 0 });
+    const v3 = versionId('wtp', template, 3);
+    const v3Items = await stored(v3);
+    expect(v3Items[2].details).toEqual({ timing: 'after the first round', within_item_id: MINT.templateItem(v3, '2') });
+    expect(issueOrder(v3Items).map((item) => item.ordinal)).toEqual([1, 2, 3]);
   });
 
   it('a template is unchanged when only its drill got a newer version, and keeps the version it was built with', async () => {
