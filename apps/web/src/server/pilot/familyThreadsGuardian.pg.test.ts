@@ -558,9 +558,19 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     ['the account deactivated',
       (db) => db.query(`update pilot.accounts set active_flag = false where account_id = $1`, [GUARDIAN]),
       (db) => db.query(`update pilot.accounts set active_flag = true where account_id = $1`, [GUARDIAN])],
+    // Marking a parent account deleted also withdraws the children only that guardian holds
+    // (pilot.cascade_parent_deletion, data-retention-deletion migration): here the sibling and the grown
+    // child. The undo brings them back too, or every later fact would run with this guardian's only
+    // other linked children gone, and a predicate that lost its "this child" condition would pass.
     ['the account marked deleted',
       (db) => db.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [GUARDIAN]),
-      (db) => db.query(`update pilot.accounts set deleted_at = null where account_id = $1`, [GUARDIAN])],
+      async (db) => {
+        await db.query(`update pilot.accounts set deleted_at = null where account_id = $1`, [GUARDIAN]);
+        await db.query(
+          `update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = any($2::text[])`,
+          [ORG, [SIBLING, GROWN]],
+        );
+      }],
     // The account's home gym another, active one: the status read is the gym acted in, not the home gym.
     ['the gym suspended',
       async (db) => {
@@ -604,6 +614,21 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       `select (select count(*) from pilot.family_thread_posts)::int + (select count(*) from pilot.family_thread_reads)::int as n`,
     )).rows[0].n as number;
     const before = await kept();
+    // Every fact the predicate reads, so an undo that leaves anything changed (a cascade's side effect
+    // included) fails here rather than quietly weakening every later step.
+    const fixture = async () => (await client.query(
+      `select
+         (select json_agg(json_build_array(organization_id, parent_id, athlete_id) order by organization_id, parent_id, athlete_id)
+            from pilot.guardian_links) as links,
+         (select json_agg(json_build_array(organization_id, athlete_id, deleted_at is null, dob::text) order by organization_id, athlete_id)
+            from pilot.athletes) as athletes,
+         (select json_agg(json_build_array(account_id, organization_id, active_flag, deleted_at is null, is_platform_owner) order by account_id)
+            from pilot.accounts) as accounts,
+         (select json_agg(json_build_array(account_id, organization_id, role, active_flag) order by account_id, organization_id)
+            from pilot.organization_memberships) as memberships,
+         (select json_agg(json_build_array(organization_id, status) order by organization_id) from pilot.organizations) as gyms`,
+    )).rows[0];
+    const asSetUp = await fixture();
 
     const writes: Array<[string, () => Promise<unknown>, number]> = [
       ['open a thread', () => start(GUARDIAN, CHILD), 403],
@@ -627,6 +652,7 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
           expect(beforeGuardianWrite).toBeNull();
           expect([guards, changeLabel, writeLabel, outcome, await kept()]).toEqual([guards, changeLabel, writeLabel, status, before]);
           await undo(client);
+          expect([changeLabel, await fixture()]).toEqual([changeLabel, asSetUp]);
         }
       }
     }
