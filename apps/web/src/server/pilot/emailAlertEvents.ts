@@ -209,8 +209,9 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * past counts as the posting. A RESTORE SETS IT LIVE AGAIN (Overwatch on
  * #2193, comment 7165858842): restoring a retired notice emails everyone who
  * reads it and has not had it, and nobody twice, because the send log's key
- * is one row per person per notice (OW27-03 B); a send skipped because the
- * notice was retired before it went out is queued again (emailAlertQueue.ts). The restore time is the row's
+ * is one row per person per notice (OW27-03 B). A send that was skipped (the
+ * notice retired before it went out, say) was never had, so a restore after
+ * the skip queues it again (emailAlertQueue.ts). The restore time is the row's
  * updated_at: setAnnouncementActive is the only write to a notice and stamps
  * it on every call, so a Restore pressed on a notice already live counts the
  * same and reaches only those who have not had it.
