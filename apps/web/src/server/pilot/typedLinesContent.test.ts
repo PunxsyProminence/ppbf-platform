@@ -45,6 +45,7 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_43c793b8f90e77: '0ce93376cfc381be8be9e73068f87136e6b238d8f235f82ef21108586c6926d9', // 48-Session Manual, Weeks 1-4 (TL-1b)
   wtp_ed57bea28de0f7: '5c1fda8d7e279462011757fdb575f8ed2b837d6e6544cc45ad5e6e51f20f0bdb', // Weeks 5-8 (TL-1b)
   wtp_d861f584584788: '0db4dd011480e5ccfd5f3fc5df45984ebb9f25803a3e26c91e55fa94bb79f2b2', // Weeks 9-12 (TL-1b)
+  wtp_900c0a3fd4422a: '76781c9612b5ad2c1e003308dafa24cf78438f64140c99b5ffaa2180ff21f03e', // Scripted 60-Minute Class (TL-2; at d9514532)
 };
 
 type Row = Record<string, string>;
