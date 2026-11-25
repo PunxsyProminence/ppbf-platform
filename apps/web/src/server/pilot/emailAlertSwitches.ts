@@ -12,7 +12,9 @@
  *
  * An adult athlete cannot switch on before an address is confirmed (OW27-38 B;
  * GO on #2159, condition 3); the table's CHECK refuses it too. Every change is
- * audited in the same transaction, never with an address.
+ * audited in the same transaction. No address field is audited; the audit row
+ * names the account by its id, which can itself be the sign-in address (see
+ * the email-alert-switches migration).
  */
 
 import type { PoolClient } from 'pg';
