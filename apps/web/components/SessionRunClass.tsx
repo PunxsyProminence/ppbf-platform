@@ -43,18 +43,6 @@ export function unknownOutcomeWords(label: string): string {
   return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
 }
 
-/**
- * The coach's live run and its class, as GET /api/pilot/session-scripts/runs answers them. A kept
- * save's landed check reads it: the answer is about the coach's live run, so it counts for this run
- * only when the run id matches.
- */
-export async function fetchLiveRunClass(signal?: AbortSignal): Promise<{ runId: string | null; view: RunClassView | null }> {
-  const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { credentials: 'include', signal });
-  if (!response.ok) throw new Error('run');
-  const payload = (await response.json()) as { run?: { run_id?: string } | null; class?: RunClassView };
-  return { runId: payload.run?.run_id ?? null, view: payload.class ?? null };
-}
-
 /** The live run's class as GET /api/pilot/session-scripts/runs answers it, or null. */
 export async function fetchRunClass(signal?: AbortSignal): Promise<RunClassView | null> {
   const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { credentials: 'include', signal });
@@ -82,6 +70,20 @@ export function tieSummary(title: string, copied: readonly Copied[]): string {
 }
 
 const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
+// The tie's refusals given only after its request key was looked up and found unrecorded
+// (setSessionRunClass): the tie never landed. Any other refusal of a resend leaves it not known.
+// Decided by the key alone, never by the run holding the class asked for, which another tab or
+// device tying the same class would also produce (OVERWATCH 7170099938 on #2178).
+const TIE_REFUSED_AFTER_KEY = new Set([
+  'SESSION_RUN_NOT_LIVE',
+  'SESSION_CLASS_NOT_FOUND',
+  'SESSION_CLASS_NOT_YOURS',
+  'SESSION_CLASS_CANCELLED',
+  'SESSION_CLASS_NOT_TODAY',
+  'SESSION_CLASS_ALREADY_LIVE',
+]);
+
+type TieAnswer = { class_id?: string | null; copied?: Copied[]; released?: string[]; replayed?: unknown; live?: unknown };
 
 export default function SessionRunClass({
   runId,
@@ -151,23 +153,27 @@ export default function SessionRunClass({
     };
   }, [classId]);
 
-  // What a tie (or untie) the server took did, in words.
-  async function showTied(payload: { class_id?: string | null; copied?: Copied[]; released?: string[] }) {
+  // What a tie (or untie) the server took did, in words. `changedSince`: this tap landed, and the
+  // session's class was changed again after it (another tab or device); the words say what it is now.
+  async function showTied(payload: TieAnswer, changedSince?: string) {
     setChoosing(false);
     onClassChange(payload.class_id ?? null);
+    const lead = changedSince ? `${changedSince}: saved, but the session's class was changed again after it. ` : '';
     if (payload.class_id) {
       const tied = await fetchRunClass().catch(() => null);
       setView(tied);
-      setMessage(tieSummary(tied?.title ?? 'the class', payload.copied ?? []));
+      setMessage(`${lead}${tieSummary(tied?.title ?? 'the class', payload.copied ?? [])}`);
     } else {
       const kept = payload.released?.length ?? 0;
-      setMessage(`No class now (open gym).${kept ? ` The ${plural(kept, 'mark', 'marks')} this session put on the class register ${kept === 1 ? 'stays' : 'stay'}.` : ''}`);
+      setMessage(`${lead}No class now (open gym).${kept ? ` The ${plural(kept, 'mark', 'marks')} this session put on the class register ${kept === 1 ? 'stays' : 'stay'}.` : ''}`);
     }
   }
 
-  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). It sets the session's
-  // class, so a resend changes nothing more (OQ-1's repeat proofs). A refused RESEND is checked
-  // against the class the server holds before any failed words (Overwatch condition 2).
+  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Every send carries the
+  // save's own request key: the server records it with the tie and answers a resend of a key it holds
+  // as saved (`replayed`), writing nothing more. A refused RESEND is decided by that key before any
+  // failed words (Overwatch condition 2): TIE_REFUSED_AFTER_KEY means it never landed; any other
+  // refusal leaves it not known.
   function keptTie(next: string | null, resolved: { done: boolean }): KeptSave {
     let refusal: { error?: string; message?: string } = {};
     const title = next ? pickedClasses.current.find((item) => item.class_id === next)?.title : undefined;
@@ -175,12 +181,12 @@ export default function SessionRunClass({
     const forThisRun = () => currentRun.current === runId;
     return {
       label,
-      send: ({ signal }) =>
+      send: ({ signal, requestKey }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'tie_class', class_id: next }),
+          body: JSON.stringify({ action: 'tie_class', class_id: next, request_key: requestKey }),
           signal,
         }),
       answerOf: async (response) => {
@@ -188,23 +194,21 @@ export default function SessionRunClass({
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
-      // Landed only if the coach's live run is this run, and its class is the one asked for. When
-      // the live run is another run or none, this run has ended and what it held is not read here:
-      // not known, never "not saved" (condition 2; round 14, reviewer B).
-      checkLanded: async (signal) => {
-        const now = await fetchLiveRunClass(signal).catch(() => null);
-        if (now === null || now.runId !== runId) return null;
-        return (now.view?.class_id ?? null) === next;
-      },
+      // Decided by this save's own key: no read of the run, whose class another tab or device could match.
+      checkLanded: async () => (refusal.error !== undefined && TIE_REFUSED_AFTER_KEY.has(refusal.error) ? false : null),
       onSaved: (response) => {
         resolved.done = true;
         setWaitingWords('');
-        if (!forThisRun()) return;
+        if (!forThisRun() || !response) return;
         void (async () => {
-          const payload = response
-            ? ((await response.json().catch(() => ({}))) as { class_id?: string | null; copied?: Copied[]; released?: string[] })
-            : { class_id: next };
-          await showTied(payload);
+          const payload = (await response.json().catch(() => ({}))) as TieAnswer;
+          // An earlier send landed, and the session has ended since (not here): the console resyncs.
+          if (payload.replayed === true && payload.live === false) {
+            onRunNotLive();
+            return;
+          }
+          // The class the server holds now, said as changed since when it is not the one this tap set.
+          await showTied(payload, payload.replayed === true && (payload.class_id ?? null) !== next ? label : undefined);
         })();
       },
       // Refused: said on this line, where the coach tapped.

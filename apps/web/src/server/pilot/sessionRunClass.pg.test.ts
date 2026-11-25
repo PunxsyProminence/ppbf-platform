@@ -28,6 +28,10 @@
 //    or untie and the no-shows tap, each sent twice, leave every row and audit event as the first left them.
 // 10. A LATE TAP carries when it was tapped: an Absent or Excused set on the register after that time
 //    wins (ruling 1, "a later register change still wins"); one set before it is flipped.
+// 11. A KEPT RUN ACTION OR TIE IS DECIDED BY ITS OWN REQUEST KEY (OVERWATCH 7170099938): a resend of a
+//    key recorded for the run writes nothing and says so; a key never recorded is refused once the run
+//    has ended, even when another tab or device made the same change; the key is recorded exactly when
+//    its action is written.
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites use. It NEVER
 // connects to production or staging.
@@ -92,7 +96,14 @@ import type { PilotRole } from './contracts';
 import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
 import { setRunAthletePresent } from './sessionRunAthletes';
 import { describeRunClass, listTieableClasses, markSessionNoShowsAbsent, setSessionRunClass } from './sessionRunClass';
-import { finishSessionScriptRun, listSettledRunsForOrganization, startSessionScriptRun } from './sessionScriptRuns';
+import {
+  finishSessionScriptRun,
+  keyedSessionScriptRunAction,
+  listSettledRunsForOrganization,
+  pauseSessionScriptRun,
+  startSessionScriptRun,
+  type RunActionAsked,
+} from './sessionScriptRuns';
 
 jest.setTimeout(240_000);
 
@@ -1444,5 +1455,234 @@ describe('a late tap or take-back keeps its tap time on the session mark', () =>
     expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked', register: { effect: 'removed' } });
     expect(await tap(gym.coach, runId, gym.ada)).toEqual({ outcome: 'marked', register: { effect: 'created' } });
     expect((await markAudit(gym)).every((row) => !('tapped_at' in row.details))).toBe(true);
+  });
+});
+
+// OVERWATCH 7170099938 on #2178 (Codex P2 4698738015): a kept run action or tie decides whether its own
+// earlier send landed by its request key, recorded on the run's audit event with the action, never by
+// the run's state matching what it asked, which another tab or device making the same change also gives.
+describe('a kept run action or tie is decided by its own request key', () => {
+  const asCoach = (gym: Gym) => ({ organizationId: gym.organizationId, accountId: gym.coach.accountId, role: gym.coach.role });
+  const keyed = (gym: Gym, runId: string, key: string, asked: RunActionAsked) => keyedSessionScriptRunAction(asCoach(gym), runId, key, asked);
+  const finishing = (runState: 'completed' | 'abandoned', deviationNote?: string): RunActionAsked => ({ action: 'finish', input: { runState, deviationNote } });
+
+  /** The run actions recorded on a run, oldest first. */
+  async function runActions(gym: Gym, runId: string) {
+    const { rows } = await client.query<{ details: Record<string, unknown> }>(
+      `select details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2 and details->>'action' = 'run_action'
+        order by audit_id`,
+      [gym.organizationId, runId],
+    );
+    return rows.map((row) => row.details);
+  }
+
+  /** The ties recorded on a run, oldest first. */
+  async function ties(gym: Gym, runId: string) {
+    const { rows } = await client.query<{ details: Record<string, unknown> }>(
+      `select details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2 and details->>'action' = 'tie_class'
+        order by audit_id`,
+      [gym.organizationId, runId],
+    );
+    return rows.map((row) => row.details);
+  }
+
+  /** A three-block plan, so a run has blocks to move between. */
+  async function withPlan(gym: Gym) {
+    // The plan's discipline (boxing, the default) must be one of the gym's.
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact') on conflict do nothing`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+       values ($1, 'scr-keys', 'scr-keys', 1, 'Plan', $2)`,
+      [gym.organizationId, gym.coach.accountId],
+    );
+    for (const [index, blockId] of ['blk-k1', 'blk-k2', 'blk-k3'].entries()) {
+      await client.query(
+        `insert into pilot.session_script_blocks
+           (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
+         values ($1, $2, 'scr-keys', $3, $4, $5, $6, 'cue')`,
+        [gym.organizationId, blockId, index + 1, index * 10, (index + 1) * 10, `block ${index + 1}`],
+      );
+    }
+    return startSessionScriptRun(gym.organizationId, gym.coach.accountId, { scriptId: 'scr-keys', classId: null, actorRole: gym.coach.role });
+  }
+
+  test('a run action whose answer is lost: the resend is replayed with the run now and writes nothing, and two resends at once write nothing', async () => {
+    const gym = await newGym('keys-lost');
+    const { run_id: runId } = await withPlan(gym);
+
+    const first = await keyed(gym, runId, 'key-pause', { action: 'pause' });
+    expect(first).toMatchObject({ replayed: false, run: { run_id: runId, is_paused: true } });
+    expect(await runActions(gym, runId)).toEqual([{ run_id: runId, action: 'run_action', request_key: 'key-pause', asked: { run_action: 'pause' } }]);
+    const landed = await gymState(gym, runId);
+    await letTheClockMove();
+
+    const resent = await Promise.all([
+      keyed(gym, runId, 'key-pause', { action: 'pause' }),
+      keyed(gym, runId, 'key-pause', { action: 'pause' }),
+    ]);
+    for (const answer of resent) expect(answer).toMatchObject({ replayed: true, run: { run_id: runId, is_paused: true } });
+    expect(await gymState(gym, runId)).toEqual(landed);
+  });
+
+  test('two first sends of one key at once: one writes and records it, the other waits on the run and is replayed', async () => {
+    const gym = await newGym('keys-race');
+    const { run_id: runId } = await withPlan(gym);
+    const answers = await Promise.all([
+      keyed(gym, runId, 'key-move', { action: 'advance', toBlockId: 'blk-k3' }),
+      keyed(gym, runId, 'key-move', { action: 'advance', toBlockId: 'blk-k3' }),
+    ]);
+    expect(answers.map((answer) => answer.replayed).sort()).toEqual([false, true]);
+    expect(await runActions(gym, runId)).toHaveLength(1);
+  });
+
+  test.each<[string, RunActionAsked, (gym: Gym, runId: string) => Promise<unknown>]>([
+    ['advance', { action: 'advance', toBlockId: 'blk-k3' }, (gym, runId) => keyed(gym, runId, 'key-b', { action: 'advance', toBlockId: 'blk-k3' })],
+    ['pause', { action: 'pause' }, (gym, runId) => pauseSessionScriptRun(gym.organizationId, gym.coach.accountId, runId)],
+    ['show_on_wall', { action: 'show_on_wall', show: true }, (gym, runId) => keyed(gym, runId, 'key-b', { action: 'show_on_wall', show: true })],
+    ['finish', finishing('completed'), (gym, runId) => finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' })],
+  ])('%s: another tab or device makes the same change first, and the session ends; this send, never landed, is refused, never replayed', async (_action, asked, sameChange) => {
+    const gym = await newGym(`keys-same-${asked.action}`);
+    const { run_id: runId } = await withPlan(gym);
+    await sameChange(gym, runId);
+    if (asked.action !== 'finish') await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const before = await gymState(gym, runId);
+
+    // The run shows what this send asked, but its key was never recorded: refused after the lookup.
+    expect(await refusal(keyed(gym, runId, 'key-a', asked))).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(before);
+    expect((await runActions(gym, runId)).map((details) => details.request_key)).not.toContain('key-a');
+  });
+
+  test('resume: another device resumes first; this send, landing later on the live run, is its own and recorded; once the session ends a key never sent is refused', async () => {
+    const gym = await newGym('keys-same-resume');
+    const { run_id: runId } = await withPlan(gym);
+    await pauseSessionScriptRun(gym.organizationId, gym.coach.accountId, runId);
+    await keyed(gym, runId, 'key-b', { action: 'resume' });
+    // This send reaches the live run after the other device's: a no-op on the run, but this key's own.
+    expect(await keyed(gym, runId, 'key-a', { action: 'resume' })).toMatchObject({ replayed: false, run: { is_paused: false } });
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    // Its resend after the end is replayed, with no live run to show; a key never sent is refused.
+    expect(await keyed(gym, runId, 'key-a', { action: 'resume' })).toEqual({ run: null, replayed: true });
+    expect(await refusal(keyed(gym, runId, 'key-c', { action: 'resume' }))).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    expect((await runActions(gym, runId)).map((details) => details.request_key)).toEqual(['key-b', 'key-a']);
+  });
+
+  test('a finish whose answer is lost: the resend is replayed with the run it settled, coach notes never recorded in the audit', async () => {
+    const gym = await newGym('keys-finish');
+    const { run_id: runId } = await withPlan(gym);
+    const first = await keyed(gym, runId, 'key-end', finishing('abandoned', 'cut short'));
+    expect(first).toMatchObject({ replayed: false, run: { run_state: 'abandoned', deviation_note: 'cut short' } });
+    const settled = await gymState(gym, runId);
+    expect(await keyed(gym, runId, 'key-end', finishing('abandoned', 'cut short'))).toEqual({ run: first.run, replayed: true });
+    expect(await gymState(gym, runId)).toEqual(settled);
+    expect(await runActions(gym, runId)).toEqual([
+      { run_id: runId, action: 'run_action', request_key: 'key-end', asked: { run_action: 'finish', run_state: 'abandoned' } },
+    ]);
+  });
+
+  test('the same key for another action or target is refused and writes nothing; a key is the run\'s own; another coach gets not-found', async () => {
+    const gym = await newGym('keys-reuse');
+    const { run_id: runId } = await withPlan(gym);
+    await keyed(gym, runId, 'key-1', { action: 'show_on_wall', show: true });
+    const before = await gymState(gym, runId);
+    for (const asked of [
+      { action: 'show_on_wall', show: false },
+      { action: 'pause' },
+      { action: 'advance', toBlockId: 'blk-k2' },
+      finishing('completed'),
+    ] as RunActionAsked[]) {
+      expect(await refusal(keyed(gym, runId, 'key-1', asked))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    }
+    expect(await gymState(gym, runId)).toEqual(before);
+    // Another coach's run, with a key recorded on it, reads as missing.
+    const theirs = { organizationId: gym.organizationId, accountId: gym.otherCoach.accountId, role: gym.otherCoach.role };
+    expect(await refusal(keyedSessionScriptRunAction(theirs, runId, 'key-1', { action: 'show_on_wall', show: true })))
+      .toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    // The same key on the coach's next run is that run's own: written, not replayed.
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const next = await startSessionScriptRun(gym.organizationId, gym.coach.accountId, { scriptId: 'scr-keys', classId: null, actorRole: gym.coach.role });
+    expect(await keyed(gym, next.run_id, 'key-1', { action: 'show_on_wall', show: true })).toMatchObject({ replayed: false, run: { show_on_wall: true } });
+  });
+
+  test('a refusal before the action is written records no key: a block of no plan here, or a plain session\'s move', async () => {
+    const gym = await newGym('keys-refused');
+    const { run_id: runId } = await withPlan(gym);
+    expect(await refusal(keyed(gym, runId, 'key-x', { action: 'advance', toBlockId: 'blk-elsewhere' }))).toMatchObject({ status: 422 });
+    expect(await runActions(gym, runId)).toEqual([]);
+    expect(await keyed(gym, runId, 'key-x', { action: 'advance', toBlockId: 'blk-k2' })).toMatchObject({ replayed: false, run: { current_block_id: 'blk-k2' } });
+    const plain = await start(gym, gym.otherCoach, null);
+    const theirs = { organizationId: gym.organizationId, accountId: gym.otherCoach.accountId, role: gym.otherCoach.role };
+    expect(await refusal(keyedSessionScriptRunAction(theirs, plain.run_id, 'key-y', { action: 'advance', toBlockId: 'blk-k2' })))
+      .toMatchObject({ message: 'SESSION_RUN_HAS_NO_SCRIPT', status: 409 });
+    expect(await runActions(gym, plain.run_id)).toEqual([]);
+  });
+
+  test('a tie whose answer is lost: the resend is replayed with the first answer and writes nothing; the same key for another class is refused', async () => {
+    const gym = await newGym('keys-tie');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await tap(gym.coach, runId, gym.ada);
+
+    const answer = { class_id: gym.klass, copied: [{ athlete_id: gym.ada, effect: 'created' }], released: [] };
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass, 'key-tie')).toEqual(answer);
+    const tied = await gymState(gym, runId);
+    await letTheClockMove();
+    const resent = await Promise.all([
+      setSessionRunClass(gym.coach, runId, gym.klass, 'key-tie'),
+      setSessionRunClass(gym.coach, runId, gym.klass, 'key-tie'),
+    ]);
+    for (const again of resent) expect(again).toEqual({ ...answer, replayed: true, live: true });
+    expect(await gymState(gym, runId)).toEqual(tied);
+    expect(await refusal(setSessionRunClass(gym.coach, runId, null, 'key-tie'))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(tied);
+    expect(await ties(gym, runId)).toEqual([{
+      run_id: runId, class_id: gym.klass, previous_class_id: null, action: 'tie_class', request_key: 'key-tie',
+      copied: [{ athlete_id: gym.ada, effect: 'created' }], released: [],
+    }]);
+  });
+
+  test('another tab or device ties the same class first: this send is a no-op on the run but its own, recorded; once the session ends a key never recorded is refused', async () => {
+    const gym = await newGym('keys-tie-same');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await setSessionRunClass(gym.coach, runId, gym.klass, 'key-b');
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass, 'key-a')).toEqual({ class_id: gym.klass, copied: [], released: [] });
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass, 'key-a')).toEqual({ class_id: gym.klass, copied: [], released: [], replayed: true, live: true });
+
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    // The run still holds the class asked for, but this key was never recorded: refused after the lookup.
+    expect(await refusal(setSessionRunClass(gym.coach, runId, gym.klass, 'key-c'))).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    // A key recorded before the end is replayed after it, saying the run is no longer live.
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass, 'key-a')).toEqual({ class_id: gym.klass, copied: [], released: [], replayed: true, live: false });
+    expect((await ties(gym, runId)).map((details) => details.request_key)).toEqual(['key-b', 'key-a']);
+  });
+
+  test('a replayed tie whose class was changed since answers the class the run holds now, without the first send\'s copies', async () => {
+    const gym = await newGym('keys-tie-changed');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await tap(gym.coach, runId, gym.ada);
+    await setSessionRunClass(gym.coach, runId, gym.klass, 'key-tie');
+    // Another device unties it after this tie landed.
+    await setSessionRunClass(gym.coach, runId, null, 'key-other');
+    const untied = await gymState(gym, runId);
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass, 'key-tie')).toEqual({ class_id: null, copied: [], released: [], replayed: true, live: true });
+    // Not tied again: the other device's later change stands.
+    expect(await gymState(gym, runId)).toEqual(untied);
+  });
+
+  test('a tie without a key is as before: a no-op writes nothing, and a tie records its answer with no key', async () => {
+    const gym = await newGym('keys-tie-none');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await setSessionRunClass(gym.coach, runId, gym.klass);
+    const tied = await gymState(gym, runId);
+    await setSessionRunClass(gym.coach, runId, gym.klass);
+    expect(await gymState(gym, runId)).toEqual(tied);
+    expect(await ties(gym, runId)).toEqual([{
+      run_id: runId, class_id: gym.klass, previous_class_id: null, action: 'tie_class', request_key: null, copied: [], released: [],
+    }]);
   });
 });

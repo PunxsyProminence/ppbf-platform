@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import SessionNoShows from './SessionNoShows';
 import SaveQueueNotice from './SaveQueueNotice';
+import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
@@ -214,16 +215,19 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('Nobody this tap named needed marking.')).toBeTruthy();
   });
 
-  test('a refused resend the server shows as landed (this run, none of the names sent still a no-show) reads as done (condition 2)', async () => {
+  // OVERWATCH 7170099938 on #2178: another tab or device marks the same athletes while this tap's first
+  // answer is lost. The class then lists none of them, but that is not this tap landing.
+  test('another tab or device marks the same athletes in between: a resend refused before its key is looked up is not known, never done', async () => {
     jest.useFakeTimers();
-    // Ath 9 became a no-show since; the tap never named them, so they do not count.
-    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-9'] : 2));
+    // After the tap, the class lists none of the names it sent (the other device marked them).
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'FORBIDDEN' }, 403)), (sends) => (sends > 0 ? 0 : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText('None of the athletes this tap named is still listed as a no-show.')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toMatch(/^Mark the no-shows Absent: .*not known whether it was saved/);
+    // Decided by the key alone: only the class read before the tap.
+    expect(classReads()).toHaveLength(1);
   });
 
   // Round 15, reviewer A: a name can stay listed after a tap that landed (a mark taken off since, a
@@ -267,17 +271,19 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(classReads()).toHaveLength(1);
   });
 
-  test('a resend refused as not found (refused before the key is looked up) is checked against the class, and reads as landed when none it named is still a no-show', async () => {
+  test('a resend refused as not found (refused before the key is looked up) is not known: the console is told, and nothing is read to decide it', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_RUN_NOT_FOUND' }, 404)), (sends) => (sends > 0 ? 0 : 2));
     const onRunNotLive = await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    // The landed check's read is the one sent with the queue's signal.
-    expect(classReads().filter(([, init]) => (init as RequestInit).signal)).toHaveLength(1);
-    expect(onRunNotLive).not.toHaveBeenCalled();
-    expect(screen.getByText('None of the athletes this tap named is still listed as a no-show.')).toBeTruthy();
+    expect(classReads()).toHaveLength(1);
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/marked Absent on the class register/)).toBeNull();
+    expect(readSaveQueue().failed).toEqual([
+      { label: 'Mark the no-shows Absent', words: unknownOffPage('Check the class register before marking them again.'), known: false },
+    ]);
   });
 
   test('a resend refused as no longer live, given after the key was looked up, hands that to the console without reading the class', async () => {

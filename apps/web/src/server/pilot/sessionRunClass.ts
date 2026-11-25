@@ -64,6 +64,7 @@ export const SESSION_CLASS_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['SESSION_CLASS_ALREADY_LIVE', 'Another live session is already running this class. Start without a class, or ask that coach to end theirs.'],
   ['SESSION_NO_SHOWS_KEY_REUSED', 'This tap was already sent for other athletes. Nothing more was marked.'],
   ['SESSION_NO_SHOWS_CLASS_CHANGED', 'This session is now tied to another class, so nobody was marked Absent.'],
+  ['SESSION_RUN_KEY_REUSED', 'This tap was already sent for another change. Nothing more was changed.'],
 ]);
 
 type Tier = Pick<ActorIdentity, 'organizationId' | 'accountId' | 'role'>;
@@ -193,12 +194,6 @@ async function lockOwnRun(client: PoolClient, actor: ActorIdentity, runId: strin
   return { run_state: owned.run_state, class_id: owned.class_id };
 }
 
-async function lockOwnLiveRun(client: PoolClient, actor: ActorIdentity, runId: string): Promise<{ class_id: string | null }> {
-  const owned = await lockOwnRun(client, actor, runId);
-  if (owned.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
-  return { class_id: owned.class_id };
-}
-
 /** The marks that stand in this run (athlete, when marked), locked: what a tie copies. */
 async function standingMarks(client: PoolClient, organizationId: string, runId: string): Promise<Array<{ athlete_id: string; marked_at: string }>> {
   const { rows } = await client.query<{ athlete_id: string; marked_at: string }>(
@@ -240,18 +235,85 @@ export interface TieOutcome {
   copied: Array<{ athlete_id: string } & RegisterResult>;
   /** Untying or retying: the register marks this session had created, which now simply stay. */
   released: string[];
+  /**
+   * Set only on a resend of a key already recorded (it wrote nothing). class_id is then the class
+   * the run holds NOW, which another device may have changed since; copied and released are the
+   * first send's only while the run still holds the class it set. live: whether the run still is.
+   */
+  replayed?: true;
+  live?: boolean;
 }
 
 /**
  * Tie the actor's own live session to a class, or untie it (classId null). Untying, or tying to a
  * different class, leaves the register marks in place and clears the session's claim to undo them.
+ *
+ * With a request key (W4 item 7, OVERWATCH 7170099938 on #2178), whether an earlier send landed is
+ * decided by the key, never by the run holding the class asked for (another device may have tied
+ * it): every keyed tie, a no-op included, is recorded on the run's audit event with its key and
+ * answer, in the same transaction. The key is looked up under the run's lock and before the run must
+ * be live, as for the no-shows tap; a resend of a recorded key writes nothing (TieOutcome.replayed),
+ * and the same key for another class is refused.
  */
-export async function setSessionRunClass(actor: ActorIdentity, runId: string, classId: string | null): Promise<TieOutcome> {
+export async function setSessionRunClass(
+  actor: ActorIdentity,
+  runId: string,
+  classId: string | null,
+  requestKey: string | null = null,
+): Promise<TieOutcome> {
   return withTransaction(async (client) => {
+    // READ COMMITTED, set and not assumed: a resend that waited on the run's lock sees the first send's commit.
+    await client.query('set transaction isolation level read committed');
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
-    const owned = await lockOwnLiveRun(client, actor, runId);
-    if (owned.class_id === classId) return { class_id: classId, copied: [], released: [] };
+    const run = await lockOwnRun(client, actor, runId);
+    if (requestKey !== null) {
+      const first = await client.query<{ same: boolean; copied: TieOutcome['copied']; released: string[] }>(
+        `select details->'class_id' = $4::jsonb as same, details->'copied' as copied, details->'released' as released
+           from pilot.audit_events
+          where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
+            and details->>'action' = 'tie_class' and details->>'request_key' = $3
+          order by audit_id
+          limit 1`,
+        [actor.organizationId, runId, requestKey, JSON.stringify(classId)],
+      );
+      const landed = first.rows[0];
+      if (landed) {
+        if (!landed.same) throw new SessionRunClassError('SESSION_RUN_KEY_REUSED', 409);
+        const holds = run.class_id === classId;
+        return {
+          class_id: run.class_id,
+          copied: holds ? landed.copied : [],
+          released: holds ? landed.released : [],
+          replayed: true,
+          live: run.run_state === 'in_progress',
+        };
+      }
+    }
+    if (run.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
+    const owned = { class_id: run.class_id };
+    const audit = (outcome: TieOutcome) => writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: role,
+        organization_id: actor.organizationId,
+        entity_type: 'session_script_run',
+        entity_id: runId,
+        details: {
+          run_id: runId, class_id: classId, previous_class_id: owned.class_id, action: 'tie_class', request_key: requestKey,
+          copied: outcome.copied, released: outcome.released,
+        },
+        shadow_mirror: false,
+      },
+      client,
+    );
+    if (owned.class_id === classId) {
+      const unchanged: TieOutcome = { class_id: classId, copied: [], released: [] };
+      // Recorded only with a key (a keyless resend of a no-op still writes nothing).
+      if (requestKey !== null) await audit(unchanged);
+      return unchanged;
+    }
 
     // The lock order: run, then the marks (and their athletes), then the class, then the register.
     const standing = await standingMarks(client, actor.organizationId, runId);
@@ -273,20 +335,6 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
       }
       throw error;
     }
-    await writePilotAuditEvent(
-      {
-        event_type: 'update',
-        actor_account_id: actor.accountId,
-        actor_role: role,
-        organization_id: actor.organizationId,
-        entity_type: 'session_script_run',
-        entity_id: runId,
-        details: { run_id: runId, class_id: classId, previous_class_id: owned.class_id },
-        shadow_mirror: false,
-      },
-      client,
-    );
-
     const copied: TieOutcome['copied'] = [];
     if (classId) {
       for (const { athlete_id: athleteId, marked_at: markedAt } of standing) {
@@ -294,7 +342,10 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
         copied.push({ athlete_id: athleteId, ...(await copyTapToRegister(client, tap, markedAt)) });
       }
     }
-    return { class_id: classId, copied, released: released.rows.map((row) => row.athlete_id).sort() };
+    const outcome: TieOutcome = { class_id: classId, copied, released: released.rows.map((row) => row.athlete_id).sort() };
+    // After the copy, so the record holds the answer a resend of its key is given.
+    await audit(outcome);
+    return outcome;
   });
 }
 
