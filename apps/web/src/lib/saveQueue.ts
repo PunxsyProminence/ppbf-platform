@@ -237,17 +237,20 @@ async function pump(): Promise<void> {
       response = null;
     }
     head.sends += 1;
+    // Read the answer, then ask once whether the queue was dropped while it was on its way (a
+    // sign-out, another account): a dropped save's answer is never used.
+    const accountGone = response !== null
+      && (response.status === 401 || (await codeOf(response)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT');
+    const answer = response === null || accountGone ? 'unknown' : await (head.save.answerOf ?? defaultAnswer)(response);
     if (seen !== generation) return;
+    if (accountGone) {
+      dropAll();
+      return;
+    }
     if (response === null) {
       later();
       return;
     }
-    if (response.status === 401 || (await codeOf(response)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT') {
-      if (seen === generation) dropAll();
-      return;
-    }
-    const answer = await (head.save.answerOf ?? defaultAnswer)(response);
-    if (seen !== generation) return;
     if (answer === 'unknown') {
       later();
       return;
