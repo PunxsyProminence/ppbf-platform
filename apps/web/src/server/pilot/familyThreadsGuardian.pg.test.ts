@@ -434,6 +434,11 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'guardian')`,
       [OTHER_ORG, `parent-${GUARDIAN}`, CHILD],
     );
+    // A real parent seat in the other gym too, so the gym filter is what refuses below, not a missing membership.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'parent', true)`,
+      [GUARDIAN, OTHER_ORG],
+    );
     await expect(
       threads.writeAgainInFamilyThread({ organizationId: OTHER_ORG, accountId: GUARDIAN, threadId: opened.thread_id, text: 'Hi' }),
     ).rejects.toMatchObject({ status: 404 });
@@ -441,6 +446,9 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       threads.recordFamilyThreadReadByGuardian({ organizationId: OTHER_ORG, accountId: GUARDIAN, postId: reply }),
     ).rejects.toMatchObject({ status: 404 });
     expect(await threads.listOwnFamilyThreads(OTHER_ORG, GUARDIAN)).toEqual([]);
+    // Positive control: that seat is live, so the same login opens a thread about the other gym's child there.
+    const there = await threads.startFamilyThread({ organizationId: OTHER_ORG, accountId: GUARDIAN, athleteId: CHILD, text: 'Hello' });
+    expect((await threads.listOwnFamilyThreads(OTHER_ORG, GUARDIAN)).map((thread) => thread.thread_id)).toEqual([there.thread_id]);
   });
 
   test('the opener sees the staff reply as new, writes again (Q2 A), and records the read once', async () => {
@@ -604,16 +612,25 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       }), 404],
       ['record a read', () => threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: reply }), 404],
     ];
-    for (const [changeLabel, change, undo] of FACT_CHANGES) {
-      for (const [writeLabel, write, status] of writes) {
-        beforeGuardianWrite = change;
-        const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
-        expect(beforeGuardianWrite).toBeNull();
-        expect([changeLabel, writeLabel, outcome, await kept()]).toEqual([changeLabel, writeLabel, status, before]);
-        await undo(client);
+    // Twice: with the database guards (PM-1a) on, then off. The guards re-check the link and the
+    // account inside the insert and refuse with the same status, so only the second pass proves the
+    // store's own statement sees each fact (reviewer B on 19f31f87).
+    for (const guards of ['on', 'off'] as const) {
+      if (guards === 'off') {
+        await client.query(`alter table pilot.family_thread_posts disable trigger trg_family_thread_posts_guard;
+          alter table pilot.family_thread_reads disable trigger trg_family_thread_reads_guard`);
+      }
+      for (const [changeLabel, change, undo] of FACT_CHANGES) {
+        for (const [writeLabel, write, status] of writes) {
+          beforeGuardianWrite = change;
+          const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
+          expect(beforeGuardianWrite).toBeNull();
+          expect([guards, changeLabel, writeLabel, outcome, await kept()]).toEqual([guards, changeLabel, writeLabel, status, before]);
+          await undo(client);
+        }
       }
     }
-    // Positive control: with every fact as it was, each of the three writes goes through.
+    // Positive control, guards still off: with every fact as it was, each of the three writes goes through.
     for (const [, write] of writes) await write();
     expect(await kept()).toBe(before + 3);
   });
