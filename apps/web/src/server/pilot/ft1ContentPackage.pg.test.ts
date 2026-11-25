@@ -269,7 +269,21 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
     [CUES_CSV]: rewrite(files[CUES_CSV], (row) => !(row.source_ref ?? '').endsWith(RS_SOURCE)),
   };
 }
-const committedWithLaneRs = withoutLaneHw(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES));
+/**
+ * Lane W4-8 (OD-2026-11-19-030; #2162) came after this lane too: AI-drafted library drills for the typed steps
+ * of the mixed templates, with their child rows. Left out the same way; typedLinesContent.test.ts checks them.
+ */
+function withoutLaneW48(files: Record<string, string>): Record<string, string> {
+  const laneDrillIds = new Set(rowsOf(files[DRILLS_CSV]).filter((row) => row.content_class.startsWith('AI DRAFT - lane W4-8')).map((row) => row.drill_id));
+  const rewrite = (text: string) => {
+    const header = readCsv(text).header;
+    return writeCsv(header, rowsOf(text).filter((row) => !laneDrillIds.has(row.drill_id)).map((row) => header.map((name) => row[name] ?? '')));
+  };
+  const out = { ...files };
+  for (const name of [DRILLS_CSV, CUES_CSV, STOPS_CSV, 'drill-library/seed_drill_scale_levels.csv']) out[name] = rewrite(files[name]);
+  return out;
+}
+const committedWithLaneRs = withoutLaneHw(withoutLaneW48(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES)));
 const committed = withoutLaneRs(committedWithLaneRs);
 const ft1DrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
 const ft1TemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));

@@ -50,16 +50,15 @@ const checkReady = (table, name, predicate) => constraintOn(
      and regexp_replace(pg_get_constraintdef(c.oid), '[[:space:]]+', ' ', 'g') = '${predicate.replaceAll("'", "''")}'`,
 );
 
-// Every column, in order, with its type, NOT NULL and default, exactly as this migration makes
-// it: a table of these names built earlier with another shape is not this one.
-const columnsReady = (table, signature) => `(
-  select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod)
-           || case when a.attnotnull then ' not null' else '' end
-           || coalesce(' default ' || pg_get_expr(d.adbin, d.adrelid), ''), ', ' order by a.attnum)
-    from pg_attribute a
+// Each column this migration makes, by name, with its type, NOT NULL and default ('' for none).
+// Columns are checked one by one, not as the table's whole list, so a later migration that adds a
+// column to either table does not make this runner refuse when `all` re-runs it.
+const columnsReady = (table, columns) => columns.map(([name, type, notNull, defaultExpr]) => `exists (
+  select 1 from pg_attribute a
     left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-   where a.attrelid = to_regclass('${table}') and a.attnum > 0 and not a.attisdropped
-) is not distinct from '${signature}'`;
+   where a.attrelid = to_regclass('${table}') and a.attname = '${name}' and a.attnum > 0 and not a.attisdropped
+     and format_type(a.atttypid, a.atttypmod) = '${type}' and a.attnotnull = ${notNull}
+     and coalesce(pg_get_expr(d.adbin, d.adrelid), '') = '${defaultExpr}')`).join('\n    and ');
 
 // A plain, valid index of this name on this table, over exactly these columns in this order.
 const indexReady = (table, name, columns) => `exists (
@@ -92,7 +91,11 @@ const ROLES = "CHECK ((%s = ANY (ARRAY['parent'::text, 'coach'::text, 'organizat
 const READINESS_QUERY = `
   select
     to_regclass('${POSTS}') is not null as posts_table_ready,
-    ${columnsReady(POSTS, 'organization_id text not null, post_id uuid not null, thread_id uuid not null, athlete_id text not null, author_account_id text, author_role text not null, post_text text not null, created_at timestamp with time zone not null default now()')} as posts_columns_ready,
+    ${columnsReady(POSTS, [
+    ['organization_id', 'text', true, ''], ['post_id', 'uuid', true, ''], ['thread_id', 'uuid', true, ''],
+    ['athlete_id', 'text', true, ''], ['author_account_id', 'text', false, ''], ['author_role', 'text', true, ''],
+    ['post_text', 'text', true, ''], ['created_at', 'timestamp with time zone', true, 'now()'],
+  ])} as posts_columns_ready,
     ${keyReady(POSTS, 'pilot_family_thread_posts_pkey', 'p', "'organization_id', 'post_id'")} as posts_primary_key_ready,
     ${keyReady(POSTS, 'pilot_family_thread_posts_post_athlete_key', 'u', "'organization_id', 'post_id', 'athlete_id'")} as posts_post_athlete_key_ready,
     ${foreignKeyReady(POSTS, 'pilot_family_thread_posts_athlete_fk', 'pilot.athletes', "'organization_id', 'athlete_id'", "'organization_id', 'athlete_id'", 'c')} as posts_athlete_fk_ready,
@@ -107,7 +110,10 @@ const READINESS_QUERY = `
     ${indexReady(POSTS, 'idx_family_thread_posts_author', "'author_account_id', 'organization_id'")} as posts_author_index_ready,
     ${guardReady(POSTS, 'trg_family_thread_posts_guard', 'pilot.family_thread_posts_guard')} as posts_guard_ready,
     to_regclass('${READS}') is not null as reads_table_ready,
-    ${columnsReady(READS, 'organization_id text not null, post_id uuid not null, reader_account_id text not null, reader_role text not null, first_read_at timestamp with time zone not null default now()')} as reads_columns_ready,
+    ${columnsReady(READS, [
+    ['organization_id', 'text', true, ''], ['post_id', 'uuid', true, ''], ['reader_account_id', 'text', true, ''],
+    ['reader_role', 'text', true, ''], ['first_read_at', 'timestamp with time zone', true, 'now()'],
+  ])} as reads_columns_ready,
     ${keyReady(READS, 'pilot_family_thread_reads_pkey', 'p', "'organization_id', 'post_id', 'reader_account_id'")} as reads_primary_key_ready,
     ${foreignKeyReady(READS, 'pilot_family_thread_reads_post_fk', POSTS, "'organization_id', 'post_id'", "'organization_id', 'post_id'", 'c')} as reads_post_fk_ready,
     ${foreignKeyReady(READS, null, 'pilot.accounts', "'reader_account_id'", "'account_id'", 'c')} as reads_reader_fk_cascade,
