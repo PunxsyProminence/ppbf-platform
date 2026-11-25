@@ -262,8 +262,8 @@ export async function setStoppedComingReachedOut(
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
     if (!(await lockLiveAthlete(client, organizationId, athleteId))) throw new NotFoundError('Athlete not found.');
-    // The list check, all of it on this transaction (reviewer J): a "left" flag or a lapsed
-    // membership committed before this point is seen; the athlete row is locked above.
+    // The list check on this transaction (reviewer J), all but the gym's number of days (read just
+    // before): a "left" flag or a lapsed membership committed before this point is seen.
     if (policy) {
       const flag = await client.query<{ active_flag: boolean }>(
         'select active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2',
