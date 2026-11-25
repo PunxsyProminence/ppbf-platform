@@ -81,11 +81,11 @@ export default function SessionStaffNotesPanel(
     buttonLabel?: string;
     /** The live floor only: writes are kept on the open page and sent again until they go through. */
     keptOnThisPage?: boolean;
-    /** A finish is kept and waiting: once it lands this panel goes, so a refusal is said in the page's list. */
-    finishWaiting?: boolean;
+    /** Whether a finish is kept and waiting now: once it lands this panel goes, so a refusal is said in the page's list. */
+    isFinishWaiting?: () => boolean;
   },
 ) {
-  const { athleteId, buttonLabel, keptOnThisPage = false, finishWaiting = false } = props;
+  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting } = props;
   const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
   const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
@@ -115,10 +115,6 @@ export default function SessionStaffNotesPanel(
   );
   // While this panel is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
-  const toPageList = useRef(finishWaiting);
-  useEffect(() => {
-    toPageList.current = finishWaiting;
-  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -253,19 +249,21 @@ export default function SessionStaffNotesPanel(
           if (onPage.current && isOpen.current) void read();
         },
         // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the draft.
-        onRefused: (_response, landed) => {
+        onRefused: (response, landed) => {
           settle();
-          if (!onPage.current || toPageList.current) {
+          if (!onPage.current || isFinishWaiting?.()) {
             return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
           }
           if (kind === 'add') setDraft((current) => (current === '' ? what.text : current));
           setRefusal(landed === null ? { heading: 'NOT KNOWN', text: unknownOutcomeWords(label) } : { heading: failed.heading, text: reason });
-          if (isOpen.current) void read();
+          // As today: "no such note" means the list is out of date. Otherwise the list as last read
+          // stays (a read again that fails would hide the words).
+          if (landed === false && response.status === 404 && isOpen.current) void read();
           return undefined;
         },
       };
     },
-    [read, readNotes],
+    [isFinishWaiting, read, readNotes],
   );
 
   const write = useCallback(

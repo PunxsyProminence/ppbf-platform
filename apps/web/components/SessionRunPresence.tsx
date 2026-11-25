@@ -174,7 +174,7 @@ export default function SessionRunPresence({
   classId = null,
   onPresentCount,
   onRunNotLive,
-  finishWaiting = false,
+  isFinishWaiting,
 }: {
   runId: string;
   /** The session is tied to a class (D4): marks here also go on its register. */
@@ -185,8 +185,8 @@ export default function SessionRunPresence({
   onPresentCount?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
   onRunNotLive?: () => void;
-  /** A finish is kept and waiting: once it lands this list goes, so a refusal is said in the page's list. */
-  finishWaiting?: boolean;
+  /** Whether a finish is kept and waiting now: once it lands this list goes, so a refusal is said in the page's list. */
+  isFinishWaiting?: () => boolean;
 }) {
   const [readingState, setReading] = useState<Reading | null>(null);
   const [filter, setFilter] = useState('');
@@ -294,10 +294,6 @@ export default function SessionRunPresence({
   );
   // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
-  const toPageList = useRef(finishWaiting);
-  useEffect(() => {
-    toPageList.current = finishWaiting;
-  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -383,7 +379,7 @@ export default function SessionRunPresence({
         onRefused: (_response, landed) => {
           release();
           if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
-          if (!onPage.current || toPageList.current) {
+          if (!onPage.current || isFinishWaiting?.()) {
             return landed === null ? unknownOffPage('Check who is marked here on the class screen.') : refusalText(refusalCode);
           }
           // Not known: said, with the list as last read (a read again that fails would hide the words).
@@ -392,7 +388,7 @@ export default function SessionRunPresence({
         },
       };
     },
-    [onRunNotLive, readPresent, readRegister, runId],
+    [isFinishWaiting, onRunNotLive, readPresent, readRegister, runId],
   );
 
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
@@ -630,7 +626,7 @@ export default function SessionRunPresence({
                               athleteId={athlete.athlete_id}
                               buttonLabel={`Staff notes on ${athlete.full_name}`}
                               keptOnThisPage
-                              finishWaiting={finishWaiting}
+                              isFinishWaiting={isFinishWaiting}
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                           </>

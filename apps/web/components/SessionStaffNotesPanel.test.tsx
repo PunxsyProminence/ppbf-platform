@@ -5,6 +5,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import SessionStaffNotesPanel from './SessionStaffNotesPanel';
+import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 const THEIRS = {
   note_id: 'note-2',
@@ -497,5 +500,244 @@ describe('a write is reported as the server answered it', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     expect(draftField().value).toBe('');
     expect(gets).toHaveLength(2);
+  });
+});
+
+
+// W4 item 7, OQ-4 (OW27-35 A, condition 4): on the live floor only (the "Who is here" list mounts the
+// panel with keptOnThisPage), a write whose answer is lost is kept on the open page and sent again
+// until it goes through; a new note carries one request key and the account that made it.
+describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () => {
+  interface Sent { method: string; url: string; body: Record<string, unknown> | null; signal: unknown }
+  let sent: Sent[];
+  let noteReads: unknown[];
+  const RUN_GET = `${ROUTE}?run_id=ssrun%201&athlete_id=ath-1`;
+  const answer = (body: unknown, status = 200) => {
+    const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
+    return response as unknown as Response;
+  };
+  const NOTES_WAITING = 'One change to these notes is not saved yet. This page keeps sending it while it stays open.';
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    // Signed in first, then the queue reset: the sign-in's ask must not outlive the reset.
+    createPersistentRoleSession('coach');
+    resetSaveQueueForTests();
+  });
+  afterEach(() => {
+    act(() => {
+      resetSaveQueueForTests();
+    });
+    jest.useRealTimers();
+  });
+
+  function serveKept(handlers: {
+    notes: () => unknown[] | 'fail';
+    write: (send: number, call: Sent) => Response | 'lost' | Promise<Response>;
+  }) {
+    sent = [];
+    noteReads = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: 'acct-a' });
+      if (method === 'GET') {
+        noteReads.push(init?.signal);
+        const notes = handlers.notes();
+        return notes === 'fail' ? answer({}, 500) : answer({ ok: true, note_max: 2000, notes });
+      }
+      const call: Sent = { method, url, body: typeof init?.body === 'string' ? JSON.parse(init.body) : null, signal: init?.signal };
+      sent.push(call);
+      const next = await handlers.write(sent.length, call);
+      if (next === 'lost') throw new TypeError('Failed to fetch');
+      return next;
+    }) as unknown as typeof fetch;
+  }
+
+  async function openKept(props: { kept?: boolean; finishWaiting?: boolean } = {}) {
+    prepareSaveQueue();
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(
+        <>
+          <SessionStaffNotesPanel
+            runId="ssrun 1"
+            athleteId="ath-1"
+            buttonLabel="Staff notes on Ada Reyes"
+            keptOnThisPage={props.kept ?? true}
+            isFinishWaiting={() => props.finishWaiting === true}
+          />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    return view as ReturnType<typeof render>;
+  }
+
+  async function addNote(text: string) {
+    fireEvent.change(draftField(), { target: { value: text } });
+    await act(async () => {
+      fireEvent.click(addButton());
+      await jest.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  async function wait(ms: number) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  const waitingLine = () => (screen.queryByText(WAITING_WORDS)?.closest('[role="status"]') as HTMLElement | null | undefined) ?? null;
+  const saved = (note: string) => ({ ...MINE, note_id: 'note-9', note });
+
+  test('a new note whose send is lost is kept with one key and the account that made it, unnamed in the page\'s list, and lands once', async () => {
+    jest.useFakeTimers();
+    let notes: unknown[] = [];
+    serveKept({
+      notes: () => notes,
+      write: (send) => {
+        if (send === 1) return 'lost';
+        notes = [saved('Wrist taped.')];
+        return answer({ ok: true, note_id: 'note-9' });
+      },
+    });
+    await openKept();
+    await addNote('Wrist taped.');
+    const line = waitingLine() as HTMLElement;
+    expect(line.textContent).toContain('Staff note');
+    expect(line.textContent).not.toContain('Wrist');
+    expect(line.textContent).not.toContain('Ada');
+    expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
+    // Kept: the draft clears, so a second tap is a new note, not this one twice.
+    expect(draftField().value).toBe('');
+    await wait(RESEND_MS);
+    expect(sent).toHaveLength(2);
+    expect(sent[0].body).toEqual({ run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Wrist taped.', request_key: expect.any(String), made_by_account_id: 'acct-a' });
+    expect(sent[1].body).toEqual(sent[0].body);
+    for (const call of sent) expect(call.signal).toBeInstanceOf(AbortSignal);
+    expect(await screen.findByText('Wrist taped.')).toBeTruthy();
+    expect(waitingLine()).toBeNull();
+    expect(screen.queryByText(NOTES_WAITING)).toBeNull();
+  });
+
+  test('off the live floor the panel keeps today\'s behaviour: no key, no account, nothing kept (condition 4)', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: () => answer({ ok: true, note_id: 'note-9' }) });
+    await openKept({ kept: false });
+    await addNote('Wrist taped.');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body).toEqual({ run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Wrist taped.' });
+    expect(waitingLine()).toBeNull();
+  });
+
+  test('a change and a removal are kept as they are sent today, with no key; a refused resend the list shows as landed reads as done', async () => {
+    jest.useFakeTimers();
+    let notes: unknown[] = [MINE];
+    serveKept({
+      notes: () => notes,
+      write: (send, call) => {
+        if (call.method === 'PATCH') {
+          if (send === 1) {
+            notes = [{ ...MINE, note: 'Shoulders fine now.' }];
+            return 'lost';
+          }
+          return answer({ error: 'Something else.' }, 409);
+        }
+        // The removal: its first send lands, its answer is lost; the resend finds no such note.
+        if (call.method === 'DELETE' && notes.length > 0) {
+          notes = [];
+          return 'lost';
+        }
+        return answer({ error: 'No such note.' }, 404);
+      },
+    });
+    await openKept();
+    fireEvent.click(await screen.findByRole('button', { name: /^Change your note/ }));
+    fireEvent.change(screen.getByLabelText('Change your note'), { target: { value: 'Shoulders fine now.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save change' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(sent.map((call) => call.body)).toEqual([
+      { note_id: 'note-1', note: 'Shoulders fine now.' },
+      { note_id: 'note-1', note: 'Shoulders fine now.' },
+    ]);
+    expect(screen.queryByText('NOT CHANGED')).toBeNull();
+    expect(screen.queryByText('NOT KNOWN')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove your note/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, remove this note' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(sent.filter((call) => call.method === 'DELETE')).toHaveLength(2);
+    expect(screen.queryByText('NOT REMOVED')).toBeNull();
+    // The landed checks read the list with the queue's signal.
+    expect(noteReads.filter((signal) => signal instanceof AbortSignal).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a refused new note gives its words back to the draft and says NOT SAVED in the server\'s words', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: () => answer({ error: 'That athlete is not marked here.' }, 409) });
+    await openKept();
+    await addNote('Wrist taped.');
+    expect(await screen.findByText('NOT SAVED')).toBeTruthy();
+    expect(screen.getByText('That athlete is not marked here.')).toBeTruthy();
+    expect(draftField().value).toBe('Wrist taped.');
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    await wait(RESEND_MS * 2);
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a refused RESEND the list could not be checked for says NOT KNOWN, never not saved', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    serveKept({
+      notes: () => {
+        reads += 1;
+        return reads === 1 ? [] : 'fail';
+      },
+      write: (send) => (send === 1 ? 'lost' : answer({ error: 'Something else.' }, 409)),
+    });
+    await openKept();
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(screen.getByText('NOT KNOWN')).toBeTruthy();
+    expect(screen.getByText(/^Staff note: the server refused it when it was sent again and could not be checked/)).toBeTruthy();
+    expect(screen.queryByText('NOT SAVED')).toBeNull();
+  });
+
+  test('signing out drops a kept note: its words leave the screen and it is not resent', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: () => 'lost' });
+    await openKept();
+    await addNote('Wrist taped.');
+    expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(waitingLine()).toBeNull();
+    expect(screen.queryByText(NOTES_WAITING)).toBeNull();
+    await wait(RESEND_MS * 3);
+    expect(sent).toHaveLength(1);
+  });
+
+  test('a refusal after the panel has gone, or while a kept finish waits, is said in the page\'s list without the note', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
+    await openKept({ finishWaiting: true });
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(screen.getByText('Staff note: That athlete is not marked here.')).toBeTruthy();
+    expect(screen.queryByText('NOT SAVED')).toBeNull();
+    expect(screen.getByRole('alert').textContent).not.toContain('Wrist');
   });
 });

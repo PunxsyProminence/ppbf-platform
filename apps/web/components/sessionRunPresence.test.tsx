@@ -761,12 +761,13 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
   }
 
   async function showKept(props: { onRunNotLive?: jest.Mock; finishWaiting?: boolean } = {}) {
+    const isFinishWaiting = () => props.finishWaiting === true;
     prepareSaveQueue();
     let view: ReturnType<typeof render> | undefined;
     await act(async () => {
       view = render(
         <>
-          <SessionRunPresence runId="ssrun 1" onRunNotLive={props.onRunNotLive ?? jest.fn()} finishWaiting={props.finishWaiting} />
+          <SessionRunPresence runId="ssrun 1" onRunNotLive={props.onRunNotLive ?? jest.fn()} isFinishWaiting={isFinishWaiting} />
           <SaveQueueNotice />
         </>,
       );
