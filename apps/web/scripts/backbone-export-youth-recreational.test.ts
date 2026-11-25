@@ -536,6 +536,12 @@ describe('the committed youth + recreational rows', () => {
     wtp_43c793b8f90e77: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // 48-Session Youth Coaching Manual, Weeks 1-4 (TL-1b)
     wtp_ed57bea28de0f7: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 5-8 (TL-1b)
     wtp_d861f584584788: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 9-12 (TL-1b)
+    wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (test run 4-5) (TL-2)
+  };
+  // Of those, the steps that also took their own clock time (details.block_time) as duration_minutes (Codex P1 and
+  // App Overwatch on #2177): the export would blank that cell too.
+  const LANE_W48_DURATIONS: Record<string, number[]> = {
+    wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
@@ -552,20 +558,24 @@ describe('the committed youth + recreational rows', () => {
     // Lane W4-8 (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; plan and GO on #2162): each typed step in
     // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template's 'items' label gains the
     // lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so the guard names exactly those
-    // steps (drill_id is their one committed cell the export would change; the cleared free_text_drill is a blank it
-    // would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
+    // steps (drill_id is their committed cell the export would change, with duration_minutes on the LANE_W48_DURATIONS
+    // steps; the cleared free_text_drill is a blank it would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
     // step PR's head before merging it (#2162).
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
-    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, 'drill_id']));
+    const timed = (row: Record<string, string>) => (LANE_W48_DURATIONS[row.template_id] ?? []).includes(Number(row.ordinal));
+    expect(named.filter(([file]) => file === ITEMS))
+      .toEqual(laneSteps.map((row) => [ITEMS, row.template_id, timed(row) ? 'drill_id, duration_minutes' : 'drill_id']));
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
       .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
-    // A lane template that no other lane drafted changes in field_labels alone.
-    for (const id of Object.keys(LANE_W48_STEPS).filter((template) => !draftedIds.includes(template))) {
-      expect(named.filter(([file, owner]) => file === TEMPLATES && owner === id).map(([, , columns]) => columns)).toEqual(['field_labels']);
+    // A lane template changes in field_labels and, if lane YR drafted it, in exactly its drafted cells (header order).
+    for (const id of Object.keys(LANE_W48_STEPS)) {
+      const labels = JSON.parse(templates.find((row) => row.template_id === id)?.field_labels ?? '{}');
+      const columns = [...DRAFTED.filter((field) => (labels[field] ?? {}).draft), 'field_labels'].join(', ');
+      expect(named.filter(([file, owner]) => file === TEMPLATES && owner === id).map(([, , cells]) => cells)).toEqual([columns]);
     }
     // Every overwrite line is one of those named: no committed row is removed.
-    expect(refused.stderr.split('\n').filter((line) => /^ {2}\S+ \w+ \S+: (changes .+|removes \S+)$/.test(line) && !line.includes(' links drill '))).toHaveLength(named.length);
+    expect(refused.stderr.split('\n').filter((line) => /^ {2}\S+ \w+ \S+: (changes .+|removes .+)$/.test(line) && !line.includes(' links drill '))).toHaveLength(named.length);
 
     // Lane GD: the frozen track row still names the held six in its details, so no flag writes it back
     // (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042). The plain refusal says so, and
