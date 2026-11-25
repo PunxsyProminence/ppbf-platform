@@ -116,7 +116,12 @@ brief, which says to propose the words of the line and the register-only case
 it may answer FN0-Q1 and FN0-Q2 itself in this PR, but only with an option
 that narrows none of Jason's answers (FN0-Q1 C; for FN0-Q2, the words with
 B's timing, the refresh rate staying with Jason); a pick that narrows one goes to Jason. FN0-Q1 rides with FN0-Q2
-because both are about which register marks count. INFERRED.
+because both are about which register marks count. On the words, the
+kernel and the brief point different ways: the kernel puts how a screen
+looks with Jason (`AGENT_KERNEL.md:87-88`), and the brief names App
+Overwatch. This review follows the kernel; whether the brief governs here
+instead is App Overwatch's reading to make, and the fallback applies to
+FN0-Q2's words only if it reads so. INFERRED.
 
 **On OD-2026-10-13-013 ("asked once, ruled once").** It has a standing ruling
 applied to every case its words or plain principle reach, without asking
@@ -254,7 +259,7 @@ file on the floor line.
 |---|---|---|---|
 | Public wall `/api/pilot/wall` | anyone, no sign-in | today's classes; a head count per class and in total; no person, no initials, no key | `apps/web/app/api/pilot/wall/route.ts:20-35`; `apps/web/src/server/pilot/wallDisplay.ts:462-485` |
 | Paired gym TV `/api/pilot/tv/session` | a TV paired with a code (the route and its gate as the code's comments describe them, `wallDisplay.ts:444-449`; the route file was not read) | initials (or a consented name) of today's present marks, newest first, up to 18, and session milestones (`marquee`, `wallDisplay.ts:458`) | `wallDisplay.ts:444-460`, `:545-558`; `ON_FLOOR_MAX` `:491` |
-| Coach "who is marked today" | coach, organization admin, admin | every mark today across the gym's live roster, from CT-13's reconciled view | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
+| Coach "who is marked today" | coach, organization admin, admin | one reconciled status per athlete for today across the gym's live roster, from CT-13's reconciled view, which reads no mark on a cancelled class (`attendancePrecedence.ts:118-133`; `ATTENDANCE_PRECEDENCE.md:162`) | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
 | A run's marks by run id | coach, organization admin, admin | the names marked on that run, for the gym's live athletes | `runs/[runId]/athletes/route.ts:63-79` |
 | Finished runs | coach, organization admin, admin | who was marked on each settled run | `apps/web/app/api/pilot/session-scripts/runs/route.ts:69-72` |
 | Coach home live panel | the coach running the run | "Session in progress" and "Athletes Present" for their own run | `apps/web/components/CoachWorkspace.tsx:1325-1326`, `:3296` |
@@ -362,7 +367,9 @@ see; nothing says what the board, the platform owner, or staff-role and
 volunteer accounts see. Their limits today:
 - board: "Counts only, floored by k-anonymity ... never a row, never a name"
   (`privacyTiers.ts:81-87`); the scheduler read refuses the board outright
-  (`scheduler/route.ts:707-709`);
+  (`scheduler/route.ts:707-709`); but the wall of names, open to every
+  signed-in role, gives it every live athlete's initials and years today
+  (`apps/web/app/api/pilot/wall-of-names/route.ts:27`, `:35-42`);
 - platform owner: no athlete ids, no names, across organizations
   (`privacyTiers.ts:73-79`), and "never an individual athlete's file"
   (OD-2026-09-28-005); taken off the session-script runs routes
@@ -372,7 +379,8 @@ volunteer accounts see. Their limits today:
   shelves; applied in OD-2026-10-02-015 D3, `:12204-12206`; quoted at
   `:8638`); and kept from
   the board's compliance and escalation summaries (OD-2026-10-05-006, F-003,
-  `:9742-9745`);
+  `OWNER_DECISIONS.md:9742-9745`); whether the wall of names reaches it
+  depends on its principal's organization, UNVERIFIED;
 - staff-role and volunteer accounts: "hold no athlete-scoped or
   administrative surface" (`pilotRoleRouting.ts:51-52`); the run read admits
   only coach, organization admin and admin (`runs/[runId]/athletes/route.ts:52`,
@@ -470,20 +478,29 @@ INFERRED. Recommendation; the words are question FN0-Q2.
 
 **F5. The coach line's names: the same people, sooner and in one place.** A coach
 already reads every live athlete of the gym (OD-2026-10-11-007), and the
-"marked today" read already returns the whole gym's marks, from CT-13's
-reconciled view, to a coach
-and an admin (`attendance-today/route.ts:49-53`). OBSERVED. For run marks,
+"marked today" read already returns, to a coach and an admin, one reconciled
+status per athlete for the day across the gym, from CT-13's reconciled view
+(`attendance-today/route.ts:49-53`; `attendancePrecedence.ts:118-133`).
+OBSERVED. For run marks,
 today a coach finds only their own live run
 (`sessionScriptRuns.ts:339-350`), reads any run's marks by its run id
 (`runs/[runId]/athletes/route.ts:63-79`), and sees every run's marks in one
 list only once the runs have settled (`runs/route.ts:69-72`). OBSERVED. So the
 coach line shows no person a coach cannot already read; what is new is every
 coach's live run marks gathered into one list while the runs are live.
-INFERRED. That keeps Q3.3 A's "Adds no new access" true, provided FN-1 uses
-the same gate: an active staff membership in this organization
+INFERRED. One exception: a present mark on a cancelled class. A coach reads
+register marks only for the classes they run (`scheduler/route.ts:670-672`),
+and the reconciled view reads no mark on a cancelled class (the rows are
+kept for `/schedule` and `/admin/attendance`, `ATTENDANCE_PRECEDENCE.md:162`).
+OBSERVED. So under FN0-Q1 A or C, a coach who does not run that class gets a
+mark no read gives them today; OD-2026-10-11-007 ("coaches to whole gym")
+may reach it, but the code does not. INFERRED. Outside that case, the line
+keeps Q3.3 A's "Adds no new access" true, provided FN-1 uses the same
+gate: an active staff membership in this organization
 (`staffNoteRoleInOrganization`, `sessionStaffNotes.ts:121-131`; "A coach whose
-membership was ended reads nobody", `sessionRunAthletes.ts:268-271`) and the
-gym's live roster. Recommendation.
+membership was ended reads nobody", `sessionRunAthletes.ts:268-271`; the
+same membership test, refused rather than empty, check 4) and the gym's
+live roster. Recommendation.
 
 **F6. The parent's scope is the guardian rule, with the 18 and deletion
 rules inside it.** `guardianAthleteIds` returns only live, linked children who
@@ -653,15 +670,16 @@ A search of `apps/web` for "releaseRestrictions" and
 "release_restrictions" found only the module, its database test,
 `apps/web/package.json` and the migration runner
 (`apps/web/scripts/pilot-apply-release-restrictions-migration.mjs`), so no
-screen sets or reads the flag today. OBSERVED. Holding the line back from one guardian would be a new gate
-(L1 rule), and the app has no way today to tell which guardian a restriction
+screen sets or reads the flag today. OBSERVED. Holding the line back from one guardian would be a new
+restriction (RULES section 1, "unless the owner directs it",
+`W4_SIZING.md:136-137`), and the app has no way today to tell which guardian a restriction
 concerns. INFERRED. Nor is ending the link always open: staff removal of a
 link is refused when it is a signed-in guardian's only link, and while that
 guardian's media consent is withdrawn
 (`apps/web/src/server/pilot/staffProvisioning.ts:1138-1140`, `:1151-1153`).
 Nor can the gym simply switch a parent's login off: the organization admin's
 deactivate route admits only coach, staff, volunteer and athlete accounts,
-and sends a guardian back to "the people console's link controls"
+and its comment points a guardian to "the people console's link controls"
 (`apps/web/app/api/pilot/admin/accounts/deactivate/route.ts:28-34`,
 `:88-91`), as OD-2026-10-07-009 ruling 1 (`OWNER_DECISIONS.md:8693`, coach,
 staff, volunteer) and OD-2026-11-19-025 (athletes) set it; the platform
@@ -777,7 +795,10 @@ its parent and athlete branches are refused, as for a role the read does not
 serve (check 4), until FN-2 opens them, and FN-2 and FN-3, the first PRs
 that show the line, ship after he has answered. So no family gets a value he
 has not chosen. The staff branch shows staff nothing they cannot already
-read (2.1, 2.2), whatever the three conditions hold (section 1). Until FN0-Q3 is answered,
+read (F5), with one exception: a present mark on a cancelled class, which no
+read gives a coach who does not run that class today (F5). So until FN0-Q1
+is answered, the staff branch leaves those marks out, as every coach read
+but the class's own register does today. Until FN0-Q3 is answered,
 the board's, the platform owner's and the staff-role and volunteer homes get
 no line: they are outside the sized PRs (`W4_SIZING.md:553-554`), and if
 "every home" reaches them this is a temporary narrowing of Q12 A.
@@ -808,7 +829,7 @@ which FN0-Q1 splits by reader.
 | Coach, organization admin, admin (coach home, admin home): the coach line | The names of every live athlete of this gym who counts, from either source (Q3.3 A). Presence only, as answered (F12). Staff gate as F5. That it could not be checked, when the read fails (F15). | Anyone the rule above leaves out. Absent or excused shown as "not here" (F4). "Nobody ..." when the read failed (F15). |
 | Parent (Parent Hub) | For each of their own children who counts, a line saying so (Q3.2 A), in the words FN0-Q2 rules. Scope as F6. When the read fails, what FN0-Q5 rules. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the time of the mark, the coach, the run, the room (Q3.2 B not chosen; a run mark's time is staff only today, `runs/[runId]/athletes/route.ts:74`; a register mark's time already reaches families on the schedule read, 2.2, but not on this line). A child who is 18 or over, unlinked, or deleted. Who marked the child or how (F11). A hold, pain, readiness or injury state (F12). "Not here" or "absent" (F4). A failed read shown as "not on the floor" (F15). |
 | Athlete (athlete home) | Their own status (Q3.4 A, "A line about themselves only ... Their own status"): on the floor now, or not marked on the floor right now (FN0-Q2). When the read fails, what FN0-Q5 rules. | Anyone else: no name, no count (Q3.4 B not chosen), no id; not who else is in the session, nor the coach ("nothing about others", Q3.4 A). Recommended, not ruled by Q3.4 A: not the run, the class or the time of the mark, so the athlete's line carries no more than the parent's (Q3.2 A). Who marked them or how (F11). A hold or health state (F12). A failed read shown as "not on the floor" (F15). |
-| Board, staff-role and volunteer accounts | Under FN0-Q3 A, the classes running now (title and times only) and no person, as far as class titles name none (FN0-Q3 A's con). Under its other options, only what Jason rules there. | Names, initials or ids (F3). Any count that includes run marks unless Jason rules it (F1, FN0-Q3). On the board's home, a number below 5. |
+| Board, staff-role and volunteer accounts | Under FN0-Q3 A, the classes running now (title and times only) and no person, as far as class titles name none (FN0-Q3 A's con). Under its other options, only what Jason rules there. | Names, initials or ids (F3). Any count that includes run marks unless Jason rules it (F1, FN0-Q3). On the board's home, and under FN0-Q3 C on the staff-role and volunteer home, a number below 5. |
 | Platform owner | Nothing, under FN0-Q3 A ("platform for platform gym for gym"). Under its other options, only what Jason rules there. | Names, initials or ids (F3; OD-2026-09-28-005). Any per-gym class list or count unless Jason rules it. |
 | Signed out: public wall, paired TV | Unchanged: classes and counts on the public address, initials on a paired TV (OD-2026-10-07-008 ruling 1). | Any part of the line. |
 
@@ -818,10 +839,13 @@ organization and the athlete ids come from the signed-in principal and the
 server's own scope, never the request, as the coach "marked today" read does
 (`attendance-today/route.ts:43-44`, `:51-52`). The response is `no-store`, as
 the wall and the staff read are (`wall/route.ts:56`;
-`attendance-today/route.ts:90-92`), and the page keeps none of it in device
+`attendance-today/route.ts:90-92`), and the route is `force-dynamic`, as both
+are (`wall/route.ts:11`; `attendance-today/route.ts:10`), and the page keeps none of it in device
 storage (F10). A family's failure text is the same whatever the cause (F15).
 No athlete name or id goes to a log line: the wall logs an event name and the
-error's message (`wall/route.ts:63`), so FN-1 logs an event and a code only.
+error's message (`wall/route.ts:63`), which a database error could fill with
+an id; FN-1 logs an event, an error name and a code only, as the idle close
+does (`sessionScriptRuns.ts:330-333`).
 Recommendations.
 
 ## 5. Checks FN-1 to FN-3 should carry (recommended, not built)
@@ -844,8 +868,9 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    chosen), and an athlete's no run, class or time of the mark either
    (section 4's athlete row; recommended, not ruled by Q3.4 A).
 4. A coach whose staff membership has ended, a board member, the platform
-   owner, a staff-role or volunteer account, and a caller from another
-   organization are refused by the line's read, not given an empty answer,
+   owner and a staff-role or volunteer account are refused by the line's
+   read (a request naming another organization gets its own gym's answer,
+   check 8), not given an empty answer,
    which would read as "Nobody ..." (F15): no names, no yes/no and no count
    (F1, F3, F5). Until FN-2 opens them, parents and athletes are refused the
    same way (section 4). Any count Jason rules under FN0-Q3
@@ -924,7 +949,9 @@ no copy in this repository).
 start time change which marks count. FN-1 can build those three as separate
 conditions before they are answered, serving staff only until FN-2; FN-2 and
 FN-3 ship after (section 4), and FN0-Q4 decides whether Jason hears F1 and
-F14 before FN-2. FN-2 and
+F14 before FN-2. This moves the opening of the family cuts, which the sizing
+puts in FN-1 (`W4_SIZING.md:552`), to FN-2, sized as screens only (`:553`):
+a departure from the sizing, for App Overwatch to note. FN-2 and
 FN-3, the screens: FN0-Q2 sets the words for both, and FN0-Q5 the family
 words on a failed read, in FN-2. FN0-Q3 sets what the
 board's, the platform owner's and the staff-role and volunteer homes show;
@@ -965,13 +992,15 @@ on such a class still counts while its run is live (section 4).
   (option C), by that application; a child who may still be on the floor
   after a mid-class cancel loses the family's line, which reads as "not on
   the floor" (F15), unless a session tied to the class still has them
-  marked (section 4).
+  marked (section 4); for a coach who does not run that class, the mark is
+  new: no coach read gives it today (F5).
 - **B: not shown to anyone, as the wall does.** Pros: one rule; matches the
   wall. Cons: children marked present before a mid-class cancel drop off the
   coach's head count.
 - **C: shown to everyone as any other mark.** Pros: Q3.1 C read literally.
   Cons: gives families a mark the family read withholds today; a parent may
-  see a line for a class that never ran.
+  see a line for a class that never ran; for a coach who does not run that
+  class, the mark is new (F5).
 - Families get nothing from the read, and no screen shows the line, until
   you answer (section 4).
 
@@ -1091,7 +1120,8 @@ is still open, because each of these roles has limits on what it may see
   comes from the class schedule alone: a class whose `start_at` is at or
   before now and whose `end_at` is after now, and which is not cancelled
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:15-16`,
-  `:22`); no register or run mark is read. The platform
+  `:22`); no register or run mark is read. On a failed read, the line says
+  it could not be checked, as the coach line does (F15). The platform
   owner gets nothing under your "platform for platform gym for gym"
   (OD-2026-10-02-013, `OWNER_DECISIONS.md:12291-12292`; applied in OD-2026-10-07-011 ruling 2
   and OD-2026-10-10-004 ruling 3), whose plain principle reaches a gym's
@@ -1100,8 +1130,8 @@ is still open, because each of these roles has limits on what it may see
   only athlete, parent, coach, organization admin and admin,
   `scheduler/route.ts:723`), though the public wall shows the default gym's
   classes to anyone and families already see the class titles (all but
-  cancelled classes that have ended, `scheduler/route.ts:610-614`)
-  (`scheduler/route.ts:680-681`) (F3); a title is staff-written text and a
+  cancelled classes that have ended; `scheduler/route.ts:610-614`, `:680-681`;
+  F3); a title is staff-written text and a
   class can have a capacity of 1
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:13-18`),
   so "no person" rests on titles naming none; the board's privacy tier is
@@ -1111,8 +1141,7 @@ is still open, because each of these roles has limits on what it may see
   classes, not people; not an "on the floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
   it, as B's con says for all three; not sized.
-- **B: no line on those three homes.** Pros: no new access and no new
-  restriction for any role; matches the sizing. Cons: narrows your Q12 A if
+- **B: no line on those three homes.** Pros: no new access for any role; matches the sizing. Cons: narrows your Q12 A if
   "every home" meant every role's landing page, and much of the record leans
   that way (F3).
 - **C: a count of who counts under section 4's rule, from register marks
@@ -1124,7 +1153,7 @@ is still open, because each of these roles has limits on what it may see
   default gym's day count to anyone (F3); a moving number thins the board's
   floor; a different number from the coach line (F8); not sized.
 - **D: a count that includes run marks on the board and platform owner's
-  homes,** held to the floor of 5. Pros: the same count as the coach line.
+  homes (not the staff-role and volunteer home),** held to the floor of 5. Pros: the same count as the coach line.
   Cons: departs from Overwatch's 10-13 note that a run mark feeds no "board or
   grant figure", which OW27-32 treated as needing your ruling (F1); goes
   against "platform for platform gym for gym" for the platform owner (taken
@@ -1243,8 +1272,8 @@ reaches the case and they disagree, so it is put to you. INFERRED.
   the floor (kernel floor, "Nothing false ships", `AGENT_KERNEL.md:105`).
   Cons: narrows Q3.1 C for this case; one more rule in the read; it applies
   to every reader, so the child also leaves the coach's head count while
-  their run mark stands (staff set the later mark: the class's coach, a
-  cover or an organization admin, `access.ts:651-657`).
+  their run mark stands (staff set the later mark: the class's coach, its
+  scheduler, a cover or an organization admin, `access.ts:651-657`).
 - **B: no, a standing here mark on a running session always counts.** Pros:
   exactly Q3.1 C. Cons: a child sent home and marked Excused still shows on
   the floor until the coach untaps them or the run ends, while the family's
