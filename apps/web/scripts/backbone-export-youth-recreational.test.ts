@@ -531,6 +531,12 @@ describe('the committed youth + recreational rows', () => {
 
   const HW_TRACK = 'trk_55480ac4429113';
   const HW_TRACK_COLUMNS = ['sources', 'details', 'field_labels'];
+  // Lane W4-8's step PRs: template id -> the typed steps now linked to the lane's drills (one entry per template).
+  const LANE_W48_STEPS: Record<string, number[]> = {
+    wtp_43c793b8f90e77: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // 48-Session Youth Coaching Manual, Weeks 1-4 (TL-1b)
+    wtp_ed57bea28de0f7: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 5-8 (TL-1b)
+    wtp_d861f584584788: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 9-12 (TL-1b)
+  };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -542,8 +548,18 @@ describe('the committed youth + recreational rows', () => {
     // Lane HW (OD-2026-11-19-005; Overwatch R1): the Personal and Home Training track names the six PPBF
     // home sessions in days 1-6 in place of the held six, so its details, sources and field_labels differ
     // from the frozen Backbone, and the guard refuses to write the frozen row back over them.
-    expect(named.filter(([file]) => file !== TEMPLATES)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
-    expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort()).toEqual(draftedIds);
+    expect(named.filter(([file]) => file !== TEMPLATES && file !== ITEMS)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
+    // Lane W4-8 (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; plan and GO on #2162): each typed step in
+    // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template gains the 'items.drill_id'
+    // label. The frozen Backbone keeps the typed lines, so the guard names exactly those steps (drill_id is their one
+    // committed cell the export would change; the cleared free_text_drill is a blank it would fill) and those
+    // templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
+    // step PR's head before merging it (#2162).
+    const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
+    expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
+    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, 'drill_id']));
+    expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
+      .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
 
     // Lane GD: the frozen track row still names the held six in its details, so no flag writes it back
     // (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042). The plain refusal says so, and
@@ -557,7 +573,11 @@ describe('the committed youth + recreational rows', () => {
     const forced = exportInto(FROZEN, SEED_DIR, ['--allow-overwrite']);
     expect(forced.status).toBe(1);
     expect(heldLines(forced.stderr)).toEqual([heldLine]);
-    expect(forced.stderr).not.toContain('the export would write it back as a typed line');
+    // ...and both runs refuse to write lane W4-8's linked steps back as typed lines, naming exactly those steps.
+    const typedLines = (stderr: string) => stderr.split('\n').filter((line) => line.endsWith('the export would write it back as a typed line'));
+    const laneTypedLines = laneSteps.map((row) => `  ${ITEMS} template_id ${row.template_id}: step ${row.ordinal} links drill ${row.drill_id}; the export would write it back as a typed line`);
+    expect(typedLines(refused.stderr)).toEqual(laneTypedLines);
+    expect(typedLines(forced.stderr)).toEqual(laneTypedLines);
     for (const name of WRITTEN) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
   });
 });

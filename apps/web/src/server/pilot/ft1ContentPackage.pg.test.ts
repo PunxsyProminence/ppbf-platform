@@ -271,16 +271,38 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
 }
 /**
  * Lane W4-8 (OD-2026-11-19-030; #2162) came after this lane too: AI-drafted library drills for the typed steps
- * of the mixed templates, with their child rows. Left out the same way; typedLinesContent.test.ts checks them.
+ * of the mixed templates, with their child rows, and the steps it linked to them. Left out the same way: the drills
+ * go, each linked step gets its typed line back (each drill quotes its line word for word in its source_ref; a
+ * line a scripted step held only as its block title stays there), and its template loses the 'items.drill_id' label
+ * the lane added. typedLinesContent.test.ts checks the lane's rows.
  */
+const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
 function withoutLaneW48(files: Record<string, string>): Record<string, string> {
-  const laneDrillIds = new Set(rowsOf(files[DRILLS_CSV]).filter((row) => row.content_class.startsWith('AI DRAFT - lane W4-8')).map((row) => row.drill_id));
-  const rewrite = (text: string) => {
+  const laneDrills = new Map(rowsOf(files[DRILLS_CSV]).filter((row) => row.content_class.startsWith('AI DRAFT - lane W4-8')).map((row) => [row.drill_id, row]));
+  const rewrite = (text: string, keep: (row: Row) => boolean, edit: (row: Row) => Row = (row) => row) => {
     const header = readCsv(text).header;
-    return writeCsv(header, rowsOf(text).filter((row) => !laneDrillIds.has(row.drill_id)).map((row) => header.map((name) => row[name] ?? '')));
+    return writeCsv(header, rowsOf(text).filter(keep).map(edit).map((row) => header.map((name) => row[name] ?? '')));
+  };
+  const typedAgain = (row: Row): Row => {
+    const drill = laneDrills.get(row.drill_id);
+    if (!drill) return row;
+    const line = LANE_W48_LINE.exec(drill.source_ref)?.[1] ?? '';
+    const heldInTitle = row.details !== '' && JSON.parse(row.details).block_title === line;
+    return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line };
+  };
+  const linkedTemplates = new Set(rowsOf(files[ITEMS_CSV]).filter((row) => laneDrills.has(row.drill_id)).map((row) => row.template_id));
+  const unlabelled = (row: Row): Row => {
+    if (!linkedTemplates.has(row.template_id)) return row;
+    const labels = JSON.parse(row.field_labels);
+    delete labels['items.drill_id'];
+    return { ...row, field_labels: JSON.stringify(labels) };
   };
   const out = { ...files };
-  for (const name of [DRILLS_CSV, CUES_CSV, STOPS_CSV, 'drill-library/seed_drill_scale_levels.csv']) out[name] = rewrite(files[name]);
+  for (const name of [DRILLS_CSV, CUES_CSV, STOPS_CSV, 'drill-library/seed_drill_scale_levels.csv']) {
+    out[name] = rewrite(files[name], (row) => !laneDrills.has(row.drill_id));
+  }
+  out[ITEMS_CSV] = rewrite(files[ITEMS_CSV], () => true, typedAgain);
+  out[TEMPLATES_CSV] = rewrite(files[TEMPLATES_CSV], () => true, unlabelled);
   return out;
 }
 const committedWithLaneRs = withoutLaneHw(withoutLaneW48(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES)));
