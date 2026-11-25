@@ -775,11 +775,30 @@ describe('email alert staff event sources', () => {
     ])));
     expect([...source.values()].flat()).not.toContain(old);
     await expectStillReadableAsPage(page, inWindow, 'gym_notice', userTypeOf);
+    // A send queued under another user type than the role now gives reads as no.
+    expect(await emailAlertEventStillReadable({
+      organization_id: ORG, account_id: 'acct-ev-parent', user_type: 'staff', event_kind: 'gym_notice', event_id: everywhere,
+    })).toBe(false);
   });
 
   test('coach_message names only the athlete account linked to the record, for messages from staff', async () => {
     const client = await freshDatabase('emailevents_coach_messages');
     activeClient = client;
+    // Two accounts the page never shows these messages to: one whose home gym
+    // is the other gym, linked there to its ATH_B, with an athlete membership
+    // here too (every sign-in is minted in the home gym); and one linked to
+    // this gym's ATH_B but holding a coach membership here.
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, login_email)
+       values ('acct-ev-roaming-athlete', 'athlete', $2, 'magic_link', $3, null),
+              ('acct-ev-athlete-now-coach', 'coach', $1, 'magic_link', $3, null)`,
+      [ORG, OTHER_ORG, ATH_B],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ('acct-ev-roaming-athlete', $1, 'athlete', true), ('acct-ev-athlete-now-coach', $1, 'coach', true)`,
+      [ORG],
+    );
 
     const toA = await athleteMessage(client, ORG, ATH_A);
     const toAFromAdmin = await athleteMessage(client, ORG, ATH_A, { authorRole: 'organization_admin' });
@@ -788,7 +807,7 @@ describe('email alert staff event sources', () => {
     const familyNoteOnA = await athleteMessage(client, ORG, ATH_A, { noteType: 'parent_message' });
     const toC = await athleteMessage(client, ORG, ATH_C); // its account's membership is off
     const toGone = await athleteMessage(client, ORG, ATH_GONE); // a deleted record
-    const toB = await athleteMessage(client, ORG, ATH_B); // no account linked
+    const toB = await athleteMessage(client, ORG, ATH_B); // only the two accounts above link to an ATH_B
     const old = await athleteMessage(client, ORG, ATH_A, { minutesAgo: 120 });
     const otherGym = await athleteMessage(client, OTHER_ORG, ATH_OTHER);
 
@@ -804,6 +823,10 @@ describe('email alert staff event sources', () => {
     ])));
     expect([...source.values()].flat()).not.toContain(old);
     await expectStillReadableAsPage(page, inWindow, 'coach_message', () => 'adult_athlete');
+    // A send queued under another user type reads as no.
+    expect(await emailAlertEventStillReadable({
+      organization_id: ORG, account_id: 'acct-ev-athlete', user_type: 'parent', event_kind: 'coach_message', event_id: toA,
+    })).toBe(false);
   });
 
   test('a retired notice is not sent; a live one and a coach message reach a parent, a coach and an adult athlete', async () => {
