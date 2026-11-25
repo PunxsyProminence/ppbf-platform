@@ -8869,6 +8869,35 @@
     }
   },
   {
+    "id": "app/api/pilot/on-the-floor/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/on-the-floor",
+    "gate": "requirePrincipal + requireRole(ON_THE_FLOOR_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in listOnTheFloorForStaff; 403 without); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Who is on the floor now, for the coach and admin line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; FN-0 signed off on #2160; GO on #2192). Counts a standing here mark on a live run of this gym (less one a later Absent or Excused on the tied class's register took off, FN0-Q6 A) or a present register mark on a class whose gym day is today (a family's own mark from the class's start, a staff mark from when written, FN0-Q2 A); cancelled classes stay on this staff line (FN0-Q1 A). Returns the gym day and each counted live athlete's id and name, in name order; no run, class, mark time, marker or source. writes: before reading it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). Not attendance; no figure reads it. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Parents and athletes are refused until FN-2.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/incidents/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/incidents",
