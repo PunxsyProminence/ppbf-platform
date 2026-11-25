@@ -340,10 +340,12 @@ describe('email alert queue', () => {
       // The other replica is part-way through claiming the coach's send.
       await other.query('begin');
       await other.query(`select 1 from pilot.email_alert_sends where account_id = $1 for update`, [COACH_ID]);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const claimed = await Promise.race([
         claimDueEmailAlertSends(10),
-        new Promise<'waited'>((resolve) => { setTimeout(() => resolve('waited'), 5_000); }),
+        new Promise<'waited'>((resolve) => { timer = setTimeout(() => resolve('waited'), 5_000); }),
       ]);
+      clearTimeout(timer);
       expect(claimed).not.toBe('waited');
       expect((claimed as Array<{ account_id: string }>).map((row) => row.account_id)).toEqual([PARENT_ID]);
       await other.query('rollback');
