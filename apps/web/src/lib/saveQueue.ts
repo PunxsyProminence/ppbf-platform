@@ -19,14 +19,15 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  * TIED TO THE ACCOUNT THAT MADE IT. A save is kept only once this page knows who is signed in
  * (POST /api/pilot/auth/session); before that it is not kept, and the screen says what it says
  * today. The account is asked again before every resend, before the first send of a save that
- * waited, and in the background whenever the role session is written again; until that background
- * ask confirms the account, a new save waits for its answer and is checked again before it is sent.
- * Everything kept,
- * waiting or failed, is dropped the moment that account is gone or another is signed in: the role
- * session is cleared (every sign-out in the page does that), the device's sign-out / sign-in mark
- * changes (every sign-in writes it first; this tab or another), a 401, the server saying the save
- * was made by another account, or a check that answers with another account or nobody. The words a waiting or failed save showed go with it: the next person sees
- * nothing of the last person's saves. Only the person whose saves were dropped, once the page has
+ * waited, and in the background whenever the role session is written again. Until that background
+ * ask confirms the account (asked again every 15 seconds), the page shows only how many saves it
+ * holds, with no names, since another person may have signed in by a path that writes no device mark
+ * (a Microsoft sign-in, /login?logout=true); a new save waits for its answer and is checked again
+ * before it is sent. Everything kept, waiting or failed, is dropped the moment that account is gone
+ * or another is signed in: the role session is cleared (every sign-out in the page does that), the
+ * device's sign-out / sign-in mark changes (this tab or another), a 401, the server saying the save
+ * was made by another account, or a check that answers with another account or nobody. The words a
+ * waiting or failed save showed go with it: the next person sees nothing of the last person's saves. Only the person whose saves were dropped, once the page has
  * confirmed it is still them signed in with no sign-out or sign-in on the device since, is told how
  * many were not sent, with no names (AGENT_KERNEL floor: an unknown value never looks complete).
  * The count, too, is forgotten at a sign-out or sign-in.
@@ -47,6 +48,7 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  * Known limit, within one page: a send given up on after ANSWER_WAIT_MS is aborted, which stops it
  * on the network, but not work the server had already started on it. If the server took a request
  * and is still working on it after 30 seconds, it may write it after a newer save from this page.
+ * Only saves without a request key (here taps, run actions) can be put out of order by that.
  */
 
 export const RESEND_MS = 15_000;
@@ -111,6 +113,11 @@ export interface SaveQueueState {
   failed: readonly FailedSave[];
   /** How many waiting saves were dropped unsent; shown only to the account that made them. */
   notSent: number;
+  /**
+   * While the page checks again who is signed in: how many saves, waiting or failed, it holds. Their
+   * names are not shown until the check confirms the account (waiting and failed are empty then).
+   */
+  checking: number;
 }
 
 interface Entry {
@@ -122,7 +129,7 @@ interface Entry {
   sends: number;
 }
 
-const EMPTY: SaveQueueState = { waiting: [], failed: [], notSent: 0 };
+const EMPTY: SaveQueueState = { waiting: [], failed: [], notSent: 0, checking: 0 };
 
 let entries: Entry[] = [];
 let failed: FailedSave[] = [];
@@ -145,6 +152,7 @@ let learning: Promise<string | null> | null = null;
 let learnSeq = 0;
 /** The role session was written again and no answer has confirmed the account since. */
 let rechecking = false;
+let recheckTimer: ReturnType<typeof setTimeout> | undefined;
 /** Saves dropped unsent: how many, whose, and the device mark when they were dropped. */
 let notSent: { count: number; accountId: string; mark: number | null } | null = null;
 let generation = 0;
@@ -155,10 +163,12 @@ let snapshot: SaveQueueState = EMPTY;
 const listeners = new Set<() => void>();
 
 function notify(): void {
-  const dropped = notSent && accountId !== null && notSent.accountId === accountId ? notSent.count : 0;
-  snapshot = entries.length === 0 && failed.length === 0 && dropped === 0
-    ? EMPTY
-    : { waiting: entries.map((entry) => entry.save.label), failed: [...failed], notSent: dropped };
+  const held = entries.length + failed.length;
+  const dropped = !rechecking && notSent && accountId !== null && notSent.accountId === accountId ? notSent.count : 0;
+  if (held === 0 && dropped === 0) snapshot = EMPTY;
+  // While the account is being checked again, the person at the screen may be someone else: a count.
+  else if (rechecking) snapshot = { waiting: [], failed: [], notSent: 0, checking: held };
+  else snapshot = { waiting: entries.map((entry) => entry.save.label), failed: [...failed], notSent: dropped, checking: 0 };
   for (const listener of listeners) {
     try {
       listener();
@@ -181,6 +191,21 @@ function later(): void {
   }, RESEND_MS);
 }
 
+function stopRechecking(): void {
+  rechecking = false;
+  if (recheckTimer !== undefined) clearTimeout(recheckTimer);
+  recheckTimer = undefined;
+}
+
+/** While the account is being checked again and the check could not answer: ask again in 15 seconds. */
+function recheckLater(): void {
+  if (recheckTimer !== undefined) clearTimeout(recheckTimer);
+  recheckTimer = setTimeout(() => {
+    recheckTimer = undefined;
+    if (rechecking) void learnAccount(true);
+  }, RESEND_MS);
+}
+
 /** Everything kept, waiting or failed, goes: the account it was tied to is gone or has changed. */
 function dropAll(): void {
   if (entries.length > 0) {
@@ -195,39 +220,67 @@ function dropAll(): void {
   holding = false;
   markAtHold = null;
   learning = null;
-  rechecking = false;
+  stopRechecking();
   clearTimer();
   notify();
 }
 
 /**
- * A request, given up on after ANSWER_WAIT_MS: no request may hold the queue forever. It is ABORTED
- * then, not left open, so a send given up on cannot reach the server after a newer one.
+ * A request and the read of its answer, given up on after ANSWER_WAIT_MS: it is ABORTED then, and
+ * the queue goes on only once it has settled. fetch settles at once when aborted, so a send given up
+ * on cannot reach the server after a newer one; a send that ignored the signal would hold the queue,
+ * its save still shown as waiting, never let a newer save overtake it. A give-up throws 'no answer'.
  */
-function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
+  // Through a promise, so a start that throws at once is a rejection here, not a stray timer.
+  const run = Promise.resolve().then(() => start(controller.signal));
   let wait: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    wait = setTimeout(() => {
-      controller.abort();
-      reject(new Error('no answer'));
-    }, ANSWER_WAIT_MS);
+  const givenUp = new Promise<'given up'>((resolve) => {
+    wait = setTimeout(() => resolve('given up'), ANSWER_WAIT_MS);
   });
-  return Promise.race([start(controller.signal), timeout]).finally(() => clearTimeout(wait));
+  try {
+    const first = await Promise.race([run.then(() => 'settled' as const, () => 'settled' as const), givenUp]);
+    if (first === 'given up') {
+      controller.abort();
+      await run.catch(() => undefined);
+      throw new Error('no answer');
+    }
+    return await run;
+  } finally {
+    clearTimeout(wait);
+  }
+}
+
+/** A screen's callback, never allowed to stop the queue: a throw, or no answer by ANSWER_WAIT_MS, gives the fallback. */
+async function safely<T>(callback: () => T | Promise<T>, fallback: T): Promise<T> {
+  let wait: ReturnType<typeof setTimeout> | undefined;
+  const givenUp = new Promise<T>((resolve) => {
+    wait = setTimeout(() => resolve(fallback), ANSWER_WAIT_MS);
+  });
+  const answered = Promise.resolve().then(callback).catch(() => fallback);
+  try {
+    return await Promise.race([answered, givenUp]);
+  } finally {
+    clearTimeout(wait);
+  }
 }
 
 /** Who is signed in now: an account id, null for nobody, or 'unreachable'. */
 async function signedInAccount(): Promise<string | null | 'unreachable'> {
   try {
-    const response = await withinWait((signal) => fetch(`${apiBase()}/api/pilot/auth/session`, {
-      method: 'POST',
-      credentials: 'include',
-      cache: 'no-store',
-      signal,
-    }));
-    if (!response.ok) return 'unreachable';
-    const body = (await response.json().catch(() => null)) as { authenticated?: unknown; account_id?: unknown } | null;
-    if (body?.authenticated === false) return null;
+    const body = await withinWait(async (signal) => {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        signal,
+      });
+      if (!response.ok) return null;
+      return (await response.json().catch(() => null)) as { authenticated?: unknown; account_id?: unknown } | null;
+    });
+    if (body === null) return 'unreachable';
+    if (body.authenticated === false) return null;
     return typeof body?.account_id === 'string' && body.account_id !== '' ? body.account_id : 'unreachable';
   } catch {
     return 'unreachable';
@@ -243,7 +296,7 @@ function boundaryNewer(): boolean {
 function confirmAccount(answer: string): void {
   if (accountId !== null && accountId !== answer) dropAll();
   accountId = answer;
-  rechecking = false;
+  stopRechecking();
   if (!holding) {
     holding = true;
     markAtHold = readGymTabletSignedOutAt();
@@ -280,7 +333,10 @@ function learnAccount(again = false): Promise<string | null> {
         notify();
         return null;
       }
-      if (answer === 'unreachable') return accountId;
+      if (answer === 'unreachable') {
+        if (rechecking) recheckLater();
+        return accountId;
+      }
       confirmAccount(answer);
       return answer;
     });
@@ -292,21 +348,24 @@ function install(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   subscribeRoleSession(() => {
-    // Signed out, or a sign-in on this device since this page began to hold (every sign-in writes
-    // the device mark before it writes the role session): everything goes, at once.
+    // Signed out, or a sign-in or sign-out mark on this device since this page began to hold:
+    // everything goes, at once.
     if (!getRoleSessionSnapshot() || boundaryNewer()) {
       dropAll();
       return;
     }
-    // The same device with no sign-in since: a page read its session again. Ask in the background;
-    // another account or nobody drops everything, and an unanswered ask leaves the saves as they are.
+    // No mark since: a page read its session again, or someone signed in by a path that writes no
+    // mark. Only a count shows until the account is confirmed; another account or nobody drops
+    // everything; an ask that cannot answer is asked again every 15 seconds.
     rechecking = true;
+    notify();
     void learnAccount(true);
   });
   window.addEventListener('storage', () => {
     if (boundaryNewer()) dropAll();
   });
   window.addEventListener('online', () => {
+    if (rechecking) void learnAccount(true);
     clearTimer();
     void pump();
   });
@@ -341,14 +400,6 @@ function defaultAnswer(response: Response): SaveAnswer {
   return response.status >= 400 && response.status < 500 ? 'refused' : 'unknown';
 }
 
-/** A screen's callback, never allowed to stop the queue: a throw gives the fallback. */
-async function safely<T>(callback: () => T | Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await callback();
-  } catch {
-    return fallback;
-  }
-}
 
 async function pump(): Promise<void> {
   const head = entries[0];
@@ -380,20 +431,24 @@ async function pump(): Promise<void> {
       confirmAccount(now);
     }
     let response: Response | null = null;
+    let accountGone = false;
     try {
-      response = await withinWait((signal) => head.save.send({
-        signal,
-        requestKey: head.requestKey,
-        madeByAccountId: head.accountId,
-        msSinceMade: msSinceMade(head),
-        first: head.sends === 0,
+      // The answer's code is read under the same limit: a body that stalls is aborted with the send.
+      ({ response, accountGone } = await withinWait(async (signal) => {
+        const answered = await head.save.send({
+          signal,
+          requestKey: head.requestKey,
+          madeByAccountId: head.accountId,
+          msSinceMade: msSinceMade(head),
+          first: head.sends === 0,
+        });
+        const gone = answered.status === 401 || (await codeOf(answered)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT';
+        return { response: answered, accountGone: gone };
       }));
     } catch {
       response = null;
     }
     head.sends += 1;
-    const accountGone = response !== null
-      && (response.status === 401 || (await codeOf(response)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT');
     // A dropped save's answer is never used (a sign-out, another account, while it was on its way).
     if (seen !== generation) return;
     if (accountGone) {

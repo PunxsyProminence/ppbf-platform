@@ -5,7 +5,7 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS, notSentWords } from './SaveQueueNotice';
+import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS, checkingWords, notSentWords } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, keepSave, prepareSaveQueue, resetSaveQueueForTests, type KeptSave } from '@/src/lib/saveQueue';
 
@@ -116,4 +116,25 @@ test('after saves were dropped unsent, the person who made them is told how many
   const line = screen.getByRole('alert');
   expect(line).toHaveTextContent(notSentWords(1));
   expect(line).not.toHaveTextContent('Ada Reyes');
+});
+
+test('while the page checks again who is signed in, only a count shows, with no names', async () => {
+  const { container } = render(<SaveQueueNotice />);
+  await act(async () => {
+    await keepSave(save('Staff note on Ben Ortiz', [answer(422)]));
+    await jest.advanceTimersByTimeAsync(0);
+    await keepSave(save('Ada Reyes: here', ['throw']));
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  (global.fetch as jest.Mock).mockImplementation(async () => {
+    throw new TypeError('Failed to fetch');
+  });
+  await act(async () => {
+    createPersistentRoleSession('coach');
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByRole('status')).toHaveTextContent(checkingWords(2));
+  expect(container).not.toHaveTextContent('Ada Reyes');
+  expect(container).not.toHaveTextContent('Ben Ortiz');
+  expect(screen.queryByRole('alert')).toBeNull();
 });
