@@ -175,6 +175,8 @@ function queueIdle(): boolean {
 }
 
 type PendingRun = Partial<Pick<LiveSessionScriptRun, 'is_paused' | 'show_on_wall' | 'current_block_id'>>;
+/** An intervention execution of this run as the ledger lists it (the fields a landed check reads). */
+type RunExecution = { execution_id: string; created_at: string; recorded_by_account_id?: string; version?: number };
 /** One kept run action not yet answered: what it asks, and whether it ends the session. */
 type AskedRun = { save: object; asked: PendingRun; finish: boolean };
 
@@ -560,7 +562,7 @@ export default function SessionScriptLiveDelivery({
       athleteId: string,
       protocolId: string,
       signal?: AbortSignal,
-    ): Promise<{ execution_id: string; created_at: string }[] | null> => {
+    ): Promise<RunExecution[] | null> => {
       try {
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/intervention-executions?athlete_id=${encodeURIComponent(athleteId)}`,
@@ -568,7 +570,7 @@ export default function SessionScriptLiveDelivery({
         );
         if (!response.ok) return null;
         const payload = (await response.json()) as {
-          items?: { execution_id: string; created_at: string; session_run_id: string | null; protocol_id: string }[];
+          items?: (RunExecution & { session_run_id: string | null; protocol_id: string })[];
         };
         if (!Array.isArray(payload.items)) return null;
         return payload.items.filter((item) => item.session_run_id === run.run_id && item.protocol_id === protocolId);
@@ -641,7 +643,7 @@ export default function SessionScriptLiveDelivery({
         },
         answerOf: async (response) => {
           const payload = (await response.clone().json().catch(() => ({}))) as {
-            item?: { recorded_by_account_id?: unknown };
+            item?: { recorded_by_account_id?: unknown; version?: unknown };
             replayed?: unknown;
             error?: string;
             code?: string;
@@ -652,8 +654,10 @@ export default function SessionScriptLiveDelivery({
           }
           // The pair's key wrote another account's log (a key first sent on today's path, then someone
           // else signed in): this log is not written. The key is theirs; this one goes again under its own.
+          // Only an uncorrected record names who wrote it: a correction is recorded by the corrector, so
+          // a corrected replay counts as this log, as before (never a second one).
           const recordedBy = payload.item?.recorded_by_account_id;
-          if (response.ok && payload.replayed === true && pairKey && sent?.key === pairKey
+          if (response.ok && payload.replayed === true && pairKey && sent?.key === pairKey && payload.item?.version === 1
             && typeof recordedBy === 'string' && recordedBy !== sent.by) {
             pairKeyAccounts.current.set(pairKey, recordedBy);
             return 'unknown';
@@ -665,7 +669,9 @@ export default function SessionScriptLiveDelivery({
           const after = await readRunExecutions(athleteId, protocolId, signal);
           if (before === null || after === null) return null;
           const known = new Set([...before, ...loggedRef.current].map((item) => item.execution_id));
-          landedItem = after.find((item) => !known.has(item.execution_id)) ?? null;
+          // Another account's uncorrected log of the pair (its own write landing late) is not this one.
+          landedItem = after.find((item) => !known.has(item.execution_id)
+            && (sent === null || item.version !== 1 || item.recorded_by_account_id === sent.by)) ?? null;
           return landedItem !== null;
         },
         onSaved: (response) => {

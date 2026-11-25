@@ -2664,7 +2664,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
           return lost();
         }
         if (body.request_key === firstKey) {
-          return jsonResponse({ item: { execution_id: 'exec-a', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-a' }, replayed: true });
+          return jsonResponse({ item: { execution_id: 'exec-a', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-a', version: 1 }, replayed: true });
         }
         return jsonResponse({ item: { execution_id: 'exec-b', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-b' } });
       },
@@ -2681,6 +2681,54 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(posted[2]).toEqual(expect.objectContaining({ made_by_account_id: 'acct-b' }));
     expect(posted[2].request_key).not.toBe(firstKey);
     expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
+  it('a replay of this log as corrected by someone else since is still this log: never written twice (F-135)', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        // Written; the answer is lost. A head coach corrects it on The Work before the resend.
+        if (posts === 1) return lost();
+        return jsonResponse({
+          item: { execution_id: 'exec-1b', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-head', version: 2 },
+          replayed: true,
+        });
+      },
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS * 3);
+    expect(logPostCalls(fetchMock)).toHaveLength(2);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+    expect(waitingLine()).toBeNull();
+  });
+
+  it('a refused RESEND is not read as landed by another account\'s new log of the pair', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        return jsonResponse({
+          items: reads === 1 ? [] : [{
+            execution_id: 'exec-x', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1',
+            recorded_by_account_id: 'acct-x', version: 1,
+          }],
+        });
+      },
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS);
+    expect(screen.queryByText('logged')).toBeNull();
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent !== '')).toBe(true);
   });
 
   it('the next account\'s two taps of a pair whose key is not theirs carry one key of their own: one log, never two (F-135)', async () => {
