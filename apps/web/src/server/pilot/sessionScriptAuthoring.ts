@@ -7,7 +7,7 @@ import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels'
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { orNotWritten } from '@/src/lib/drillPresentation';
-import { BLOCK_RENDERED_FORMATS, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
+import { BLOCK_RENDERED_FORMATS, FROM_DRILL, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
@@ -17,12 +17,15 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 //
 // Two writes, both on tables owned by
 // infra/azure/pilot_slice_postgres_session_scripts_migration.sql. Nothing here
-// issues DDL, and nothing here deletes a row.
+// issues DDL. The one row ever deleted is a block an edit removes from a plan
+// nobody has run and nothing else names (editSessionScript).
 //
 //   createSessionScriptFromTemplate  a workout template's steps, in the
 //     template's order, become timed blocks: minutes from the start, running
 //     on from one step to the next.
-//   editSessionScript  the name, and each block's title and minutes.
+//   editSessionScript  the name, each block's title and minutes, and (lane
+//     W4-5) the blocks themselves: a library drill added, a block removed, the
+//     running order.
 //   setSessionScriptRetired  retires a script (kept, left out of the browse
 //     list) or brings a retired one back. In place, never a new version.
 //   markSessionScriptReviewed  a coach marks a draft plan reviewed. In place,
@@ -113,7 +116,7 @@ type TemplateStep = Pick<
 // The session-level contact label, from the steps' own levels. All without
 // contact, all with, without-then-with, and anything else that has contact in
 // it reads 'contact'.
-export function contactStructure(steps: readonly Pick<TemplateStep, 'contact_level'>[]): string {
+export function contactStructure(steps: readonly { contact_level: string }[]): string {
   const withContact = steps.map((step) => step.contact_level !== 'none');
   if (!withContact.includes(true)) return 'non_contact';
   if (!withContact.includes(false)) return 'contact';
@@ -332,23 +335,84 @@ export interface SessionScriptBlockEdit {
   end_offset_min: number;
 }
 
+/**
+ * A block an edit adds (lane W4-5, SP-1a): a drill from the gym's library. `ref` is the caller's
+ * name for it in `order` and is not stored. The title is the drill's name unless one is given.
+ */
+export interface SessionScriptBlockAdd {
+  ref: string;
+  kind: 'drill';
+  drill_id: string;
+  block_label?: string;
+  start_offset_min: number;
+  end_offset_min: number;
+}
+
 export interface EditedSessionScript {
-  /** 'new_version' when the script had a run: script_id is then the NEW row's. */
+  /** 'new_version' when the script had a run, or the edit removed a block something names: script_id is then the NEW row's. */
   outcome: 'unchanged' | 'updated' | 'new_version';
   script_id: string;
   version: number;
 }
 
+function refuse(code: string): never {
+  throw new SessionScriptAuthoringError(code, 422);
+}
+
+function checkMinutes(start: number, end: number): void {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > MAX_OFFSET_MIN) {
+    refuse('SESSION_SCRIPT_BLOCK_MINUTES_INVALID');
+  }
+}
+
+/**
+ * The plan's running order after an edit: stored block ids and new blocks' refs. Pure.
+ *
+ * Without `order`, the blocks kept stay in their order and the new ones follow in the order
+ * given. With it, it must name every block kept and every new one exactly once: a list that
+ * leaves a block out is refused, never read as a removal, which only `remove` says.
+ */
+export function runningOrderAfter(
+  storedIds: readonly string[],
+  change: { edited: readonly string[]; remove: readonly string[]; refs: readonly string[]; order?: readonly string[] },
+): string[] {
+  const stored = new Set(storedIds);
+  if (change.remove.some((id) => !stored.has(id))) refuse('SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT');
+  const removed = new Set(change.remove);
+  // A block named twice, or both edited and removed, is not one change.
+  if (removed.size !== change.remove.length || change.edited.some((id) => removed.has(id))) {
+    refuse('SESSION_SCRIPT_BLOCK_REPEATED');
+  }
+  const refs = new Set(change.refs);
+  if (refs.size !== change.refs.length || change.refs.some((ref) => ref.trim() === '' || stored.has(ref))) {
+    refuse('SESSION_SCRIPT_BLOCK_REF_INVALID');
+  }
+  const kept = storedIds.filter((id) => !removed.has(id));
+  const order = change.order ?? [...kept, ...change.refs];
+  const expected = new Set([...kept, ...change.refs]);
+  if (order.length !== expected.size || new Set(order).size !== order.length || order.some((id) => !expected.has(id))) {
+    refuse('SESSION_SCRIPT_ORDER_INVALID');
+  }
+  // A plan with no blocks could never be delivered (createSessionScriptFromTemplate refuses one too).
+  if (order.length === 0) refuse('SESSION_SCRIPT_NO_BLOCKS');
+  return [...order];
+}
+
+/**
+ * The plan's contact label once its blocks change, read from them in running order
+ * (contactStructure). observation_only is the one label blocks cannot say: an author's is kept
+ * while every block is still without contact, and gives way once one has contact, so the label
+ * never reads less contact than the blocks carry. Pure.
+ */
+export function contactStructureAfter(stored: string, blocks: readonly { contact_level: string }[]): string {
+  const read = contactStructure(blocks);
+  return stored === 'observation_only' && read === 'non_contact' ? stored : read;
+}
+
 function cleanBlockEdits(edits: readonly SessionScriptBlockEdit[]): Map<string, SessionScriptBlockEdit> {
   const byId = new Map<string, SessionScriptBlockEdit>();
   for (const edit of edits) {
-    const { start_offset_min: start, end_offset_min: end } = edit;
-    if (
-      !Number.isInteger(start) || !Number.isInteger(end)
-      || start < 0 || end <= start || end > MAX_OFFSET_MIN
-    ) {
-      throw new SessionScriptAuthoringError('SESSION_SCRIPT_BLOCK_MINUTES_INVALID', 422);
-    }
+    checkMinutes(edit.start_offset_min, edit.end_offset_min);
     if (byId.has(edit.block_id)) {
       throw new SessionScriptAuthoringError('SESSION_SCRIPT_BLOCK_REPEATED', 422);
     }
@@ -405,22 +469,100 @@ async function lockCurrentScript(
   return script;
 }
 
+interface DrillForBlock {
+  drill_id: string;
+  name: string;
+  contact_level: string;
+}
+
 /**
- * Change a script's name and its blocks' titles and minutes. A block the edit
- * does not name keeps what it has; blocks are never added, removed or
- * reordered here. A coach-format rendering made from the blocks is re-rendered
- * from the edited ones; every other rendering stays as written.
+ * The drills new blocks link, read FOR SHARE: a drill revised or withdrawn while this edit runs is
+ * either seen as replaced here, or waits for this edit (drillLibraryEdit.ts locks its row FOR UPDATE
+ * before it checks the steps that run it, drill_contact_below_steps). Only a current drill of this
+ * gym is linked -- the browse list's rule: active and not superseded (drillLibraryV3.ts).
+ */
+async function drillsForNewBlocks(
+  client: PoolClient,
+  organizationId: string,
+  drillIds: readonly string[],
+): Promise<Map<string, DrillForBlock>> {
+  if (drillIds.length === 0) return new Map();
+  const found = await client.query<DrillForBlock & { current: boolean }>(
+    `select drill_id, name, contact_level, (active and superseded_at is null) as current
+       from pilot.drill_library
+      where organization_id = $1 and drill_id = any($2::text[])
+      order by drill_id
+        for share`,
+    [organizationId, [...new Set(drillIds)]],
+  );
+  const byId = new Map(found.rows.map((row) => [row.drill_id, row]));
+  for (const drillId of drillIds) {
+    const drill = byId.get(drillId);
+    if (!drill) refuse('SESSION_SCRIPT_DRILL_NOT_FOUND');
+    if (!drill.current) throw new SessionScriptAuthoringError('SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
+  }
+  return byId;
+}
+
+/**
+ * Whether anything outside the plan names one of these blocks: a research transfer claim (content
+ * import), a behaviour window, or a run's cursor. Such a block is never deleted (Overwatch Q3 = A on
+ * #2189: "Never delete a claim"); the edit that removes it is written as a new version instead.
+ */
+async function blocksNamedElsewhere(client: PoolClient, organizationId: string, blockIds: readonly string[]): Promise<boolean> {
+  if (blockIds.length === 0) return false;
+  const named = await client.query(
+    `select 1 from pilot.transfer_claims where organization_id = $1 and block_id = any($2::text[])
+     union all
+     select 1 from pilot.behaviour_observations_windows
+      where organization_id = $1 and context_kind = 'block' and context_id = any($2::text[])
+     union all
+     select 1 from pilot.session_script_runs where organization_id = $1 and current_block_id = any($2::text[])
+     limit 1`,
+    [organizationId, [...blockIds]],
+  );
+  return (named.rowCount ?? 0) > 0;
+}
+
+/** A block as the edit leaves it: a stored one (block_id set) or a new one (block_id null). */
+type PlannedBlock = Omit<SessionScriptBlockRow, 'organization_id' | 'script_id' | 'block_id'> & { block_id: string | null };
+
+/**
+ * Change a script: its name; its blocks' titles and minutes (a block the edit does not name keeps
+ * what it has); and, lane W4-5 SP-1a, its blocks themselves -- a library drill added, a block
+ * removed, the running order (runningOrderAfter). Minutes are stored as sent: the editor proposes
+ * them (Overwatch Q2 = A on #2189). A coach-format rendering made from the blocks is re-rendered
+ * from the result; every other rendering stays as written.
+ *
+ * When the blocks change, the plan's contact label is read again from them (contactStructureAfter)
+ * and its stated length kept no shorter than they run. A new drill block carries its drill's own
+ * contact level (Q1 = C on #2189), the most step_contact_above_drill allows, and says which drill it
+ * was made from (FROM_DRILL), the way a template step says which template.
+ *
+ * A plan with a run gets a new version, as before. So does a plan whose edit removes a block
+ * something else names (blocksNamedElsewhere): that block stays, with what names it, on the version
+ * it was written for. When the blocks change in place their running order is renumbered 1..n.
  */
 export async function editSessionScript(
   params: Actor & {
     scriptId: string;
     name?: string;
     blocks?: readonly SessionScriptBlockEdit[];
+    /** Lane W4-5 SP-1a: blocks to add, blocks to remove, and the running order after. */
+    add?: readonly SessionScriptBlockAdd[];
+    remove?: readonly string[];
+    order?: readonly string[];
     /** The script's updated_at as the editor read it. Given, a script saved since is refused. */
     expectedUpdatedAt?: string;
   },
 ): Promise<EditedSessionScript> {
   const edits = cleanBlockEdits(params.blocks ?? []);
+  const adds = (params.add ?? []).map((add) => {
+    checkMinutes(add.start_offset_min, add.end_offset_min);
+    const label = add.block_label === undefined ? undefined : cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID');
+    return { ...add, block_label: label };
+  });
+  const remove = params.remove ?? [];
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
 
   return withTransaction(async (client) => {
@@ -432,36 +574,75 @@ export async function editSessionScript(
         order by block_order`,
       [params.organizationId, params.scriptId],
     );
-    const storedIds = new Set(stored.rows.map((block) => block.block_id));
-    if ([...edits.keys()].some((blockId) => !storedIds.has(blockId))) {
-      throw new SessionScriptAuthoringError('SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT', 422);
+    const byId = new Map(stored.rows.map((block) => [block.block_id, block]));
+    if ([...edits.keys()].some((blockId) => !byId.has(blockId))) {
+      refuse('SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT');
     }
+    const storedIds = stored.rows.map((block) => block.block_id);
+    const order = runningOrderAfter(storedIds, {
+      edited: [...edits.keys()],
+      remove,
+      refs: adds.map((add) => add.ref),
+      order: params.order,
+    });
+    const drills = await drillsForNewBlocks(client, params.organizationId, adds.map((add) => add.drill_id));
+    const addByRef = new Map(adds.map((add) => [add.ref, add]));
 
-    const blocks = stored.rows.map((block) => {
-      const edit = edits.get(block.block_id);
-      return edit
-        ? {
-            ...block,
+    const keptBefore = storedIds.filter((id) => order.includes(id));
+    const keptAfter = order.filter((id) => byId.has(id));
+    const orderChanged = keptAfter.some((id, index) => id !== keptBefore[index]);
+    const structural = adds.length > 0 || remove.length > 0 || orderChanged;
+
+    const blocks: PlannedBlock[] = order.map((id, index) => {
+      const block = byId.get(id);
+      if (block) {
+        const edit = edits.get(id);
+        return {
+          ...block,
+          ...(edit && {
             block_label: edit.block_label,
             start_offset_min: edit.start_offset_min,
             end_offset_min: edit.end_offset_min,
-          }
-        : block;
+          }),
+          block_order: structural ? index + 1 : block.block_order,
+        };
+      }
+      const add = addByRef.get(id) as (typeof adds)[number];
+      const drill = drills.get(add.drill_id) as DrillForBlock;
+      return {
+        block_id: null,
+        block_order: index + 1,
+        start_offset_min: add.start_offset_min,
+        end_offset_min: add.end_offset_min,
+        block_label: add.block_label ?? (drill.name.trim().slice(0, MAX_TEXT_LENGTH) || `Step ${index + 1}`),
+        what_to_say: null,
+        what_to_explain: `${FROM_DRILL}${drill.name}`,
+        what_to_watch: null,
+        what_to_fix: null,
+        block_kind: 'drill_round',
+        drill_id: drill.drill_id,
+        scale_level: null,
+        contact_level: drill.contact_level,
+      };
     });
-    const movedAt = (index: number) =>
-      blocks[index].start_offset_min !== stored.rows[index].start_offset_min
-      || blocks[index].end_offset_min !== stored.rows[index].end_offset_min;
-    const changed = blocks.filter(
-      (block, index) => movedAt(index) || block.block_label !== stored.rows[index].block_label,
-    );
-    const minutesChanged = blocks.some((_, index) => movedAt(index));
+    const before = (block: PlannedBlock) => (block.block_id === null ? undefined : byId.get(block.block_id));
+    const moved = (block: PlannedBlock) => {
+      const was = before(block);
+      return !was || block.start_offset_min !== was.start_offset_min || block.end_offset_min !== was.end_offset_min;
+    };
+    const changed = blocks.filter((block) => {
+      const was = before(block);
+      return was !== undefined && (moved(block) || block.block_label !== was.block_label);
+    });
+    const minutesChanged = blocks.some(moved);
     const name = newName ?? script.name;
-    if (changed.length === 0 && name === script.name) {
+    if (!structural && changed.length === 0 && name === script.name) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    const totalMinutes = minutesChanged
+    const totalMinutes = minutesChanged || structural
       ? statedLength(script.total_minutes, Math.max(...blocks.map((block) => block.end_offset_min)))
       : script.total_minutes;
+    const contact = structural ? contactStructureAfter(script.contact_structure, blocks) : script.contact_structure;
 
     const run = await client.query(
       `select 1 from pilot.session_script_runs
@@ -469,31 +650,62 @@ export async function editSessionScript(
       [params.organizationId, params.scriptId],
     );
     const hasRun = (run.rowCount ?? 0) > 0;
+    const removedNamed = await blocksNamedElsewhere(client, params.organizationId, remove);
+    const newVersion = hasRun || removedNamed;
+
+    const insertNew = (scriptId: string, block: PlannedBlock) =>
+      client.query(
+        `insert into pilot.session_script_blocks (
+           organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min,
+           block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind,
+           drill_id, scale_level, contact_level
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [
+          params.organizationId, mintId('blk'), scriptId, block.block_order, block.start_offset_min,
+          block.end_offset_min, block.block_label, block.what_to_say, block.what_to_explain, block.what_to_watch,
+          block.what_to_fix, block.block_kind, block.drill_id, block.scale_level, block.contact_level,
+        ],
+      );
 
     let result: EditedSessionScript;
     let rerendered: number;
-    if (!hasRun) {
+    if (!newVersion) {
       await client.query(
         `update pilot.session_scripts
-            set name = $3, total_minutes = $4,
+            set name = $3, total_minutes = $4, contact_structure = $5,
                 updated_at = greatest(now(), updated_at + interval '1 millisecond')
           where organization_id = $1 and script_id = $2`,
-        [params.organizationId, script.script_id, name, totalMinutes],
+        [params.organizationId, script.script_id, name, totalMinutes, contact],
       );
-      for (const block of changed) {
+      if (structural) {
         await client.query(
-          `update pilot.session_script_blocks
-              set block_label = $4, start_offset_min = $5, end_offset_min = $6
-            where organization_id = $1 and script_id = $2 and block_id = $3`,
-          [
-            params.organizationId,
-            script.script_id,
-            block.block_id,
-            block.block_label,
-            block.start_offset_min,
-            block.end_offset_min,
-          ],
+          `delete from pilot.session_script_blocks
+            where organization_id = $1 and script_id = $2 and block_id = any($3::text[])`,
+          [params.organizationId, script.script_id, [...remove]],
         );
+        // pilot_ssb_order_uq is checked row by row and is not deferrable: every kept block is first
+        // lifted clear of 1..n, so no block is moved onto a place another still holds.
+        const lift = Math.max(blocks.length, ...stored.rows.map((block) => block.block_order));
+        await client.query(
+          `update pilot.session_script_blocks set block_order = block_order + $3
+            where organization_id = $1 and script_id = $2`,
+          [params.organizationId, script.script_id, lift],
+        );
+      }
+      for (const block of blocks) {
+        if (block.block_id === null) {
+          await insertNew(script.script_id, block);
+        } else if (structural || changed.includes(block)) {
+          await client.query(
+            `update pilot.session_script_blocks
+                set block_order = $4, block_label = $5, start_offset_min = $6, end_offset_min = $7
+              where organization_id = $1 and script_id = $2 and block_id = $3`,
+            [
+              params.organizationId, script.script_id, block.block_id, block.block_order,
+              block.block_label, block.start_offset_min, block.end_offset_min,
+            ],
+          );
+        }
       }
       rerendered = await rerenderFromBlocks(client, params.organizationId, script.script_id, name, blocks);
       result = { outcome: 'updated', script_id: script.script_id, version: script.version };
@@ -507,20 +719,24 @@ export async function editSessionScript(
            coach_priorities, frequent_phrases, authoring_state, source_document, created_by_account_id
          )
          select organization_id, $3, lineage_id, $4, $5, discipline, theme, phase, day_of_week,
-                $6, contact_structure, target_group, prerequisite_note, reset_protocol,
+                $6, $8, target_group, prerequisite_note, reset_protocol,
                 coach_priorities, frequent_phrases, authoring_state, source_document, $7
            from pilot.session_scripts
           where organization_id = $1 and script_id = $2`,
-        [params.organizationId, script.script_id, newScriptId, version, name, totalMinutes, params.actorAccountId],
+        [params.organizationId, script.script_id, newScriptId, version, name, totalMinutes, params.actorAccountId, contact],
       );
       for (const block of blocks) {
+        if (block.block_id === null) {
+          await insertNew(newScriptId, block);
+          continue;
+        }
         await client.query(
           `insert into pilot.session_script_blocks (
              organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min,
              block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind,
              drill_id, scale_level, contact_level
            )
-           select organization_id, $4, $3, block_order, $5, $6, $7, what_to_say, what_to_explain,
+           select organization_id, $4, $3, $8, $5, $6, $7, what_to_say, what_to_explain,
                   what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level
              from pilot.session_script_blocks
             where organization_id = $1 and block_id = $2`,
@@ -532,6 +748,7 @@ export async function editSessionScript(
             block.start_offset_min,
             block.end_offset_min,
             block.block_label,
+            block.block_order,
           ],
         );
       }
@@ -553,7 +770,7 @@ export async function editSessionScript(
 
     await writePilotAuditEvent(
       {
-        event_type: hasRun ? 'create' : 'update',
+        event_type: newVersion ? 'create' : 'update',
         actor_account_id: params.actorAccountId,
         actor_role: params.actorRole,
         organization_id: params.organizationId,
@@ -565,6 +782,10 @@ export async function editSessionScript(
           outcome: result.outcome,
           edited_script_id: script.script_id,
           blocks_changed: changed.length,
+          blocks_added: adds.length,
+          blocks_removed: remove.length,
+          order_changed: orderChanged,
+          ...(removedNamed && !hasRun && { new_version_because: 'a removed block is named elsewhere' }),
           renderings_rerendered: rerendered,
         },
       },

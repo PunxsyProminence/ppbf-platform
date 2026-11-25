@@ -258,6 +258,96 @@ describe('PATCH /api/pilot/session-scripts', () => {
   });
 });
 
+// Lane W4-5, SP-1a: blocks added from the library, removed and moved. What the module does with
+// them is proven against PostgreSQL; here, what reaches it and what never does.
+describe('PATCH /api/pilot/session-scripts adding, removing and moving blocks', () => {
+  const ADD = { ref: 'new-1', kind: 'drill', drill_id: 'drl-1', start_offset_min: 30, end_offset_min: 35 };
+
+  it("passes the added, removed and ordered blocks to the module, in the principal's gym", async () => {
+    const response = await patch({
+      ...EDIT,
+      add_blocks: [ADD, { ...ADD, ref: 'new-2', block_label: 'Mitts' }],
+      remove_block_ids: ['blk-2'],
+      order: ['new-1', 'blk-1', 'new-2'],
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockEdit).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      actorAccountId: 'coach-1',
+      actorRole: 'coach',
+      scriptId: 'scr-1',
+      name: undefined,
+      blocks: undefined,
+      add: [ADD, { ...ADD, ref: 'new-2', block_label: 'Mitts' }],
+      remove: ['blk-2'],
+      order: ['new-1', 'blk-1', 'new-2'],
+      expectedUpdatedAt: READ_AT,
+    });
+  });
+
+  it('400s a block to add that is not a whole library-drill block, or names a gym, a contact level or anything else', async () => {
+    const bad: Array<[unknown, string]> = [
+      ['all', 'add_blocks'],
+      [[null], 'add_blocks'],
+      [[{ ...ADD, kind: 'text' }], 'add_blocks'],
+      [[{ ...ADD, drill_id: ' ' }], 'add_blocks'],
+      [[{ ...ADD, ref: 7 }], 'add_blocks'],
+      [[{ ...ADD, start_offset_min: '30' }], 'add_blocks'],
+      [[{ ...ADD, block_label: 5 }], 'add_blocks'],
+      [[{ ...ADD, organization_id: 'org-2' }], 'add_blocks'],
+      [[{ ...ADD, contact_level: 'none' }], 'add_blocks'],
+      [[{ ...ADD, what_to_say: 'x' }], 'add_blocks'],
+    ];
+    for (const [addBlocks, code] of bad) {
+      const response = await patch({ ...EDIT, add_blocks: addBlocks });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: code });
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it('400s a removal or an order that is not a list of ids', async () => {
+    for (const [key, value] of [
+      ['remove_block_ids', 'blk-1'],
+      ['remove_block_ids', ['']],
+      ['remove_block_ids', [3]],
+      ['order', 'blk-1'],
+      ['order', [' ']],
+      ['order', [null]],
+    ] as const) {
+      const response = await patch({ ...EDIT, [key]: value });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: key });
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it('is never mixed with a retire or a review', async () => {
+    for (const change of [{ add_blocks: [ADD] }, { remove_block_ids: ['blk-1'] }, { order: ['blk-1'] }]) {
+      expect((await patch({ ...EDIT, retired: true, ...change })).status).toBe(400);
+      expect((await patch({ ...EDIT, reviewed: true, ...change })).status).toBe(400);
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+    expect(mockRetire).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  it("answers the module's refusals with their codes and statuses", async () => {
+    for (const [code, status] of [
+      ['SESSION_SCRIPT_ORDER_INVALID', 422],
+      ['SESSION_SCRIPT_DRILL_NOT_FOUND', 422],
+      ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409],
+      ['SESSION_SCRIPT_NO_BLOCKS', 422],
+    ] as const) {
+      mockEdit.mockRejectedValueOnce(new SessionScriptAuthoringError(code, status));
+      const response = await patch({ ...EDIT, add_blocks: [ADD] });
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toEqual({ error: code });
+    }
+  });
+});
+
 describe('PATCH /api/pilot/session-scripts with `retired`', () => {
   beforeEach(() => {
     mockRetire.mockResolvedValue({ outcome: 'retired', script_id: 'scr-1', version: 1 });

@@ -1,4 +1,12 @@
-import { DEFAULT_STEP_MINUTES, blocksFromTemplateSteps, contactStructure, renderingFromBlocks } from './sessionScriptAuthoring';
+import {
+  DEFAULT_STEP_MINUTES,
+  SessionScriptAuthoringError,
+  blocksFromTemplateSteps,
+  contactStructure,
+  contactStructureAfter,
+  renderingFromBlocks,
+  runningOrderAfter,
+} from './sessionScriptAuthoring';
 
 // The pure half of making a script from a template. The writes, and what an
 // edit does to a delivered script, are in sessionScriptAuthoring.pg.test.ts.
@@ -115,5 +123,72 @@ describe('contactStructure', () => {
     expect(of('none', 'none', 'conditioned')).toBe('split_non_contact_then_contact');
     expect(of('conditioned', 'none')).toBe('contact');
     expect(of('none', 'conditioned', 'none')).toBe('contact');
+  });
+});
+
+// Lane W4-5, SP-1a: the running order an edit leaves, and the contact label read from it.
+describe('runningOrderAfter', () => {
+  const STORED = ['b1', 'b2', 'b3'];
+  const none = { edited: [], remove: [], refs: [] };
+  const refusal = (change: Parameters<typeof runningOrderAfter>[1]) => {
+    try {
+      runningOrderAfter(STORED, change);
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionScriptAuthoringError);
+      expect((error as SessionScriptAuthoringError).status).toBe(422);
+      return (error as SessionScriptAuthoringError).message;
+    }
+    throw new Error('not refused');
+  };
+
+  it('without an order, keeps the stored order and puts new blocks last, in the order given', () => {
+    expect(runningOrderAfter(STORED, none)).toEqual(STORED);
+    expect(runningOrderAfter(STORED, { ...none, remove: ['b2'], refs: ['n1', 'n2'] })).toEqual(['b1', 'b3', 'n1', 'n2']);
+  });
+
+  it('with an order, takes it as given when it names every kept and new block once', () => {
+    expect(runningOrderAfter(STORED, { ...none, order: ['b3', 'b1', 'b2'] })).toEqual(['b3', 'b1', 'b2']);
+    expect(runningOrderAfter(STORED, { ...none, remove: ['b1'], refs: ['n1'], order: ['n1', 'b3', 'b2'] })).toEqual(['n1', 'b3', 'b2']);
+  });
+
+  it('refuses an order that leaves a block out, names one twice, names a removed one or an unknown one', () => {
+    expect(refusal({ ...none, order: ['b1', 'b2'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+    expect(refusal({ ...none, order: ['b1', 'b2', 'b3', 'b3'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+    expect(refusal({ ...none, order: ['b1', 'b2', 'b2'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+    expect(refusal({ ...none, remove: ['b1'], order: ['b1', 'b2', 'b3'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+    expect(refusal({ ...none, order: ['b1', 'b2', 'b3', 'x'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+    expect(refusal({ ...none, refs: ['n1'], order: ['b1', 'b2', 'b3'] })).toBe('SESSION_SCRIPT_ORDER_INVALID');
+  });
+
+  it('refuses removing a block not in the plan, the same block twice, or one the same edit retitles', () => {
+    expect(refusal({ ...none, remove: ['x'] })).toBe('SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT');
+    expect(refusal({ ...none, remove: ['b1', 'b1'] })).toBe('SESSION_SCRIPT_BLOCK_REPEATED');
+    expect(refusal({ ...none, edited: ['b2'], remove: ['b2'] })).toBe('SESSION_SCRIPT_BLOCK_REPEATED');
+  });
+
+  it("refuses a new block's ref that is blank, repeated, or the id of a stored block", () => {
+    expect(refusal({ ...none, refs: [' '] })).toBe('SESSION_SCRIPT_BLOCK_REF_INVALID');
+    expect(refusal({ ...none, refs: ['n1', 'n1'] })).toBe('SESSION_SCRIPT_BLOCK_REF_INVALID');
+    expect(refusal({ ...none, refs: ['b2'] })).toBe('SESSION_SCRIPT_BLOCK_REF_INVALID');
+  });
+
+  it('refuses an edit that would leave the plan with no blocks', () => {
+    expect(refusal({ ...none, remove: STORED })).toBe('SESSION_SCRIPT_NO_BLOCKS');
+  });
+});
+
+describe('contactStructureAfter', () => {
+  const blocks = (...levels: string[]) => levels.map((contact_level) => ({ contact_level }));
+
+  it('reads the label from the blocks in their new order', () => {
+    expect(contactStructureAfter('non_contact', blocks('none', 'controlled_sparring'))).toBe('split_non_contact_then_contact');
+    expect(contactStructureAfter('split_non_contact_then_contact', blocks('controlled_sparring', 'none'))).toBe('contact');
+    expect(contactStructureAfter('contact', blocks('none', 'none'))).toBe('non_contact');
+  });
+
+  it("keeps an author's observation_only while no block has contact, and never reads less contact than the blocks carry", () => {
+    expect(contactStructureAfter('observation_only', blocks('none', 'none'))).toBe('observation_only');
+    expect(contactStructureAfter('observation_only', blocks('none', 'controlled_sparring'))).toBe('split_non_contact_then_contact');
+    expect(contactStructureAfter('observation_only', blocks('controlled_sparring'))).toBe('contact');
   });
 });
