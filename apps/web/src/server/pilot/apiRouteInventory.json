@@ -6386,7 +6386,7 @@
     "id": "app/api/pilot/coach/family-threads/unread/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/family-threads/unread",
-    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); scope in familyThreads.countUnseenFamilyThreadPostsForStaff: a coach's athleteIdsForCoach, an organization admin or admin the whole gym",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); scope in familyThreads.countUnseenFamilyThreadPostsForStaff, inside the counting statement: a coach's own and actively covered athletes (athleteIdsForCoach's rule), an organization admin or admin the whole gym; the staff seat re-read there too",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
