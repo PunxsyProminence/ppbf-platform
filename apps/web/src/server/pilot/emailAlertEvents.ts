@@ -305,7 +305,11 @@ const GYM_NOTICE: AlertEvent = {
  * (coach_account_id set to null) is not on the page, so it emails nobody. The
  * sweep's candidates are every account behind a guardian record linked to the
  * note's child; each is then asked that rule, so the source and the send-time
- * check are one rule.
+ * check are one rule. That rule does not ask what the session gate also asks of
+ * a sign-in: whether the login's home role fits a parent session, its PIN rule
+ * and its home gym. A login that fails one of those can be named here though
+ * its page refuses it; the sender's sign-in check (emailAlertSender.ts,
+ * signInIsOn) skips it as sign_in_off, so it is never emailed.
  */
 const FAMILY_NOTE_READ = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
    from pilot.coach_observations co
