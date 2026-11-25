@@ -53,12 +53,12 @@ import {
   claimDueEmailAlertSends,
   EMAIL_ALERT_LEASE_SECONDS,
   EMAIL_ALERT_MAX_TRIES,
-  EMAIL_ALERT_SOURCES,
   recoverExpiredEmailAlertLeases,
   sweepEmailAlertSource,
   type ClaimedEmailAlertSend,
   type EmailAlertSource,
 } from './emailAlertQueue';
+import { EMAIL_ALERT_EVENT_SOURCES } from './emailAlertEvents';
 import { isGymEmailAlertEventTicked } from './emailAlertGymEvents';
 import { emailAlertUserTypeFor } from './emailAlertSwitches';
 import { MailSendError, sendPlainTextMail, type OutboundMessage } from './graphMailer';
@@ -285,7 +285,7 @@ export interface EmailAlertSweepResult {
 /** One tick of the sender. A failing source is logged and the rest still run. */
 export async function runEmailAlertSweep(
   dependencies: EmailAlertSenderDependencies = emailAlertSenderDependencies(),
-  sources: readonly EmailAlertSource[] = EMAIL_ALERT_SOURCES,
+  sources: readonly EmailAlertSource[] = EMAIL_ALERT_EVENT_SOURCES,
   limits: { readonly budgetMs: number; readonly sendsPerTick: number } = EMAIL_ALERT_SEND_LIMITS,
 ): Promise<EmailAlertSweepResult> {
   const result: EmailAlertSweepResult = { queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0 };

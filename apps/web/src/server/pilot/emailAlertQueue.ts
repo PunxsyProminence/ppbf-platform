@@ -50,8 +50,6 @@ export interface EmailAlertSource {
   readonly candidates: (from: Date, to: Date) => Promise<EmailAlertCandidate[]>;
 }
 
-export const EMAIL_ALERT_SOURCES: readonly EmailAlertSource[] = [];
-
 /**
  * Queues one send per candidate whose switch is on under that user type and
  * whose gym has the event ticked; nobody else gets a row. A candidate already
