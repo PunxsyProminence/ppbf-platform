@@ -5,10 +5,17 @@ Rulings: OD-2026-11-19-030 (OW26-05, Jason: "B: Turn typed lines into library dr
 ## What this PR changes
 
 - 30 steps of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0f7` (Weeks 5–8) and `wtp_d861f584584788` (Weeks 9–12), steps 1, 2 and 7–14 of each: `drill_id` set to the TL-1a drill written for the step's line, `free_text_drill` cleared (the import's rule for a linked step, `contentImport/aiPrompt.ts:136-139`). Block, contact (`none`), coach note, scale and `details` are unchanged. The line stays word for word in the drill's `source_ref`.
-- Each of the three templates gains one `field_labels` entry, `items.drill_id`: `INFERRED`, with the lane W4-8 draft marker, naming the linked steps. No other cell of the template rows changes.
+- Each of the three templates' own `items` label gains one part, `drill_id`: `INFERRED`, with the lane W4-8 draft marker, naming the linked steps and saying that for these steps OW26-05 B replaces D-OQ44 (which kept them as verbatim free-text items). As a part of `items`, it makes the template screen mark the steps as AI draft (`drillLibraryV3.ts` `labelIsDraft`), as lane HW's templates are; it is not a top-level key, because a template may already hold an owner's `items.drill_id` label (`wtp_01de3f48606d4c`, D-OQ99). The group label (DOC-151, OBSERVED) and every other cell of the rows are unchanged.
 - The three manuals leave `TYPED_IN_MIXED` in `committedTemplateIssueSweep.test.ts`: on a fresh load they now plan with no refusal (the sweep's exact allowlist would fail on any new one).
 - At load, each changed template becomes its next version (`specs/templates.ts:33-38`). A version holding a coach's in-app edit is `held`, not revised (`contentImport/inAppEdits.ts`): Overwatch's dry run shows that.
 - Frozen Backbone: the youth-recreational export would write these 30 typed lines back. Its guard refuses (lane GD), and its frozen-folder case now expects exactly these 30 steps and three templates (`backbone-export-youth-recreational.test.ts`, `LANE_W48_STEPS`). Written where the frozen folder is absent: UNVERIFIED until Overwatch runs it on Jason's PC (GO answer, item 3).
+
+## Flags for the reviewers and for a coach edit
+
+- Weeks 5–8, step 11 ("Add 4th round simulation in Weeks 7–8") now issues with the whole template in Weeks 5 and 6 too; its drill (`Fourth-Round Simulation (Weeks 7-8)`) says "Not run in Weeks 5 and 6". The template could not be issued before. Not a safety point: a coach may skip the step in those weeks.
+- On the template screen each step now shows its drill's name instead of the typed line. Words that leave the screen, such as the character-focus descriptors ("Build routine, follow structure without reminders") and "thoracic rotation" (the drill says "Upper Back"), stay in the drill's target and execution, and every line stays word for word in its drill's `source_ref`.
+- `ft1ContentPackage.pg.test.ts`: `withoutLaneW48` now also gives each linked step its typed line back and removes the lane's label part, so the FT1 plan sees the pre-lane files (byte for byte, per reviewer B's simulation); it throws if a drill quotes no line or a linked template has no lane label. Run locally (embedded PostgreSQL), and with the restore switched off it failed 3 of 3.
+- `typedLinesContent.test.ts` pins, per linked template, a sha256 of the typed lines it held before this PR (taken at 89d1dc81) and checks the linked drills still quote exactly those lines (reviewer B): once a step links its drill, its typed text is gone from the template.
 
 ## The 30 steps
 

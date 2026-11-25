@@ -273,8 +273,9 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
  * Lane W4-8 (OD-2026-11-19-030; #2162) came after this lane too: AI-drafted library drills for the typed steps
  * of the mixed templates, with their child rows, and the steps it linked to them. Left out the same way: the drills
  * go, each linked step gets its typed line back (each drill quotes its line word for word in its source_ref; a
- * line a scripted step held only as its block title stays there), and its template loses the 'items.drill_id' label
- * the lane added. typedLinesContent.test.ts checks the lane's rows.
+ * line a scripted step held only as its block title stays there), and its template's 'items' label loses the
+ * lane's 'drill_id' part (only that part: a template can hold an owner's top-level 'items.drill_id', D-OQ99).
+ * typedLinesContent.test.ts checks the lane's rows.
  */
 const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
 function withoutLaneW48(files: Record<string, string>): Record<string, string> {
@@ -286,7 +287,8 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
   const typedAgain = (row: Row): Row => {
     const drill = laneDrills.get(row.drill_id);
     if (!drill) return row;
-    const line = LANE_W48_LINE.exec(drill.source_ref)?.[1] ?? '';
+    const line = LANE_W48_LINE.exec(drill.source_ref)?.[1];
+    if (line === undefined) throw new Error(`${drill.drill_id}: source_ref quotes no typed line`);
     const heldInTitle = row.details !== '' && JSON.parse(row.details).block_title === line;
     return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line };
   };
@@ -294,7 +296,10 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
   const unlabelled = (row: Row): Row => {
     if (!linkedTemplates.has(row.template_id)) return row;
     const labels = JSON.parse(row.field_labels);
-    delete labels['items.drill_id'];
+    if (!String(labels.items?.drill_id?.draft ?? '').startsWith('AI draft, lane W4-8')) {
+      throw new Error(`${row.template_id}: links lane W4-8 drills but holds no lane label`);
+    }
+    delete labels.items.drill_id;
     return { ...row, field_labels: JSON.stringify(labels) };
   };
   const out = { ...files };

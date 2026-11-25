@@ -550,16 +550,22 @@ describe('the committed youth + recreational rows', () => {
     // from the frozen Backbone, and the guard refuses to write the frozen row back over them.
     expect(named.filter(([file]) => file !== TEMPLATES && file !== ITEMS)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
     // Lane W4-8 (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; plan and GO on #2162): each typed step in
-    // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template gains the 'items.drill_id'
-    // label. The frozen Backbone keeps the typed lines, so the guard names exactly those steps (drill_id is their one
-    // committed cell the export would change; the cleared free_text_drill is a blank it would fill) and those
-    // templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
+    // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template's 'items' label gains the
+    // lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so the guard names exactly those
+    // steps (drill_id is their one committed cell the export would change; the cleared free_text_drill is a blank it
+    // would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
     // step PR's head before merging it (#2162).
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
     expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, 'drill_id']));
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
       .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
+    // A lane template that no other lane drafted changes in field_labels alone.
+    for (const id of Object.keys(LANE_W48_STEPS).filter((template) => !draftedIds.includes(template))) {
+      expect(named.filter(([file, owner]) => file === TEMPLATES && owner === id).map(([, , columns]) => columns)).toEqual(['field_labels']);
+    }
+    // Every overwrite line is one of those named: no committed row is removed.
+    expect(refused.stderr.split('\n').filter((line) => /^ {2}\S+ \w+ \S+: (changes .+|removes \S+)$/.test(line) && !line.includes(' links drill '))).toHaveLength(named.length);
 
     // Lane GD: the frozen track row still names the held six in its details, so no flag writes it back
     // (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042). The plain refusal says so, and
