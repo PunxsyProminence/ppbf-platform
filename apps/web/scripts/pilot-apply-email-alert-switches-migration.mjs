@@ -22,8 +22,8 @@ function sslConfig() {
 // and no others, each compared IN FULL against the text Postgres stores
 // (emailAlertSwitchesMigration.pg.test.ts drives this runner against a real
 // database, so a deparse mismatch fails there first), the two-column primary
-// key in order, the three foreign keys by column, target and delete rule (gym,
-// account, and the person's membership of that gym; all cascade), and the
+// key in order, exactly three foreign keys, each by column, target and delete
+// rule (gym, account, and the person's membership of that gym; all cascade), the
 // partial index the sender reads through, by its full definition.
 export const EXPECTED_CHECKS = {
   pilot_email_alert_switch_user_type_check:
@@ -124,6 +124,10 @@ const READINESS_QUERY = `
                join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k.attnum)
             = array['account_id', 'organization_id']
     ) as membership_fk_ready,
+    (
+      select count(*) = 3 from pg_constraint c
+      where c.conrelid = ${TABLE} and c.contype = 'f'
+    ) as no_other_keys,
     exists (
       select 1 from pg_indexes
       where schemaname = 'pilot' and tablename = 'email_alert_switches'
