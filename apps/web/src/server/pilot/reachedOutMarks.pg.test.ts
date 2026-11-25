@@ -452,7 +452,7 @@ describe('readCurrentReachedOut on a real database', () => {
     expect((await readCurrentReachedOut(gym.organizationId, new Map())).size).toBe(0);
   });
 
-  test('a mark whose marker account was deleted stays, signed with the floor, and names no one', async () => {
+  test('a mark whose marker account was deleted stays, and its by_name is null: who it was is no longer known', async () => {
     const gym = await newGym('gone');
     const leaverId = `acct-leaver-${gymCount}`;
     await staffMember(gym.organizationId, leaverId, 'coach', 'Robin');
@@ -464,6 +464,6 @@ describe('readCurrentReachedOut on a real database', () => {
     await client.query('delete from pilot.accounts where account_id = $1', [leaverId]);
     expect(await marks(gym, 'ada')).toEqual([expect.objectContaining({ marked_by_account_id: null, ended: false })]);
     await expect(readCurrentReachedOut(gym.organizationId, new Map([['ada', day(-20)]])))
-      .resolves.toEqual(new Map([['ada', { by_name: 'Gym office', on_day: TODAY }]]));
+      .resolves.toEqual(new Map([['ada', { by_name: null, on_day: TODAY }]]));
   });
 });

@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import type { ActorIdentity } from './access';
-import { getStaffAuthorName, STAFF_AUTHOR_NAME_FLOOR } from './achievements';
+import { getStaffAuthorName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query } from './db';
 import { ConflictError } from './errors';
@@ -28,8 +28,9 @@ import { ConflictError } from './errors';
  * WHAT LEAVES: the marker's display name (getStaffAuthorName, by the role the
  * mark was made in) and the mark's gym-local day; a write answers one outcome
  * word. Never an account id. A mark whose marker account was deleted (the
- * foreign key's SET NULL) is signed STAFF_AUTHOR_NAME_FLOOR, as
- * parentResourcesStaff.ts signs a resource whose author account is gone.
+ * foreign key's SET NULL) has by_name null: who it was is no longer known, and
+ * an unknown value is not shown as a name (AGENT_KERNEL, the floor: "an
+ * unknown value never looks complete"; as painReportAlert.ts gives byName null).
  *
  * Audited on entity 'athlete_reached_out_mark' in the same transaction,
  * shadow_mirror false, as rest marks are: 'create' for a mark, 'update' with
@@ -37,7 +38,8 @@ import { ConflictError } from './errors';
  */
 
 export interface ReachedOut {
-  readonly by_name: string;
+  /** The marker's display name; null when their account has since been deleted. */
+  readonly by_name: string | null;
   /** The gym-local day it was marked. */
   readonly on_day: string;
 }
@@ -81,7 +83,7 @@ export async function readCurrentReachedOut(
   const names = new Map<string, string>();
   for (const row of rows) {
     if (!isNewer(row.on_day, lastCameDays.get(row.athlete_id) ?? null)) continue;
-    let byName = STAFF_AUTHOR_NAME_FLOOR;
+    let byName: string | null = null;
     if (row.marked_by_account_id !== null) {
       const key = `${row.marked_by_role}:${row.marked_by_account_id}`;
       const known = names.get(key);
