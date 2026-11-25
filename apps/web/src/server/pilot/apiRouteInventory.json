@@ -6295,6 +6295,94 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-thread-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-thread-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the post's athlete (in familyThreads.recordFamilyThreadReadByStaff)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller records the first time they saw one guardian post in a family thread in their own gym (half of it on screen in the coach panel, FC-05 Q-1 A; W4 item 4). Only a guardian's post; a staff post, a forged id, another gym's post or an unreachable athlete is the same 404. The database guard also requires an active staff seat. Written on conflict do nothing, so the first time stays.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Every family thread on one athlete (W4 item 4, scrub FAM-09; familyThreads.ts listFamilyThreadsForStaff): the guardian's opening post, the guardian's own later posts and the staff answers, with the guardian's name from the parent record (Overwatch Q4 A on #2161, as family-message-replies) and which guardian posts are new to this staff member (their own reads only). No account id in the answer. Scoped by assertActorCanAccessAthlete (whole gym since #1480; Q3 A).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the thread's athlete (in familyThreads.replyInFamilyThread)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A staff member answers under a guardian's thread on an athlete they reach (W4 item 4; Overwatch Q3 A on #2161). A forged id, another gym's thread or an unreachable athlete is the same 404; the database guard also requires an active staff seat in this gym. Append-only. Audit row entity family_thread_reply in the same transaction, shadow_mirror false (no SHADOW event, no telemetry; joins no audit read allow-list). Nothing sent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",
