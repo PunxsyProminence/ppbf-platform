@@ -67,6 +67,19 @@ it('a coach with no active staff membership here is refused (the module\'s 403 p
   expect(response.status).toBe(403);
 });
 
+it('asks for the gym-local day, not the UTC day', async () => {
+  // 03:00 UTC on 26 November is still 25 November in the gym (America/New_York).
+  jest.useFakeTimers({ now: new Date('2026-11-26T03:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  try {
+    mockPrincipal.mockResolvedValue(principal('coach'));
+    const response = await GET(new NextRequest(URL));
+    expect(response.status).toBe(200);
+    expect(mockList.mock.calls[0][1]).toBe('2026-11-25');
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 it('reads the organization from the session, and refuses a query that names one', async () => {
   mockPrincipal.mockResolvedValue(principal('coach'));
   const response = await GET(new NextRequest(`${URL}?organization_id=org-2`));

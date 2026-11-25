@@ -173,7 +173,33 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(handlers).toBe(1);
     expect(text).not.toMatch(/^export\s*(\{|\*)/m);
     expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.STOPPED_COMING_READ_ROLES\]\s*\)/g))).toHaveLength(1);
-    expect(text).toMatch(/const STOPPED_COMING_READ_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
+    // Defined once, at the start of a line (not in a comment), as exactly the three staff roles.
+    expect(Array.from(text.matchAll(/^const STOPPED_COMING_READ_ROLES = (.*)$/gm), (match) => match[1]))
+      .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
+  });
+
+  // The exemption for stoppedComing.ts (TABLE_FILES above) is for one read only: the gym-local day
+  // of each athlete's last standing mark on an untied run, inside lastOpenGymDays. Pinned, as the
+  // idle sweep's exemption is below, because a new read added to that file would otherwise pass the
+  // file-level list unnoticed: the staff notes table is never named, the presence table only in that
+  // one FROM, the module's one value export is listStoppedComing, and it refuses a caller with no
+  // staff membership before anything is read (Overwatch, W4-6 GO, condition 1).
+  it('stoppedComing.ts reads one day per athlete from the presence table, in one place, behind the staff refusal', () => {
+    const text = source(path.join(PILOT_DIR, 'stoppedComing.ts'));
+    const code = text.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+    expect(code.filter((line) => /session_staff_notes/.test(line))).toEqual([]);
+    const reads = code.filter((line) => NAMES_A_TABLE.test(line));
+    expect(reads.map((line) => line.trim())).toEqual(['from pilot.session_run_athletes m']);
+    const block = text.slice(text.indexOf('async function lastOpenGymDays('), text.indexOf('export async function listStoppedComing('));
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toContain(reads[0]);
+    expect(block).toMatch(/select m\.athlete_id, max\(\(m\.marked_at at time zone \$4\)::date\)::text as last_day\n/);
+    const valueExports = Array.from(text.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+(\w+)/gm), (match) => match[1]);
+    expect(valueExports).toEqual(['listStoppedComing']);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    expect(text).toMatch(
+      /export async function listStoppedComing\(actor: ActorIdentity, today: string\): Promise<StoppedComingList> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
+    );
   });
 
   it('no route, page, component or other module names either table in its own text', () => {

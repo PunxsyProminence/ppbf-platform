@@ -159,8 +159,8 @@ what counts. An untied (open gym) session writes no register
 are in `sessionRunClass.ts`; the no-shows offer at End Session (ruling 3) comes
 in a later change.
 
-One page, and only that page, also reads open-gym marks: the "who has stopped
-coming" list counts a standing "here" mark on an untied session as coming
+One page, and only that page, counts a standing open-gym mark as coming: the
+"who has stopped coming" list counts a standing "here" mark on an untied session
 (Jason OW27-32 A, "Yes, on this page only", OD-2026-11-21-006;
 `stoppedComing.ts`, lane W4-6). No attendance figure, report, board or grant
 figure reads it, and nothing above changes.

@@ -16,9 +16,14 @@
  *     getAttendanceLast28Days, whose last present day is not limited to 28
  *     days) OR a standing "here" mark on an UNTIED, open-gym session run
  *     (pilot.session_run_athletes, removed_at null; session_script_runs.class_id
- *     null). A tied run's tap already wrote the register, and a later register
- *     change wins there (docs/current/ATTENDANCE_PRECEDENCE.md), so tied runs
- *     are left to the register. The later of the two is the last day they came.
+ *     null). A tied run's tap writes the register, and a later register change
+ *     wins there (docs/current/ATTENDANCE_PRECEDENCE.md), so tied runs are left
+ *     to the register. The later of the two is the last day they came.
+ *     KNOWN EXCEPTIONS (open with Overwatch on #2172): a tap on a run tied to a
+ *     class that is then cancelled, or tapped after the cancel, is in neither
+ *     source (the view reads no cancelled class; sessionRunClass.ts skips the
+ *     write), so that day does not count here; and the tie is read as it is
+ *     now, so a run untied after a tap counts that tap as open gym.
  *   - Listed when today minus that day is the gym's number of days or more: no
  *     day they came among the last N gym days, today included.
  *

@@ -185,15 +185,28 @@ async function classWithMark(gym: Gym, classId: string, day: string, athleteId: 
   );
 }
 
-/** A "here" mark at 18:00 gym time on `day`; taken back if `removed`. */
-async function hereMark(gym: Gym, runId: string, athleteId: string, day: string, { removed = false } = {}) {
+/** A "here" mark at `time` gym time (18:00 unless given) on `day`; taken back if `removed`. */
+async function hereMark(gym: Gym, runId: string, athleteId: string, day: string, { removed = false, time = '18:00' } = {}) {
   await client.query(
     `insert into pilot.session_run_athletes
        (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role, marked_at, removed_at, removed_by_account_id)
-     values ($1, $2, $3, $4, 'coach', ($5 || ' 18:00')::timestamp at time zone 'America/New_York',
+     values ($1, $2, $3, $4, 'coach', ($5 || ' ' || $7)::timestamp at time zone 'America/New_York',
              case when $6 then now() end, case when $6 then $4 end)`,
-    [gym.organizationId, runId, athleteId, gym.coach.accountId, day, removed],
+    [gym.organizationId, runId, athleteId, gym.coach.accountId, day, removed, time],
   );
+}
+
+/** An account with an active membership in this gym, in `role`. */
+async function member(gym: Gym, role: PilotRole): Promise<ActorIdentity> {
+  const accountId = `${role}-member@${gym.organizationId}`;
+  await client.query(`insert into pilot.accounts (account_id, role, organization_id) values ($1, $2, $3)`, [
+    accountId, role, gym.organizationId,
+  ]);
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, $3, true)`,
+    [accountId, gym.organizationId, role],
+  );
+  return actor(gym.organizationId, accountId, role);
 }
 
 beforeAll(async () => {
@@ -290,6 +303,9 @@ describe('listStoppedComing on a real database', () => {
     await registerDay(gym, 'ivy', daysAgo(30), 'present');
 
     await addAthlete(gym, 'jo', 'Jo Vance'); // open gym only, 16 days ago: came before, listed, 16
+    await addAthlete(gym, 'max', 'Max Dunn'); // open gym at 23:30 gym time 14 days ago (04:30 UTC the next day): listed, 14
+    await addAthlete(gym, 'nia', 'Nia Ford'); // register 20 days ago; a mark dated tomorrow does not count: listed, 20
+    await registerDay(gym, 'nia', daysAgo(20), 'present');
     await addAthlete(gym, 'kit', 'Kit Lane'); // the register only ever says absent: never came, not listed
     await registerDay(gym, 'kit', daysAgo(40), 'absent');
 
@@ -297,6 +313,8 @@ describe('listStoppedComing on a real database', () => {
     await hereMark(gym, openGym, 'ben', daysAgo(3));
     await hereMark(gym, openGym, 'ivy', daysAgo(4), { removed: true });
     await hereMark(gym, openGym, 'jo', daysAgo(16));
+    await hereMark(gym, openGym, 'max', daysAgo(14), { time: '23:30' });
+    await hereMark(gym, openGym, 'nia', daysAgo(-1));
 
     const tied = (await startSessionScriptRun(gym.organizationId, gym.coach2.accountId, {})).run_id;
     await client.query('update pilot.session_script_runs set class_id = $1 where organization_id = $2 and run_id = $3', [
@@ -314,10 +332,14 @@ describe('listStoppedComing on a real database', () => {
       { athlete_id: 'ivy', full_name: 'Ivy Rowe', last_came_day: daysAgo(30), days_since_came: 30 },
       { athlete_id: 'ada', full_name: 'Ada Reyes', last_came_day: daysAgo(20), days_since_came: 20 },
       { athlete_id: 'hal', full_name: 'Hal Moss', last_came_day: daysAgo(20), days_since_came: 20 },
+      { athlete_id: 'nia', full_name: 'Nia Ford', last_came_day: daysAgo(20), days_since_came: 20 },
       { athlete_id: 'jo', full_name: 'Jo Vance', last_came_day: daysAgo(16), days_since_came: 16 },
       { athlete_id: 'fay', full_name: 'Fay Cole', last_came_day: daysAgo(14), days_since_came: 14 },
+      { athlete_id: 'max', full_name: 'Max Dunn', last_came_day: daysAgo(14), days_since_came: 14 },
     ];
-    for (const reader of [gym.coach, gym.coach2, gym.admin]) {
+    // A membership in the legacy 'admin' name reads it too.
+    const legacyAdmin = await member(gym, 'admin');
+    for (const reader of [gym.coach, gym.coach2, gym.admin, legacyAdmin]) {
       await expect(listStoppedComing(reader, TODAY)).resolves.toEqual({
         gap_days: 14, is_default: true, today: TODAY, athletes: expected,
       });
@@ -344,7 +366,7 @@ describe('listStoppedComing on a real database', () => {
     });
   });
 
-  test('a coach whose membership ended, an athlete, and a staff member of another gym are refused (403), not given an empty list', async () => {
+  test('a coach whose membership ended, an athlete, another gym\'s coach, and this gym\'s board, volunteer, staff and parent members are refused (403), not given an empty list', async () => {
     const gym = await newGym('refused');
     const other = await newGym('refused-other');
     await addAthlete(gym, 'ada', 'Ada Reyes');
@@ -354,5 +376,9 @@ describe('listStoppedComing on a real database', () => {
     await expect(listStoppedComing(gym.athleteAccount, TODAY)).rejects.toMatchObject({ status: 403 });
     // The other gym's coach, claiming this gym: no active membership here.
     await expect(listStoppedComing({ ...other.coach, organizationId: gym.organizationId }, TODAY)).rejects.toMatchObject({ status: 403 });
+    // Members of this gym in a role that is not staff here, each with an active membership.
+    for (const role of ['board', 'volunteer', 'staff', 'parent'] as const) {
+      await expect(listStoppedComing(await member(gym, role), TODAY)).rejects.toMatchObject({ status: 403 });
+    }
   });
 });
