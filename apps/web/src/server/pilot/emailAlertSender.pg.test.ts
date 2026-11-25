@@ -481,7 +481,7 @@ describe('email alert sender', () => {
     }
   });
 
-  test('the tick stops claiming at its send limit and at its time budget', async () => {
+  test('the tick stops claiming at its send limit', async () => {
     const client = await freshDatabase('emailsender_limits');
     activeClient = client;
     try {
@@ -491,13 +491,30 @@ describe('email alert sender', () => {
         candidate(PARENT_ID, 'parent', 'family_note', EVENT_1),
       ]);
       const { sent, dependencies } = recorder();
+      // Three due: the send limit of 2 stops the tick after two.
       expect((await runEmailAlertSweep(dependencies, [], { budgetMs: 60_000, sendsPerTick: 2 })).sent).toBe(2);
-      // A clock that moves 15 seconds a read: the budget of 20 seconds allows one claim.
+      expect(sent).toHaveLength(2);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the tick stops claiming when its time budget runs out', async () => {
+    const client = await freshDatabase('emailsender_budget');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_2),
+        candidate(PARENT_ID, 'parent', 'family_note', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      // Three due, and a clock that moves 15 seconds a read: a budget of 20
+      // seconds allows one claim, though the send limit would allow all three.
       let clock = 0;
       const ticking = { ...dependencies, clockMs: () => { const now = clock; clock += 15_000; return now; } };
-      await client.query('update pilot.email_alert_sends set next_try_at = clock_timestamp()');
       expect((await runEmailAlertSweep(ticking, [], { budgetMs: 20_000, sendsPerTick: 20 })).sent).toBe(1);
-      expect(sent).toHaveLength(3);
+      expect(sent).toHaveLength(1);
     } finally {
       await client.end();
     }
