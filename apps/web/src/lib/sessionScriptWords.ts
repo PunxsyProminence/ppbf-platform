@@ -47,13 +47,15 @@ const STORED_SECTION = /^([a-z]+(?:[_-][a-z]+)*)(?: - (\d+) reps)?$/;
 
 /**
  * The block's what_to_explain line as the screens show it. A line the template step wrote is
- * labelled as the template's, not as something to explain; a bare section code stored before
+ * labelled as the template's, not as something to explain, and so is the line naming the drill a
+ * coach added a block from (FROM_DRILL); a bare section code stored before
  * F-078 is shown in words; anything else is the coach's text, unchanged, under "Explain".
  */
 export function explainLine(explain: string): { label: string; value: string } {
   for (const prefix of [FROM_TEMPLATE, FROM_TEMPLATE_BEFORE]) {
     if (explain.startsWith(prefix)) return { label: 'From the template', value: explain.slice(prefix.length) };
   }
+  if (explain.startsWith(FROM_DRILL)) return { label: FROM_THE_DRILL, value: explain.slice(FROM_DRILL.length) };
   const stored = STORED_SECTION.exec(explain.trim());
   if (stored) {
     const section = templateSectionWords(stored[1]);
@@ -97,6 +99,8 @@ export interface CoachingLine {
 
 /** Lane U2-6e wording (Overwatch Q2 = A, 2026-11-19). */
 export const FROM_THE_DRILL = 'From the drill';
+/** How a block a coach added from the library states which drill it was made from (lane W4-5, SP-1a). */
+export const FROM_DRILL = `${FROM_THE_DRILL}: `;
 export const DRILL_TEXT_LOADING = "Loading the drill's text...";
 export const DRILL_TEXT_FAILED = `${NOT_WRITTEN_YET}. The drill's text could not be loaded.`;
 /** The mark /coach/drills already shows on a drafted KPI (app/coach/drills/page.tsx). */
@@ -147,7 +151,7 @@ export function blockCoachingLines(block: CoachingBlock, drill: LinkedDrillText 
 
   const explained = explainLine(block.what_to_explain ?? '');
   const explain: CoachingLine = explained.value.trim() === ''
-    ? notWritten(explained.label === 'From the template' ? 'Explain' : explained.label)
+    ? notWritten('Explain')
     : { ...explained, fromDrill: false };
 
   const watchOwn = own('Watch', block.what_to_watch);
