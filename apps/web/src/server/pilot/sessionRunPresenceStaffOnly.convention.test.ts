@@ -186,17 +186,25 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   // staff membership before anything is read (Overwatch, W4-6 GO, condition 1).
   it('stoppedComing.ts reads one day per athlete from the presence table, in one place, behind the staff refusal', () => {
     const text = source(path.join(PILOT_DIR, 'stoppedComing.ts'));
-    const code = text.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
-    expect(code.filter((line) => /session_staff_notes/.test(line))).toEqual([]);
-    const reads = code.filter((line) => NAMES_A_TABLE.test(line));
-    expect(reads.map((line) => line.trim())).toEqual(['from pilot.session_run_athletes m']);
+    const lines = text.split('\n');
+    // The staff notes table is never named, not even in a comment or inside the SQL.
+    expect(text).not.toMatch(/session_staff_notes/);
+    // The presence table is named on exactly two lines: one doc-comment line in the header,
+    // and the one FROM, inside lastOpenGymDays. A third naming anywhere (a comment-prefixed
+    // SQL line included) fails here.
+    const naming = lines.filter((line) => NAMES_A_TABLE.test(line)).map((line) => line.trim());
+    expect(naming).toHaveLength(2);
+    expect(naming.filter((line) => line === 'from pilot.session_run_athletes m')).toHaveLength(1);
+    expect(naming.filter((line) => line.startsWith('* '))).toHaveLength(1);
     const block = text.slice(text.indexOf('async function lastOpenGymDays('), text.indexOf('export async function listStoppedComing('));
     expect(block.length).toBeGreaterThan(0);
-    expect(block).toContain(reads[0]);
+    expect(block).toContain('from pilot.session_run_athletes m');
     expect(block).toMatch(/select m\.athlete_id, max\(\(m\.marked_at at time zone \$4\)::date\)::text as last_day\n/);
-    const valueExports = Array.from(text.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+(\w+)/gm), (match) => match[1]);
-    expect(valueExports).toEqual(['listStoppedComing']);
-    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    // Every export but a type is counted (default, re-export, indented, generator, enum alike):
+    // the one there may be is listStoppedComing, which refuses first.
+    const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
+    expect(exports).toHaveLength(1);
+    expect(exports[0].startsWith('export async function listStoppedComing(')).toBe(true);
     expect(text).toMatch(
       /export async function listStoppedComing\(actor: ActorIdentity, today: string\): Promise<StoppedComingList> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
     );
