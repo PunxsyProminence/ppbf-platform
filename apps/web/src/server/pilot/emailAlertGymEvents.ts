@@ -17,7 +17,9 @@
  *
  * Each change writes one audit row (user type, event, ticked before and after)
  * in the same transaction; saving the value that already applies writes
- * nothing. No person data is stored or audited here.
+ * nothing. No member's data is stored or audited here; the setter and the
+ * audit's actor are the admin's account id, which can itself be their sign-in
+ * address (see the email-alert-switches migration).
  */
 
 import {
