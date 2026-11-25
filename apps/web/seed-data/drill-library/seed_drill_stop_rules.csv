@@ -1598,3 +1598,13 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_eb95e320e73821,drl_273f6b1e785e96,1,"Technique breaks down (the guard stays out, the stance is lost): stop the burst and reset (Technique breakdown = reset).",drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_a576d71acd538c,drl_7c236b9eb91129,1,"An athlete is still breathing very hard, dizzy or sick when the minute ends: keep them out of the next burst.",drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_213d1ed257eacf,drl_b6903e7c2c7291,1,The talk drifts away from the focus or runs long: close it and move to the breathing reset.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0203dd5e2573e9,drl_6a9ba21ab70739,1,"An athlete trips on the rope or a rope comes near another athlete: stop, re-space, then restart.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_0d833e20f0ad61,drl_03947956e0019b,1,Pain in a joint (more than a stretch): stop that movement and tell the coach.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_54b97341c3f07c,drl_3bfff862173673,1,"The combination breaks down (feet cross, the guard stays down): go back to the last clean step of the sequence.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fdbee00c42adfb,drl_d8b4d7db05e1f7,1,"Form breaks down (hips sag on the push-ups, the lower back lifts on the leg lifts): stop the cycle and reset, or move to level A (leg lifts held at 5).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0437c1bf0e5439,drl_d7ee1ff332329d,1,"The stance is not reset after the duck, or the duck bends the back instead of the knees: stop and reset before the next burst.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_145f44da507593,drl_513c67125a9e62,1,"Technique breaks down (the guard drops, the feet cross): stop, reset the stance, then carry on.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ad58bd2719f494,drl_dfa6361ed26d2a,1,Pain in the shoulder (more than a stretch): ease off and tell the coach.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_0d9e16c1dd948e,drl_2840b7b848ba9a,1,Pain in the hip or knee (more than a stretch): ease off and tell the coach.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_029b7b612201fc,drl_035fbd809c8e13,1,Pain behind the knee or in the lower back (more than a stretch): ease off and tell the coach.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_e6342b8693b4c7,drl_478db0c9f74694,1,The close runs long or drifts: end it on the coach's closing line.,drill_specific,intent_drift
