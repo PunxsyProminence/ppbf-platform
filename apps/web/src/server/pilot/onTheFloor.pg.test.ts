@@ -333,7 +333,7 @@ describe('listOnTheFloorForStaff on a real database', () => {
       ['ada', 'Ada'], ['ben', 'Ben'], ['cal', 'Cal'], ['dot', 'Dot'], ['eli', 'Eli'], ['fay', 'Fay'], ['gus', 'Gus'],
       ['hal', 'Hal'], ['jon', 'Jon'], ['kim', 'Kim'], ['lou', 'Lou'], ['max', 'Max'], ['ned', 'Ned'], ['oda', 'Oda'],
       ['pam', 'Pam'], ['quo', 'Quo'], ['rex', 'Rex'], ['sal', 'Sal'], ['tia', 'Tia'], ['uma', 'Uma'], ['vic', 'Vic'],
-      ['wes', 'Wes'], ['xia', 'Xia'], ['yan', 'Yan'], ['zed', 'Zed'],
+      ['wes', 'Wes'], ['xia', 'Xia'], ['yan', 'Yan'], ['zed', 'Zed'], ['pia', 'Pia'], ['ray', 'Ray'], ['zoe', 'Zoe'],
     ]) {
       await addAthlete(gym, id, name);
     }
@@ -373,8 +373,11 @@ describe('listOnTheFloorForStaff on a real database', () => {
     await hereMark(gym, open, 'ivy', at(-20)); // deleted athlete: not
     await hereMark(gym, sentHome, 'cal', at(-20)); // later Excused on the tied class: not (FN0-Q6 A)
     await registerMark(gym, 'k-sent-home', 'cal', 'excused', at(-10));
-    await hereMark(gym, sentHome, 'dot', at(-20)); // an Absent written BEFORE the mark does not take her off
-    await registerMark(gym, 'k-sent-home', 'dot', 'absent', at(-40));
+    await hereMark(gym, sentHome, 'dot', at(-20)); // an Absent written after the run began but BEFORE her mark does not take her off
+    await registerMark(gym, 'k-sent-home', 'dot', 'absent', at(-25));
+    await hereMark(gym, open, 'pia', at(-20)); // a later Absent on another class does not touch an open-gym mark
+    await hereMark(gym, sentHome, 'ray', at(-20)); // nor a mark on a run tied to a different class
+    // (both Absents below are on k-early, written after the marks)
     await hereMark(gym, sentHome, 'eli', at(-20)); // both records: counted once
     await registerMark(gym, 'k-sent-home', 'eli', 'present', at(-19));
     await hereMark(gym, cancelledTie, 'fay', at(-20)); // a run tied to a cancelled class stays on the staff line (FN0-Q1 A)
@@ -398,6 +401,8 @@ describe('listOnTheFloorForStaff on a real database', () => {
     await registerMark(gym, 'k-tomorrow', 'sal', 'present', at(-60)); // another day's class: not
     await registerMark(gym, 'k-cancel-reg', 'tia', 'present', at(-200)); // a cancelled class stays on the staff line (FN0-Q1 A)
     await registerMark(gym, 'k-early', 'uma', 'absent', at(-60)); // absent: not
+    await registerMark(gym, 'k-early', 'pia', 'absent', at(-10)); // see pia above: she stays on by her run mark
+    await registerMark(gym, 'k-early', 'ray', 'absent', at(-10)); // see ray above: he stays on by his run mark
     await registerMark(gym, 'k-early', 'vic', 'excused', at(-60)); // excused: not
     await registerMark(gym, 'k-early', 'wes', 'present', at(30)); // written after now: not yet
     await registerMark(gym, 'k-late-yesterday', 'xia', 'present', at(-600)); // the gym's yesterday: not
@@ -409,11 +414,18 @@ describe('listOnTheFloorForStaff on a real database', () => {
        values ($1, gen_random_uuid(), 'zed', $2::date, 'present')`,
       [gym.organizationId, TODAY],
     );
+    await client.query( // nor does an activity log row alone (FN-0 F9; the convention test also pins that the file names none)
+      `insert into pilot.activity_log
+         (organization_id, activity_id, person_account_id, athlete_id, activity_domain, activity_type, occurred_on,
+          duration_minutes, attendance_status, capture_method, recorded_by_role, recorded_by_account_id)
+       values ($1, 'al-zoe', $2, 'zoe', 'boxing_training', 'technical_session', $3::date, 60, 'present', 'coach_override', 'coach', $2)`,
+      [gym.organizationId, gym.coach.accountId, TODAY],
+    );
 
     expect(await runState(gym, forgotten)).toBe('in_progress');
     const line = await listOnTheFloorForStaff(gym.coach, NOW);
     expect(line.day).toBe(TODAY);
-    expect(names(line)).toEqual(['Ada', 'Dot', 'Eli', 'Fay', 'Kim', 'Lou', 'Pam', 'Quo', 'Tia', 'Yan']);
+    expect(names(line)).toEqual(['Ada', 'Dot', 'Eli', 'Fay', 'Kim', 'Lou', 'Pam', 'Pia', 'Quo', 'Ray', 'Tia', 'Yan']);
     // Nothing but the day and each athlete's id and name leaves the read.
     expect(Object.keys(line).sort()).toEqual(['athletes', 'day']);
     for (const athlete of line.athletes) expect(Object.keys(athlete).sort()).toEqual(['athlete_id', 'full_name']);
@@ -436,9 +448,24 @@ describe('listOnTheFloorForStaff on a real database', () => {
     await addClass(gym, 'k-five', TODAY, '17:00');
     await registerMark(gym, 'k-five', 'amy', 'present', at(-360), 'self');
     expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toEqual([]); // 15:00: before the class
+    expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-25T21:59:00Z'))))).toEqual([]); // 16:59
     expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-25T22:00:00Z'))))).toEqual(['Amy']); // 17:00
     expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-26T04:59:00Z'))))).toEqual(['Amy']); // 23:59
     expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-26T05:00:00Z'))))).toEqual([]); // the next gym day
+  });
+
+  test('the gym day follows daylight saving: in July a class just after local midnight is that day\'s, one just before is the day before\'s', async () => {
+    const gym = await newGym('summer');
+    const summerNoon = new Date(Date.parse('2026-07-15T16:00:00Z')); // 12:00 at the gym (UTC-4 in July)
+    await addAthlete(gym, 'amy', 'Amy');
+    await addAthlete(gym, 'bo', 'Bo');
+    await addClass(gym, 'k-just-after', '2026-07-15', '00:30'); // 04:30 UTC on the 15th
+    await addClass(gym, 'k-just-before', '2026-07-14', '23:30'); // 03:30 UTC on the 15th
+    await registerMark(gym, 'k-just-after', 'amy', 'present', '2026-07-15T05:00:00Z');
+    await registerMark(gym, 'k-just-before', 'bo', 'present', '2026-07-15T04:00:00Z');
+    const line = await listOnTheFloorForStaff(gym.coach, summerNoon);
+    expect(line.day).toBe('2026-07-15');
+    expect(names(line)).toEqual(['Amy']);
   });
 
   test('a caller with no active staff membership here is refused (403) before anything is read or closed', async () => {

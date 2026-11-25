@@ -12,7 +12,10 @@
  *     register takes the child off the line, for every reader (FN0-Q6 A).
  *     "Later" is the register's own test for "a later register change still
  *     wins": the register row was updated after the mark (schedulerDb.ts,
- *     writeSessionRegisterPresent).
+ *     writeSessionRegisterPresent). It applies to that run's mark, as FN-0
+ *     section 4 frames it ("except as FN0-Q6 rules for a run tied to a class
+ *     ..."), and reads the run's tie as it is now: a child still counts by
+ *     another standing mark or a present register mark of their own.
  *   - OR a present mark on the register of a class whose gym day is today.
  *     A mark the family wrote (the scheduler's own test, as
  *     FAMILY_ATTENDANCE_UPSERT_SQL has it: method self or parent, or an older
@@ -117,6 +120,7 @@ async function presentOnTodaysRegister(
         and sa.athlete_id = any($2::text[])
         and sa.status = 'present'
         and (c.start_at at time zone $3)::date = $4::date
+        and c.start_at between $5::timestamptz - interval '2 days' and $5::timestamptz + interval '2 days'
         and sa.checked_in_at <= $5::timestamptz
         and (
           not (sa.method in ('self', 'parent') or sa.checked_in_by_role in ('athlete', 'parent'))
