@@ -22,14 +22,22 @@
 --
 -- FORM. Plain `create index`, not CONCURRENTLY: every pilot:apply-* runner in
 -- this repository applies its file inside one BEGIN/COMMIT, and PostgreSQL
--- refuses CREATE INDEX CONCURRENTLY inside a transaction block. The plain
--- form holds a SHARE lock on each table for the duration of its build: reads
--- continue, inserts (a new escalation, a parent's reply) wait. The tables'
--- production row counts are not known from the repository; each lock lasts
--- for one index build over its table. Same form as
--- pilot_slice_postgres_audit_events_entity_index_migration.sql.
+-- refuses CREATE INDEX CONCURRENTLY inside a transaction block. Same form as
+-- pilot_slice_postgres_audit_events_entity_index_migration.sql. Each build
+-- takes a SHARE lock on its table, and both locks are held until the one
+-- COMMIT: reads continue, writes (a new escalation, a parent's reply) wait.
+-- `if not exists` does not avoid the lock, so a re-run under `all` takes it
+-- too. Two things bound the wait:
+--   - the replies index is built first, so while the runner waits for the
+--     replies table it holds nothing on pilot.safety_escalations, and safety
+--     escalations go on being written;
+--   - the runner sets lock_timeout to 10 seconds, so behind a long
+--     transaction it gives up and rolls back rather than queue, and the
+--     operator re-runs in a quieter moment.
+-- The tables' production row counts are not known from the repository.
 --
--- Idempotent: `if not exists` makes a re-run under `all` a no-op. Depends on
+-- Idempotent: `if not exists` makes a re-run under `all` a no-op for the
+-- schema (it still takes the locks, as FORM says). Depends on
 -- the base schema (pilot.safety_escalations) and the family-message-replies
 -- migration (pilot.family_message_replies); the guard below names a missing
 -- table rather than failing inside the create. No begin;/commit; here,
@@ -49,8 +57,9 @@ begin
 end
 $pilot_email_alert_sweep_indexes$;
 
-create index if not exists idx_pilot_safety_escalations_created_at
-  on pilot.safety_escalations (created_at);
-
+-- Replies first: see FORM above.
 create index if not exists idx_pilot_family_message_replies_created_at
   on pilot.family_message_replies (created_at);
+
+create index if not exists idx_pilot_safety_escalations_created_at
+  on pilot.safety_escalations (created_at);

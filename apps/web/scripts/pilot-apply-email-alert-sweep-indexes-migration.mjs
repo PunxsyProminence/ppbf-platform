@@ -67,7 +67,9 @@ export const SWEEP_INDEXES = [
 // valid (a CONCURRENTLY build that failed would leave an invalid index of
 // this name; this file never builds that way, but the check should not trust
 // the name), a plain b-tree (not partial, not unique), and keyed on exactly
-// (created_at). The key columns are read back by name, in index order,
+// (created_at): one column in all (indnatts, so no INCLUDE column and no
+// second key), and that column is created_at. An expression key has attnum 0,
+// so it drops out of the column join below and the names do not match. The key columns are read back by name, in index order,
 // through unnest(indkey) with ordinality, as the audit-events entity index
 // runner does: `indkey::int2[] = array(...)` would compare a zero-based array
 // and be false for every correct index.
@@ -91,6 +93,7 @@ const READINESS_QUERY = `
         -- "if not exists"; it is not the index this migration promises.
         and i.indpred is null
         and not i.indisunique
+        and i.indnatts = 1
         and c.relam = (select oid from pg_am where amname = 'btree')
         and (
           select array_agg(a.attname::text order by k.ord)
@@ -112,6 +115,14 @@ function assertReadiness(row) {
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // Each index build takes a SHARE lock on its table (reads go on, writes
+    // wait), held until COMMIT, and a re-run takes it too. Rather than queue
+    // behind a long transaction already holding a write lock, and hold every
+    // new escalation or reply up behind it, give up after 10 seconds and let
+    // the operator re-run in a quieter moment, as the other pilot:apply-*
+    // runners that lock busy tables do. Nothing is half-applied: it is one
+    // transaction.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);
     assertReadiness(readiness.rows[0]);

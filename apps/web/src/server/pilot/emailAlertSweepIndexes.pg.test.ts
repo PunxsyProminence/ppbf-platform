@@ -402,6 +402,8 @@ describe('email alert sweep indexes migration', () => {
     ['unique', `create unique index ${REPLIES_INDEX} on pilot.family_message_replies (created_at)`],
     ['not a b-tree', `create index ${REPLIES_INDEX} on pilot.family_message_replies using hash (created_at)`],
     ['on the wrong table', `create index ${REPLIES_INDEX} on pilot.coach_observations (created_at)`],
+    ['keyed on created_at and an expression', `create index ${REPLIES_INDEX} on pilot.family_message_replies (created_at, lower(reply_text))`],
+    ['keyed on created_at with an INCLUDE column', `create index ${REPLIES_INDEX} on pilot.family_message_replies (created_at) include (note_id)`],
   ])('the runner refuses an index of the right name that is %s', async (_label, wrong) => {
     const client = await freshDatabase('sweep_index_wrong');
     try {
@@ -410,6 +412,51 @@ describe('email alert sweep indexes migration', () => {
       // the readiness check must notice and refuse.
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_NOT_READY');
     } finally {
+      await client.end();
+    }
+  });
+
+  test('behind a long write on the replies table the runner gives up after its lock timeout, holding nothing on the escalations table while it waits', async () => {
+    const client = await freshDatabase('sweep_index_lock_timeout');
+    const writer = new Client({ connectionString: connectionStringFor('sweep_index_lock_timeout') });
+    const escalationWriter = new Client({ connectionString: connectionStringFor('sweep_index_lock_timeout') });
+    await writer.connect();
+    await escalationWriter.connect();
+    try {
+      // A parent's reply being written in a transaction that stays open.
+      await writer.query('begin');
+      await writer.query('lock table pilot.family_message_replies in row exclusive mode');
+
+      const started = Date.now();
+      const apply = applyMigrationTransaction(client, migrationSql).then(
+        () => 'applied',
+        (error: { code?: string; message?: string }) => error.code ?? error.message,
+      );
+      // While the runner waits on the replies table, a new escalation is
+      // still written at once: the replies index is built first, so nothing
+      // is held on pilot.safety_escalations yet.
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await escalationWriter.query("set statement_timeout = '3s'");
+      await escalationWriter.query(
+        `insert into pilot.safety_escalations
+           (organization_id, escalation_id, source_type, athlete_id, severity, reason, escalated_to_role, triggered_by)
+         values ($1, 'esc-during-apply', 'near_miss', $2, 'moderate', 'a near miss', 'coach', 'system')`,
+        [ORG_ID, ATHLETE_ID],
+      );
+
+      // 55P03 lock_not_available: lock_timeout, about 10 seconds, not the
+      // writer's whole transaction.
+      expect(await apply).toBe('55P03');
+      const waited = Date.now() - started;
+      expect(waited).toBeGreaterThanOrEqual(9_000);
+      expect(waited).toBeLessThan(30_000);
+      // Rolled back: neither index, and the session is usable.
+      for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
+      expect((await client.query<{ ok: number }>('select 1 as ok')).rows[0].ok).toBe(1);
+    } finally {
+      await writer.query('rollback').catch(() => {});
+      await writer.end();
+      await escalationWriter.end();
       await client.end();
     }
   });
