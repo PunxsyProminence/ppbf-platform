@@ -1066,6 +1066,18 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect((await registerAudit(gym)).map((row) => row.entity_id)).toEqual([`${gym.klass}:${gym.ada}`, `${gym.klass}:${gym.ben}`]);
   });
 
+  // The key is looked up on this run only: a key the same coach sent on an earlier run is not this
+  // tap's first send, so it is neither answered from there nor refused as reused.
+  test('a key is the run\'s own: the same key on the coach\'s next run is a new tap there', async () => {
+    const gym = await newGym('key-per-run');
+    const first = await start(gym, gym.coach);
+    expect(await markSessionNoShowsAbsent(gym.coach, first.run_id, naming([gym.ben], 'key-shared'))).toEqual({ marked: [gym.ben] });
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, first.run_id, { runState: 'completed' });
+    const second = await start(gym, gym.coach);
+    expect(await markSessionNoShowsAbsent(gym.coach, second.run_id, naming([gym.ada], 'key-shared'))).toEqual({ marked: [gym.ada] });
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent', by: gym.coach.accountId });
+  });
+
   // Found by both merge-check reviewers of #2182: a no-shows tap and a later here tap, both kept while
   // the wifi was down, land in that order. Marked Absent as of when it landed, the no-shows tap would
   // read as the later register change and the here tap made after it would lose (register_newer).
