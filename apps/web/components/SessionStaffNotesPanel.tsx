@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 
 // Staff notes on one athlete's session (OD-2026-10-06-025 ruling 4): the
 // athlete's own note stays theirs, and a coach or organization admin adds a
@@ -103,8 +103,6 @@ export default function SessionStaffNotesPanel(
   // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
   // page (a sign-out drop tells this panel nothing otherwise).
   const [waitingWrites, setWaitingWrites] = useState(0);
-  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
-  const nothingWaiting = saves.waiting.length === 0 && saves.checking === 0;
   useEffect(
     () =>
       subscribeSaveQueue(() => {
@@ -494,13 +492,14 @@ export default function SessionStaffNotesPanel(
                 )}
               </div>
 
-              {waitingWrites > 0 && !nothingWaiting ? (
-                <p className="t-body mt-[var(--s3)] font-semibold" role="status">
-                  {waitingWrites === 1
+              {/* Mounted always, so a screen reader announces the line when it fills. */}
+              <p className={waitingWrites > 0 ? 't-body mt-[var(--s3)] font-semibold' : 'sr-only'} role="status">
+                {waitingWrites === 0
+                  ? ''
+                  : waitingWrites === 1
                     ? 'One change to these notes is not saved yet. This page keeps sending it while it stays open.'
                     : `${waitingWrites} changes to these notes are not saved yet. This page keeps sending them while it stays open.`}
-                </p>
-              ) : null}
+              </p>
 
               {refusal ? (
                 <div className="mt-[var(--s3)]" role="alert">

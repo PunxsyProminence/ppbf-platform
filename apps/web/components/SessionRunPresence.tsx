@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 import { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -163,8 +163,8 @@ function refusalText(code: unknown): string {
 }
 
 // Brass and bone: an ordinary message, not the medical stop colour.
-// No here tap waits on the page.
-const NO_ASKED: ReadonlyMap<string, boolean> = new Map();
+/** One kept here tap not yet answered: whom it marks, and how. */
+type AskedTap = { save: object; athleteId: string; present: boolean };
 
 const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
@@ -276,16 +276,16 @@ export default function SessionRunPresence({
   // HERE TAPS KEPT ON THE OPEN PAGE (W4 item 7, OQ-4; OW27-34 A, OW27-35 A). A tap whose answer is
   // lost is kept and sent again until it goes through, with the milliseconds since the tap, so a late
   // one never undoes an Absent or Excused set after it (Overwatch condition 1, OQ-1's server half).
-  // What each waiting tap asked, by athlete: shown only while the page holds a kept save, and cleared
-  // once nothing kept waits (a sign-out drop tells this list nothing otherwise).
-  const [askedHere, setAskedHere] = useState<ReadonlyMap<string, boolean>>(NO_ASKED);
-  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
-  const asked = saves.waiting.length === 0 && saves.checking === 0 ? NO_ASKED : askedHere;
+  // What each kept tap asked, in the order tapped: added once its save is kept, gone with that save's
+  // own answer (a later tap of the same athlete wins), and all cleared once nothing kept waits (a
+  // sign-out drop tells this list nothing otherwise).
+  const [askedTaps, setAskedTaps] = useState<readonly AskedTap[]>([]);
+  const asked = useMemo(() => new Map(askedTaps.map((tap) => [tap.athleteId, tap.present])), [askedTaps]);
   useEffect(
     () =>
       subscribeSaveQueue(() => {
         const state = readSaveQueue();
-        if (state.waiting.length === 0 && state.checking === 0) setAskedHere(NO_ASKED);
+        if (state.waiting.length === 0 && state.checking === 0) setAskedTaps([]);
       }),
     [],
   );
@@ -321,15 +321,10 @@ export default function SessionRunPresence({
     (athlete: Athlete, present: boolean, resolved: { done: boolean }): KeptSave => {
       let refusalCode: unknown;
       const label = present ? 'Mark an athlete here' : 'Unmark an athlete here';
-      // What this tap asked stops showing once it is answered, unless a later tap of the same athlete asks again.
+      // What this tap asked goes with its own answer, saved or refused.
       const release = () => {
         resolved.done = true;
-        setAskedHere((current) => {
-          if (current.get(athlete.athlete_id) !== present) return current;
-          const next = new Map(current);
-          next.delete(athlete.athlete_id);
-          return next;
-        });
+        setAskedTaps((taps) => taps.filter((tap) => tap.save !== resolved));
       };
       const showMark = () => {
         setReading((current) => {
@@ -412,7 +407,7 @@ export default function SessionRunPresence({
         // once, as before. What it asks shows once kept, unless it was answered first.
         const resolved = { done: false };
         if ((await keepSave(keptTap(athlete, present, resolved))) === 'kept') {
-          if (!resolved.done) setAskedHere((current) => new Map(current).set(athlete.athlete_id, present));
+          if (!resolved.done) setAskedTaps((taps) => [...taps, { save: resolved, athleteId: athlete.athlete_id, present }]);
           return;
         }
         let response: Response;
