@@ -1,13 +1,7 @@
 // POST /api/pilot/coach/family-thread-reads { post_id } -- the signed-in staff
-// member has seen a guardian's post in a family thread: at least half of it on
-// screen in the coach panel (FC-05 Q-1 A, as FC-09b's replies). A second look
-// keeps the first time. "New to me" is each staff member's own (W4 item 4).
-//
-// Staff only, the same people as /api/pilot/coach/family-threads: coach,
-// organization admin and admin. The athlete gate (assertActorCanAccessAthlete)
-// runs on the post's athlete (familyThreads.recordFamilyThreadReadByStaff); a
-// staff post, a forged id, another gym's post or an athlete the caller cannot
-// reach is one 404. The gym and the reader come from the session.
+// member has seen a guardian's post in a family thread (half of it on screen,
+// FC-05 Q-1 A); the first time stays (W4 item 4). Staff only; the athlete gate
+// runs on the post's athlete in familyThreads.recordFamilyThreadReadByStaff.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';

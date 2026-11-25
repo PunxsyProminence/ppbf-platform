@@ -17,22 +17,16 @@
  *     wrote in it (OD-2026-10-12-024).
  *   - The athlete reads none of it.
  *
- * WHO, ON EVERY CALL (the staff half, PM-1c; Overwatch Q3 A):
- *   - Coach, organization admin and admin, the people who "Post to Family",
- *     on an athlete they reach (assertActorCanAccessAthlete: every live
- *     athlete of their own gym, OD-2026-10-11-007). They read every thread on
- *     that athlete, with the guardian's name (Q4 A, as replies, FC-03 Q-D A),
- *     and answer under it. "New to me" is each staff member's own.
- *   - A forged id, another gym's thread and an athlete they cannot reach are
- *     one 404. The database guard also requires an active staff seat here.
+ * WHO (the staff half, PM-1c; Overwatch Q3 A): coach, organization admin and
+ * admin, the people who "Post to Family", on an athlete they reach
+ * (assertActorCanAccessAthlete: the whole gym, OD-2026-10-11-007). They read
+ * every thread on that athlete, with the guardian's name (Q4 A), and answer.
  *
- * Nothing is sent from here (no email, no push) and nothing is written to the
- * audit trail or the SHADOW feed for a guardian's post, as for a guardian's
- * reply (familyMessageReplies.ts). A staff reply gets an audit row in its own
- * transaction, entity family_thread_reply, shadow_mirror false, as the
- * migration's header says (Overwatch condition 4): no SHADOW event, no
- * telemetry, no family audit read (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES stays
- * empty). No account id leaves this module.
+ * Nothing is sent from here (no email, no push). A guardian's post writes no
+ * audit row, as a guardian's reply (familyMessageReplies.ts). A staff reply
+ * writes one in its own transaction: entity family_thread_reply, shadow_mirror
+ * false (the migration header, Overwatch condition 4), so no SHADOW event and
+ * no telemetry. No account id leaves this module.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -68,6 +62,7 @@ export interface FamilyThreadStaff {
   accountId: string;
   role: PilotRole;
 }
+
 
 /** One post in a thread, as the guardian who opened it sees it. */
 export interface GuardianThreadPost {
@@ -109,69 +104,6 @@ export interface StaffThread {
   /** The opener's name from their parent record (Q4 A); "A guardian" once it cannot be found. */
   guardian_name: string;
   posts: StaffThreadPost[];
-}
-
-interface PostRow {
-  thread_id: string;
-  athlete_id: string;
-  thread_created_at: string;
-  post_id: string;
-  author_role: string;
-  /** Null for a guardian's post: it never leaves the query. */
-  author_account_id: string | null;
-  post_text: string;
-  created_at: string;
-  seen: boolean;
-}
-
-// One post's columns, for listOwnFamilyThreads and listFamilyThreadsForStaff:
-// o is the opening post, p the post; seen is the reader's ($2 there, $3 here).
-const POST_COLUMNS = `o.post_id::text as thread_id, o.athlete_id,
-            to_char(o.created_at at time zone 'UTC', ${ISO_UTC}) as thread_created_at,
-            p.post_id::text as post_id, p.author_role,
-            case when p.author_role = 'parent' then null else p.author_account_id end as author_account_id,
-            p.post_text,
-            to_char(p.created_at at time zone 'UTC', ${ISO_UTC}) as created_at`;
-
-type ThreadPost = Omit<GuardianThreadPost, 'from'> & { from: 'you' | 'guardian' | 'staff' };
-type ThreadOf<P> = { thread_id: string; athlete_id: string; created_at: string; posts: P[] };
-
-/**
- * Rows (newest thread first, its posts oldest first) into threads. new_to_me
- * marks a post from the other side that this reader has not seen.
- */
-async function intoThreads(
-  organizationId: string,
-  rows: PostRow[],
-  reader: 'guardian' | 'staff',
-): Promise<Map<string, ThreadOf<ThreadPost>>> {
-  const staffNames = new Map<string, string>();
-  const threads = new Map<string, ThreadOf<ThreadPost>>();
-  for (const row of rows) {
-    let thread = threads.get(row.thread_id);
-    if (!thread) {
-      thread = { thread_id: row.thread_id, athlete_id: row.athlete_id, created_at: row.thread_created_at, posts: [] };
-      threads.set(row.thread_id, thread);
-    }
-    const fromStaff = row.author_role !== 'parent';
-    let staffName: string | null = null;
-    if (fromStaff && row.author_account_id) {
-      const key = `${row.author_role}:${row.author_account_id}`;
-      if (!staffNames.has(key)) {
-        staffNames.set(key, await getStaffAuthorName(organizationId, row.author_account_id, row.author_role));
-      }
-      staffName = staffNames.get(key) ?? null;
-    }
-    thread.posts.push({
-      post_id: row.post_id,
-      from: fromStaff ? 'staff' : reader === 'guardian' ? 'you' : 'guardian',
-      staff_name: staffName,
-      text: row.post_text,
-      created_at: row.created_at,
-      new_to_me: fromStaff === (reader === 'guardian') && !row.seen,
-    });
-  }
-  return threads;
 }
 
 function cleanText(raw: unknown): string {
@@ -281,8 +213,23 @@ export async function writeAgainInFamilyThread(input: {
 export async function listOwnFamilyThreads(organizationId: string, accountId: string): Promise<GuardianThread[]> {
   const athleteIds = await guardianAthleteIds(organizationId, accountId);
   if (athleteIds.length === 0) return [];
-  const rows = await query<PostRow>(
-    `select ${POST_COLUMNS},
+  const rows = await query<{
+    thread_id: string;
+    athlete_id: string;
+    thread_created_at: string;
+    post_id: string;
+    author_role: string;
+    author_account_id: string | null;
+    post_text: string;
+    created_at: string;
+    seen: boolean;
+  }>(
+    `select o.post_id::text as thread_id, o.athlete_id,
+            to_char(o.created_at at time zone 'UTC', ${ISO_UTC}) as thread_created_at,
+            p.post_id::text as post_id, p.author_role,
+            case when p.author_role = 'parent' then null else p.author_account_id end as author_account_id,
+            p.post_text,
+            to_char(p.created_at at time zone 'UTC', ${ISO_UTC}) as created_at,
             exists (select 1 from pilot.family_thread_reads r
                      where r.organization_id = p.organization_id and r.post_id = p.post_id
                        and r.reader_account_id = $2) as seen
@@ -296,7 +243,34 @@ export async function listOwnFamilyThreads(organizationId: string, accountId: st
       order by o.created_at desc, o.post_id, p.created_at asc, p.post_id asc`,
     [organizationId, accountId, athleteIds],
   );
-  return [...(await intoThreads(organizationId, rows, 'guardian')).values()] as ThreadOf<GuardianThreadPost>[];
+
+  const staffNames = new Map<string, string>();
+  const threads = new Map<string, GuardianThread>();
+  for (const row of rows) {
+    let thread = threads.get(row.thread_id);
+    if (!thread) {
+      thread = { thread_id: row.thread_id, athlete_id: row.athlete_id, created_at: row.thread_created_at, posts: [] };
+      threads.set(row.thread_id, thread);
+    }
+    const fromStaff = row.author_role !== 'parent';
+    let staffName: string | null = null;
+    if (fromStaff && row.author_account_id) {
+      const key = `${row.author_role}:${row.author_account_id}`;
+      if (!staffNames.has(key)) {
+        staffNames.set(key, await getStaffAuthorName(organizationId, row.author_account_id, row.author_role));
+      }
+      staffName = staffNames.get(key) ?? null;
+    }
+    thread.posts.push({
+      post_id: row.post_id,
+      from: fromStaff ? 'staff' : 'you',
+      staff_name: staffName,
+      text: row.post_text,
+      created_at: row.created_at,
+      new_to_me: fromStaff && !row.seen,
+    });
+  }
+  return [...threads.values()];
 }
 
 /**
@@ -353,8 +327,20 @@ async function reachOrNotHere(staff: FamilyThreadStaff, athleteId: string): Prom
  * passed assertActorCanAccessAthlete on this athlete (the route's gate).
  */
 export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athleteId: string): Promise<StaffThread[]> {
-  const rows = await query<PostRow & { guardian_name: string | null }>(
-    `select ${POST_COLUMNS},
+  const rows = await query<{
+    thread_id: string;
+    athlete_id: string;
+    thread_created_at: string;
+    guardian_name: string | null;
+    post_id: string;
+    author_role: string;
+    author_account_id: string | null;
+    post_text: string;
+    created_at: string;
+    seen: boolean;
+  }>(
+    `select o.post_id::text as thread_id, o.athlete_id,
+            to_char(o.created_at at time zone 'UTC', ${ISO_UTC}) as thread_created_at,
             coalesce(
               (select min(pa.full_name)
                  from pilot.parents pa
@@ -366,6 +352,10 @@ export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athlet
                  from pilot.parents pa
                 where pa.organization_id = o.organization_id and pa.account_id = o.author_account_id)
             ) as guardian_name,
+            p.post_id::text as post_id, p.author_role,
+            case when p.author_role = 'parent' then null else p.author_account_id end as author_account_id,
+            p.post_text,
+            to_char(p.created_at at time zone 'UTC', ${ISO_UTC}) as created_at,
             exists (select 1 from pilot.family_thread_reads r
                      where r.organization_id = p.organization_id and r.post_id = p.post_id
                        and r.reader_account_id = $3) as seen
@@ -378,15 +368,40 @@ export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athlet
       order by o.created_at desc, o.post_id, p.created_at asc, p.post_id asc`,
     [staff.organizationId, athleteId, staff.accountId],
   );
-  const names = new Map(rows.map((row) => [row.thread_id, row.guardian_name?.trim() || 'A guardian']));
-  const threads = await intoThreads(staff.organizationId, rows, 'staff');
-  return [...threads.values()].map((thread) => ({
-    thread_id: thread.thread_id,
-    athlete_id: thread.athlete_id,
-    created_at: thread.created_at,
-    guardian_name: names.get(thread.thread_id) ?? 'A guardian',
-    posts: thread.posts as StaffThreadPost[],
-  }));
+
+  const staffNames = new Map<string, string>();
+  const threads = new Map<string, StaffThread>();
+  for (const row of rows) {
+    let thread = threads.get(row.thread_id);
+    if (!thread) {
+      thread = {
+        thread_id: row.thread_id,
+        athlete_id: row.athlete_id,
+        created_at: row.thread_created_at,
+        guardian_name: row.guardian_name?.trim() || 'A guardian',
+        posts: [],
+      };
+      threads.set(row.thread_id, thread);
+    }
+    const fromStaff = row.author_role !== 'parent';
+    let staffName: string | null = null;
+    if (fromStaff && row.author_account_id) {
+      const key = `${row.author_role}:${row.author_account_id}`;
+      if (!staffNames.has(key)) {
+        staffNames.set(key, await getStaffAuthorName(staff.organizationId, row.author_account_id, row.author_role));
+      }
+      staffName = staffNames.get(key) ?? null;
+    }
+    thread.posts.push({
+      post_id: row.post_id,
+      from: fromStaff ? 'staff' : 'guardian',
+      staff_name: staffName,
+      text: row.post_text,
+      created_at: row.created_at,
+      new_to_me: !fromStaff && !row.seen,
+    });
+  }
+  return [...threads.values()];
 }
 
 /**

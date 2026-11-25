@@ -1,18 +1,10 @@
 // /api/pilot/coach/family-threads -- the messages guardians start to the coach,
-// and the gym's answers under them (W4 item 4, scrub FAM-09; OW27-24 A).
+// and the gym's answers (W4 item 4, scrub FAM-09). Staff only, the gate of
+// "Post to Family" and coach/family-message-replies (Overwatch Q3 A on #2161).
 //
-// Staff only, the same people and the same athlete gate as "Post to Family"
-// and /api/pilot/coach/family-message-replies (Overwatch Q3 A on #2161): coach,
-// organization admin and admin, and assertActorCanAccessAthlete -- every live
-// athlete of the caller's own gym (OD-2026-10-11-007) and none of another's.
-//
-// GET ?athlete_id=: every thread on that athlete, newest first, with the
-// guardian's name (Q4 A, as replies) and which guardian posts are new to this
-// staff member.
-// POST { thread_id, text }: answer under a thread. The gate runs on the
-// thread's athlete (familyThreads.replyInFamilyThread); a forged id, another
-// gym's thread or an athlete the caller cannot reach is one 404. Writes an
-// audit row with the post; nothing is sent (email is lane W4-1's, Q1.9).
+// GET ?athlete_id=: every thread on that athlete (familyThreads.ts).
+// POST { thread_id, text }: answer under a thread; the athlete gate runs on the
+// thread's athlete in replyInFamilyThread. Nothing is sent (W4-1's, Q1.9).
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
