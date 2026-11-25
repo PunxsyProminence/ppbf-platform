@@ -293,9 +293,16 @@ describe('POST tapped_ms_ago', () => {
     expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ath-1', present: true, tappedAt: '2026-11-25T02:58:30.000Z' }));
   });
 
-  it('a tap sent without it reaches the module with no tap time, exactly as before', async () => {
+  it('a tap sent without it, or with null, reaches the module with no tap time, exactly as before', async () => {
     await post({ athlete_id: 'ath-1', present: true });
+    await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: null });
     expect(mockSet.mock.calls[0][0]).not.toHaveProperty('tappedAt');
+    expect(mockSet.mock.calls[1][0]).not.toHaveProperty('tappedAt');
+  });
+
+  it('a take-back carries its tap time too', async () => {
+    await post({ athlete_id: 'ath-1', present: false, tapped_ms_ago: 5_000 });
+    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ present: false, tappedAt: '2026-11-25T02:59:55.000Z' }));
   });
 
   it('accepts 0 and a full day', async () => {
@@ -310,8 +317,8 @@ describe('POST tapped_ms_ago', () => {
     ['a fraction', 1.5],
     ['over a day', 86_400_001],
     ['text', '90000'],
-    ['null', null],
     ['not finite', 'Infinity'],
+    ['an object', { ms: 1 }],
   ])('refuses a tapped_ms_ago that is %s, and marks nothing', async (_label, value) => {
     const response = await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: value });
     expect(response.status).toBe(400);

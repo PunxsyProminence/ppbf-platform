@@ -12,8 +12,14 @@ import { ConflictError, ValidationError } from './errors';
  * route refuses it, writing nothing, when that is not the signed-in account.
  *
  * Only on the two routes whose writes are not already tied to their owner: adding a staff note
- * and logging an intervention. A run's actions and here taps act only on the caller's own live
- * run (requireOwnLiveRun, lockOwnLiveRun), so another account's resend there is refused already.
+ * and logging an intervention. A run's actions (sessionScriptRuns.ts requireOwnLiveRun,
+ * sessionRunClass.ts lockOwnLiveRun) and here taps (sessionRunAthletes.ts setRunAthletePresent,
+ * which checks the run's delivering coach itself) act only on the caller's own live run, so
+ * another account's resend there is refused already. Starting a run is not tied that way, and it is
+ * not one of the run actions the page keeps (the actions of runs/[runId]/route.ts, as the plan of
+ * record, W4_SIZING.md item 7, names them).
+ *
+ * The id is compared exactly: no trimming and no case folding, since an account id is not a name.
  *
  * Optional: a body without the field is answered exactly as before. The check only refuses; it
  * gives no one anything they could not already do.
@@ -33,7 +39,7 @@ export function refuseSaveMadeByAnotherAccount(
   }
   if (madeBy !== principal.accountId) {
     throw new ConflictError(
-      'This was saved by someone who is no longer signed in here, so it was not saved.',
+      'This save was made by a different account from the one signed in now, so it was not saved.',
       'SAVE_MADE_BY_ANOTHER_ACCOUNT',
     );
   }

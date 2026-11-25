@@ -202,6 +202,21 @@ describe('a note resent from the open page', () => {
   });
 
   it.each([
+    ['in another case', 'ACCT-COACH'],
+    ['with spaces around it', ' acct-coach '],
+  ])('compares made_by_account_id exactly: one %s is another account, refused, nothing written', async (_label, madeBy) => {
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', made_by_account_id: madeBy });
+    expect(response.status).toBe(409);
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('treats made_by_account_id: null as not sent, exactly as before', async () => {
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', made_by_account_id: null });
+    expect(response.status).toBe(200);
+    expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.', requestKey: null });
+  });
+
+  it.each([
     ['blank', ''],
     ['a number', 7],
     ['an object', { id: 'acct-coach' }],

@@ -106,7 +106,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (typeof record.present !== 'boolean') {
       return badRequest('present');
     }
-    const tappedMsAgo = record.tapped_ms_ago;
+    // null is "not sent", as for the other optional fields a kept save may carry.
+    const tappedMsAgo = record.tapped_ms_ago ?? undefined;
     if (
       tappedMsAgo !== undefined
       && (typeof tappedMsAgo !== 'number' || !Number.isSafeInteger(tappedMsAgo) || tappedMsAgo < 0 || tappedMsAgo > TAPPED_MS_AGO_MAX)
