@@ -8,6 +8,7 @@ import SessionRunPresence from './SessionRunPresence';
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { unknownOffPage } from './SessionRunClass';
 
 // "Who is here" on the live session screen (audit finding F-067). The server decides who may be
 // marked and by whom (sessionRunAthletes.pg.test.ts); this suite asserts what the screen does with
@@ -737,6 +738,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     tap: (send: number) => Response | 'lost' | Promise<Response>;
     present: () => Array<typeof ADA> | 'fail';
     session?: () => Response | Promise<Response>;
+    gym?: Array<typeof ADA>;
   }) {
     sent = [];
     presentReads = [];
@@ -762,7 +764,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
         presentReads.push(init?.signal);
         const present = handlers.present();
         if (present === 'fail') return answer({}, 500);
-        return answer({ present: present.map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: [ADA, BEN, CY] });
+        return answer({ present: present.map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: handlers.gym ?? [ADA, BEN, CY] });
       }
       return answer({});
     }) as unknown as typeof fetch;
@@ -834,16 +836,127 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.queryByText(WAITING_ROW)).toBeNull();
   });
 
-  test('a refused first send is not resent; its words are on this list, not in the page\'s', async () => {
+  test('a refused first send is not resent; its words name the athlete on this list, not in the page\'s, and outlast the next tap', async () => {
     jest.useFakeTimers();
-    serveKept({ tap: () => answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403), present: () => [] });
+    serveKept({
+      tap: (send) => (send === 1 ? answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403) : answer({ outcome: 'marked' })),
+      present: () => [],
+    });
     await showKept();
     await tapKept('Mark here Ada Reyes');
-    expect(screen.getByText('This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
+    const words = 'Ada Reyes: This account cannot mark that athlete here. Nothing was saved.';
+    expect(screen.getByText(words)).toBeTruthy();
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    // A tap of someone else does not take the words away.
+    await tapKept('Mark here Ben Ortiz');
+    expect(screen.getByText(words)).toBeTruthy();
     await wait(RESEND_MS * 2);
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+  });
+
+  test('a waiting tap stays in view in a large gym\'s list, said on its row and described to the button, and counted for screen readers', async () => {
+    jest.useFakeTimers();
+    const gym = Array.from({ length: 31 }, (_, index) => ({ athlete_id: `ath-${index + 10}`, full_name: `Athlete ${String(index + 10)}` }));
+    serveKept({ tap: () => 'lost', present: () => [], gym });
+    await showKept();
+    fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: 'Athlete 17' } });
+    await tapKept('Mark here Athlete 17');
+    fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: '' } });
+    const button = screen.getByRole('button', { name: 'Here Athlete 17' });
+    const line = screen.getByText(WAITING_ROW);
+    expect(line.id).not.toBe('');
+    expect(button.getAttribute('aria-describedby')).toBe(line.id);
+    expect(screen.getByText('One here tap is not saved yet.')).toBeTruthy();
+  });
+
+  test('an unmark whose send is lost is kept and said; a refused resend the server shows as unmarked reads as done', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [ADA];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [];
+          return 'lost';
+        }
+        return answer({ error: 'SOMETHING_ELSE' }, 409);
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Here Ada Reyes');
+    expect(screen.getByText('Unmarked here: not saved yet. This page keeps sending it while it stays open.')).toBeTruthy();
+    expect(sent[0].body).toEqual({ athlete_id: 'ath-1', present: false, tapped_ms_ago: expect.any(Number) });
+    await wait(RESEND_MS);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Nobody marked here yet. Tap each athlete in the room.')).toBeTruthy();
+  });
+
+  test('a tap refused because the run cannot be found tells the live screen, as today', async () => {
+    jest.useFakeTimers();
+    serveKept({ tap: () => answer({ error: 'SESSION_RUN_NOT_FOUND' }, 404), present: () => [] });
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+  });
+
+  test('a resend refused as no longer live whose check finds the mark reads as done and still tells the live screen', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        return answer({ error: 'SESSION_RUN_NOT_LIVE' }, 409);
+      },
+      present: () => present,
+    });
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('1 marked here.')).toBeTruthy();
+  });
+
+  test('a kept tap that lands says what it did to the class register, and a Training Hold, as today', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) return 'lost';
+        present = [ADA];
+        return answer({ outcome: 'marked', register: { effect: 'created' }, hold_warning: { hold_id: 'h' } });
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getAllByText('Ada Reyes is Present on the class register. Ada Reyes has an active Training Hold; the mark was NOT blocked.').length).toBeGreaterThan(0);
+  });
+
+  test('a not-known outcome after this list has gone is listed apart in the page\'s list, with where to check', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    serveKept({
+      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'SOMETHING_ELSE' }, 409)),
+      present: () => {
+        reads += 1;
+        return reads === 1 ? [] : 'fail';
+      },
+    });
+    const view = await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await act(async () => {
+      view.rerender(<SaveQueueNotice />);
+    });
+    await wait(RESEND_MS);
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeTruthy();
+    expect(screen.getByText(`Mark an athlete here: ${unknownOffPage('Check who is marked here on the class screen.')}`)).toBeTruthy();
   });
 
   test('a refused RESEND that the server shows had landed reads as marked (condition 2), read with the queue\'s signal', async () => {
@@ -983,7 +1096,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
     expect(screen.getByText('Mark an athlete here: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
-    expect(screen.queryByText('This account cannot mark that athlete here. Nothing was saved.')).toBeNull();
+    expect(screen.queryByText('Ada Reyes: This account cannot mark that athlete here. Nothing was saved.')).toBeNull();
   });
 });
 

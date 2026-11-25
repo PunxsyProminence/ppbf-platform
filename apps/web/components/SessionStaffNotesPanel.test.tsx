@@ -5,7 +5,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import SessionStaffNotesPanel from './SessionStaffNotesPanel';
-import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
@@ -636,27 +637,9 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(waitingLine()).toBeNull();
   });
 
-  test('a change and a removal are kept as they are sent today, with no key; a refused resend the list shows as landed reads as done', async () => {
+  test('on the live floor a change and a removal still go today\'s way: sent once, with no key, nothing kept (a change has no key to be sent twice safely)', async () => {
     jest.useFakeTimers();
-    let notes: unknown[] = [MINE];
-    serveKept({
-      notes: () => notes,
-      write: (send, call) => {
-        if (call.method === 'PATCH') {
-          if (send === 1) {
-            notes = [{ ...MINE, note: 'Shoulders fine now.' }];
-            return 'lost';
-          }
-          return answer({ error: 'Something else.' }, 409);
-        }
-        // The removal: its first send lands, its answer is lost; the resend finds no such note.
-        if (call.method === 'DELETE' && notes.length > 0) {
-          notes = [];
-          return 'lost';
-        }
-        return answer({ error: 'No such note.' }, 404);
-      },
-    });
+    serveKept({ notes: () => [MINE], write: () => 'lost' });
     await openKept();
     fireEvent.click(await screen.findByRole('button', { name: /^Change your note/ }));
     fireEvent.change(screen.getByLabelText('Change your note'), { target: { value: 'Shoulders fine now.' } });
@@ -664,23 +647,145 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
       fireEvent.click(screen.getByRole('button', { name: 'Save change' }));
       await jest.advanceTimersByTimeAsync(0);
     });
-    await wait(RESEND_MS);
-    expect(sent.map((call) => call.body)).toEqual([
-      { note_id: 'note-1', note: 'Shoulders fine now.' },
-      { note_id: 'note-1', note: 'Shoulders fine now.' },
-    ]);
-    expect(screen.queryByText('NOT CHANGED')).toBeNull();
-    expect(screen.queryByText('NOT KNOWN')).toBeNull();
+    expect(sent.map((call) => [call.method, call.body])).toEqual([['PATCH', { note_id: 'note-1', note: 'Shoulders fine now.' }]]);
+    expect(await screen.findByText('CONNECTION FAILED')).toBeTruthy();
+    expect(waitingLine()).toBeNull();
+    // As today, the change box stays open after a failed change.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.click(await screen.findByRole('button', { name: /^Remove your note/ }));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Yes, remove this note' }));
       await jest.advanceTimersByTimeAsync(0);
     });
+    await wait(RESEND_MS * 2);
+    expect(sent.map((call) => call.method)).toEqual(['PATCH', 'DELETE']);
+    expect(waitingLine()).toBeNull();
+  });
+
+  test('a resend refused because its own key already added a note (edited since) reads as saved, never as not saved', async () => {
+    jest.useFakeTimers();
+    serveKept({
+      notes: () => [],
+      write: (send) => (send === 1
+        ? 'lost'
+        : answer({ error: 'This request was already used to add a different note.', code: 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED' }, 409)),
+    });
+    await openKept();
+    await addNote('Wrist taped.');
     await wait(RESEND_MS);
-    expect(sent.filter((call) => call.method === 'DELETE')).toHaveLength(2);
-    expect(screen.queryByText('NOT REMOVED')).toBeNull();
-    // The landed checks read the list with the queue's signal.
-    expect(noteReads.filter((signal) => signal instanceof AbortSignal).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('NOT SAVED')).toBeNull();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    expect(draftField().value).toBe('');
+    expect(waitingLine()).toBeNull();
+  });
+
+  test('the landed check finds this note as written (trimmed), and only a new one of the coach\'s own', async () => {
+    jest.useFakeTimers();
+    let notes: unknown[] = [];
+    serveKept({
+      notes: () => notes,
+      write: (send) => {
+        if (send === 1) {
+          notes = [saved('Wrist taped.')];
+          return 'lost';
+        }
+        return answer({ error: 'That athlete is not marked here.' }, 409);
+      },
+    });
+    await openKept();
+    await addNote('Wrist taped.  ');
+    await wait(RESEND_MS);
+    expect(screen.queryByText('NOT SAVED')).toBeNull();
+    expect(await screen.findByText('Wrist taped.')).toBeTruthy();
+  });
+
+  test('the landed check does not take someone else\'s note, or one listed before the tap, as this one', async () => {
+    jest.useFakeTimers();
+    const earlier = { ...MINE, note_id: 'note-0', note: 'Wrist taped.' };
+    let notes: unknown[] = [earlier];
+    serveKept({
+      notes: () => notes,
+      write: (send) => {
+        if (send === 1) {
+          notes = [earlier, { ...THEIRS, note_id: 'note-8', note: 'Wrist taped.' }];
+          return 'lost';
+        }
+        return answer({ error: 'That athlete is not marked here.' }, 409);
+      },
+    });
+    await openKept();
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(await screen.findByText('NOT SAVED')).toBeTruthy();
+  });
+
+  test('a note landing while the coach types a new one keeps the box on the screen', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    let holdRead: ((response: Response) => void) | undefined;
+    sent = [];
+    serveKept({
+      notes: () => [],
+      write: (send) => (send === 1 ? 'lost' : answer({ ok: true, note_id: 'note-9' })),
+    });
+    const base = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET' && String(input).startsWith(ROUTE)) {
+        reads += 1;
+        if (reads > 1) {
+          return new Promise<Response>((resolve) => {
+            holdRead = resolve;
+          });
+        }
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await openKept();
+    await addNote('Wrist taped.');
+    fireEvent.change(draftField(), { target: { value: 'Second' } });
+    await wait(RESEND_MS);
+    // The list is being read again after the landing: the box and its words stay.
+    expect(holdRead).toBeDefined();
+    expect(screen.queryByText('Reading…')).toBeNull();
+    expect(draftField().value).toBe('Second');
+  });
+
+  test('with the panel closed, the waiting line stays beside its button, and a refusal is said in the page\'s list; the words come back to the draft', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
+    await openKept();
+    await addNote('Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
+    await wait(RESEND_MS);
+    expect(screen.getByText('Staff note: That athlete is not marked here.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(draftField().value).toBe('Wrist taped.');
+  });
+
+  test('a refusal after the panel has left the screen is said in the page\'s list; a not-known one apart, with where to check', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    serveKept({
+      notes: () => {
+        reads += 1;
+        return reads === 1 ? [] : 'fail';
+      },
+      write: (send) => (send === 1 ? 'lost' : answer({ error: 'Something else.' }, 409)),
+    });
+    const view = await openKept();
+    await addNote('Wrist taped.');
+    await act(async () => {
+      view.rerender(<SaveQueueNotice />);
+    });
+    await wait(RESEND_MS);
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeTruthy();
+    expect(screen.getByText(`Staff note: ${unknownOffPage('Check the staff notes on the class screen before writing it again.')}`)).toBeTruthy();
   });
 
   test('a refused new note gives its words back to the draft and says NOT SAVED in the server\'s words', async () => {
@@ -712,6 +817,8 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(screen.getByText('NOT KNOWN')).toBeTruthy();
     expect(screen.getByText(/^Staff note: the server refused it when it was sent again and could not be checked/)).toBeTruthy();
     expect(screen.queryByText('NOT SAVED')).toBeNull();
+    // It may have been written: its words do not come back to the draft to be added twice.
+    expect(draftField().value).toBe('');
   });
 
   test('signing out drops a kept note: its words leave the screen and it is not resent', async () => {

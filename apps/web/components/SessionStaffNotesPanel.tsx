@@ -123,11 +123,13 @@ export default function SessionStaffNotesPanel(
     };
   }, []);
 
-  const read = useCallback(async () => {
+  // Quiet: the list as shown stays until the new one is in (a kept write landing while the coach types
+  // must not take the draft or a change box away), and a read that fails leaves it as it was.
+  const read = useCallback(async (quiet = false) => {
     const ticket = latestRead.current + 1;
     latestRead.current = ticket;
     isOpen.current = true;
-    setReading({ state: 'loading' });
+    if (!quiet) setReading({ state: 'loading' });
     const landed = () => isOpen.current && latestRead.current === ticket;
     try {
       const response = await fetch(
@@ -149,7 +151,7 @@ export default function SessionStaffNotesPanel(
       setReading({ state: 'loaded', notes: payload.notes as NoteRow[], noteMax: payload.note_max });
     } catch {
       // Unknown is never shown as "no notes".
-      if (landed()) setReading({ state: 'unavailable' });
+      if (landed() && !quiet) setReading({ state: 'unavailable' });
     }
   }, [athleteId, subjectId, subjectKey]);
 
@@ -190,17 +192,20 @@ export default function SessionStaffNotesPanel(
   // One write path for add, change and remove. `done` runs only on the
   // server's own yes; the list is then re-read (unless the coach closed the
   // panel meanwhile -- a write must never reopen what the coach closed).
-  const keptWrite = useCallback(
+  // Only a NEW note is kept: it carries one request key, so it is written once however often it is sent.
+  // A change or a removal has no key (the server applies every send of a change), so it goes today's way.
+  const keptAdd = useCallback(
     (
-      kind: 'add' | 'change' | 'remove',
       request: { url: string; method: string; body?: unknown },
       failed: { heading: string; verb: string },
-      what: { noteId?: string; text: string; before: ReadonlySet<string> | null },
+      what: { text: string; before: ReadonlySet<string> | null },
       resolved: { done: boolean; counted: boolean },
     ): KeptSave => {
       let reason = '';
+      // A resend refused because this save's own key already added a note (one edited since): it landed.
+      let ownKeyUsed = false;
       // No note text and no name: the line can outlive this panel on a shared floor screen.
-      const label = kind === 'add' ? 'Staff note' : kind === 'change' ? 'Staff note change' : 'Staff note removal';
+      const label = 'Staff note';
       const settle = () => {
         resolved.done = true;
         if (!resolved.counted) return;
@@ -217,11 +222,8 @@ export default function SessionStaffNotesPanel(
               ? {}
               : {
                 headers: { 'content-type': 'application/json' },
-                // A new note carries its key and the account that made it (OQ-1); a change or removal is
-                // the author's own note, which the server already checks.
-                body: JSON.stringify(kind === 'add'
-                  ? { ...(request.body as Record<string, unknown>), request_key: requestKey, made_by_account_id: madeByAccountId }
-                  : request.body),
+                // The note's key and the account that made it (OQ-1).
+                body: JSON.stringify({ ...(request.body as Record<string, unknown>), request_key: requestKey, made_by_account_id: madeByAccountId }),
               }),
             signal,
           }),
@@ -229,36 +231,36 @@ export default function SessionStaffNotesPanel(
         answerOf: async (response) => {
           if (response.ok) return 'saved';
           if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
-          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown } | null;
+          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
           reason = typeof payload?.error === 'string' && payload.error ? payload.error : `The note was not ${failed.verb} (${response.status}).`;
+          if (payload?.code === 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED') ownKeyUsed = true;
           return 'refused';
         },
         // A refused resend: do the notes now show what this write asked?
         checkLanded: async (signal) => {
+          if (ownKeyUsed) return true;
           const notes = await readNotes(signal);
           if (notes === null) return null;
           const text = what.text.trim();
-          if (kind === 'remove') return !notes.some((row) => row.note_id === what.noteId);
-          if (kind === 'change') return notes.some((row) => row.note_id === what.noteId && row.note === text);
           if (what.before === null) return null;
           const before = what.before;
           return notes.some((row) => row.own && !before.has(row.note_id) && row.note === text);
         },
         onSaved: () => {
           settle();
-          if (onPage.current && isOpen.current) void read();
+          if (onPage.current && isOpen.current) void read(true);
         },
-        // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the draft.
-        onRefused: (response, landed) => {
+        // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the
+        // draft (a not-known one may have been written, so it does not).
+        onRefused: (_response, landed) => {
           settle();
-          if (!onPage.current || isFinishWaiting?.()) {
+          if (landed === false) setDraft((current) => (current === '' ? what.text : current));
+          // Off the page, with the panel closed, or while a kept finish waits: said in the page's list.
+          if (!onPage.current || !isOpen.current || isFinishWaiting?.()) {
             return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
           }
-          if (kind === 'add') setDraft((current) => (current === '' ? what.text : current));
           setRefusal(landed === null ? { heading: 'NOT KNOWN', text: unknownOutcomeWords(label) } : { heading: failed.heading, text: reason });
-          // As today: "no such note" means the list is out of date. Otherwise the list as last read
-          // stays (a read again that fails would hide the words).
-          if (landed === false && response.status === 404 && isOpen.current) void read();
+          // The list as last read stays (a read again that fails would hide the words).
           return undefined;
         },
       };
@@ -272,17 +274,17 @@ export default function SessionStaffNotesPanel(
       request: { url: string; method: string; body?: unknown },
       failed: { heading: string; verb: string },
       done: () => void,
-      what: { noteId?: string; text: string } = { text: '' },
+      what: { text: string } = { text: '' },
     ) => {
       setRefusal(null);
       setBusy(kind);
       try {
-        if (keptOnThisPage) {
-          // Kept: done at once (the draft clears), so a second tap is a new write, not this one twice.
+        if (keptOnThisPage && kind === 'add') {
+          // Kept: done at once (the draft clears), so a second tap is a new note, not this one twice.
           // Not kept (the page does not know who is signed in): sent once, as before.
           const before = reading.state === 'loaded' ? new Set(reading.notes.map((row) => row.note_id)) : null;
           const resolved = { done: false, counted: false };
-          if ((await keepSave(keptWrite(kind, request, failed, { ...what, before }, resolved))) === 'kept') {
+          if ((await keepSave(keptAdd(request, failed, { text: what.text, before }, resolved))) === 'kept') {
             if (!resolved.done) {
               resolved.counted = true;
               setWaitingWrites((count) => count + 1);
@@ -334,7 +336,7 @@ export default function SessionStaffNotesPanel(
         setBusy(null);
       }
     },
-    [keptOnThisPage, keptWrite, read, reading],
+    [keptAdd, keptOnThisPage, read, reading],
   );
 
   const add = () => write(
@@ -350,7 +352,6 @@ export default function SessionStaffNotesPanel(
     { url: ROUTE, method: 'PATCH', body: { note_id: noteId, note: text } },
     { heading: 'NOT CHANGED', verb: 'changed' },
     () => setEditing(null),
-    { noteId, text },
   );
 
   const remove = (noteId: string) => write(
@@ -358,7 +359,6 @@ export default function SessionStaffNotesPanel(
     { url: `${ROUTE}?note_id=${encodeURIComponent(noteId)}`, method: 'DELETE' },
     { heading: 'NOT REMOVED', verb: 'removed' },
     () => setRemoving(null),
-    { noteId, text: '' },
   );
 
   const open = reading.state !== 'closed';
@@ -382,6 +382,14 @@ export default function SessionStaffNotesPanel(
       >
         {open ? 'Hide staff notes' : subjectWords}
       </button>
+      {/* Beside the button, open or closed, and mounted always, so a screen reader announces it when it fills. */}
+      <p className={waitingWrites > 0 ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
+        {waitingWrites === 0
+          ? ''
+          : waitingWrites === 1
+            ? 'One change to these notes is not saved yet. This page keeps sending it while it stays open.'
+            : `${waitingWrites} changes to these notes are not saved yet. This page keeps sending them while it stays open.`}
+      </p>
 
       {open ? (
         <div id={panelId} className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
@@ -498,15 +506,6 @@ export default function SessionStaffNotesPanel(
                   </ul>
                 )}
               </div>
-
-              {/* Mounted always, so a screen reader announces the line when it fills. */}
-              <p className={waitingWrites > 0 ? 't-body mt-[var(--s3)] font-semibold' : 'sr-only'} role="status">
-                {waitingWrites === 0
-                  ? ''
-                  : waitingWrites === 1
-                    ? 'One change to these notes is not saved yet. This page keeps sending it while it stays open.'
-                    : `${waitingWrites} changes to these notes are not saved yet. This page keeps sending them while it stays open.`}
-              </p>
 
               {refusal ? (
                 <div className="mt-[var(--s3)]" role="alert">
