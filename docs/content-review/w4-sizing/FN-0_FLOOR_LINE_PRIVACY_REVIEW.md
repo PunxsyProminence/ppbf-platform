@@ -18,7 +18,8 @@ five for Jason.
   option's con, as shown to him: "What minors' data the homes show is settled
   without you reading it" (`:1312`). FN-1 starts after that sign-off.
 - **Code read at:** `main` `f8963ecb06b8aa9ec52093a2e2ccd034f3ad6b3c`. Every
-  `file:line` below is at that commit. (Earlier versions read `348e126d`.
+  `file:line` below is at that commit, except one marked as at `a4b420c`
+  (section 7). (Earlier versions read `348e126d`.
   Between the two, seven of the files named here changed. In
   `sessionRunAthletes.ts`, the run's athletes route (W4 item 7, a late tap,
   2.1) and `OWNER_DECISIONS.md`, cited lines moved and were re-pinned. In
@@ -97,8 +98,9 @@ on a cancelled class (FN0-Q1, which narrows Q3.1 C for families through an
 Overwatch application, not his words); the words of the line, including
 what a register-only mark is called and from when it counts (FN0-Q2),
 because "What a screen looks like and how it flows is decided by Jason with
-the lane doing the work" (the kernel's own rule, `AGENT_KERNEL.md:87-88`, in
-its section headed with OD-2026-10-02-004, `:76`), and
+the lane doing the work" (the kernel's own rule, `AGENT_KERNEL.md:87-88`,
+after the paragraph led "UI and visual work", which names OD-2026-10-02-004,
+`:76`), and
 the start time narrows his C for a case his card did not show; what "every home" means
 (FN0-Q3, the record pointing both ways); the family's words when a check
 fails (FN0-Q5, a new line on minors' screens: the L1 rule bars new
@@ -138,9 +140,10 @@ F2); and a run mark the register later set Absent or Excused (FN0-Q6, F16).
 Nothing he has not chosen reaches a family in the meantime: FN-1 builds each
 case as its own condition and serves staff only until FN-2 opens its parent
 and athlete branches, and FN-2 and FN-3, the first PRs that show the line,
-ship after he has answered (section 4). Until FN0-Q3 is answered, three
-homes get no line, a temporary narrowing of Q12 A if "every home" reaches
-them (section 4). OD-2026-10-10-007 records his complaint about questions
+ship after he has answered (section 4). Two temporary narrowings hold
+until he answers: FN-1's staff branch leaves cancelled-class marks out until
+FN0-Q1 is answered, and three homes get no line until FN0-Q3 is answered,
+a narrowing of Q12 A if "every home" reaches them (section 4). OD-2026-10-10-007 records his complaint about questions
 that "slowly adds constrainsts" (`OWNER_DECISIONS.md:8034`); each of the
 three is put once, each with the option that builds C as chosen. Narrower words are an option put to him, not a recommendation
 (FN0-Q2). Where a ruling's plain
@@ -259,7 +262,7 @@ file on the floor line.
 |---|---|---|---|
 | Public wall `/api/pilot/wall` | anyone, no sign-in | today's classes; a head count per class and in total; no person, no initials, no key | `apps/web/app/api/pilot/wall/route.ts:20-35`; `apps/web/src/server/pilot/wallDisplay.ts:462-485` |
 | Paired gym TV `/api/pilot/tv/session` | a TV paired with a code (the route and its gate as the code's comments describe them, `wallDisplay.ts:444-449`; the route file was not read) | initials (or a consented name) of today's present marks, newest first, up to 18, and session milestones (`marquee`, `wallDisplay.ts:458`) | `wallDisplay.ts:444-460`, `:545-558`; `ON_FLOOR_MAX` `:491` |
-| Coach "who is marked today" | coach, organization admin, admin | one reconciled status per athlete for today across the gym's live roster, from CT-13's reconciled view, which reads no mark on a cancelled class (`attendancePrecedence.ts:118-133`; `ATTENDANCE_PRECEDENCE.md:162`) | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
+| Coach "Who is marked on the floor today" (`attendance-today/route.ts:13`) | coach, organization admin, admin | one reconciled status per athlete for today across the gym's live roster, from CT-13's reconciled view, which reads no mark on a cancelled class (`attendancePrecedence.ts:118-133`; `ATTENDANCE_PRECEDENCE.md:162`) | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
 | A run's marks by run id | coach, organization admin, admin | the names marked on that run, for the gym's live athletes | `runs/[runId]/athletes/route.ts:63-79` |
 | Finished runs | coach, organization admin, admin | who was marked on each settled run | `apps/web/app/api/pilot/session-scripts/runs/route.ts:69-72` |
 | Coach home live panel | the coach running the run | "Session in progress" and "Athletes Present" for their own run | `apps/web/components/CoachWorkspace.tsx:1325-1326`, `:3296` |
@@ -367,16 +370,17 @@ see; nothing says what the board, the platform owner, or staff-role and
 volunteer accounts see. Their limits today:
 - board: "Counts only, floored by k-anonymity ... never a row, never a name"
   (`privacyTiers.ts:81-87`); the scheduler read refuses the board outright
-  (`scheduler/route.ts:707-709`); but the wall of names, open to every
-  signed-in role, gives it every live athlete's initials and years today
-  (`apps/web/app/api/pilot/wall-of-names/route.ts:27`, `:35-42`);
+  (`scheduler/route.ts:707-709`); but the wall of names is open to every
+  signed-in role, the board included (`apps/web/app/api/pilot/wall-of-names/route.ts:27`,
+  `:35-42`), and by its route's comment gives every live athlete's initials
+  and years, which depends on a deploy setting not checked here (`:29-32`);
 - platform owner: no athlete ids, no names, across organizations
   (`privacyTiers.ts:73-79`), and "never an individual athlete's file"
   (OD-2026-09-28-005); taken off the session-script runs routes
   (OD-2026-10-07-011 ruling 2, `OWNER_DECISIONS.md:8646`; repeated in
   OD-2026-10-08-003 R2), a card that cited Jason's "platform for platform
   gym for gym" (his words in OD-2026-10-02-013, `:12291-12292`, about research
-  shelves; applied in OD-2026-10-02-015 D3, `:12204-12206`; quoted at
+  shelves; applied in OD-2026-10-02-015 D3, `:12204-12206`; cited at
   `:8638`); and kept from
   the board's compliance and escalation summaries (OD-2026-10-05-006, F-003,
   `OWNER_DECISIONS.md:9742-9745`); whether the wall of names reaches it
@@ -790,7 +794,7 @@ ships after it (section 4).
 The verdicts assume the questions are answered as recommended; a different
 answer changes the rows it names. Three questions change which marks count
 and narrow Jason's C: FN0-Q1, FN0-Q2's start time and FN0-Q6. No interim is
-set for them. FN-1 builds each as its own condition and serves staff only:
+set for families. FN-1 builds each as its own condition and serves staff only:
 its parent and athlete branches are refused, as for a role the read does not
 serve (check 4), until FN-2 opens them, and FN-2 and FN-3, the first PRs
 that show the line, ship after he has answered. So no family gets a value he
@@ -798,7 +802,10 @@ has not chosen. The staff branch shows staff nothing they cannot already
 read (F5), with one exception: a present mark on a cancelled class, which no
 read gives a coach who does not run that class today (F5). So until FN0-Q1
 is answered, the staff branch leaves those marks out, as every coach read
-but the class's own register does today. Until FN0-Q3 is answered,
+but the class's own register does today: a temporary narrowing of C for
+staff (FN0-Q1 B, for staff only). For FN0-Q2's start time and FN0-Q6, the
+staff branch serves C as chosen until he answers (a register mark from when
+it is written; a run mark counts), both within what staff read today. Until FN0-Q3 is answered,
 the board's, the platform owner's and the staff-role and volunteer homes get
 no line: they are outside the sized PRs (`W4_SIZING.md:553-554`), and if
 "every home" reaches them this is a temporary narrowing of Q12 A.
@@ -880,7 +887,7 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    completed or abandoned; a run idle past 3 hours that no read has closed
    (F13); a run mark on a tied class whose register later says Absent or
    Excused, if FN0-Q6 so rules (F16); a register mark on a cancelled class, except as FN0-Q1
-   rules; an absent or excused
+   rules (until it is answered, none on any line, section 4); an absent or excused
    mark; a register mark for a class on another day; an `activity_log` or
    legacy `pilot.attendance` row alone (F2, F4, F9, section 4).
 6. A register-only mark is shown in the words FN0-Q2 rules, only for a class
@@ -1308,4 +1315,5 @@ reaches the case and they disagree, so it is put to you. INFERRED.
   `wallDisplayDb.ts`); any screen, staging or production. Not run: any test.
 - The sizing's own code cites (in `W4_SIZING.md` section 3) were made at
   `a4b420c`; some have moved (for example the register copy, `sessionRunAthletes.ts:171` there, is
-  `:206-211` here). This file cites `f8963ecb` throughout.
+  `:206-211` here). This file cites `f8963ecb` throughout, except where a
+  cite is marked as at another commit.
