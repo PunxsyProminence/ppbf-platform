@@ -8,24 +8,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * The caller's own email alert switch (lane W4-1, EM-1; OD-2026-11-19-019,
- * OW27-10 A: "Each person turns their own email on or off with one switch on
- * their own settings page").
+ * The caller's own email alert switch (lane W4-1, EM-1b; OD-2026-11-19-019,
+ * OW27-10 A). Self-scoped: no account_id parameter, ever (profile/me's rule);
+ * gym and account from the session; any query field refused.
  *
- * SELF-SCOPED, structurally: there is no account_id parameter and there must
- * never be one (profile/me/route.ts's rule). The organization and account come
- * from the session only; any query field is refused.
- *
- * WHO (OW27-02 C; Overwatch GO on #2159, section 8): coach, organization admin
- * ('admin' by alias), parent and athlete may call. An athlete is offered a
- * switch only when their own athlete record says 18 or over; no date of birth
- * counts as a minor (OD-2026-10-04-010). GET then answers `{ offered: false }`
- * and nothing else, and PUT refuses (403). Staff, volunteer, board and the
- * platform owner are refused by requireRole.
- *
- * PUT { switched_on: boolean }. An adult athlete cannot switch on until an
- * address is confirmed (409; EM-2b adds the address). The write and its audit
- * row commit together.
+ * WHO (OW27-02 C; GO on #2159, section 8): coach, organization admin ('admin'
+ * by alias), parent, athlete. An athlete under 18, or with no date of birth,
+ * gets `{ offered: false }` on GET and 403 on PUT. PUT { switched_on }: an adult
+ * athlete with no confirmed address gets 409 (EM-2b adds the address).
  */
 
 export async function GET(request: NextRequest) {
