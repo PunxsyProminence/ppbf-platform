@@ -1517,7 +1517,7 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
 
     const result = await edit(gym, scriptId, { remove: [mirror], order: [spar, jab] });
 
-    expect(result).toMatchObject({ outcome: 'new_version', version: 2 });
+    expect(result).toMatchObject({ outcome: 'new_version', version: 2, because: 'removal' });
     expect(await storedBytes(gym, scriptId)).toBe(v1Bytes);
     const v2 = await getSessionScriptWithDetail(gym.organizationId, result.script_id);
     expect(v2!.blocks.map((block) => [block.block_order, block.block_label, block.start_offset_min, block.end_offset_min])).toEqual([
@@ -1566,7 +1566,8 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
       order: [jab, 'pads', spar],
     });
 
-    expect(result).toMatchObject({ outcome: 'new_version', version: 2 });
+    // A delivered plan, removal or not: the version was made because it had been run.
+    expect(result).toMatchObject({ outcome: 'new_version', version: 2, because: 'run' });
     expect(await storedBytes(gym, scriptId)).toBe(v1Bytes);
     const v2 = await getSessionScriptWithDetail(gym.organizationId, result.script_id);
     expect(v2!.blocks.map((block) => [block.block_order, block.block_label, block.drill_id, block.contact_level])).toEqual([
@@ -1796,6 +1797,37 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks.map((block) => block.drill_id)).toContain('ref-pads');
   });
 
+  // Reviewer A on #2191, round 4: content import locks every drill it names in one statement, in drill_id
+  // order. An edit locks its new and its linked drills in one ordered statement too, so an import
+  // holding a linked drill (ref-jab) and then wanting the new one (ref-pads) queues with it.
+  test('an edit adding a drill and an import holding a linked drill then the new drill queue, never deadlock', async () => {
+    const { gym, scriptId } = await plan('lock-union');
+    await libraryDrill(gym, 'ref-pads', 'Pad Round');
+    const holder = new Client({ connectionString: activeConnectionString as string });
+    await holder.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-jab' for update`, [gym.organizationId]);
+      const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const adding = edit(gym, scriptId, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-pads', start_offset_min: 16, end_offset_min: 20 }] }).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      );
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const blocked = await client.query(`select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))`, [rows[0].pid]);
+        if ((blocked.rowCount ?? 0) > 0 || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-pads' for update`, [gym.organizationId]);
+      await holder.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`, [gym.organizationId, scriptId]);
+      await holder.query('COMMIT');
+      expect((await adding).status).toBe('fulfilled');
+    } finally {
+      await holder.end();
+    }
+  });
+
   test('the coach rendering made from the blocks follows the new running order', async () => {
     const { gym, scriptId, jab, mirror, spar } = await plan('render');
     await client.query(
@@ -1864,6 +1896,7 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
       await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: kind, text: '' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     }
     await expectRefused(edit(gym, scriptId, { add: [text({ text: '\u200B \u2060' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    await expectRefused(edit(gym, scriptId, { add: [text({ text: '\u200E\u00AD\u3164\u2063' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ text: 'x'.repeat(1001) })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: 'drill_round' })] }), 'SESSION_SCRIPT_BLOCK_KIND_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: 'full_contact' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
@@ -1925,13 +1958,40 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: jab, ...place }] });
 
     const copy = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3];
-    expect(copy).toMatchObject({ drill_id: 'ref-jab-v2', block_label: 'Jab Drill', contact_level: 'none' });
+    // The title is the coach's text and is carried; the template's line is the template's and is carried too.
+    expect(copy).toMatchObject({ drill_id: 'ref-jab-v2', block_label: 'Jab Drill', contact_level: 'none', what_to_explain: 'From the template: Warm-up' });
     const { rows } = await client.query(
       `select details from pilot.audit_events where organization_id = $1 and entity_type = 'session_script'
         order by created_at desc, audit_id desc limit 1`,
       [gym.organizationId],
     );
     expect(rows[0].details).toMatchObject({ blocks_added: 1, copied_from: [jab] });
+  });
+
+  // Reviewer C on #2196, round 2: the "From the drill" line is written by the app and names the drill
+  // version the block links, so a copy relinked to a renamed drill's current version names that one.
+  test('a copy of a block added from a drill, after the drill was renamed, names the version it now links', async () => {
+    const { gym, scriptId } = await plan('copy-rename');
+    await insertReference(gym, 'ref-pads', 'Pad Round');
+    await edit(gym, scriptId, { add: [{ ref: 'p', kind: 'drill', drill_id: 'ref-pads', ...place }] });
+    const pads = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3];
+    expect(pads.what_to_explain).toBe('From the drill: Pad Round');
+    await client.query(`update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-pads'`, [
+      gym.organizationId,
+    ]);
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, version, supersedes_drill_id, name, discipline, category, difficulty,
+          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, field_provenance, active)
+       values ($1, 'ref-pads-v2', 'ref-pads', 2, 'ref-pads', 'Pad Ladder', 'boxing', 'footwork', 'advanced',
+               'target', 'purpose', 'setup', 'execution', 'good', 'bad', 'PPBF source manual v3', true)`,
+      [gym.organizationId],
+    );
+
+    await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: pads.block_id, start_offset_min: 20, end_offset_min: 24 }] });
+
+    const copy = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[4];
+    expect(copy).toMatchObject({ drill_id: 'ref-pads-v2', what_to_explain: 'From the drill: Pad Ladder', block_label: 'Pad Round' });
   });
 
   test("refused and nothing written: a copy of a withdrawn drill, a copy above its drill's current contact, another gym's block", async () => {
@@ -1955,6 +2015,36 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     const withOddLevel = await storedBytes(gym, scriptId);
     await expectRefused(copyOf(mirror), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
     expect(await storedBytes(gym, scriptId)).toBe(withOddLevel);
+  });
+
+  // Reviewer D on #2196, round 2: new, copied and linked drills are locked in ONE statement in drill_id
+  // order, as content import locks the drills it names, so an import holding a linked drill (ref-jab)
+  // and then wanting the copy's (ref-spar) queues with the edit.
+  test("an import holding a linked drill then a copy's drill queues with the copy, never deadlocks", async () => {
+    const { gym, scriptId, spar } = await plan('copy-lock-union');
+    const holder = new Client({ connectionString: activeConnectionString as string });
+    await holder.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-jab' for update`, [gym.organizationId]);
+      const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const copying = edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: spar, ...place }] }).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      );
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const blocked = await client.query(`select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))`, [rows[0].pid]);
+        if ((blocked.rowCount ?? 0) > 0 || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-spar' for update`, [gym.organizationId]);
+      await holder.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`, [gym.organizationId, scriptId]);
+      await holder.query('COMMIT');
+      expect((await copying).status).toBe('fulfilled');
+    } finally {
+      await holder.end();
+    }
   });
 
   test("a copy's drill is locked before the plan, so an import holding that drill then the plan queues with it", async () => {

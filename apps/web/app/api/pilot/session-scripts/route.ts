@@ -287,7 +287,8 @@ export async function PATCH(request: NextRequest) {
       expectedUpdatedAt: record.expected_updated_at,
     });
     const script = await getSessionScriptWithDetail(principal.organizationId, edited.script_id);
-    return NextResponse.json({ outcome: edited.outcome, script });
+    // `because` says why a new version was made: 'run' (delivered before) or 'removal' (no block row is deleted).
+    return NextResponse.json({ outcome: edited.outcome, ...(edited.because && { because: edited.because }), script });
   } catch (error) {
     return authoringError(error);
   }

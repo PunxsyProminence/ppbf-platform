@@ -205,6 +205,12 @@ describe('PATCH /api/pilot/session-scripts', () => {
     await expect(response.json()).resolves.toEqual({ outcome: 'new_version', script: STORED });
   });
 
+  it('says why a new version was made, when the module says so (reviewer B on #2191)', async () => {
+    mockEdit.mockResolvedValueOnce({ outcome: 'new_version', script_id: 'scr-new', version: 2, because: 'removal' });
+    const response = await patch({ ...EDIT, remove_block_ids: ['blk-1'] });
+    await expect(response.json()).resolves.toEqual({ outcome: 'new_version', because: 'removal', script: STORED });
+  });
+
   it('accepts no organization or version from the body', async () => {
     for (const extra of ['organization_id', 'version', 'lineage_id', 'authoring_state']) {
       const response = await patch({ ...EDIT, [extra]: 'x' });
