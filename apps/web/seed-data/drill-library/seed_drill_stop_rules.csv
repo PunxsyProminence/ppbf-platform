@@ -1623,3 +1623,19 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_caa9f14713ea99,drl_a5d2a79b8224ab,1,Speed creeps above half or breathing is held: stop and reset to 50% speed and steady breathing.,drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_b20dc5e6c3c960,drl_8b5cad86b115a9,1,"Movement quality drops (plank sags, wall sit slips): stop the station and rest (the sheet: quality movement only).",drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_fd499543b5e886,drl_5093325d1b6985,1,The circle drifts or runs past its 5 minutes: close it on the line.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0bd024b7afb6d9,drl_26a97e355c0e0a,1,Talking or crowding continues after a fix: stop and restart the two minutes.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_c46a804a02fd2e,drl_c7e4c5ae475b65,1,"A non-negotiable breaks (knees straight, hands down, feet cross): fix it before going on (""Smaller steps."" / ""Hands home."").",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c47802f84debd0,drl_1d6dcdeb8b8013,1,"The athlete leans into the jab or stops moving to punch: reset before the next jab (""Punch then reset."").",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ffd9731e0eb226,drl_bae413a2338d17,1,"The athlete slips before the cue (guessing) or the slip grows big: stop and reset (""See it first."" / ""Smaller."").",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9e1434f261e4cd,drl_13242d8acf3944,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_803057f966547e,drl_13242d8acf3944,2,Stop the round when contact rises above the level the coach set for this drill.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_6b8e230f03fe79,drl_13242d8acf3944,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_fb294896d4f793,drl_13242d8acf3944,4,"If chaos rises above the educational value of the round, intensity is reduced or the round is stopped.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_d2de58723941fe,drl_13242d8acf3944,5,Punches outside the round's tools come in (a cross in round 1) and one reset does not stop them: stop the round.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6438b32a4a76fc,drl_0126497cf4649f,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_982b56cf72e70b,drl_0126497cf4649f,2,Stop the round when contact rises above the level the coach set for this drill.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_6ad313cd82598d,drl_0126497cf4649f,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_b78d3c97e32d2a,drl_0126497cf4649f,4,"If chaos rises above the educational value of the round, intensity is reduced or the round is stopped.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_36a09bda2524ec,drl_0126497cf4649f,5,"Stop the round when punches stop being controlled or the escape turns into wrestling or scrambling, and one cue does not settle it.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_44957d3bb3eefc,drl_0126497cf4649f,6,"When the higher-pace finish turns into rushing: ""Freeze."" Check stance and spacing, give a one-sentence instruction, take one clean rep, then ""Restart slower"" (Control > pace > complexity).",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6c63b3221d9625,drl_558fc9e8f7ddc3,1,"Technique breaks down under fatigue (stance lost, guard dropped): stop, rest, then restart at level A.",drill_specific,fatigue

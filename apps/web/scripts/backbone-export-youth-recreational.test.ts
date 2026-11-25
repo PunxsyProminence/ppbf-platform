@@ -539,6 +539,7 @@ describe('the committed youth + recreational rows', () => {
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (test run 4-5) (TL-2)
     wtp_1ad3c846b03ecc: [1, 2, 9, 10, 11], // Friday Sparring Coach Sheet (TL-3a)
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday Gold Standard Coach Script (TL-3b)
   };
   // Of those, the steps that also took their own stated time (details.block_time, or minutes in the block_title) as
   // duration_minutes (Codex P1 and App Overwatch on #2177): the export would blank that cell too.
@@ -546,6 +547,7 @@ describe('the committed youth + recreational rows', () => {
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
     wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b)
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
