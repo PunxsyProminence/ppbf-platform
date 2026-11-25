@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import type { ActorIdentity } from './access';
-import { getStaffAuthorName } from './achievements';
+import { getStaffDisplayName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import { query } from './db';
 import { ConflictError } from './errors';
@@ -14,8 +14,9 @@ import { ConflictError } from './errors';
  * SC-3a-2; table pilot.athlete_reached_out_marks, SC-3a-1). OW27-33 B: the
  * page lists people "plus mark 'reached out'". Overwatch W4-6 Q4 A: "who and
  * when only, no free text, one current mark per athlete; taking it back keeps
- * the row and is audited". This module is the table's SQL only: who may call
- * it, for which athlete, and that athlete's last day they came are
+ * the row and is audited". This module holds the table's SQL, the newer-or-
+ * stale rule and the marker's name lookup. Who may call it, for which athlete
+ * (one on the list now), and that athlete's last day they came are
  * stoppedComing.ts's (Overwatch on #2163, answer A). Writes run on the
  * caller's transaction client.
  *
@@ -25,12 +26,13 @@ import { ConflictError } from './errors';
  * mark in the same transaction (Overwatch on #2176: cleared_kind 'replaced',
  * ended by the marking coach). An athlete who never came has no stale mark.
  *
- * WHAT LEAVES: the marker's display name (getStaffAuthorName, by the role the
- * mark was made in) and the mark's gym-local day; a write answers one outcome
- * word. Never an account id. A mark whose marker account was deleted (the
- * foreign key's SET NULL) has by_name null: who it was is no longer known, and
- * an unknown value is not shown as a name (AGENT_KERNEL, the floor: "an
- * unknown value never looks complete"; as painReportAlert.ts gives byName null).
+ * WHAT LEAVES: the marker's staff name at this gym (getStaffDisplayName, the
+ * gated lookup every staff name uses) and the mark's gym-local day; a write
+ * answers one outcome word. Never an account id. When the marker cannot be
+ * named (a deleted account, one no longer a member here, no name on record),
+ * by_name is null, never a stand-in such as "Your coach": an unknown value is
+ * not shown as a name (AGENT_KERNEL, the floor: "an unknown value never looks
+ * complete"), as painReportAlert.ts names a pain report's reviewer.
  *
  * Audited on entity 'athlete_reached_out_mark' in the same transaction,
  * shadow_mirror false, as rest marks are: 'create' for a mark, 'update' with
@@ -38,7 +40,7 @@ import { ConflictError } from './errors';
  */
 
 export interface ReachedOut {
-  /** The marker's display name; null when their account has since been deleted. */
+  /** The marker's staff name at this gym; null when they cannot be named. */
   readonly by_name: string | null;
   /** The gym-local day it was marked. */
   readonly on_day: string;
@@ -68,10 +70,9 @@ export async function readCurrentReachedOut(
   const rows = await query<{
     athlete_id: string;
     marked_by_account_id: string | null;
-    marked_by_role: ReachedOutMarkRole;
     on_day: string;
   }>(
-    `select athlete_id, marked_by_account_id, marked_by_role,
+    `select athlete_id, marked_by_account_id,
             (marked_at at time zone $3)::date::text as on_day
        from pilot.athlete_reached_out_marks
       where organization_id = $1
@@ -79,16 +80,16 @@ export async function readCurrentReachedOut(
         and cleared_at is null`,
     [organizationId, [...lastCameDays.keys()], GYM_TIME_ZONE],
   );
-  // Keyed by role too, as sessionStaffNotes.ts names authors: an admin's mark is not signed "Coach".
-  const names = new Map<string, string>();
+  // One lookup per distinct marker, as painReportAlert.ts names reviewers.
+  const names = new Map<string, string | null>();
   for (const row of rows) {
     if (!isNewer(row.on_day, lastCameDays.get(row.athlete_id) ?? null)) continue;
     let byName: string | null = null;
     if (row.marked_by_account_id !== null) {
-      const key = `${row.marked_by_role}:${row.marked_by_account_id}`;
-      const known = names.get(key);
-      byName = known ?? await getStaffAuthorName(organizationId, row.marked_by_account_id, row.marked_by_role);
-      names.set(key, byName);
+      byName = names.has(row.marked_by_account_id)
+        ? names.get(row.marked_by_account_id) ?? null
+        : await getStaffDisplayName(organizationId, row.marked_by_account_id);
+      names.set(row.marked_by_account_id, byName);
     }
     shown.set(row.athlete_id, { by_name: byName, on_day: row.on_day });
   }

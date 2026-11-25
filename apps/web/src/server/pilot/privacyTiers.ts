@@ -583,7 +583,10 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'standing mark the register does not hold (an untied run, a tap that created no register mark, or a cancelled '
       + 'class) as coming, for coach and organization admin with a staff '
       + 'membership here; it returns that day per athlete, never the run, the mark or who else was in it, '
-      + 'and no attendance figure reads it.',
+      + 'and no attendance figure reads it. The same module\'s reached-out write '
+      + '(setStoppedComingReachedOut) reads that day for one athlete, on its own transaction, to refuse a '
+      + 'mark for an athlete not on the list and to tell a stale mark from a newer one; it answers one '
+      + 'outcome word.',
   },
   'behaviour_keys.label': {
     tier: 'organization',

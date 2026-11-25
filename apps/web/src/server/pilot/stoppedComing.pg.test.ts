@@ -537,13 +537,13 @@ describe('listStoppedComing on a real database', () => {
     await expect(setStoppedComingReachedOut(gym.coach, 'ada', true, today)).resolves.toBe('marked');
     await expect(row('ada')).resolves.toEqual({
       athlete_id: 'ada', full_name: 'Ada Reyes', last_came_day: day(-40), days_since_came: 40,
-      reached_out: { by_name: 'Coach Jordan', on_day: today },
+      reached_out: { by_name: 'Jordan', on_day: today },
     });
     await expect(setStoppedComingReachedOut(gym.coach2, 'ada', true, today)).resolves.toBe('already_marked');
 
     // The mark was made 30 days ago; Ada came back to open gym 25 days ago and has stopped again.
     await backdateReachedOut(gym, 'ada', day(-30));
-    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Coach Jordan', on_day: day(-30) } });
+    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Jordan', on_day: day(-30) } });
     const openGym = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, {})).run_id;
     await hereMark(gym, openGym, 'ada', day(-25));
     await expect(row('ada')).resolves.toMatchObject({ last_came_day: day(-25), days_since_came: 25, reached_out: null });
@@ -551,7 +551,7 @@ describe('listStoppedComing on a real database', () => {
     await expect(setStoppedComingReachedOut(gym.admin, 'ada', false, today)).resolves.toBe('not_marked');
     // A new mark replaces it, in one transaction, the old row ended by the coach making the new one.
     await expect(setStoppedComingReachedOut(gym.coach2, 'ada', true, today)).resolves.toBe('marked');
-    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Coach Sam', on_day: today } });
+    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Sam', on_day: today } });
     expect(await reachedOutRows(gym, 'ada')).toEqual([
       { marked_by_account_id: gym.coach.accountId, cleared_by_account_id: gym.coach2.accountId, cleared_kind: 'replaced' },
       { marked_by_account_id: gym.coach2.accountId, cleared_by_account_id: null, cleared_kind: null },
@@ -609,5 +609,70 @@ describe('listStoppedComing on a real database', () => {
       for (const actor of [gym.coach, gym.coach2, gym.admin, gym.exCoach]) expect(text).not.toContain(actor.accountId);
       expect(text).not.toMatch(/mark_id|account/);
     }
+  });
+
+  // Reviewers J and K: a mark the page would never show is not written. The list's own rules decide.
+  test('a mark is refused (409), with no row and no audit row, for an athlete not on the list now; a take-back needs no list check', async () => {
+    const gym = await newGym('not-listed');
+    const today = (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    const refused = { status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' };
+
+    await addAthlete(gym, 'lia', 'Lia Left', { active: false }); // marked as left the gym
+    await registerDay(gym, 'lia', day(-40), 'present');
+    await addAthlete(gym, 'lou', 'Lou Lapsed'); // only a lapsed membership
+    await registerDay(gym, 'lou', day(-40), 'present');
+    await programMembership(gym, 'lou', 'Youth Boxing', 'lapsed');
+    await addAthlete(gym, 'ned', 'Ned Ended'); // only ended memberships
+    await registerDay(gym, 'ned', day(-40), 'present');
+    await programMembership(gym, 'ned', 'Youth Boxing', 'ended');
+    await programMembership(gym, 'ned', 'Open Gym', 'ended');
+    await addAthlete(gym, 'cy', 'Cy Never'); // never came
+    await addAthlete(gym, 'gus', 'Gus Recent'); // came 13 days ago: inside the gym's 14
+    await registerDay(gym, 'gus', day(-13), 'present');
+    await addAthlete(gym, 'tod', 'Tod Today'); // came today, by open gym
+    await registerDay(gym, 'tod', day(-40), 'present');
+    const run = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, {})).run_id;
+    await hereMark(gym, run, 'tod', today, { time: '00:30' });
+    await addAthlete(gym, 'jay', 'Jay Loop'); // came today, by the register
+    await registerDay(gym, 'jay', today, 'present');
+    await addAthlete(gym, 'fay', 'Fay Fourteen'); // exactly the gym's 14 days: on the list
+    await registerDay(gym, 'fay', day(-14), 'present');
+    await programMembership(gym, 'fay', 'Youth Boxing', 'active');
+
+    for (const athleteId of ['lia', 'lou', 'ned', 'cy', 'gus', 'tod']) {
+      await expect(setStoppedComingReachedOut(gym.coach, athleteId, true, today)).rejects.toMatchObject(refused);
+    }
+    // Reviewer J's loop on a day the athlete came: refused at the first mark, so nothing to take back or replace.
+    await expect(setStoppedComingReachedOut(gym.coach, 'jay', true, today)).rejects.toMatchObject(refused);
+    await expect(setStoppedComingReachedOut(gym.coach, 'jay', false, today)).resolves.toBe('not_marked');
+    await expect(setStoppedComingReachedOut(gym.coach, 'jay', true, today)).rejects.toMatchObject(refused);
+    await expect(setStoppedComingReachedOut(gym.coach2, 'jay', true, today)).rejects.toMatchObject(refused);
+
+    const written = async () => ({
+      marks: (await client.query('select athlete_id from pilot.athlete_reached_out_marks where organization_id = $1 order by athlete_id', [gym.organizationId])).rows,
+      audits: (await client.query(
+        `select details->>'athlete_id' as athlete_id, event_type from pilot.audit_events
+          where organization_id = $1 and entity_type = 'athlete_reached_out_mark' order by audit_id`,
+        [gym.organizationId],
+      )).rows,
+    });
+    expect(await written()).toEqual({ marks: [], audits: [] });
+
+    // On the list (the boundary day, an active membership): marks, and a repeat writes nothing.
+    await expect(setStoppedComingReachedOut(gym.admin, 'fay', true, today)).resolves.toBe('marked');
+    await expect(setStoppedComingReachedOut(gym.coach, 'fay', true, today)).resolves.toBe('already_marked');
+    await expect(listStoppedComing(gym.coach, today)).resolves.toMatchObject({
+      athletes: [{ athlete_id: 'fay', reached_out: { by_name: null, on_day: today } }],
+    });
+
+    // Fay is then marked as left: a new mark is refused, but her mark can still be taken back.
+    await client.query(`update pilot.athletes set active_flag = false where organization_id = $1 and athlete_id = 'fay'`, [gym.organizationId]);
+    await expect(setStoppedComingReachedOut(gym.coach, 'fay', true, today)).rejects.toMatchObject(refused);
+    await expect(setStoppedComingReachedOut(gym.coach, 'fay', false, today)).resolves.toBe('taken_back');
+    expect(await written()).toEqual({
+      marks: [{ athlete_id: 'fay' }],
+      audits: [{ athlete_id: 'fay', event_type: 'create' }, { athlete_id: 'fay', event_type: 'update' }],
+    });
   });
 });

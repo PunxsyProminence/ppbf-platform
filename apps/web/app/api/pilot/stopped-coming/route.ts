@@ -24,8 +24,10 @@ export const dynamic = 'force-dynamic';
  * are refused before anything is read or written. The organization comes from
  * the session; query fields are refused. The PUT takes exactly its two fields
  * (no note can ride along: who and when only), for a live athlete of this gym
- * (404 otherwise); the module decides stale and replaced, and audits each
- * write. No account id leaves either handler.
+ * (404 otherwise); a mark (not a take-back) only for one on the list now, by
+ * the list's own rules (409 otherwise, nothing written). The module decides
+ * stale and replaced, and audits each write. No account id leaves either
+ * handler.
  *
  * It reads the staff-only session presence record for here marks the register
  * does not hold (open gym, a tap that created no register mark, a cancelled

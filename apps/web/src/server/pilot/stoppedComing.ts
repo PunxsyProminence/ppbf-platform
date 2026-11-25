@@ -54,8 +54,10 @@
  * is written and read under). Anyone else is refused with 403, never handed an
  * empty list: an empty list here reads as "nobody has stopped coming". A
  * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
- * the same list. A mark is for a live athlete of this gym only (404); both are
- * checked again under lock in the write, as sessionRunAthletes.ts does.
+ * the same list. A mark is for a live athlete of this gym (404) who is on the
+ * list now, by its own rules (409; the day rule read on the write's
+ * transaction); membership and athlete are checked again under lock in the
+ * write, as sessionRunAthletes.ts does.
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
  * route as readers of the staff-only presence record (Overwatch, W4-6 GO,
  * condition 1).
@@ -76,7 +78,7 @@ import type { ActorIdentity } from './access';
 import { getAttendanceLast28Days } from './attendancePrecedence';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
-import { ForbiddenError, NotFoundError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError } from './errors';
 import { type ReachedOut, type ReachedOutOutcome, readCurrentReachedOut, setReachedOutMark } from './reachedOutMarks';
 import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
 import { readStoppedComingPolicy, type StoppedComingGapDays } from './stoppedComingPolicy';
@@ -103,6 +105,11 @@ export interface StoppedComingList {
 
 function dayNumber(isoDay: string): number {
   return Math.round(Date.parse(`${isoDay}T00:00:00Z`) / 86_400_000);
+}
+
+/** Listed by the day rule: came at least once, and not for the gym's number of days, today included. */
+function goneLongEnough(lastCame: string | null, today: string, gapDays: number): lastCame is string {
+  return lastCame !== null && dayNumber(today) - dayNumber(lastCame) >= gapDays;
 }
 
 /** The later of the two sources' days (ISO days compare as text); null when neither: never came. */
@@ -195,9 +202,8 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
       register.get(athlete.athlete_id)?.last_present_day ?? null,
       openGym.get(athlete.athlete_id) ?? null,
     );
-    if (lastCame === null) continue;
+    if (!goneLongEnough(lastCame, today, policy.gap_days)) continue;
     const daysSince = todayNumber - dayNumber(lastCame);
-    if (daysSince < policy.gap_days) continue;
     athletes.push({
       athlete_id: athlete.athlete_id,
       full_name: athlete.full_name,
@@ -226,9 +232,15 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
 
 const NOT_STAFF_TO_MARK = 'Forbidden: only a coach or the gym admin of this gym marks who was reached out to';
 
+const NOT_LISTED = 'This athlete is not on the stopped-coming list now. Reload the page.';
+
 /**
  * Marks that the actor reached out to one athlete (`reachedOut` true), or
- * takes the mark back (false). The athlete must be a live athlete of this gym.
+ * takes the mark back (false). The athlete must be a live athlete of this gym
+ * (404), and a mark is only for one on the list now, by the list's own rules
+ * (not left, an active membership where any is recorded, came at least once,
+ * gone the gym's number of days; 409 otherwise, nothing written): a mark the
+ * page would never show is not written. A take-back needs no list check.
  * `today` is the gym-local day (gymDayIso), passed in so tests are fixed.
  */
 export async function setStoppedComingReachedOut(
@@ -242,8 +254,12 @@ export async function setStoppedComingReachedOut(
   }
   const organizationId = actor.organizationId;
   // Live athletes of this gym only: the table would take a soft-deleted one. 404, as athleteInjuries.ts answers.
-  if (!(await organizationActionableRoster(organizationId)).some((athlete) => athlete.athlete_id === athleteId)) {
-    throw new NotFoundError('Athlete not found.');
+  const athlete = (await organizationActionableRoster(organizationId)).find((row) => row.athlete_id === athleteId);
+  if (!athlete) throw new NotFoundError('Athlete not found.');
+  const policy = reachedOut ? await readStoppedComingPolicy(organizationId) : null;
+  if (reachedOut && (athlete.active_flag !== true
+    || (await athletesWithNoActiveMembership(organizationId, [athleteId])).has(athleteId))) {
+    throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
   }
   return withTransaction(async (client) => {
     // Both again, under lock, as sessionRunAthletes.ts marks a session: membership and account,
@@ -255,6 +271,9 @@ export async function setStoppedComingReachedOut(
     const register = await getAttendanceLast28Days(organizationId, [athleteId], today, client);
     const openGym = await lastOpenGymDays(organizationId, [athleteId], today, client);
     const lastCameDay = laterDay(register.get(athleteId)?.last_present_day ?? null, openGym.get(athleteId) ?? null);
+    if (policy && !goneLongEnough(lastCameDay, today, policy.gap_days)) {
+      throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
+    }
     return setReachedOutMark(client, { actor, role, athleteId, lastCameDay, reachedOut });
   });
 }

@@ -191,8 +191,8 @@ describe('PUT: the reached-out mark (SC-3a-2)', () => {
     }
   });
 
-  it('the module\'s refusals pass through: no staff membership here (403), not a live athlete of this gym (404)', async () => {
-    const { ForbiddenError, NotFoundError } = jest.requireActual('@/src/server/pilot/errors');
+  it('the module\'s refusals pass through: no staff membership here (403), not a live athlete of this gym (404), not on the list now (409)', async () => {
+    const { ConflictError, ForbiddenError, NotFoundError } = jest.requireActual('@/src/server/pilot/errors');
     mockPrincipal.mockResolvedValue(principal('coach'));
     mockMark.mockRejectedValueOnce(new ForbiddenError('Forbidden: only a coach or the gym admin of this gym marks who was reached out to'));
     expect((await put({ athlete_id: 'a-1', reached_out: true })).status).toBe(403);
@@ -200,6 +200,10 @@ describe('PUT: the reached-out mark (SC-3a-2)', () => {
     const response = await put({ athlete_id: 'a-gone', reached_out: true });
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe('Athlete not found.');
+    mockMark.mockRejectedValueOnce(new ConflictError('This athlete is not on the stopped-coming list now. Reload the page.', 'NOT_ON_STOPPED_COMING_LIST'));
+    const notListed = await put({ athlete_id: 'a-1', reached_out: true });
+    expect(notListed.status).toBe(409);
+    expect(await notListed.json()).toMatchObject({ code: 'NOT_ON_STOPPED_COMING_LIST' });
   });
 
   it('a caller with no session is refused before anything is written', async () => {

@@ -133,19 +133,27 @@ async function newGym(label: string): Promise<Gym> {
   return { organizationId, coach: actor(0), coach2: actor(1), admin: actor(2) };
 }
 
-/** An account with an active membership here and the display name the gym typed. */
-async function staffMember(organizationId: string, accountId: string, role: PilotRole, name: string) {
-  await client.query('insert into pilot.accounts (account_id, role, organization_id) values ($1, $2, $3)', [
-    accountId, role, organizationId,
+/**
+ * An account with an active membership here and, unless `name` is null, the staff name the gym
+ * typed. `home` is the account's home gym (default: here); `login` its sign-in address.
+ */
+async function staffMember(
+  organizationId: string, accountId: string, role: PilotRole, name: string | null,
+  { home = organizationId, login = null as string | null } = {},
+) {
+  await client.query('insert into pilot.accounts (account_id, role, organization_id, login_email) values ($1, $2, $3, $4)', [
+    accountId, role, home, login,
   ]);
   await client.query(
     'insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, $3, true)',
     [accountId, organizationId, role],
   );
-  await client.query(
-    'insert into pilot.account_profiles (organization_id, account_id, staff_display_name) values ($1, $2, $3)',
-    [organizationId, accountId, name],
-  );
+  if (name !== null) {
+    await client.query(
+      'insert into pilot.account_profiles (organization_id, account_id, staff_display_name) values ($1, $2, $3)',
+      [organizationId, accountId, name],
+    );
+  }
 }
 
 /** One transaction on `on` (default: the shared client), committed, or rolled back on a throw. */
@@ -425,13 +433,13 @@ describe('setReachedOutMark on a real database', () => {
 });
 
 describe('readCurrentReachedOut on a real database', () => {
-  test('a current mark shows only while newer than the last day they came, by display name and gym day, with no account id', async () => {
+  test('a current mark shows only while newer than the last day they came, by staff name and gym day, with no account id', async () => {
     const gym = await newGym('read');
     const other = await newGym('read-other');
-    await set(gym.coach, 'ada', day(-20), true); // newer: shown, a coach signs "Coach"
+    await set(gym.coach, 'ada', day(-20), true); // newer: shown, by the staff name, no title added
     await set(gym.admin, 'ben', day(-20), true);
     await backdate(gym, 'ben', day(-20)); // marked on the day they last came: stale, not shown
-    await set(gym.admin, 'cy', null, true); // never came: no mark is stale; an admin signs without "Coach"
+    await set(gym.admin, 'cy', null, true); // never came: no mark is stale
     await set(gym.coach, 'dee', day(-20), true);
     await set(gym.coach, 'dee', day(-20), false); // taken back: not current
     await set(other.coach, 'ada', day(-20), true); // another gym's athlete of the same id
@@ -439,7 +447,7 @@ describe('readCurrentReachedOut on a real database', () => {
     const lastCame = new Map<string, string | null>([['ada', day(-20)], ['ben', day(-20)], ['cy', null], ['dee', day(-20)]]);
     const shown = await readCurrentReachedOut(gym.organizationId, lastCame);
     expect(Object.fromEntries(shown)).toEqual({
-      ada: { by_name: 'Coach Jordan', on_day: TODAY },
+      ada: { by_name: 'Jordan', on_day: TODAY },
       cy: { by_name: 'Pat', on_day: TODAY },
     });
     const text = JSON.stringify(Object.fromEntries(shown));
@@ -447,23 +455,53 @@ describe('readCurrentReachedOut on a real database', () => {
 
     // The other gym reads its own mark only.
     expect(Object.fromEntries(await readCurrentReachedOut(other.organizationId, new Map([['ada', day(-20)], ['ben', null]]))))
-      .toEqual({ ada: { by_name: 'Coach Jordan', on_day: TODAY } });
+      .toEqual({ ada: { by_name: 'Jordan', on_day: TODAY } });
     // Nothing asked, nothing read.
     expect((await readCurrentReachedOut(gym.organizationId, new Map())).size).toBe(0);
   });
 
-  test('a mark whose marker account was deleted stays, and its by_name is null: who it was is no longer known', async () => {
-    const gym = await newGym('gone');
-    const leaverId = `acct-leaver-${gymCount}`;
-    await staffMember(gym.organizationId, leaverId, 'coach', 'Robin');
-    const leaver: ActorIdentity = { organizationId: gym.organizationId, accountId: leaverId, role: 'coach', athleteId: null };
-    await set(leaver, 'ada', day(-20), true);
-    await expect(readCurrentReachedOut(gym.organizationId, new Map([['ada', day(-20)]])))
-      .resolves.toEqual(new Map([['ada', { by_name: 'Coach Robin', on_day: TODAY }]]));
+  // Reviewer K: a marker who cannot be named is null, never a stand-in that reads as a name.
+  test('by_name is null when the marker cannot be named: account deleted (row gone, or marked deleted), membership here ended while homed elsewhere, no name on record', async () => {
+    const gym = await newGym('unnamed');
+    const elsewhere = await newGym('unnamed-home');
+    const n = gymCount;
+    const marker = (accountId: string, role: PilotRole): ActorIdentity => ({ organizationId: gym.organizationId, accountId, role, athleteId: null });
+    // ada: the account row is deleted (the foreign key's SET NULL).
+    await staffMember(gym.organizationId, `acct-gone-${n}`, 'coach', 'Robin');
+    // ben: the account is marked deleted (deleted_at), its row and id kept.
+    await staffMember(gym.organizationId, `acct-deleted-${n}`, 'coach', 'Kim');
+    // cy: an admin homed at another gym whose membership here then ends.
+    await staffMember(gym.organizationId, `acct-visitor-${n}`, 'organization_admin', 'Lee', { home: elsewhere.organizationId });
+    // dee: a coach with no typed name and a generic login (a role word names nobody).
+    await staffMember(gym.organizationId, `acct-generic-${n}`, 'coach', null, { login: 'coach@example.org' });
+    await set(marker(`acct-gone-${n}`, 'coach'), 'ada', day(-20), true);
+    await set(marker(`acct-deleted-${n}`, 'coach'), 'ben', day(-20), true);
+    await set(marker(`acct-visitor-${n}`, 'organization_admin'), 'cy', day(-20), true);
+    await set(marker(`acct-generic-${n}`, 'coach'), 'dee', day(-20), true);
+    const lastCame = new Map<string, string | null>([['ada', day(-20)], ['ben', day(-20)], ['cy', day(-20)], ['dee', day(-20)]]);
 
-    await client.query('delete from pilot.accounts where account_id = $1', [leaverId]);
+    // Before: the three with a name on record are named, the generic login is not.
+    expect(Object.fromEntries(await readCurrentReachedOut(gym.organizationId, lastCame))).toEqual({
+      ada: { by_name: 'Robin', on_day: TODAY },
+      ben: { by_name: 'Kim', on_day: TODAY },
+      cy: { by_name: 'Lee', on_day: TODAY },
+      dee: { by_name: null, on_day: TODAY },
+    });
+
+    await client.query('delete from pilot.accounts where account_id = $1', [`acct-gone-${n}`]);
+    await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [`acct-deleted-${n}`]);
+    await client.query(
+      'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+      [`acct-visitor-${n}`, gym.organizationId],
+    );
     expect(await marks(gym, 'ada')).toEqual([expect.objectContaining({ marked_by_account_id: null, ended: false })]);
-    await expect(readCurrentReachedOut(gym.organizationId, new Map([['ada', day(-20)]])))
-      .resolves.toEqual(new Map([['ada', { by_name: null, on_day: TODAY }]]));
+    const shown = await readCurrentReachedOut(gym.organizationId, lastCame);
+    expect(Object.fromEntries(shown)).toEqual({
+      ada: { by_name: null, on_day: TODAY },
+      ben: { by_name: null, on_day: TODAY },
+      cy: { by_name: null, on_day: TODAY },
+      dee: { by_name: null, on_day: TODAY },
+    });
+    expect(JSON.stringify(Object.fromEntries(shown))).not.toMatch(/acct-|Coach|Gym office|Your coach/);
   });
 });
