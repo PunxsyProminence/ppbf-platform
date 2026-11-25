@@ -162,6 +162,52 @@ describe('FamilyThreadsForStaff', () => {
     expect(await screen.findByLabelText('Reply to First Guardian')).toHaveValue('Half written');
   });
 
+  test("a late answer for the last child, arriving after the next child's, does not replace it", async () => {
+    let releaseA: (response: Response) => void = () => {};
+    let readsOfA = 0;
+    global.fetch = jest.fn((url: string) => {
+      const key = String(url);
+      if (key.includes('athlete_id=ath-1')) {
+        readsOfA += 1;
+        return new Promise<Response>((resolve) => { releaseA = resolve; });
+      }
+      if (key.includes('athlete_id=ath-2')) return Promise.resolve(jsonResponse({ ok: true, items: [] }));
+      throw new Error(`Unexpected fetch: ${key}`);
+    }) as unknown as typeof fetch;
+    const { rerender } = render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    await waitFor(() => expect(readsOfA).toBe(1));
+    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
+
+    await act(async () => releaseA(jsonResponse({ ok: true, items: [THREAD] })));
+    expect(screen.getByText('No messages from the family yet.')).toBeInTheDocument();
+    expect(screen.queryByText('Is practice on Saturday?')).toBeNull();
+  });
+
+  test('coming back to a child is a new visit: a post read on the last visit is not New again', async () => {
+    let readsOfA = 0;
+    global.fetch = jest.fn((url: string) => {
+      const key = String(url);
+      if (key.includes('athlete_id=ath-1')) {
+        readsOfA += 1;
+        const posts = THREAD.posts.map((post) => ({ ...post, new_to_me: readsOfA === 1 && post.new_to_me }));
+        return Promise.resolve(jsonResponse({ ok: true, items: [{ ...THREAD, posts }] }));
+      }
+      if (key.includes('athlete_id=ath-2')) return Promise.resolve(jsonResponse({ ok: true, items: [] }));
+      throw new Error(`Unexpected fetch: ${key}`);
+    }) as unknown as typeof fetch;
+    const { rerender } = render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    const first = await screen.findByText('Is practice on Saturday?');
+    expect(within(first.closest('li') as HTMLElement).getByText('New')).toBeInTheDocument();
+
+    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    await screen.findByText('No messages from the family yet.');
+    rerender(<FamilyThreadsForStaff athleteId="ath-1" />);
+    await waitFor(() => expect(readsOfA).toBe(2));
+    const again = await screen.findByText('Is practice on Saturday?');
+    expect(within(again.closest('li') as HTMLElement).queryByText('New')).toBeNull();
+  });
+
   describe('seeing a guardian post (half on screen, FC-05 Q-1 A)', () => {
     class FakeObserver {
       static instances: FakeObserver[] = [];

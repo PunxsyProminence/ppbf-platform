@@ -243,6 +243,32 @@ test('a tap on the athlete already on screen only goes to the family section: th
   }
 });
 
+test('a tap on the athlete on screen while their records are read goes to the family section once they are in (W4 item 4)', async () => {
+  let release: () => void = () => {};
+  let held = false;
+  installFetch({
+    familyThreadsUnread: () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath-2', unseen: 2 }] }),
+    medicalStatus: () => {
+      if (held) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
+      held = true;
+      return new Promise<Response>((resolve) => { release = () => resolve(jsonResponse({ status: null, effectiveStatus: 'no_record' })); });
+    },
+  });
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+  try {
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-2' } });
+    fireEvent.click(await within(athletePicker().closest('section') as HTMLElement).findByRole('button', { name: 'Second Athlete (2 new)' }));
+    expect(scrolled).toEqual([]);
+    await act(async () => release());
+    await waitFor(() => expect(scrolled.map((element) => element.id)).toEqual([POST_TO_FAMILY_SECTION]));
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
 test('once the panel records a guardian post as seen, the line under the picker is read again (W4 item 4)', async () => {
   let unseen = 1;
   installFetch({

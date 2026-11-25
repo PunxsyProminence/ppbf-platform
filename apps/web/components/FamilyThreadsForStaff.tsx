@@ -63,10 +63,15 @@ export default function FamilyThreadsForStaff({
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [sending, setSending] = useState<string | null>(null);
+  const [sending, setSending] = useState<Record<string, boolean>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const seq = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
+  // Held in a ref so a caller's new function does not re-start the watch.
+  const onSeenRef = useRef(onSeen);
+  useEffect(() => {
+    onSeenRef.current = onSeen;
+  }, [onSeen]);
   // This visit to this athlete: the guardian posts that were new (New stays after a re-read),
   // and the reads sent (a failed write leaves the set, so the next read watches it again).
   const visit = useRef<{ athleteId: string; newIds: Set<string>; readsSent: Set<string> }>(
@@ -140,7 +145,7 @@ export default function FamilyThreadsForStaff({
           body: JSON.stringify({ post_id: postId }),
         })
           .then((response) => {
-            if (response.ok) onSeen?.();
+            if (response.ok) onSeenRef.current?.();
             else failed();
           })
           .catch(failed);
@@ -151,7 +156,7 @@ export default function FamilyThreadsForStaff({
       if (unseen.has(element.dataset.readPost ?? '')) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, [read, athleteId, onSeen]);
+  }, [read, athleteId]);
 
   async function sendReply(threadId: string) {
     const text = (drafts[threadId] ?? '').trim();
@@ -159,7 +164,7 @@ export default function FamilyThreadsForStaff({
       setReplyErrors((held) => ({ ...held, [threadId]: 'Write a reply before sending.' }));
       return;
     }
-    setSending(threadId);
+    setSending((held) => ({ ...held, [threadId]: true }));
     setReplyErrors((held) => ({ ...held, [threadId]: '' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/family-threads`, {
@@ -180,7 +185,7 @@ export default function FamilyThreadsForStaff({
     } catch {
       setReplyErrors((held) => ({ ...held, [threadId]: 'Your reply was not sent; it is still in the box. Check the connection and send again.' }));
     } finally {
-      setSending(null);
+      setSending((held) => ({ ...held, [threadId]: false }));
     }
   }
 
@@ -245,10 +250,10 @@ export default function FamilyThreadsForStaff({
                 <button
                   type="submit"
                   className="btn btn--ghost"
-                  disabled={sending !== null}
-                  aria-label={`Send reply to ${thread.guardian_name}`}
+                  disabled={sending[thread.thread_id]}
+                  aria-label={`${sending[thread.thread_id] ? 'Sending reply to' : 'Send reply to'} ${thread.guardian_name}`}
                 >
-                  {sending === thread.thread_id ? 'Sending…' : 'Send reply'}
+                  {sending[thread.thread_id] ? 'Sending…' : 'Send reply'}
                 </button>
                 {replyErrors[thread.thread_id] ? (
                   <p role="alert" className="t-body">{replyErrors[thread.thread_id]}</p>

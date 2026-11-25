@@ -1341,9 +1341,11 @@ export default function DecisionLoopReviewPage() {
                 refreshKey={`${athleteId}:${familyThreadsSeen}`}
                 onChoose={(chosen) => {
                   // The athlete already on screen is not chosen again (that would drop their
-                  // records' read and the notices): the page only goes to the family section.
+                  // records' read and the notices): the page only goes to the family section,
+                  // once their records are read, as for any other choice.
                   if (chosen === athleteId) {
-                    document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
+                    if (loadState === 'loading') scrollToFamilyRef.current = true;
+                    else document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
                     return;
                   }
                   scrollToFamilyRef.current = true;
