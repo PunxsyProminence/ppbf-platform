@@ -75,7 +75,7 @@ describe('POST /api/pilot/coach/family-thread-reads (W4 item 4)', () => {
     expect((await post({ post_id: POST_ID })).status).toBe(status);
   });
 
-  test.each(['parent', 'athlete', 'board', 'platform_owner'])('%s is refused', async (role) => {
+  test.each(['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'])('%s is refused', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     expect((await post({ post_id: POST_ID })).status).toBe(403);
     expect(mockRecord).not.toHaveBeenCalled();

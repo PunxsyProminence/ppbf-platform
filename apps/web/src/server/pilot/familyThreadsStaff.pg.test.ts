@@ -39,15 +39,21 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 // Routes familyThreads.ts's, access.ts's, audit.ts's and achievements.ts's queries into whichever
 // embedded database the current test opened. Declared before the import so jest's hoisting sees it.
 let activeClient: Client | null = null;
+// Set while withTransaction's callback runs. The mock's pooled query and queryOne refuse then: in
+// production they would run on another connection, outside the transaction, so a write that
+// forgot the transaction's client must fail here rather than pass by sharing this one.
+let inTransaction = false;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
+    if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
   queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
+    if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
@@ -55,11 +61,14 @@ jest.mock('./db', () => ({
     if (!activeClient) throw new Error('test bug: no active embedded client');
     const client = activeClient;
     await client.query('BEGIN');
+    inTransaction = true;
     try {
       const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+      inTransaction = false;
       await client.query('COMMIT');
       return result;
     } catch (error) {
+      inTransaction = false;
       await client.query('ROLLBACK').catch(() => {});
       throw error;
     }
@@ -179,6 +188,14 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, `parent-${account}`, account, fullName],
     );
   }
+  // The first guardian's account also holds a parent record in this gym linked to no child, and
+  // one in the other gym linked to that gym's child; both names sort before theirs. Staff must
+  // still see the name on the record linked to this child in this gym (Q4 A).
+  await client.query(
+    `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+     values ($1, 'parent-unlinked-record', $2, 'Aab Unlinked Record'), ($3, 'parent-elsewhere-record', $2, 'Aaa Elsewhere Record')`,
+    [ORG, GUARDIAN, OTHER_ORG],
+  );
   const links: Array<[string, string, string]> = [
     [ORG, GUARDIAN, CHILD],
     [ORG, GUARDIAN, SIBLING],
@@ -191,6 +208,11 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, `parent-${account}`, athlete],
     );
   }
+  await client.query(
+    `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+     values ($1, 'parent-elsewhere-record', $2, 'guardian')`,
+    [OTHER_ORG, CHILD],
+  );
   activeClient = client;
   return client;
 }
@@ -356,18 +378,22 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD]);
     await expect(reply(COACH, opened.thread_id)).rejects.toMatchObject({ status: 404 });
     await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)).rejects.toMatchObject({ status: 404 });
+    await expect(threads.listFamilyThreadsForStaff(staff(COACH), CHILD)).rejects.toThrow('Forbidden');
     expect(await counts(client)).toEqual(before);
   });
 
-  test('a role outside the staff list is refused by the store itself, and an organization admin answers', async () => {
+  test('a role outside the staff list is refused by the store itself, and an organization admin reads and answers', async () => {
     const client = await freshDatabase('fts_roles');
     const opened = await open(GUARDIAN);
-    for (const role of ['parent', 'athlete', 'board', 'platform_owner'] as PilotRole[]) {
+    for (const role of ['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
       await expect(reply(GUARDIAN, opened.thread_id, role)).rejects.toThrow('Forbidden');
       await expect(threads.recordFamilyThreadReadByStaff(staff(GUARDIAN, role), opened.post_id)).rejects.toThrow('Forbidden');
+      // The co-guardian, called as anything but staff, reads nothing of the first guardian's thread.
+      await expect(threads.listFamilyThreadsForStaff(staff(CO_GUARDIAN, role), CHILD)).rejects.toThrow('Forbidden');
     }
     expect(await counts(client)).toEqual({ posts: 1, reads: 0, audits: 0 });
 
+    expect(await threads.listFamilyThreadsForStaff(staff(GYM_ADMIN, 'organization_admin'), CHILD)).toHaveLength(1);
     const answer = await reply(GYM_ADMIN, opened.thread_id, 'organization_admin');
     await threads.recordFamilyThreadReadByStaff(staff(GYM_ADMIN, 'organization_admin'), opened.post_id);
     const audit = await client.query(`select actor_role from pilot.audit_events where entity_id = $1`, [answer.post_id]);

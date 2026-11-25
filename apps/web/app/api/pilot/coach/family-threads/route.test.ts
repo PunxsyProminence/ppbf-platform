@@ -79,7 +79,7 @@ describe('GET /api/pilot/coach/family-threads (W4 item 4)', () => {
     expect(mockList).not.toHaveBeenCalled();
   });
 
-  test.each(['parent', 'athlete', 'board', 'platform_owner'])('%s is refused', async (role) => {
+  test.each(['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'])('%s is refused', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     expect((await get()).status).toBe(403);
     expect(mockAccess).not.toHaveBeenCalled();
@@ -133,7 +133,7 @@ describe('POST /api/pilot/coach/family-threads (W4 item 4)', () => {
     expect((await post({ thread_id: THREAD, text: 'x' })).status).toBe(status);
   });
 
-  test.each(['parent', 'athlete', 'board', 'platform_owner'])('%s is refused', async (role) => {
+  test.each(['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'])('%s is refused', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     expect((await post({ thread_id: THREAD, text: 'Hi' })).status).toBe(403);
     expect(mockReply).not.toHaveBeenCalled();

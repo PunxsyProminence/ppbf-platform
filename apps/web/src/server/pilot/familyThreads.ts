@@ -323,10 +323,12 @@ async function reachOrNotHere(staff: FamilyThreadStaff, athleteId: string): Prom
 
 /**
  * Every thread on one athlete, for the gym's staff: newest first, each with
- * the opener's name and every post oldest first. The caller has already
- * passed assertActorCanAccessAthlete on this athlete (the route's gate).
+ * the opener's name and every post oldest first. Gated here too, not only in
+ * the route: a staff role, and an athlete this staff member reaches.
  */
 export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athleteId: string): Promise<StaffThread[]> {
+  requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
+  await assertActorCanAccessAthlete({ ...staff, athleteId: null }, athleteId);
   const rows = await query<{
     thread_id: string;
     athlete_id: string;
