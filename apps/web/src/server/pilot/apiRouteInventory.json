@@ -8675,6 +8675,68 @@
     }
   },
   {
+    "id": "app/api/pilot/email-alerts/me/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/email-alerts/me",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller's own email alert switch (lane W4-1 EM-1; OD-2026-11-19-019, OW27-10 A). Returns { offered: false } for an athlete under 18 or with no date of birth (OW27-02 C; OD-2026-10-04-010), else the user type, on/off and, for an adult athlete, whether an address is confirmed. Reads the caller's own athlete date of birth to decide; returns no address.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/me/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/email-alerts/me",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store refuses an athlete under 18 or with no date of birth (403); self-scoped",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Switches the caller's own email alert on or off (lane W4-1 EM-1). Body is exactly { switched_on: boolean }. An adult athlete cannot switch on before an address is confirmed (409; table CHECK too). Upsert and audit row (user type, before and after; no address) in one transaction, not mirrored.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/gym-tvs/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/gym-tvs",
