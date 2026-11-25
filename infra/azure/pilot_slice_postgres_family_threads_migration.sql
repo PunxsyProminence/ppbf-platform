@@ -48,7 +48,9 @@
 -- author"), and author_role still says who wrote it. A read is never changed:
 -- the first time is the record (FC-04 Q-B default A), and it goes with the
 -- reader's account (FC-04 Q-D default A). created_at and first_read_at are the
--- database's clock, whatever a caller sends.
+-- database's clock at the moment of the write (clock_timestamp(), so a reply
+-- never sorts before a question written in an older transaction), whatever a
+-- caller sends.
 --
 -- NOT DELETED BY HAND. A DELETE issued directly is refused; one that arrives as
 -- a cascade (the athlete, the gym, an opening post or an account going) runs
@@ -143,7 +145,7 @@ begin
        or new.author_role not in ('parent', 'coach', 'organization_admin', 'admin') then
       return new;
     end if;
-    new.created_at := now();
+    new.created_at := clock_timestamp();
     -- Every post is written by someone. Only the account's removal, later,
     -- may take the author away (D-9).
     if new.author_account_id is null then
@@ -277,7 +279,7 @@ begin
        or new.reader_role not in ('parent', 'coach', 'organization_admin', 'admin') then
       return new;
     end if;
-    new.first_read_at := now();
+    new.first_read_at := clock_timestamp();
 
     select p.author_role, p.athlete_id, o.author_account_id as opener_account_id
       into post

@@ -132,8 +132,9 @@ function read(
   );
 }
 
-// A guardian's account removed the way the purge removes it: the guardian record lets go of the
-// login first (pilot.parents.account_id has no delete action), then the account goes.
+// A guardian's account removed: pilot.parents.account_id has no delete action, so the guardian
+// record must stop pointing at the login before the account row can go. (The purge deletes the
+// guardian record itself, then the account; the posts end the same way, detached.)
 async function removeAccount(client: Client, account: string): Promise<void> {
   await client.query('update pilot.parents set account_id = null where account_id = $1', [account]);
   await client.query('delete from pilot.accounts where account_id = $1', [account]);
@@ -661,6 +662,29 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
     }
   });
 
+  test('a reply written in a transaction older than its question still sorts after it', async () => {
+    const client = await freshDatabase('fthreads_clock_order');
+    const older = new Client({ connectionString: connectionStringFor('fthreads_clock_order') });
+    await older.connect();
+    try {
+      // The reply's transaction starts first, so its now() is earlier than the question's.
+      await older.query('begin');
+      await older.query('select now()');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await post(client, { postId: NEW_POST });
+      await post(older, { postId: '99999999-9999-4999-8999-999999999999', threadId: NEW_POST, author: COACH, role: 'coach' });
+      await older.query('commit');
+      const order = await client.query(
+        'select post_id::text from pilot.family_thread_posts where thread_id = $1::uuid order by created_at',
+        [NEW_POST],
+      );
+      expect(order.rows.map((row) => row.post_id)).toEqual([NEW_POST, '99999999-9999-4999-8999-999999999999']);
+    } finally {
+      await older.end();
+      await client.end();
+    }
+  });
+
   test('a second look is the same row and keeps the first time; a read is never changed', async () => {
     const client = await freshDatabase('fthreads_first');
     try {
@@ -810,6 +834,16 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
         new Set(READINESS.filter((name) => !name.endsWith('_table_ready'))),
       );
       // Each refusal was rolled back: the migration's own shape still passes.
+      await applyRunner(client, migrationSql);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a later migration that adds a column to either table does not make the runner refuse on re-run', async () => {
+    const client = await freshDatabase('fthreads_later_column');
+    try {
+      await client.query(`alter table ${P} add column later_note text null; alter table ${R} add column later_flag boolean null`);
       await applyRunner(client, migrationSql);
     } finally {
       await client.end();
