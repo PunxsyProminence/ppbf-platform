@@ -7,7 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import DecisionLoopReviewPage from './page';
-import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { handOffArrivalAthlete, POST_TO_FAMILY_SECTION, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 /* A PROBE ON EVERY COMMIT. WorkAxis sits at the foot of the page and renders
    whenever the page does. This stand-in records, after each commit and before
@@ -173,6 +173,9 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       return jsonResponse({ ok: true, items: [] });
     }
     // Messages a guardian started to the coach, and the unread line (W4 item 4); none here.
+    if (key.includes('/api/pilot/coach/family-threads/unread') && overrides.familyThreadsUnread) {
+      return (overrides.familyThreadsUnread as () => Response)();
+    }
     if (key.includes('/api/pilot/coach/family-threads')) {
       return jsonResponse({ ok: true, items: [] });
     }
@@ -194,6 +197,23 @@ const originalFetch = global.fetch;
 afterEach(() => {
   global.fetch = originalFetch;
   jest.clearAllMocks();
+});
+
+test('under the Athlete picker, an athlete with unseen family messages is named; a tap chooses them and goes to the family section (W4 item 4)', async () => {
+  installFetch({ familyThreadsUnread: () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath-2', unseen: 2 }] }) });
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+  try {
+    render(<DecisionLoopReviewPage />);
+    const picker = await rosterLoaded();
+    const section = picker.closest('section') as HTMLElement;
+    fireEvent.click(await within(section).findByRole('button', { name: 'Second Athlete (2 new)' }));
+    await waitFor(() => expect(athletePicker().value).toBe('ath-2'));
+    await waitFor(() => expect(scrolled.map((element) => element.id)).toContain(POST_TO_FAMILY_SECTION));
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
 });
 
 test('logging a behavior note posts entity_type coach_note with a generic note_type, no invented taxonomy', async () => {
