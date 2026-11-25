@@ -20,11 +20,13 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-25-001 | 2026-11-25 | Build the rest of W4 fast: five W4 build lanes and a privacy review at once, as cloud sessions on the desktop account, Sonnet work on admin@, and release main `348e126d` | PRIMARY |  |  |
+| OD-2026-11-24-007 | 2026-11-24 | The no-new-lanes hold is lifted | PRIMARY |  |  |
 | OD-2026-11-24-006 | 2026-11-24 | Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging | PRIMARY |  |  |
 | OD-2026-11-24-005 | 2026-11-24 | Delete the earlier GitHub edit-history revisions of the texts rewritten in general terms | PRIMARY |  |  |
 | OD-2026-11-24-004 | 2026-11-24 | Release of main `7a0d2da4ce906eac3a1b1a2ee0f50bd489169d0c` to production; App Overwatch approves the gate when Jason's click does not register within 60 seconds | PRIMARY |  |  |
 | OD-2026-11-24-003 | 2026-11-24 | The SHADOW chat hidden-topic gap is fixed before the release goes to production | PRIMARY |  |  |
-| OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY |  |  |
+| OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY | partly replaced by OD-2026-11-24-007 (the no-new-lanes hold; the account roles stand) (2026-11-24) |  |
 | OD-2026-11-24-001 | 2026-11-24 | Every AI runs a 30-minute check and posts its questions to a named recipient | PRIMARY |  |  |
 | OD-2026-11-23-008 | 2026-11-23 | The next release waits for the sign-in work, with four add-ons | PRIMARY |  |  |
 | OD-2026-11-23-007 | 2026-11-23 | The sign-in page: parents first, "Sign In" heading, password label, one PIN form, Microsoft errors say where, change-PIN words (SIGNIN-FIX Q2 to Q8) | PRIMARY |  |  |
@@ -664,6 +666,42 @@ and should not try to.
 
 ---
 
+## OD-2026-11-25-001 -- Build the rest of W4 fast: five W4 build lanes and a privacy review at once, as cloud sessions on the desktop account, Sonnet work on admin@, and release main `348e126d`
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-25 00:07:35 UTC, PRIMARY), after App Overwatch said the W4 lanes would wait for admin@'s weekly reset:** *"Well we have plenty of usage  on this account"*
+
+**Jason (2026-11-25 01:56:42 UTC, PRIMARY):** *"look at the claue account Admin@ i have the usage pulled up between that account and this account come up wit the most effcient way to get the remaining oitem built fast"*
+
+**Question as App Overwatch put it (2026-11-25, in its reply):** "Official form: approve this plan? Options: A (recommended): all of it: five W4 lanes in the cloud on this account now, Sonnet work on admin@, and the release of `348e126d`. B: the same, but local sessions on this PC instead of cloud (about one building lane at a time). C: start fewer lanes."
+
+**Jason (2026-11-25 01:58:48 UTC, PRIMARY):** *"A ans what the ETA"*
+
+**Ruling:** A. W4 items 1, 4, 6, 7 and 8 and item 3's privacy review run at once as cloud sessions on the desktop account; admin@ takes the Sonnet work; main `348e126d` is released.
+
+**Applied (Overwatch, not his words):** usage read live before the plan: the desktop account at 6% of its weekly limit, admin@ at 79% with one free full reset that expires 2026-12-10 (kept for when admin@ reaches its limit). Six cloud sessions started, each with an App Overwatch GO on its plan PR after a fresh reviewer's read: W4-1 #2159, W4-4 #2161, W4-6 #2163, W4-7 #2158, W4-8 #2162, W4-3 (privacy review) #2160. Release: deploy-staging run 45530131239 (image `sha256:a2bd563e04fcd64de740c3129a90d13672e735cc4c61ac10435ca18f8ede6f9f`), the changed words checked on staging as the organization admin, deploy-production run 45531112008 approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds), revision `app-ppbf-production--0000217` at 100% traffic, www returned 200. The ETA given was an estimate (INFERRED), about 3 to 5 days for W4.
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-24-007 -- The no-new-lanes hold is lifted
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; it partly replaces OD-2026-11-24-002 (the status line there says which part).
+
+**Question as App Overwatch put it (2026-11-24, after it found no lane open and the build waiting on the hold):** "Lift the no-new-lanes hold so Overwatch can start the next build item?" Options: "Lift it"; "Keep the hold".
+
+**Jason (2026-11-24 21:29:19 UTC, PRIMARY):** *"Lift it"*
+
+**Ruling:** OD-2026-11-24-002's "do not start any new lanes" no longer holds. App Overwatch starts lanes by the collision rule (Jason 2026-11-20: "no cap the only restiction is collision validate that the lane wont collide before starting"). The account roles in OD-2026-11-24-002 stand.
+
+**Applied (Overwatch, not his words):** lane AS-13 started (cloud, admin@); its part a merged as #2157 (`348e126d`) and was released (OD-2026-11-25-001).
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
 ## OD-2026-11-24-006 -- Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging
 
 **Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
@@ -747,6 +785,8 @@ and should not try to.
 **Applied (Overwatch, not his words):** written into the workspace rules on his PC (CLAUDE ACCOUNTS). Which login "my personal pro accout" is was read as his gmail account (INFERRED from his 2026-10-10 and 2026-11-21 words); the desktop session confirms its own login. Observed 2026-11-24 about 18:00 UTC: the desktop App Overwatch session was still signed in as admin@, so the switch was not yet made.
 
 **Status:** recorded 2026-11-24 by PR.
+
+**Status, 2026-11-24:** partly replaced by OD-2026-11-24-007 (the no-new-lanes hold; the account roles stand)
 
 ---
 
