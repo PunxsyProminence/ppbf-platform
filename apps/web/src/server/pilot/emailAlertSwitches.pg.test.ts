@@ -189,6 +189,15 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
     );
   }
 
+  // Each account is a member of its own gym, as resolvePrincipal requires; the
+  // switch's membership key (pilot_email_alert_switch_membership_fk) needs it.
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     select account_id, organization_id, role, true from pilot.accounts where organization_id = $1
+     on conflict do nothing`,
+    [ORG_ID],
+  );
+
   if (preMigration) {
     await client.query('drop table if exists pilot.email_alert_switches cascade');
   } else {
