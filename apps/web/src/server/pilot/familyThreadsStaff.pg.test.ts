@@ -403,15 +403,18 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     expect((await counts(client)).reads).toBe(1);
   });
 
-  test("the store's own checks hold with the database guards switched off", async () => {
-    // The database refuses these too (migration family-threads). Switched off here, so each 404
-    // below is the store's own check (familyThreads.ts), not the trigger's.
+  test("the store's own checks hold with the database guards and the thread and post keys switched off", async () => {
+    // The database refuses these too (migration family-threads): its guards, and the keys that tie
+    // a post to its thread and a read to its post in the same gym. Switched off here, in this
+    // throwaway database, so each 404 below is the store's own check (familyThreads.ts).
     const client = await freshDatabase('fts_store_checks');
     const opened = await open(GUARDIAN);
     const answer = await reply(COACH, opened.thread_id);
     const elsewhere = await open(OTHER_GYM_GUARDIAN, CHILD, OTHER_ORG);
     await client.query(`alter table pilot.family_thread_posts disable trigger trg_family_thread_posts_guard;
-      alter table pilot.family_thread_reads disable trigger trg_family_thread_reads_guard`);
+      alter table pilot.family_thread_reads disable trigger trg_family_thread_reads_guard;
+      alter table pilot.family_thread_reads drop constraint pilot_family_thread_reads_post_fk;
+      alter table pilot.family_thread_posts drop constraint pilot_family_thread_posts_thread_fk`);
     const before = await counts(client);
 
     await expect(reply(COACH, answer.post_id)).rejects.toMatchObject({ status: 404 });
