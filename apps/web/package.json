@@ -322,6 +322,7 @@
     "test:migrations:athlete-rest-marks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/restMarks.pg.test.ts --testTimeout=300000",
     "test:migrations:organization-tablet-idle-policy": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/tabletIdlePolicy.pg.test.ts --testTimeout=300000",
     "test:migrations:organization-stopped-coming-policy": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/stoppedComingPolicyMigration.pg.test.ts --testTimeout=300000",
+    "test:migrations:stopped-coming-policy": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/stoppedComingPolicy.pg.test.ts --testTimeout=300000",
     "test:migrations:drill-exit-correction-fields": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillExitCorrectionFields.pg.test.ts --testTimeout=300000",
     "test:migrations:ft1-content": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/ft1ContentPackage.pg.test.ts --testTimeout=300000",
     "test:migrations:yr-content": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/yrContentPackage.pg.test.ts --testTimeout=300000",
