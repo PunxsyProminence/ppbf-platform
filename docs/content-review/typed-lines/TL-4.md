@@ -203,5 +203,8 @@ Source: the 13 typed steps of `wtp_456e418b1741b8` (Iso + Plyo 60-Minute Boxing 
 ## Durations (the rule App Overwatch set on #2177, and its extension to title minutes on #2186)
 
 - Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose details state a time of its own (its `block_time` range, or, where it has none of its own, the minutes its own `block_title` states), held by no other step of its template, carries it as its duration, at contact none or light_technical.
-- Step 21 ("58:00–60:00", the Reset block) carries 2 minutes. Every other linked step shares its block time and its block title with other steps (0:00–8:00, 8:00–18:00, 18:00–35:00, 35:00–50:00, 50:00–58:00), so it stays blank.
+- Step 21 ("58:00–60:00", the Reset block) carries 2 minutes.
+- Stated but not carried, so blank (only a step's own whole minutes fill the column; App Overwatch on #2162):
+  - every other linked step shares its block time and its block title with other steps (0:00–8:00, 8:00–18:00, 18:00–35:00, 35:00–50:00, 50:00–58:00);
+  - their typed lines give only times inside a round or a set: step 15 "rest 45–60 sec", step 19 "Fast punches 20 sec" and "Rest 20 sec", step 20 "30 sec punch out", "30 sec bounce" and "30 sec rest" (steps 19 and 20 are alternatives for the same 50:00–58:00 block).
 - The template's own `items` label gains a lane `duration_minutes` part (INFERRED; its basis names the step, its block time and its minutes). `typedLinesContent.test.ts` pins the step (`TIMED_STEPS`); the frozen youth-recreational case expects `drill_id, duration_minutes` on it (`LANE_W48_DURATIONS`; UNVERIFIED here).
