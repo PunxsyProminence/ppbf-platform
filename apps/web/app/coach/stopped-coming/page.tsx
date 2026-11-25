@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import RefusalStamp from '@/components/RefusalStamp';
+import RefusalStamp, { REFUSAL_STAMP_COPY } from '@/components/RefusalStamp';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
 import { apiBase } from '@/lib/apiBase';
@@ -34,11 +34,13 @@ import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopAr
 // whole gym). The gate below is the courtesy copy; the API is the authority.
 //
 // THE "REACHED OUT" MARK (SC-3b; OW27-33 B, so two coaches do not both reach
-// out, or neither). Who and when only (Overwatch W4-6 Q4 A): a row's button
-// sends PUT { athlete_id, reached_out } and pressing it again takes the mark
-// back. Every answer is followed by a fresh read of the list, so a row shows
-// what the server holds (another coach's mark, after 'already_marked'), never
-// a state set here. A marker the server cannot name is not given a name.
+// out, or neither). Who and when only (Overwatch W4-6 Q4 A): PUT
+// { athlete_id, reached_out }. An unmarked row has "Mark reached out"; a marked
+// row has "Take back mark", sent only if a fresh read still shows the mark the
+// row showed. After any answer but a 401 or 403 (the page's own stamp), the
+// list is read again, so a row shows what the server holds (another coach's
+// mark, after 'already_marked'), never a state set here. A marker the server
+// cannot name is not given a name, and the row says so.
 
 interface ReachedOut {
   /** The marker's staff name at this gym; null when the server cannot name them. */
@@ -80,7 +82,7 @@ function withinWords(days: number): string {
 function isReachedOut(value: unknown): value is ReachedOut | null {
   if (value === null) return true;
   const mark = value as Partial<ReachedOut> | undefined;
-  return typeof mark === 'object' && typeof mark.on_day === 'string'
+  return typeof mark === 'object' && typeof mark.on_day === 'string' && mark.on_day.trim() !== ''
     && (mark.by_name === null || typeof mark.by_name === 'string');
 }
 
@@ -93,60 +95,70 @@ function isStoppedComingList(value: unknown): value is StoppedComingList {
     && list.athletes.every((athlete) => isReachedOut((athlete as Partial<StoppedComingAthlete> | null)?.reached_out));
 }
 
-/** "Reached out by Sam K. on Mar 9, 2026."; with no name to show, "Reached out on Mar 9, 2026.", never a stand-in. */
+/** "Reached out by Sam K. on Mar 9, 2026."; with no name to show, it says who marked it cannot be shown, never a stand-in. */
 function reachedOutWords(mark: ReachedOut): string {
   const day = formatCalendarDay(mark.on_day);
   const name = mark.by_name?.trim();
-  return name ? `Reached out by ${name} on ${day}.` : `Reached out on ${day}.`;
+  return name ? `Reached out by ${name} on ${day}.` : `Reached out on ${day}; who marked it cannot be shown.`;
 }
 
-// The route's own refusals: when one of these comes back, the server said no and wrote nothing.
-const REFUSAL_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+// The route's own refusals after its 401 and 403 (handled first): the server said no and wrote nothing.
+const REFUSAL_STATUSES = new Set([400, 404, 409]);
 
-/** A refusal's words, by the route's code (stoppedComing.ts, reachedOutMarks.ts). RefusalStamp adds the full stop. */
-function refusalDetail(code: unknown, name: string): string {
-  if (code === 'NOT_ON_STOPPED_COMING_LIST') {
-    return `${name} is no longer on the stopped-coming list, so nothing was marked; the list has been read again`;
+/** A refusal's words, by the route's status and code (stoppedComing.ts, reachedOutMarks.ts). RefusalStamp adds the full stop. */
+function refusalDetail(status: number, code: unknown, name: string): string {
+  if (code === 'NOT_ON_STOPPED_COMING_LIST') return `${name} is no longer on the stopped-coming list, so nothing was marked`;
+  if (code === 'REACHED_OUT_MARK_CHANGED') return `the mark on ${name} changed while it was being saved, so nothing was saved; try again`;
+  if (status === 404) return `${name} was not found in this gym, so nothing was saved`;
+  return `the server refused the change for ${name}, so nothing was saved`;
+}
+
+/** What the server confirmed, by its outcome word. */
+function confirmedWords(outcome: unknown, name: string): string {
+  switch (outcome) {
+    case 'marked': return `${name} is marked as reached out.`;
+    case 'already_marked': return `${name} was already marked as reached out, so nothing new was saved.`;
+    case 'taken_back': return `The mark on ${name} was taken back.`;
+    case 'not_marked': return `There was no mark on ${name} to take back, so nothing was taken back.`;
+    default: return `The server accepted the change for ${name}.`;
   }
-  return `the server refused the change for ${name}, so nothing was saved; the list has been read again`;
 }
 
-/** No answer, or one that is not a refusal: whether it saved is not known. */
-function notKnownWords(name: string, reachedOut: boolean): string {
-  return reachedOut
-    ? `It is not known whether ${name} was marked as reached out; the list has been read again.`
-    : `It is not known whether the mark on ${name} was taken back; the list has been read again.`;
-}
+const LIST_NOT_READ = 'The list could not be read again.';
 
-type MarkProblem = { kind: 'refused'; detail: string } | { kind: 'not_known'; text: string };
+/** A press's outcome: a plain line, a refusal stamp (Law 7), or not known. Set only once it is true. */
+type Outcome = { kind: 'said'; text: string } | { kind: 'refused'; detail: string } | { kind: 'not_known'; text: string };
+
+/** No answer, or one that is not a refusal: whether it saved is not known; `listRead` is whether the read after it worked. */
+function notKnown(name: string, reachedOut: boolean, listRead: boolean): Outcome {
+  const what = reachedOut ? `${name} was marked as reached out` : `the mark on ${name} was taken back`;
+  return { kind: 'not_known', text: `It is not known whether ${what}. ${listRead ? 'The list has been read again.' : LIST_NOT_READ}` };
+}
 
 const READ_FAILED = 'Could not read who has stopped coming, so no one is shown. This is not an empty list.';
 
 /**
- * A row's mark: who reached out and when, and the button that marks or takes it back. The words
- * change with aria-pressed, so colour is not the only channel (Law 3); as SessionRunPresence's
- * "Here" / "Mark here", the pressed button is the brass .btn and the unpressed one the ghost.
+ * A row's mark: who reached out and when, and one button named for its action ("Mark reached out",
+ * or "Take back mark" on a marked row), so the words, not colour, say which (Law 3). aria-disabled,
+ * not disabled, so focus stays on it through a request (SessionRunPresence's register button).
  */
 function ReachedOutMark({ athlete, busy, onPress }: {
   athlete: StoppedComingAthlete;
   busy: string | null;
   onPress: (athlete: StoppedComingAthlete, reachedOut: boolean) => Promise<void>;
 }) {
-  const marked = athlete.reached_out !== null;
-  const words = busy === athlete.athlete_id ? 'Saving…' : marked ? 'Reached out' : 'Mark reached out';
+  const mark = athlete.reached_out;
+  const words = busy === athlete.athlete_id ? 'Saving…' : mark ? 'Take back mark' : 'Mark reached out';
   return (
     <>
-      {athlete.reached_out ? (
-        <p className="t-body mt-[var(--s4)] text-[length:var(--t-md)]">{reachedOutWords(athlete.reached_out)}</p>
-      ) : null}
+      {mark ? <p className="t-body mt-[var(--s4)] text-[length:var(--t-md)]">{reachedOutWords(mark)}</p> : null}
       <button
         type="button"
-        className={`${marked ? 'btn' : 'btn btn--ghost'} mt-[var(--s4)] mr-[var(--s3)] min-h-[var(--tap)] text-[length:var(--t-md)]`}
-        aria-pressed={marked}
+        className="btn btn--ghost mt-[var(--s4)] mr-[var(--s3)] min-h-[var(--tap)] text-[length:var(--t-md)]"
+        aria-disabled={busy !== null}
         aria-busy={busy === athlete.athlete_id}
         aria-label={`${words}: ${athlete.full_name}`}
-        disabled={busy !== null}
-        onClick={() => void onPress(athlete, !marked)}
+        onClick={() => void onPress(athlete, mark === null)}
       >
         {words}
       </button>
@@ -158,11 +170,14 @@ export default function CoachStoppedComingPage() {
   const [list, setList] = useState<StoppedComingList | null>(null);
   const [refused, setRefused] = useState<'signed_out' | 'wrong_door' | null>(null);
   const [failed, setFailed] = useState(false);
-  // The athlete whose mark is on its way; every row's button waits for it (no second PUT).
+  // The athlete whose mark is on its way; every row's button waits for it.
   const [busy, setBusy] = useState<string | null>(null);
-  const [markProblem, setMarkProblem] = useState<MarkProblem | null>(null);
+  // Set and read in the same task, so a double click sends one PUT (state would still read null).
+  const inFlight = useRef(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const read = useCallback(async (signal?: AbortSignal) => {
+  /** Reads the list and shows it; answers what it read, or null when it could not. */
+  const read = useCallback(async (signal?: AbortSignal): Promise<StoppedComingList | null> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/stopped-coming`, {
         credentials: 'include',
@@ -170,21 +185,23 @@ export default function CoachStoppedComingPage() {
       });
       // A refusal is a stamp, not an error toast (Law 7).
       if (response.status === 401 || response.status === 403) {
-        if (signal?.aborted) return;
+        if (signal?.aborted) return null;
         setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
-        return;
+        return null;
       }
       if (!response.ok) throw new Error('read failed');
       const payload: unknown = await response.json();
       if (!isStoppedComingList(payload)) throw new Error('unexpected answer');
-      if (signal?.aborted) return;
+      if (signal?.aborted) return null;
       setList(payload);
+      return payload;
     } catch {
       // An aborted load is the page unmounting, not a failure to report. Any other
       // failure (network, a bad status, an answer that is not the list) shows the
       // same fixed sentence, never an empty list.
-      if (signal?.aborted) return;
+      if (signal?.aborted) return null;
       setFailed(true);
+      return null;
     }
   }, []);
 
@@ -196,38 +213,59 @@ export default function CoachStoppedComingPage() {
     return () => controller.abort();
   }, [read]);
 
-  const mark = async (athlete: StoppedComingAthlete, reachedOut: boolean) => {
-    if (busy) return;
-    setBusy(athlete.athlete_id);
-    setMarkProblem(null);
+  /** Sends the PUT, then reads the list again (but after a 401 or 403); the outcome is worded after that read. */
+  const send = async (athlete: StoppedComingAthlete, reachedOut: boolean): Promise<Outcome | null> => {
+    const name = athlete.full_name;
+    let response: Response;
     try {
-      let response: Response;
-      try {
-        response = await fetch(`${apiBase()}/api/pilot/stopped-coming`, {
-          method: 'PUT',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ athlete_id: athlete.athlete_id, reached_out: reachedOut }),
-        });
-      } catch {
-        setMarkProblem({ kind: 'not_known', text: notKnownWords(athlete.full_name, reachedOut) });
-        await read();
-        return;
-      }
-      // Signed out, or not a coach or admin of this gym: the page's own stamp, as a refused read.
-      if (response.status === 401 || response.status === 403) {
-        setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
-        return;
-      }
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { code?: unknown } | null;
-        setMarkProblem(REFUSAL_STATUSES.has(response.status)
-          ? { kind: 'refused', detail: refusalDetail(payload?.code, athlete.full_name) }
-          : { kind: 'not_known', text: notKnownWords(athlete.full_name, reachedOut) });
-      }
-      // Any outcome word or refusal: the rows show what the server now holds.
-      await read();
+      response = await fetch(`${apiBase()}/api/pilot/stopped-coming`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ athlete_id: athlete.athlete_id, reached_out: reachedOut }),
+      });
+    } catch {
+      return notKnown(name, reachedOut, (await read()) !== null);
+    }
+    // Signed out, or not a coach or admin of this gym: the page's own stamp, as a refused read.
+    if (response.status === 401 || response.status === 403) {
+      setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
+      return null;
+    }
+    const payload = (await response.json().catch(() => null)) as { outcome?: unknown; code?: unknown } | null;
+    const listRead = (await read()) !== null;
+    if (REFUSAL_STATUSES.has(response.status)) {
+      return { kind: 'refused', detail: refusalDetail(response.status, payload?.code, name) };
+    }
+    if (!response.ok) return notKnown(name, reachedOut, listRead);
+    // Confirmed by the server, whether or not the list could then be read.
+    return { kind: 'said', text: `${confirmedWords(payload?.outcome, name)}${listRead ? '' : ` ${LIST_NOT_READ}`}` };
+  };
+
+  /** Takes back only the mark the row showed: another coach may have changed it since it was read. */
+  const takeBack = async (athlete: StoppedComingAthlete): Promise<Outcome | null> => {
+    const shown = athlete.reached_out;
+    const fresh = await read();
+    if (!fresh) return { kind: 'said', text: `The mark on ${athlete.full_name} could not be checked, so nothing was taken back.` };
+    const row = fresh.athletes.find((listed) => listed.athlete_id === athlete.athlete_id);
+    if (!row) return { kind: 'said', text: `${athlete.full_name} is no longer on the stopped-coming list, so nothing was taken back.` };
+    const now = row.reached_out;
+    if (!shown || !now || now.by_name !== shown.by_name || now.on_day !== shown.on_day) {
+      return { kind: 'said', text: `The mark on ${athlete.full_name} has changed since it was shown, so nothing was taken back.` };
+    }
+    return send(athlete, false);
+  };
+
+  const press = async (athlete: StoppedComingAthlete, reachedOut: boolean) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(athlete.athlete_id);
+    // The last outcome stays on screen until this press (Law 7: not dismissed by a timer).
+    setOutcome(null);
+    try {
+      setOutcome(await (reachedOut ? send(athlete, true) : takeBack(athlete)));
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   };
@@ -260,21 +298,28 @@ export default function CoachStoppedComingPage() {
             ) : null}
           </header>
 
-          {/* What a press could not do stays until the next press (Law 7: a refusal is a stamp). */}
-          {markProblem?.kind === 'refused' ? (
+          {/* Always present, so each outcome is announced (SessionRunPresence's status line); the
+              words shown below are the same, so they are not read out twice where it can be helped. */}
+          <p role="status" className="sr-only">
+            {outcome?.kind === 'refused' ? REFUSAL_STAMP_COPY.cannot_be_done.body(outcome.detail) : outcome?.text ?? ''}
+          </p>
+          {/* A press's outcome stays until the next press (Law 7: a refusal is a stamp, not dismissed). */}
+          {outcome?.kind === 'refused' ? (
             <RefusalStamp
               kind="cannot_be_done"
-              detail={markProblem.detail}
+              detail={outcome.detail}
               className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]"
             />
-          ) : markProblem?.kind === 'not_known' ? (
-            <div className="alert alert--warning mb-[var(--s5)]" role="alert">
+          ) : outcome?.kind === 'not_known' ? (
+            <div className="alert alert--warning">
               <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Attention</p>
-                <p className="alert-msg">{markProblem.text}</p>
+                <p className="alert-msg">{outcome.text}</p>
               </div>
             </div>
+          ) : outcome?.kind === 'said' ? (
+            <p aria-hidden="true" className="t-body mb-[var(--s5)] text-[length:var(--t-md)]">{outcome.text}</p>
           ) : null}
 
           {refused ? (
@@ -323,7 +368,7 @@ export default function CoachStoppedComingPage() {
                       <dd className="t-data t-data--lg mt-[var(--s1)]">{athlete.days_since_came}</dd>
                     </div>
                   </dl>
-                  <ReachedOutMark athlete={athlete} busy={busy} onPress={mark} />
+                  <ReachedOutMark athlete={athlete} busy={busy} onPress={press} />
                   {/* The athlete travels in page memory, never in the address (lane AS-11;
                       #1474 Q2 = C). Only a plain click hands off. The href stays literal so
                       the dead-link check reads it. */}
