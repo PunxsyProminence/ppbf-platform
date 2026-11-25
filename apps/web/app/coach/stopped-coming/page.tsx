@@ -118,7 +118,7 @@ export default function CoachStoppedComingPage() {
               Athletes on the roster who have come before but have not come for{' '}
               {gap ? <strong>{gap}</strong> : 'the gym’s number of days'} or more, longest gone first. Coming
               means a present day on a class register, or a &ldquo;here&rdquo; tap the register does not hold:
-              open gym, or a class whose register did not take the tap or was cancelled.
+              open gym, or a class where the tap made no register mark, or that was cancelled.
             </p>
             {list ? (
               <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-400)]">
@@ -133,7 +133,9 @@ export default function CoachStoppedComingPage() {
           {refused ? (
             <RefusalStamp
               kind={refused}
-              detail="who has stopped coming is read by a coach or the gym admin of this gym"
+              detail={refused === 'signed_out'
+                ? 'sign in again to read who has stopped coming'
+                : 'who has stopped coming is read by a coach or the gym admin of this gym'}
               className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]"
             />
           ) : failed ? (

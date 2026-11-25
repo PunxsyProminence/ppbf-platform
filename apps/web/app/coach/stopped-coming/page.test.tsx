@@ -45,11 +45,12 @@ jest.mock('next/link', () => ({
 const LIST = {
   gap_days: 14,
   is_default: true,
-  today: '2026-11-25',
+  // A day that is not the real date, so a page that printed the browser's day would show it.
+  today: '2026-03-10',
   // Longest gone first, and NOT in name order, so a page that re-sorted by name would show it.
   athletes: [
-    { athlete_id: 'ath-2', full_name: 'Rosa D.', last_came_day: '2026-10-26', days_since_came: 30 },
-    { athlete_id: 'ath-1', full_name: 'Jordan P.', last_came_day: '2026-11-11', days_since_came: 14 },
+    { athlete_id: 'ath-2', full_name: 'Rosa D.', last_came_day: '2026-02-08', days_since_came: 30 },
+    { athlete_id: 'ath-1', full_name: 'Jordan P.', last_came_day: '2026-02-24', days_since_came: 14 },
   ],
 };
 
@@ -94,9 +95,9 @@ test('rows come in the server\'s order, with the last day they came and the days
   await renderPage(mockFetch({}));
   const rows = screen.getAllByRole('listitem');
   expect(rows.map((row) => within(row).getByText(/\./).textContent)).toEqual(['Rosa D.', 'Jordan P.']);
-  expect(within(rows[0]).getByText(formatCalendarDay('2026-10-26'))).toBeTruthy();
+  expect(within(rows[0]).getByText(formatCalendarDay('2026-02-08'))).toBeTruthy();
   expect(within(rows[0]).getByText('30')).toBeTruthy();
-  expect(within(rows[1]).getByText(formatCalendarDay('2026-11-11'))).toBeTruthy();
+  expect(within(rows[1]).getByText(formatCalendarDay('2026-02-24'))).toBeTruthy();
   expect(within(rows[1]).getByText('14')).toBeTruthy();
   expect(within(rows[0]).getByText('Last came')).toBeTruthy();
   expect(within(rows[0]).getByText('Days since')).toBeTruthy();
@@ -106,7 +107,7 @@ test('the gym\'s number reads in weeks, and says when it is the default', async 
   await renderPage(mockFetch({}));
   expect(pageText()).toContain('have not come for 2 weeks or more, longest gone first');
   expect(pageText()).toContain('The gym has not set its own number of days, so the default, 2 weeks, applies.');
-  expect(pageText()).toContain(`As of ${formatCalendarDay('2026-11-25')}.`);
+  expect(pageText()).toContain(`As of ${formatCalendarDay('2026-03-10')}.`);
 });
 
 test('one week reads as "1 week" and "the last week"', async () => {
@@ -145,19 +146,15 @@ test('an empty list says what was checked, and who is not on it, never that nobo
   expect(pageText()).toContain('Athletes who have never come, and athletes marked as left the gym, are not on this list.');
 });
 
-test.each([401, 403])('a refused read (%i) is a stamp, not an error banner, and shows no rows', async (status) => {
+test.each([
+  [401, 'signed_out', 'sign in again to read who has stopped coming'],
+  [403, 'wrong_door', 'who has stopped coming is read by a coach or the gym admin of this gym'],
+])('a refused read (%i) is the %s stamp, not an error banner, and shows no rows', async (status, kind, detail) => {
   await renderPage(mockFetch({ status }));
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-  expect(pageText()).toContain('who has stopped coming is read by a coach or the gym admin of this gym');
-});
-
-test('a 401 is the signed-out stamp and a 403 the wrong-door stamp', async () => {
-  await renderPage(mockFetch({ status: 401 }));
-  const signedOut = pageText();
-  document.body.innerHTML = '';
-  await renderPage(mockFetch({ status: 403 }));
-  expect(pageText()).not.toBe(signedOut);
+  expect(document.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe(kind);
+  expect(pageText()).toContain(detail);
 });
 
 test.each([
