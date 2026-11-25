@@ -480,7 +480,7 @@ export default function SessionRunPresence({
             const skippedWhy = NOT_ADDED[answer?.register?.reason ?? ''] ?? 'it could not be added';
             const checks = [
               effect === 'register_newer' ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
-              effect === 'kept' ? 'the class register kept the mark the tap would have taken back, as it was changed after the tap; check the class register' : '',
+              effect === 'kept' ? 'the class register mark had been changed since the athlete was marked here, so the take-back left it as it is; check the class register' : '',
               effect === 'skipped' ? `the athlete is not on the class register, as ${skippedWhy}` : '',
               registerUnknown && present ? 'whether the class register has the athlete Present is not known; check the class register' : '',
               registerUnknown && !present ? 'whether the class register still has the athlete Present is not known; check the class register' : '',
@@ -514,9 +514,15 @@ export default function SessionRunPresence({
         // Refused: said in this list, where the coach tapped.
         onRefused: (_response, landed) => {
           release();
-          if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
-          if (!onPage.current || isFinishWaiting?.()) {
-            return landed === null ? unknownOffPage('Check who is marked here on the class screen.') : refusalText(refusalCode);
+          // The run gone: the console and this list go with it, so the words go to the page's list, as
+          // the no-shows tap's and the tie's do (round 14, reviewer A).
+          const runGone = refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND';
+          if (runGone) onRunNotLive?.();
+          if (!onPage.current || isFinishWaiting?.() || runGone) {
+            if (landed !== null) return refusalText(refusalCode);
+            return unknownOffPage(runGone
+              ? 'Check the class register, and who was marked here under Finished sessions.'
+              : 'Check who is marked here on the class screen.');
           }
           // Named, as it can come back long after the tap. Not known: said, with the list as last read (a
           // read again that fails would hide the words).

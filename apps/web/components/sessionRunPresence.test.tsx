@@ -1182,6 +1182,38 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.queryByText(/Ada Reyes has an active Training Hold/)).toBeNull();
   });
 
+  // Round 14, reviewer A (OBSERVED): a kept tap refused because the run has ended hands the run back to
+  // the console, which then goes with this list; its words go to the page's list, as the no-shows tap's do.
+  test('a kept tap whose resend is refused as no longer live, and cannot be checked, is listed as not known in the page\'s list', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    serveKept({
+      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_NOT_LIVE' }, 409)),
+      present: () => {
+        reads += 1;
+        return reads === 1 ? [] : 'fail';
+      },
+    });
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(onRunNotLive).toHaveBeenCalled();
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeTruthy();
+    expect(screen.getByText(/^Mark an athlete here: the server refused it when it was sent again, and whether it was saved could not be checked\. Check the class register, and who was marked here under Finished sessions\.$/)).toBeTruthy();
+  });
+
+  test('a kept tap whose first send is refused as no longer live is listed as not saved in the page\'s list', async () => {
+    jest.useFakeTimers();
+    serveKept({ tap: () => answer({ error: 'x', code: 'SESSION_RUN_NOT_LIVE' }, 409), present: () => [] });
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    expect(onRunNotLive).toHaveBeenCalled();
+    expect(screen.getByText(FAILED_WORDS)).toBeTruthy();
+    expect(screen.getByText('Mark an athlete here: This session has already ended, so nothing was saved.')).toBeTruthy();
+  });
+
   // Round 13, reviewer A: every register answer that differs from the coach's tap is a named line in
   // the alert, so a burst never overwrites it: kept (a take-back left the register's changed mark) and
   // skipped (the register was not written), as register_newer.
@@ -1236,7 +1268,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await tapKept('Here Ada Reyes');
     await wait(RESEND_MS);
     expect(screen.getByText(
-      'Unmark an athlete here: saved, but the class register kept the mark the tap would have taken back, as it was changed after the tap; check the class register.',
+      'Unmark an athlete here: saved, but the class register mark had been changed since the athlete was marked here, so the take-back left it as it is; check the class register.',
     )).toBeTruthy();
   });
 
