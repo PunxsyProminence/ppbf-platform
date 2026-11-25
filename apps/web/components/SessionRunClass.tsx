@@ -81,7 +81,7 @@ export default function SessionRunClass({
   onClassChange,
   onRunNotLive,
   onClassCancelled,
-  finishWaiting = false,
+  isFinishWaiting,
 }: {
   readonly runId: string;
   readonly classId: string | null;
@@ -90,8 +90,8 @@ export default function SessionRunClass({
   readonly onRunNotLive: () => void;
   /** Whether the tied class has been cancelled since, as last read (the who-is-here footer follows it). */
   readonly onClassCancelled?: (cancelled: boolean) => void;
-  /** A finish is kept and waiting: once it lands this screen goes, so a refusal is said in the page's list. */
-  readonly finishWaiting?: boolean;
+  /** Whether a finish is kept and waiting now: once it lands this screen goes, so a refusal is said in the page's list. */
+  readonly isFinishWaiting?: () => boolean;
 }) {
   const [view, setView] = useState<RunClassView | null>(null);
   const [choosing, setChoosing] = useState(false);
@@ -122,10 +122,6 @@ export default function SessionRunClass({
   );
   // While this line is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
-  const toPageList = useRef(finishWaiting);
-  useEffect(() => {
-    toPageList.current = finishWaiting;
-  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -212,8 +208,8 @@ export default function SessionRunClass({
         }
         const reason = refusal.message ?? 'The class could not be changed.';
         // Off the page, the page's list says it, after the save's own name.
-        if (!onPage.current || toPageList.current) {
-          return landed === null ? unknownOffPage('Check which class the session is tied to on the class screen.') : reason;
+        if (!onPage.current || isFinishWaiting?.()) {
+          return landed === null ? unknownOffPage('Check which class the session is tied to before tying it again.') : reason;
         }
         setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;

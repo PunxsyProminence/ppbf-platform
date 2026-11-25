@@ -672,11 +672,6 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   return 'kept';
 }
 
-/** Changes at every drop: a screen that keeps something per account (a pair's request key) forgets it then. */
-export function saveQueueGeneration(): number {
-  return generation;
-}
-
 /** Clears the failed words and the not-sent count once the person has read them. */
 export function dismissFailedSaves(): void {
   if (failed.length === 0 && notSent.length === 0) return;

@@ -22,15 +22,15 @@ export default function SessionNoShows({
   classId,
   presentCount,
   onRunNotLive,
-  finishWaiting = false,
+  isFinishWaiting,
 }: {
   readonly runId: string;
   readonly classId: string;
   /** The marks here, as last read: a change reads the count again. */
   readonly presentCount: number | null;
   readonly onRunNotLive: () => void;
-  /** A finish is kept and waiting: once it lands this screen goes, so a refusal is said in the page's list. */
-  readonly finishWaiting?: boolean;
+  /** Whether a finish is kept and waiting now: once it lands this screen goes, so a refusal is said in the page's list. */
+  readonly isFinishWaiting?: () => boolean;
 }) {
   const [read, setRead] = useState<Read>({ state: 'loading' });
   const [busy, setBusy] = useState(false);
@@ -73,10 +73,6 @@ export default function SessionNoShows({
   );
   // While this offer is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
-  const toPageList = useRef(finishWaiting);
-  useEffect(() => {
-    toPageList.current = finishWaiting;
-  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -141,14 +137,14 @@ export default function SessionNoShows({
         }
         const reason = refusal.message ?? 'Nobody was marked Absent.';
         // Off the page, the page's list says it, after the save's own name.
-        if (!onPage.current || toPageList.current) {
+        if (!onPage.current || isFinishWaiting?.()) {
           return landed === null ? unknownOffPage('Check the class register before marking them again.') : reason;
         }
         setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;
       },
     };
-  }, [classId, onRunNotLive, runId, showMarked]);
+  }, [classId, isFinishWaiting, onRunNotLive, runId, showMarked]);
 
   const markNoShows = useCallback(async () => {
     if (inFlight.current) return;

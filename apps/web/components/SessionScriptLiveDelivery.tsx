@@ -19,7 +19,6 @@ import {
   keepSave,
   prepareSaveQueue,
   readSaveQueue,
-  saveQueueGeneration,
   subscribeSaveQueue,
   type KeptSave,
 } from '@/src/lib/saveQueue';
@@ -426,11 +425,13 @@ export default function SessionScriptLiveDelivery({
   const finishKept = askedRuns.some((entry) => entry.finish);
   const controlsLocked = actionBusy !== null || finishKept;
   // Once a kept finish lands this console goes, so a refusal said here meanwhile would go unread:
-  // it is said in the page's list instead.
+  // it is said in the page's list instead. Set when the finish is kept and when it is answered, so a
+  // refusal arriving before the next render reads it right; the screens below ask through a getter.
   const finishKeptNow = useRef(finishKept);
   useEffect(() => {
     finishKeptNow.current = finishKept;
   }, [finishKept]);
+  const isFinishWaiting = useCallback(() => finishKeptNow.current, []);
   // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
   // the badge, the block and the switch's state as saved are the server's.
   const askedNotSaved = [
@@ -537,18 +538,10 @@ export default function SessionScriptLiveDelivery({
   // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
   // whose key could not be made (no randomUUID); then none is sent, as before.
   const logRequestKeys = useRef(new Map<string, string | null>());
-  // A drop (another account, a sign-out) forgets every pair's key: the server answers a repeated key
-  // within the organization, so a key carried into the next person's tap would replay the last
-  // person's log as theirs.
-  useEffect(() => {
-    let seen = saveQueueGeneration();
-    return subscribeSaveQueue(() => {
-      const now = saveQueueGeneration();
-      if (now === seen) return;
-      seen = now;
-      logRequestKeys.current.clear();
-    });
-  }, []);
+  // Each pair key belongs to the account whose kept log first sent it. The server answers a repeated
+  // key within the organization, so another account's tap of the same pair (someone else signed in
+  // on this page) sends its own key: it never replays the last person's log as theirs.
+  const pairKeyAccounts = useRef(new Map<string, string>());
 
   // A protocol authored for one specific athlete never applies to another --
   // the server enforces this too (startExecution), but narrowing the list
@@ -612,8 +605,11 @@ export default function SessionScriptLiveDelivery({
       return {
         // No athlete name: the line can outlive the log panel on a shared floor screen.
         label,
-        send: ({ signal, requestKey, madeByAccountId }) =>
-          fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+        send: ({ signal, requestKey, madeByAccountId }) => {
+          const owner = pairKey ? pairKeyAccounts.current.get(pairKey) : undefined;
+          if (pairKey && owner === undefined) pairKeyAccounts.current.set(pairKey, madeByAccountId);
+          const key = pairKey && (owner === undefined || owner === madeByAccountId) ? pairKey : requestKey;
+          return fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -623,11 +619,12 @@ export default function SessionScriptLiveDelivery({
               session_run_id: run.run_id,
               // The pair's own key while it is unsaved (F-135): a second tap of the same pair, or a
               // retry after today's "Try again", is the same log, never a second one.
-              request_key: pairKey ?? requestKey,
+              request_key: key,
               made_by_account_id: madeByAccountId,
             }),
             signal,
-          }),
+          });
+        },
         answerOf: async (response) => {
           const payload = (await response.clone().json().catch(() => ({}))) as { item?: unknown; error?: string; code?: string };
           if (isRefusal(response.status) && response.status !== 408 && response.status !== 429) {
@@ -881,6 +878,7 @@ export default function SessionScriptLiveDelivery({
       // What this save asked goes with its own answer, saved or refused.
       const releaseAsked = () => {
         resolved.done = true;
+        if (body.action === 'finish') finishKeptNow.current = false;
         setAskedRuns((entries) => entries.filter((entry) => entry.save !== resolved));
       };
       return {
@@ -975,6 +973,7 @@ export default function SessionScriptLiveDelivery({
         if ((await keepSave(keptRunAction(body, resolved))) === 'kept') {
           const askedHere = askedByRunAction(body);
           if (!resolved.done && (askedHere || body.action === 'finish')) {
+            if (body.action === 'finish') finishKeptNow.current = true;
             setAskedRuns((entries) => [...entries, { save: resolved, asked: askedHere ?? {}, finish: body.action === 'finish' }]);
           }
           return;
@@ -1215,7 +1214,7 @@ export default function SessionScriptLiveDelivery({
         onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
         onRunNotLive={() => void resyncAfterNotLive()}
         onClassCancelled={setClassCancelled}
-        finishWaiting={finishKept}
+        isFinishWaiting={isFinishWaiting}
       />
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
@@ -1506,7 +1505,7 @@ export default function SessionScriptLiveDelivery({
                 classId={run.class_id}
                 presentCount={athletesPresentMarks}
                 onRunNotLive={() => void resyncAfterNotLive()}
-                finishWaiting={finishKept}
+                isFinishWaiting={isFinishWaiting}
               />
             )}
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
