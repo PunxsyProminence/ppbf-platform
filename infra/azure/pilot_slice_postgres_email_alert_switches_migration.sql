@@ -29,11 +29,13 @@
 -- the only address the sender may use. EM-1 writes none of these columns;
 -- they are here so EM-2b needs no migration. Every other person's alerts go to
 -- their sign-in address (pilot.accounts.login_email), which this table has no
--- column for. BUT THE ACCOUNT ID CAN BE THAT ADDRESS: a staff member invited
--- without an account id, and a parent login made by a guardian move, get their
--- sign-in address as their account_id (staffProvisioning.ts, `|| loginEmail`;
--- guardianLoginMove.ts inserts the email as account_id). For them this row's
--- account_id is that address, as in every table keyed by account.
+-- column for. BUT THE ACCOUNT ID IS USUALLY THAT ADDRESS: an invite with no
+-- account id (the admin console's invite sends none) gives the person their
+-- sign-in address as their account_id, staff and parents alike
+-- (staffProvisioning.ts, `|| loginEmail`), and a guardian move makes a parent
+-- login the same way (guardianLoginMove.ts). Other ids are typed by an admin,
+-- with no shape check. So for most staff and parents this row's account_id is
+-- their address, as in every table keyed by account.
 --
 -- WHAT THE DATABASE REFUSES (each a named CHECK, compared in full by the
 -- runner):
