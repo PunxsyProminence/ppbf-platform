@@ -1286,6 +1286,32 @@ describe('email alert staff event sources', () => {
     expect(sent).toHaveLength(1);
   });
 
+  test('a restore that lands while the sender is deciding, after it read the notice as retired, still re-offers the send', async () => {
+    const client = await freshDatabase('emailevents_notice_restore_race');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(1);
+    await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: false, onlyAuthorAccountId: null });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 0, skipped: 1 });
+    // The restore committed between the sender's read and its skip: its time
+    // is after the row became due and before the skip was written.
+    await client.query(
+      `update pilot.announcements n
+          set active = true,
+              updated_at = s.next_try_at + (s.finished_at - s.next_try_at) / 2
+         from pilot.email_alert_sends s
+        where n.announcement_id = $1::uuid and s.event_id = $1::text
+          and s.next_try_at < s.finished_at`,
+      [live],
+    );
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 1 });
+    expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
+  });
+
   test('a source that fails is logged by class, and the next source still queues and sends', async () => {
     const client = await freshDatabase('emailevents_failing');
     activeClient = client;

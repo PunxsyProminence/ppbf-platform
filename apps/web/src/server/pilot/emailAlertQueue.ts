@@ -59,8 +59,13 @@ export interface EmailAlertSource {
  * queued again when the sweep names the person again. A restored notice is
  * live again and emails anyone who has not had it (Overwatch on #2193, comment
  * 7165858842); a skipped row was never sent, so it is not "had". "Restored
- * since" is the notice's updated_at after the row's finished_at:
- * setAnnouncementActive is the only write that stamps it. A skipped row whose
+ * since" is the notice's updated_at (setAnnouncementActive is the only write
+ * that stamps it) after the row's next_try_at, the time the row became due:
+ * every write of next_try_at is at or before the row's next claim, and the
+ * claim takes only rows already due, so it is never later than the sender's
+ * check. A restore that lands while the sender is deciding, after it read the
+ * notice as retired and before it wrote the skip, still counts; finished_at
+ * would miss it. A skipped row whose
  * notice is unchanged (a minor's login the source names and the sender
  * refuses) stays skipped, rather than being queued and skipped again on every
  * tick of the overlap. A failed row (the address refused on every try) is not
@@ -93,7 +98,7 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
        and exists (select 1 from pilot.announcements n
                     where n.organization_id = pilot.email_alert_sends.organization_id
                       and n.announcement_id::text = pilot.email_alert_sends.event_id
-                      and n.updated_at > pilot.email_alert_sends.finished_at)
+                      and n.updated_at > pilot.email_alert_sends.next_try_at)
      returning send_id`,
     [
       column((candidate) => candidate.organizationId),
