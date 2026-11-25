@@ -343,8 +343,8 @@ describe('a session tied to a class', () => {
     [{ effect: 'already_present' }, 'Ada Reyes was already Present on the class register.'],
     [{ effect: 'flipped', previous_status: 'absent' }, 'Ada Reyes was marked Absent on the class register; now Present.'],
     [{ effect: 'flipped', previous_status: 'excused' }, 'Ada Reyes was marked Excused on the class register; now Present.'],
-    [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here but not on the class register: the class was cancelled.'],
-    [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here but not on the class register: you no longer run this class.'],
+    [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: the class was cancelled.'],
+    [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.'],
     [{ effect: 'register_newer', status: 'absent' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Absent there. Change it on the register if Ada Reyes is here.'],
     [{ effect: 'register_newer', status: 'excused' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Excused there. Change it on the register if Ada Reyes is here.'],
     [{ effect: 'register_newer' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed as marked there. Change it on the register if Ada Reyes is here.'],
@@ -358,7 +358,7 @@ describe('a session tied to a class', () => {
 
   test.each([
     [{ effect: 'removed' }, 'Ada Reyes is off the class register too.'],
-    [{ effect: 'kept' }, "The class register was changed after your tap, so Ada Reyes's mark there was left as it is."],
+    [{ effect: 'kept' }, 'The class register was changed after your tap marked Ada Reyes here, so this take-back did not change it there.'],
     [{ effect: 'unchanged' }, 'Only the mark here was taken back; the class register was not changed.'],
   ])('an untap answered %j says so', async (register, words) => {
     serve(() => read([ADA]), () => respond({ outcome: 'unmarked', register }));
@@ -1235,8 +1235,8 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
       present: () => present,
     });
   }
-  const ADA_KEPT = "The class register was changed after your tap, so Ada Reyes's mark there was left as it is.";
-  const ADA_SKIPPED = 'Ada Reyes is marked here but not on the class register: you no longer run this class.';
+  const ADA_KEPT = 'The class register was changed after your tap marked Ada Reyes here, so this take-back did not change it there.';
+  const ADA_SKIPPED = 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.';
 
   test('a take-back the register answered kept, then another athlete\'s tap: the kept words stay named in the alert', async () => {
     jest.useFakeTimers();
@@ -1278,7 +1278,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await showKept({ finishWaiting: true });
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
-    expect(screen.getByText('Mark an athlete here: saved, but the athlete is not on the class register, as the class was cancelled.')).toBeTruthy();
+    expect(screen.getByText('Mark an athlete here: saved, but this tap did not put the athlete on the class register, as the class was cancelled.')).toBeTruthy();
   });
 
   test('on a tied list, a kept take-back that lands with no register answer says whether the register still has the athlete is not known', async () => {

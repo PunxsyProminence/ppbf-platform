@@ -150,9 +150,13 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     created: `${name} is Present on the class register.`,
     already_present: `${name} was already Present on the class register.`,
     flipped: `${name} was ${WAS[register.previous_status ?? ''] ?? 'not marked Present'} on the class register; now Present.`,
-    skipped: `${name} is marked here but not on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
+    // The server skips the register before reading it, so whether the athlete is on it already (their own
+    // check-in, another coach's mark) is not said (#2182 round 14, reviewer B).
+    skipped: `${name} is marked here; this tap did not put ${name} on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
     removed: `${name} is off the class register too.`,
-    kept: `The class register was changed after your tap, so ${name}'s mark there was left as it is.`,
+    // The register mark the earlier tap wrote was changed since (any change, any time): the take-back
+    // left it (#2182 round 14, reviewer B).
+    kept: `The class register was changed after your tap marked ${name} here, so this take-back did not change it there.`,
     unchanged: 'Only the mark here was taken back; the class register was not changed.',
     // A tap sent late, after the register was changed (OD-2026-10-21-004 ruling 1: the later change wins).
     // Said as what happened when the tap landed: the register may be changed again since (round 12, A).
@@ -470,7 +474,9 @@ export default function SessionRunPresence({
           // resend changed nothing, or the check found it): what the register holds is not known.
           const registerUnknown = tied && !answer?.register;
           // The hold is read with the register's answer: a mark here whose answer was lost cannot say
-          // whether the athlete is on a Training Hold, so it says that, in the existing words (round 13, B).
+          // whether the athlete is on a Training Hold, so it says that, in the existing words: an unknown
+          // value never looks complete or zero (AGENT_KERNEL.md, floor law 1; #2182 round 13, reviewer B).
+          // It asserts no hold and blocks nothing, so it is no new warning (Jason's L1 rule).
           const hold = holdAnswer(answer?.hold_warning) ?? (registerUnknown && present ? 'unknown' : null);
           // This list gone, or going with a kept finish: what the coach must still check goes to the
           // page's list, unnamed, under "Saved, with something to check" (round 12, A and B).
@@ -481,7 +487,7 @@ export default function SessionRunPresence({
             const checks = [
               effect === 'register_newer' ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
               effect === 'kept' ? 'the class register mark had been changed since the athlete was marked here, so the take-back left it as it is; check the class register' : '',
-              effect === 'skipped' ? `the athlete is not on the class register, as ${skippedWhy}` : '',
+              effect === 'skipped' ? `this tap did not put the athlete on the class register, as ${skippedWhy}` : '',
               registerUnknown && present ? 'whether the class register has the athlete Present is not known; check the class register' : '',
               registerUnknown && !present ? 'whether the class register still has the athlete Present is not known; check the class register' : '',
               hold === 'held' ? 'the athlete has an active Training Hold; the mark was NOT blocked' : '',
