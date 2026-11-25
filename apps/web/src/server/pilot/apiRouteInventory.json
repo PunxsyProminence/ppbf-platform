@@ -11951,13 +11951,13 @@
       "organization_admin",
       "admin"
     ],
-    "athleteData": false,
+    "athleteData": true,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). tie_class answers the athlete ids it copied to the class register. mark_no_shows (W4 item 7, OVERWATCH 7160191377) takes the athlete ids the screen showed, a request key and a tap time: sessionRunClass.ts markSessionNoShowsAbsent marks Absent only those still signed up with no mark, on the caller's own live run of a class they run (or as an admin), records the tap (key, ids sent, ids marked) in an audit event on the run, and answers the athlete ids it marked.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12044,7 +12044,7 @@
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names.",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names. Without script_id, the caller's own live run, when tied to a class, also carries that class's no-show athlete ids (sessionRunClass.ts describeRunClass, ids only), empty unless the caller runs the class or is an admin and it has started and is not cancelled (W4 item 7, OVERWATCH 7160191377).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

@@ -24,8 +24,9 @@ const REFUSED_AFTER_KEY = new Set([
   'SESSION_CLASS_CANCELLED',
   'SESSION_CLASS_NOT_YOURS',
   'SESSION_CLASS_NOT_STARTED',
-  'SESSION_NO_SHOWS_KEY_REUSED',
 ]);
+// The key landed with other names: what this tap's names got is not known.
+const KEY_REUSED = 'SESSION_NO_SHOWS_KEY_REUSED';
 
 type Read = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; view: RunClassView | null };
 
@@ -66,9 +67,9 @@ export default function SessionNoShows({
   // done: how many this tap marked; null when the server shows it landed without saying how many.
   const showMarked = useCallback((done: number | null) => {
     setResult(done === null
-      ? 'The class register now shows no no-shows.'
+      ? 'Everyone this tap named now has a mark on the class register.'
       : done === 0
-        ? 'Nobody needed marking: everyone signed up already has a mark.'
+        ? 'Nobody needed marking: everyone this tap named already has a mark.'
         : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
     setAttempt((count) => count + 1);
   }, []);
@@ -102,12 +103,13 @@ export default function SessionNoShows({
     const label = 'Mark the no-shows Absent';
     return {
       label,
-      send: ({ signal, requestKey }) =>
+      // With its tap time: the marks are made as of the tap, so a here tap made after it still wins.
+      send: ({ signal, requestKey, msSinceMade }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, request_key: requestKey }),
+          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, request_key: requestKey, tapped_ms_ago: msSinceMade }),
           signal,
         }),
       answerOf: async (response) => {
@@ -118,6 +120,7 @@ export default function SessionNoShows({
       // Not landed when the server refused after looking the key up. Otherwise landed only if the
       // coach's live run is this run and none of the names sent is still a no-show of its class.
       checkLanded: async (signal) => {
+        if (refusal.error === KEY_REUSED) return null;
         if (refusal.error && REFUSED_AFTER_KEY.has(refusal.error)) return false;
         const now = await fetchLiveRunClass(signal).catch(() => null);
         if (now === null) return null;
