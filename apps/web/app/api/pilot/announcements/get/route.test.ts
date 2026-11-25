@@ -15,6 +15,9 @@ jest.mock('@/src/server/pilot/announcements', () => ({
   listAuthoredAnnouncementIds: jest.fn().mockResolvedValue([]),
   isAnnouncementPlacement: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementPlacement,
   isAnnouncementKind: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementKind,
+  // The real placement rule (moved here from the route, lane W4-1 EM-4b):
+  // these tests are what pin it.
+  mayReadLivePlacement: jest.requireActual('@/src/server/pilot/announcements').mayReadLivePlacement,
   // The real projection, not a stub: these tests exist to prove what it
   // actually strips. A mocked one would assert nothing.
   projectAnnouncementForBoard: jest.requireActual('@/src/server/pilot/announcements').projectAnnouncementForBoard,
