@@ -4,6 +4,8 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import { useLayoutEffect } from 'react';
+
 import FamilyThreadsForStaff, { FamilyThreadsUnread, type StaffThreadView } from './FamilyThreadsForStaff';
 
 // The staff panel for messages a guardian started (W4 item 4, PM-2). Who may read, answer and
@@ -148,17 +150,33 @@ describe('FamilyThreadsForStaff', () => {
       throw new Error(`Unexpected fetch: ${key}`);
     });
     global.fetch = fetchMock as unknown as typeof fetch;
-    const { rerender } = render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    // Looks at the page as the render for the next child reaches it, before the panel's own
+    // effects run: the last child's words must not be there even for that one paint.
+    const underNext: string[] = [];
+    function Probe({ athleteId }: Readonly<{ athleteId: string }>) {
+      useLayoutEffect(() => {
+        if (athleteId === 'ath-2' && document.body.textContent?.includes('Is practice on Saturday?')) underNext.push(athleteId);
+      });
+      return null;
+    }
+    const both = (athleteId: string) => (
+      <>
+        <FamilyThreadsForStaff athleteId={athleteId} />
+        <Probe athleteId={athleteId} />
+      </>
+    );
+    const { rerender } = render(both('ath-1'));
     fireEvent.change(await screen.findByLabelText('Reply to First Guardian'), { target: { value: 'Half written' } });
 
-    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    rerender(both('ath-2'));
+    expect(underNext).toEqual([]);
     expect(screen.queryByText('Is practice on Saturday?')).toBeNull();
     expect(screen.queryByLabelText('Reply to First Guardian')).toBeNull();
     expect(screen.getByText('Loading messages from the family…')).toBeInTheDocument();
     await act(async () => releaseB(jsonResponse({ ok: true, items: [] })));
     expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
 
-    rerender(<FamilyThreadsForStaff athleteId="ath-1" />);
+    rerender(both('ath-1'));
     expect(await screen.findByLabelText('Reply to First Guardian')).toHaveValue('Half written');
   });
 
