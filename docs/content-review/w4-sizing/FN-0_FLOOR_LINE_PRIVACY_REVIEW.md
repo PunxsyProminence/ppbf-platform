@@ -477,7 +477,7 @@ C does not remove). INFERRED. So the line never says anyone is "not here",
 "absent" or "gone home", for any role. For a parent, Q3.2 A's option text is
 "A line for each of their own children on the floor now", which reads as no
 line for a child with no mark. For an athlete, Q3.4 A's "Their own status"
-reads as a status either way, so "not marked yet", never "absent".
+reads as a status either way, so "not counted" (FN0-Q2), never "absent".
 INFERRED. Recommendation; the words are question FN0-Q2.
 
 **F5. The coach line's names: the same people, sooner and in one place.** A coach
@@ -1066,7 +1066,7 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     nothing for a child who does not (Q3.2 A's option text, "A line for each
     of their own children on the floor now").
   - Athlete: "You're on the floor now." or "You're not counted on the floor
-    right now." ("counted", for the coach line's reason) (Q3.4 A, "Their own status"; never "absent", F4).
+    right now." ("counted", for the coach line's reason above; Q3.4 A, "Their own status"; never "absent", F4).
   - A board count, if FN0-Q3 rules one: "On the floor now: [number]"; below
     5, the board's existing hidden-figure state (`insufficient_data`, no
     number; `privacyTiers.ts:85-86`).
@@ -1167,9 +1167,12 @@ is still open, because each of these roles has limits on what it may see
   today, against the kernel floor's "role gates ... untouched"
   (`AGENT_KERNEL.md:104-105`), which only B leaves as it is, so choosing A
   is a decision for you as "owner and final authority" (`AGENT_KERNEL.md:38-40`);
-  it is recommended because your Q12 A says "on every home", if that
-  reaches these homes, and OD-2026-10-13-013 applies a standing ruling "to
-  every case its words or plain principle reach" (`OWNER_DECISIONS.md:7331`),
+  it is recommended because your Q12 A says "on every home" (which the
+  OW27-19 card calls "Already ruled, not asked again", `OWNER_DECISIONS.md:1258`),
+  if that reaches these homes, and OD-2026-10-13-013 has lanes apply a
+  standing ruling "to every case its words or plain principle reach"
+  (`:7331`); if it does not reach them, B is the recommendation (F3, where
+  that reading is UNVERIFIED);
   and the widening is class titles and times only, which every parent and,
   for the default gym, the public wall already see (F3); not an "on the floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
