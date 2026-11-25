@@ -622,6 +622,31 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
     }
   });
 
+  test('when a post was written and when a read was first made are the database clock, not the caller', async () => {
+    const client = await freshDatabase('fthreads_clock');
+    try {
+      await client.query(
+        `insert into pilot.family_thread_posts
+           (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text, created_at)
+         values ($1, $2::uuid, $2::uuid, $3, $4, 'parent', 'Backdated?', now() - interval '30 days')`,
+        [ORG, NEW_POST, ATHLETE, GUARDIAN],
+      );
+      await client.query(
+        `insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role, first_read_at)
+         values ($1, $2::uuid, $3, 'coach', now() - interval '30 days')`,
+        [ORG, NEW_POST, COACH],
+      );
+      const stamps = await client.query(
+        `select (select created_at > now() - interval '1 minute' from pilot.family_thread_posts where post_id = $1::uuid) as post_now,
+                (select first_read_at > now() - interval '1 minute' from pilot.family_thread_reads where post_id = $1::uuid) as read_now`,
+        [NEW_POST],
+      );
+      expect(stamps.rows[0]).toEqual({ post_now: true, read_now: true });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a second look is the same row and keeps the first time; a read is never changed', async () => {
     const client = await freshDatabase('fthreads_first');
     try {

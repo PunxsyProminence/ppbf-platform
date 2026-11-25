@@ -29,22 +29,26 @@
 -- thread reading a staff post in it. A guardian never reads here what another
 -- guardian wrote or was written; staff never record reads of staff posts.
 --
--- WHO MAY READ WHICH THREAD is the application's to enforce, as for the family
--- tables: the guardian link on every request (guardianAccess.ts, which also
--- ends it at 18 and on a deleted athlete), staff through
--- assertActorCanAccessAthlete. The database holds the shape: roles, the
+-- WHO MAY READ AND WRITE WHICH THREAD is the application's to enforce, as for
+-- the family tables: the guardian link on every request, for every guardian
+-- post and every read a guardian records (guardianAccess.ts, which also ends it
+-- at 18 and on a deleted athlete), staff through assertActorCanAccessAthlete.
+-- The database's rules below do not replace those checks. It holds the shape: roles, the
 -- thread's author, a guardian's link to THIS child through pilot.parents and
 -- pilot.guardian_links, a staff member's seat in the gym, and a live account.
 -- Each rule is checked against rows that already exist, so a post or a read
 -- whose thread is not yet stored is refused rather than left to a foreign key
 -- that would only look at the end of the statement.
 --
--- APPEND-ONLY. A post is not edited; a correction is a new post (FC-02 Q3 A).
--- The one change allowed is author_account_id going to NULL when that account
--- is removed (the foreign key's own SET NULL, never a hand UPDATE): the post stays, detached from its author (D-9, 2026-08-29: "Keep
--- it, detached from the author"), and author_role still says who wrote it. A
--- read is never changed: the first time is the record (FC-04 Q-B A), and it
--- goes with the reader's account (FC-04 Q-D A).
+-- APPEND-ONLY. A post is not edited; a correction is a new post (the
+-- architect's FC-02 Q3 default A, which the family replies follow). The one
+-- change allowed is author_account_id going to NULL when that account row is
+-- purged (the foreign key's own SET NULL, never a hand UPDATE): the post stays,
+-- detached from its author (D-9, 2026-08-29: "Keep it, detached from the
+-- author"), and author_role still says who wrote it. A read is never changed:
+-- the first time is the record (FC-04 Q-B default A), and it goes with the
+-- reader's account (FC-04 Q-D default A). created_at and first_read_at are the
+-- database's clock, whatever a caller sends.
 --
 -- NOT DELETED BY HAND. A DELETE issued directly is refused; one that arrives as
 -- a cascade (the athlete, the gym, an opening post or an account going) runs
@@ -59,11 +63,13 @@
 -- and entity type family_thread_reply, which joins no audit read allow-list
 -- (FAMILY_ALLOWED_AUDIT_ENTITY_TYPES stays empty). A guardian's post gets
 -- none, as a guardian's reply gets none (parent/message-replies). Reads get
--- none, as the family read tables get none. Nothing here is mirrored to the
--- SHADOW feed.
+-- none, as the family read tables get none. Unlike that "Post to Family"
+-- route, nothing here emits a SHADOW event or writes telemetry: those carry
+-- athlete_id, and the SHADOW feed serves a child's events to whoever reaches
+-- the child, the other guardian included. Nothing is mirrored to the feed.
 --
--- DEPENDS ON pilot.organizations, pilot.accounts, pilot.athletes and
--- pilot.organization_memberships. Idempotent: if-not-exists throughout, the
+-- DEPENDS ON pilot.organizations, pilot.accounts, pilot.athletes,
+-- pilot.parents, pilot.guardian_links and pilot.organization_memberships. Idempotent: if-not-exists throughout, the
 -- trigger functions are create-or-replace, and the triggers are dropped-and-
 -- created by name. No drops of any table or data, no backfill. No
 -- begin;/commit; here on purpose, matching this repo's runner-opens-the-
@@ -137,6 +143,7 @@ begin
        or new.author_role not in ('parent', 'coach', 'organization_admin', 'admin') then
       return new;
     end if;
+    new.created_at := now();
     -- Every post is written by someone. Only the account's removal, later,
     -- may take the author away (D-9).
     if new.author_account_id is null then
@@ -270,6 +277,7 @@ begin
        or new.reader_role not in ('parent', 'coach', 'organization_admin', 'admin') then
       return new;
     end if;
+    new.first_read_at := now();
 
     select p.author_role, p.athlete_id, o.author_account_id as opener_account_id
       into post
