@@ -67,7 +67,7 @@ describe('SessionRunClass', () => {
         return json({ class_id: 'class-youth', copied: [{ athlete_id: 'a', effect: 'created' }, { athlete_id: 'b', effect: 'flipped', previous_status: 'absent' }], released: [] });
       }
       if (url.includes('classes=today')) return json({ classes: [YOUTH] });
-      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0 } });
+      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0, no_show_ids: [] } });
     });
     const onClassChange = jest.fn();
     render(<SessionRunClass runId="run-1" classId={null} onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
@@ -89,7 +89,7 @@ describe('SessionRunClass', () => {
   test('a tied session names its class and unties, saying the register marks stay', async () => {
     fetchSpy.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'PATCH') return json({ class_id: null, copied: [], released: ['a', 'b'] });
-      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0 } });
+      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0, no_show_ids: [] } });
     });
     const onClassChange = jest.fn();
     render(<SessionRunClass runId="run-1" classId="class-youth" onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
@@ -106,7 +106,7 @@ describe('SessionRunClass', () => {
   test('a refusal shows the server\'s words and changes nothing', async () => {
     fetchSpy.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'PATCH') return json({ error: 'SESSION_CLASS_ALREADY_LIVE', message: 'Another live session is already running this class.' }, 409);
-      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0 } });
+      return json({ run: {}, class: { ...YOUTH, status: 'open', no_shows: 0, no_show_ids: [] } });
     });
     const onClassChange = jest.fn();
     render(<SessionRunClass runId="run-1" classId="class-youth" onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
@@ -133,7 +133,7 @@ test('a session that ended elsewhere is handed back to the live screen, not retr
 });
 
 test('a class cancelled since the tie says marks stay on the session only', async () => {
-  fetchSpy.mockResolvedValue(json({ run: {}, class: { ...YOUTH, status: 'cancelled', no_shows: 0 } }));
+  fetchSpy.mockResolvedValue(json({ run: {}, class: { ...YOUTH, status: 'cancelled', no_shows: 0, no_show_ids: [] } }));
   render(<SessionRunClass runId="run-1" classId="class-youth" onClassChange={jest.fn()} onRunNotLive={jest.fn()} />);
   expect(await screen.findByText(/This class was cancelled: marks here stay on the session only\./)).toBeTruthy();
 });
@@ -173,7 +173,7 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
       }
       if (url.includes('classes=today')) return json({ classes: [YOUTH] });
       const tied = tiedTo();
-      return json({ run: { run_id: liveRunId }, class: tied ? { ...YOUTH, status: 'open', no_shows: 0 } : null });
+      return json({ run: { run_id: liveRunId }, class: tied ? { ...YOUTH, status: 'open', no_shows: 0, no_show_ids: [] } : null });
     });
   }
 

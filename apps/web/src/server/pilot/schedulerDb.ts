@@ -917,14 +917,17 @@ export async function undoSessionRegisterPresent(
  * (Rec.)"): ONE TAP by the coach marks Absent every athlete signed up for the class who has no
  * register mark at all. Never automatic: only that tap calls this. An athlete with any mark
  * (Present, Absent, Excused, a family's own check-in) is left as they are, and so is anyone in
- * `exceptAthleteIds` (marked here on the session). A mark landing at the same moment wins: the
- * insert does nothing on a conflict. Returns the athletes it marked.
+ * `exceptAthleteIds` (marked here on the session). Only athletes in `namedAthleteIds` are marked:
+ * the set the coach's screen showed when they tapped, so a resent tap never reaches an athlete who
+ * signed up or lost a mark later (W4 item 7, OVERWATCH 7160191377). A mark landing at the same
+ * moment wins: the insert does nothing on a conflict. Returns the athletes it marked.
  */
 export async function markClassNoShowsAbsent(
   client: PoolClient,
   organizationId: string,
   mark: Pick<SchedulerAttendance, 'class_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
   exceptAthleteIds: readonly string[],
+  namedAthleteIds: readonly string[],
   now: string,
 ): Promise<string[]> {
   const { rows } = await client.query<{ athlete_id: string }>(
@@ -937,18 +940,22 @@ export async function markClassNoShowsAbsent(
                from pilot.scheduler_registrations r
               where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
                 and ${athleteNotDeletedSql('r')}
-                and r.athlete_id <> all($7::text[])) signed_up
+                and r.athlete_id <> all($7::text[])
+                and r.athlete_id = any($8::text[])) signed_up
      on conflict (organization_id, class_id, athlete_id) do nothing
      returning athlete_id`,
-    [organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now, [...exceptAthleteIds]],
+    [
+      organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now,
+      [...exceptAthleteIds], [...namedAthleteIds],
+    ],
   );
   return rows.map((row) => row.athlete_id).sort();
 }
 
-/** How many athletes the no-shows tap would mark now: signed up, no register mark, not excepted. */
-export async function countClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<number> {
-  const row = await queryOne<{ n: number }>(
-    `select count(distinct r.athlete_id)::int as n
+/** Who the no-shows tap would mark now: signed up, no register mark, not excepted. Sorted. */
+export async function listClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select distinct r.athlete_id
        from pilot.scheduler_registrations r
       where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
         and ${athleteNotDeletedSql('r')}
@@ -959,5 +966,5 @@ export async function countClassNoShows(organizationId: string, classId: string,
         )`,
     [organizationId, classId, [...exceptAthleteIds]],
   );
-  return row?.n ?? 0;
+  return rows.map((row) => row.athlete_id).sort();
 }

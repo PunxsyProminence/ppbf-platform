@@ -53,6 +53,17 @@ function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
 
+// The no-shows tap names its athletes and may carry a request key (W4 item 7, OVERWATCH
+// 7160191377): text of 1 to 200 characters, never blank, with no NUL (PostgreSQL cannot store one
+// in the audit record), at most NO_SHOWS_MAX names (a class holds at most 200).
+const NO_SHOWS_MAX = 500;
+const TEXT_MAX = 200;
+const NUL = String.fromCharCode(0);
+
+function isIdText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= TEXT_MAX && !value.includes(NUL);
+}
+
 function optionalNonNegativeInt(value: unknown): number | null | 'INVALID' {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
@@ -154,13 +165,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       case 'mark_no_shows': {
-        const extras = Object.keys(record).filter((k) => k !== 'action');
+        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'request_key'].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+        }
+        // The athletes the screen showed when the coach tapped: a resend acts on these, never on a
+        // set worked out again later.
+        const athleteIds: unknown = record.athlete_ids;
+        if (!Array.isArray(athleteIds) || athleteIds.length === 0 || athleteIds.length > NO_SHOWS_MAX || !athleteIds.every(isIdText)) {
+          return badRequest(`athlete_ids:expected 1 to ${NO_SHOWS_MAX} athlete ids`);
+        }
+        if (record.request_key !== undefined && !isIdText(record.request_key)) {
+          return badRequest(`request_key:expected text of 1 to ${TEXT_MAX} characters`);
         }
         const result = await markSessionNoShowsAbsent(
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
+          { athleteIds, requestKey: record.request_key ?? null },
         );
         return NextResponse.json(result);
       }

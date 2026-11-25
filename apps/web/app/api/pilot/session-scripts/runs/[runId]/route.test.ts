@@ -419,7 +419,7 @@ describe('tie_class and mark_no_shows', () => {
   );
 
   it('refuses extra fields on either action', async () => {
-    for (const body of [{ action: 'tie_class', class_id: 'c', run_state: 'x' }, { action: 'mark_no_shows', class_id: 'c' }]) {
+    for (const body of [{ action: 'tie_class', class_id: 'c', run_state: 'x' }, { action: 'mark_no_shows', athlete_ids: ['a'], class_id: 'c' }]) {
       const response = await patch(body);
       expect(response.status).toBe(400);
     }
@@ -427,11 +427,41 @@ describe('tie_class and mark_no_shows', () => {
     expect(mockNoShows).not.toHaveBeenCalled();
   });
 
-  it('marks the no-shows only when asked, and answers who', async () => {
+  it('marks the no-shows only when asked, passing the names and key the screen sent, and answers who', async () => {
     mockNoShows.mockResolvedValue({ marked: ['ath-2'] });
-    const response = await patch({ action: 'mark_no_shows' });
+    const response = await patch({ action: 'mark_no_shows', athlete_ids: ['ath-2', 'ath-3'], request_key: 'key-1' });
     await expect(response.json()).resolves.toEqual({ marked: ['ath-2'] });
-    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID);
+    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2', 'ath-3'], requestKey: 'key-1' });
+    await patch({ action: 'mark_no_shows', athlete_ids: ['ath-2'] });
+    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2'], requestKey: null });
+  });
+
+  // OVERWATCH 7160191377: a tap names its athletes; the server never works the set out itself.
+  const NUL = String.fromCharCode(0);
+  it.each([
+    [{ action: 'mark_no_shows' }],
+    [{ action: 'mark_no_shows', athlete_ids: [] }],
+    [{ action: 'mark_no_shows', athlete_ids: 'ath-1' }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1', ' '] }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1', 7] }],
+    [{ action: 'mark_no_shows', athlete_ids: [`ath${NUL}1`] }],
+    [{ action: 'mark_no_shows', athlete_ids: ['x'.repeat(201)] }],
+    [{ action: 'mark_no_shows', athlete_ids: Array.from({ length: 501 }, (_, i) => `ath-${i}`) }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: '' }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: null }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: 'k'.repeat(201) }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: `key${NUL}` }],
+  ])('refuses %j before touching the module', async (body) => {
+    const response = await patch(body);
+    expect(response.status).toBe(400);
+    expect(mockNoShows).not.toHaveBeenCalled();
+  });
+
+  it('takes up to 500 names of up to 200 characters each, and a key of up to 200', async () => {
+    mockNoShows.mockResolvedValue({ marked: [] });
+    const names = Array.from({ length: 500 }, (_, i) => `ath-${i}`.padEnd(200, 'x'));
+    expect((await patch({ action: 'mark_no_shows', athlete_ids: names, request_key: 'k'.repeat(200) })).status).toBe(200);
+    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: names, requestKey: 'k'.repeat(200) });
   });
 
   it('answers a class refusal with its status, code and plain message', async () => {
@@ -440,14 +470,14 @@ describe('tie_class and mark_no_shows', () => {
     expect(tie.status).toBe(409);
     expect(await tie.json()).toEqual({ error: 'SESSION_CLASS_ALREADY_LIVE', message: expect.stringMatching(/already running this class/) });
     mockNoShows.mockRejectedValueOnce(new SessionRunClassError('SESSION_RUN_NOT_TIED', 409));
-    const noShows = await patch({ action: 'mark_no_shows' });
+    const noShows = await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'] });
     expect(noShows.status).toBe(409);
     expect(await noShows.json()).toEqual({ error: 'SESSION_RUN_NOT_TIED', message: expect.any(String) });
   });
 
   it.each(['platform_owner', 'athlete', 'parent'])('refuses %s before touching the module', async (role) => {
     asCoach(role);
-    for (const body of [{ action: 'tie_class', class_id: 'class-1' }, { action: 'mark_no_shows' }]) {
+    for (const body of [{ action: 'tie_class', class_id: 'class-1' }, { action: 'mark_no_shows', athlete_ids: ['ath-1'] }]) {
       expect((await patch(body)).status).toBe(403);
     }
     expect(mockTie).not.toHaveBeenCalled();

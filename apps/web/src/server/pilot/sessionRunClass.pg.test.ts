@@ -293,6 +293,20 @@ async function gymState(gym: Gym, runId: string) {
   };
 }
 
+/** The no-shows tap as a screen sends it: the names it showed, and its key (none: sent once). */
+const naming = (athleteIds: readonly string[], requestKey: string | null = null) => ({ athleteIds, requestKey });
+
+/** The no-shows taps recorded on a run, oldest first. */
+async function noShowTaps(gym: Gym, runId: string) {
+  const { rows } = await client.query<{ details: Record<string, unknown> }>(
+    `select details from pilot.audit_events
+      where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2 and details->>'action' = 'mark_no_shows'
+      order by audit_id`,
+    [gym.organizationId, runId],
+  );
+  return rows.map((row) => row.details);
+}
+
 /** Long enough for the database clock to move, so a re-stamped now() or clock_timestamp() would show. */
 const letTheClockMove = () => client.query('select pg_sleep(0.05)');
 
@@ -766,8 +780,11 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Ada is here on the session, but her register mark has gone: the tap still skips her.
     await client.query(`delete from pilot.scheduler_attendance where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.ada]);
 
-    expect((await describeRunClass(gym.coach, gym.klass))?.no_shows).toBe(2);
-    expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [gym.ben, 'athlete-eve'] });
+    const shown = await describeRunClass(gym.coach, gym.klass);
+    expect(shown).toMatchObject({ no_shows: 2, no_show_ids: [gym.ben, 'athlete-eve'] });
+    // Named with athletes who have a mark here or on the register, and one not signed up: still only the no-shows.
+    const sent = [...(shown?.no_show_ids ?? []), gym.ada, gym.cy, 'athlete-dee', 'athlete-unknown', gym.ben];
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming(sent))).toEqual({ marked: [gym.ben, 'athlete-eve'] });
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent', method: 'coach_override', by: gym.coach.accountId });
     expect(await register(gym, 'athlete-eve')).toMatchObject({ status: 'absent' });
     expect(await register(gym, 'athlete-dee')).toMatchObject({ status: 'present', method: 'self' });
@@ -776,8 +793,23 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     expect((await registerAudit(gym)).filter((row) => row.details.effect === 'no_show_absent').map((row) => row.entity_id))
       .toEqual([`${gym.klass}:${gym.ben}`, `${gym.klass}:athlete-eve`]);
 
-    expect((await describeRunClass(gym.coach, gym.klass))?.no_shows).toBe(0);
-    expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [] });
+    expect(await describeRunClass(gym.coach, gym.klass)).toMatchObject({ no_shows: 0, no_show_ids: [] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming(sent))).toEqual({ marked: [] });
+    // Each tap is recorded on the run with the names it sent, each once and sorted, and whom it marked.
+    const names = [gym.ada, gym.ben, gym.cy, 'athlete-dee', 'athlete-eve', 'athlete-unknown'];
+    expect(await noShowTaps(gym, runId)).toEqual([
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked: [gym.ben, 'athlete-eve'] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked: [] },
+    ]);
+  });
+
+  test('marks only the athletes the tap names: a no-show the screen did not show is left alone', async () => {
+    const gym = await newGym('no-shows-named');
+    const { run_id: runId } = await start(gym, gym.coach);
+    expect(await describeRunClass(gym.coach, gym.klass)).toMatchObject({ no_show_ids: [gym.ada, gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben]))).toEqual({ marked: [gym.ben] });
+    expect(await register(gym, gym.ada)).toBeUndefined();
+    expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent' });
   });
 
   test('skips waitlisted and cancelled sign-ups, deleted athletes, and anyone seen in another session that day; an admin marks admin_override', async () => {
@@ -804,8 +836,9 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     await tap(gym.otherCoach, elsewhere, 'athlete-elsewhere');
     const { run_id: runId } = await start(gym, gym.admin);
 
-    expect((await describeRunClass(gym.admin, gym.klass))?.no_shows).toBe(2);
-    expect(await markSessionNoShowsAbsent(gym.admin, runId)).toEqual({ marked: [gym.ada, gym.ben] });
+    expect(await describeRunClass(gym.admin, gym.klass)).toMatchObject({ no_shows: 2, no_show_ids: [gym.ada, gym.ben] });
+    const everyone = [gym.ada, gym.ben, gym.cy, ...extra.map(([athleteId]) => athleteId)];
+    expect(await markSessionNoShowsAbsent(gym.admin, runId, naming(everyone))).toEqual({ marked: [gym.ada, gym.ben] });
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent', method: 'admin_override', role: 'organization_admin' });
     for (const athleteId of ['athlete-wait', 'athlete-gone', 'athlete-deleted', 'athlete-elsewhere', gym.cy]) {
       expect(await register(gym, athleteId)).toBeUndefined();
@@ -826,20 +859,22 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Run late in the evening, "3 hours from now" is tomorrow and cannot be tied; nothing to prove then.
     if (gymDayIso(later) !== gymDayIso(new Date())) return;
     const { run_id: runId } = await start(gym, gym.coach, 'class-later');
-    expect((await describeRunClass(gym.coach, 'class-later'))?.no_shows).toBe(0);
-    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId))).toMatchObject({ message: 'SESSION_CLASS_NOT_STARTED', status: 409 });
+    expect(await describeRunClass(gym.coach, 'class-later')).toMatchObject({ no_shows: 0, no_show_ids: [] });
+    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada], 'key-early')))).toMatchObject({ message: 'SESSION_CLASS_NOT_STARTED', status: 409 });
     expect(await register(gym, gym.ada, 'class-later')).toBeUndefined();
   });
 
   test('refused on an untied session, a cancelled class, and another coach\'s run', async () => {
     const gym = await newGym('no-shows-refuse');
     const { run_id: untied } = await start(gym, gym.otherCoach, null);
-    expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, untied))).toMatchObject({ message: 'SESSION_RUN_NOT_TIED', status: 409 });
+    expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, untied, naming([gym.ben])))).toMatchObject({ message: 'SESSION_RUN_NOT_TIED', status: 409 });
     const { run_id: runId } = await start(gym, gym.coach);
-    expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId, naming([gym.ben])))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
     await client.query(`update pilot.scheduler_classes set status = 'cancelled' where organization_id = $1 and class_id = $2`, [gym.organizationId, gym.klass]);
-    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId))).toMatchObject({ message: 'SESSION_CLASS_CANCELLED', status: 409 });
+    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-cancelled')))).toMatchObject({ message: 'SESSION_CLASS_CANCELLED', status: 409 });
     expect(await register(gym, gym.ben)).toBeUndefined();
+    // A refused tap is not recorded, so its key answers nothing later.
+    expect(await noShowTaps(gym, runId)).toEqual([]);
   });
 });
 
@@ -952,18 +987,74 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(await gymState(gym, runId)).toEqual(untied);
   });
 
-  test('the no-shows tap sent twice: the second marks nobody, and the register and audit stay as the first left them', async () => {
+  test('the no-shows tap sent twice with its key: the second answers as the first did, and the register and audit stay as the first left them', async () => {
     const gym = await newGym('repeat-no-shows');
     const { run_id: runId } = await start(gym, gym.coach);
     await tap(gym.coach, runId, gym.ada);
 
-    expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-repeat'))).toEqual({ marked: [gym.ben] });
     const before = await gymState(gym, runId);
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent', by: gym.coach.accountId });
     await letTheClockMove();
 
-    expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-repeat'))).toEqual({ marked: [gym.ben] });
     expect(await gymState(gym, runId)).toEqual(before);
+  });
+
+  // OVERWATCH 7160191377 (Codex P2 4693704996): the answer to the first send is lost, and the page
+  // resends. The resend acts on the names the first send carried, and applies once.
+  test('a resend after a lost answer acts on the first send\'s names, once: a mark taken off since and a later sign-up are left alone', async () => {
+    const gym = await newGym('lost-no-shows');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    expect(await describeRunClass(gym.coach, gym.klass)).toMatchObject({ no_show_ids: [gym.ben] });
+    // The first send lands; its answer never reaches the page.
+    await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost'));
+    // Meanwhile Ben's Absent is taken off the register, and Cy signs up and does not come.
+    await client.query(`delete from pilot.scheduler_attendance where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.ben]);
+    await client.query(
+      `insert into pilot.scheduler_registrations
+         (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+       values ($1, 'reg-cy', $2, $3, 'coach', $4, 'registered')`,
+      [gym.organizationId, gym.klass, gym.cy, gym.coach.accountId],
+    );
+    const meanwhile = await gymState(gym, runId);
+    await letTheClockMove();
+
+    // The resend, and one that overtakes it, answer as the first did and write nothing.
+    const resent = await Promise.all([
+      markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost')),
+      markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost')),
+    ]);
+    expect(resent).toEqual([{ marked: [gym.ben] }, { marked: [gym.ben] }]);
+    expect(await gymState(gym, runId)).toEqual(meanwhile);
+    expect(await register(gym, gym.ben)).toBeUndefined();
+    expect(await register(gym, gym.cy)).toBeUndefined();
+
+    // The same key naming others is refused, and writes nothing.
+    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben, gym.cy], 'key-lost'))))
+      .toMatchObject({ message: 'SESSION_NO_SHOWS_KEY_REUSED', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(meanwhile);
+
+    // A tap that marked nobody is recorded too: resent after Ada lost her mark here, it still marks nobody.
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada], 'key-none'))).toEqual({ marked: [] });
+    await tap(gym.coach, runId, gym.ada, false);
+    expect(await describeRunClass(gym.coach, gym.klass)).toMatchObject({ no_show_ids: [gym.ada, gym.ben, gym.cy] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada], 'key-none'))).toEqual({ marked: [] });
+    expect(await register(gym, gym.ada)).toBeUndefined();
+
+    // Sent before the session ended, a resend after it still answers; a new tap then is refused.
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost'))).toEqual({ marked: [gym.ben] });
+    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId, naming([gym.cy], 'key-after'))))
+      .toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    // Another coach cannot read a key back: their resend is refused as for any run not theirs.
+    expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId, naming([gym.ben], 'key-lost'))))
+      .toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    expect(await noShowTaps(gym, runId)).toEqual([
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked: [gym.ben] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked: [] },
+    ]);
   });
 });
 

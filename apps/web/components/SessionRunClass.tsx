@@ -19,6 +19,8 @@ export interface RunClassView {
   end_at: string;
   status: string;
   no_shows: number;
+  /** Who they are: the no-shows tap sends these names (W4 item 7, OVERWATCH 7160191377). */
+  no_show_ids: string[];
 }
 
 type Copied = { athlete_id: string; effect: string; previous_status?: string };
