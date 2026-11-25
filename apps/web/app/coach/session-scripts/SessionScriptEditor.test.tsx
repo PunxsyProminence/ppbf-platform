@@ -763,6 +763,8 @@ describe('writing a text block and copying a block (SP-2b)', () => {
           { block_id: 'blk-90', block_label: 'Body shots', block_kind: 'drill_round', contact_level: 'controlled_sparring' },
           { block_id: 'blk-92', block_label: `  ${'L'.repeat(250)}`, block_kind: 'reflection', contact_level: 'none' },
           { block_id: 'blk-93', block_label: '   ', block_kind: 'transition', contact_level: 'none' },
+          { block_id: 'blk-94', block_label: `${'E'.repeat(199)}\u{1F94A}tail`, block_kind: 'reflection', contact_level: 'none' },
+          { block_id: 'blk-95', block_label: `${'S'.repeat(199)} T`, block_kind: 'reflection', contact_level: 'none' },
         ],
       },
     },
@@ -904,6 +906,52 @@ describe('writing a text block and copying a block (SP-2b)', () => {
     type(block(4).getByLabelText('Title'), 'Water');
     await act(async () => save());
     expect((sent() as { add_blocks: { block_label: string }[] }).add_blocks.map((added) => added.block_label)).toEqual(['L'.repeat(200), 'Water']);
+  });
+
+  // Reviewers F and G: the server counts UTF-16 units and trims, so the cut keeps no half emoji and no
+  // end space -- what is sent is what the server stores.
+  it('the 200 cut never keeps half an emoji or an end space', async () => {
+    const { sent } = setupAll();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy a block from a plan' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Saturday seniors' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^E{199}/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy a block from a plan' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Saturday seniors' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^S{199} T/ }));
+    await act(async () => save());
+
+    expect((sent() as { add_blocks: { block_label: string }[] }).add_blocks.map((added) => added.block_label)).toEqual(['E'.repeat(199), 'S'.repeat(199)]);
+  });
+
+  it('closing the copy picker while the plan saves puts focus on the plan name, not on nothing (reviewer F)', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    setupAll(new Promise<Response>((resolve) => { finish = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy a block from a plan' }));
+    await screen.findByRole('button', { name: 'Saturday seniors' });
+
+    await act(async () => save());
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Close without copying' }));
+
+    expect(screen.getByLabelText('Plan name')).toHaveFocus();
+    await act(async () => {
+      finish?.(answer(409, { error: 'SESSION_SCRIPT_CHANGED' }));
+    });
+  });
+
+  it('the "add or close the text block" message also goes when the block is added (reviewer F)', async () => {
+    setupAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Write a text block' }));
+    await act(async () => save());
+    expect(screen.getByRole('alert')).toHaveTextContent('Add the text block you are writing');
+
+    type(textForm().getByLabelText('Kind of block'), 'close');
+    type(textForm().getByLabelText('Title'), 'Line up');
+    type(textForm().getByLabelText('Contact level'), 'none');
+    fireEvent.click(textForm().getByRole('button', { name: 'Add this block' }));
+
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('words the eye cannot see show as not written, as the server stores them', () => {

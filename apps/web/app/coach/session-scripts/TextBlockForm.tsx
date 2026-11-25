@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 
 import { blockKindWord } from '@/components/blockKindIcons';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
-import { INVISIBLE_FORMAT } from '@/src/server/pilot/feedbackSafetyScan';
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 
 // Writing a text block (SP-2b): kind, title, what to say and contact level, for
@@ -23,6 +22,14 @@ export interface WrittenBlock {
   text: string;
   contact_level: string;
 }
+
+/**
+ * Characters a reader cannot see: the server's own class, feedbackSafetyScan.ts INVISIBLE_FORMAT,
+ * which sessionScriptAuthoring.ts reads a text block's words with. Copied rather than imported so
+ * the coach page's bundle does not carry the safeguarding scanner (reviewer F); a test holds the
+ * two equal.
+ */
+export const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u2009\u200A\u202F]/gu;
 
 const KINDS = VOCABULARIES.block_kind.values.filter((kind) => kind !== 'drill_round');
 const CONTACT_LADDER = VOCABULARIES.contact_level.values;
@@ -58,7 +65,7 @@ export default function TextBlockForm({
       kind === '' ? 'Choose the kind of block.' : '',
       title.trim() === '' ? 'The block needs a title.' : '',
       // Words the eye cannot see are no words, read with the server's own class (cleanAdd; reviewers F and G).
-      kind !== '' && !MAY_HOLD_NO_TEXT.includes(kind) && text.replace(INVISIBLE_FORMAT, '').trim() === ''
+      kind !== '' && !MAY_HOLD_NO_TEXT.includes(kind) && text.replace(INVISIBLE, '').trim() === ''
         ? 'Write what to say in this block. Only Arrival, Transition and Close blocks can be left without words.'
         : '',
       text.length > MAX_TEXT_LENGTH ? `What to say can be ${MAX_TEXT_LENGTH} characters at most.` : '',

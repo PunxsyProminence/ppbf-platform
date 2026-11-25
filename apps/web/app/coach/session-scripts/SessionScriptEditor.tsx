@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 
 import BlockDrillPicker, { type PickableDrill } from './BlockDrillPicker';
 import CopyBlockPicker, { type CopiedBlock } from './CopyBlockPicker';
-import TextBlockForm, { type WrittenBlock } from './TextBlockForm';
+import TextBlockForm, { INVISIBLE, type WrittenBlock } from './TextBlockForm';
 
 import { blockKindWord } from '@/components/blockKindIcons';
 import { apiBase } from '@/lib/apiBase';
 import { humanizeContactLevel, NOT_WRITTEN_YET } from '@/src/lib/drillPresentation';
-import { INVISIBLE_FORMAT } from '@/src/server/pilot/feedbackSafetyScan';
 import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
 // Changing a plan: its name, each block's title and minutes (lane L1), and
@@ -133,7 +132,7 @@ function newWords(added: NonNullable<BlockDraft['added']>): string {
 
 /** A text block's words as the editor shows them: words the eye cannot see are no words (as the server reads them). */
 function writtenWords(text: string): string {
-  return text.replace(INVISIBLE_FORMAT, '').trim() === '' ? NOT_WRITTEN_YET : text.trim();
+  return text.replace(INVISIBLE, '').trim() === '' ? NOT_WRITTEN_YET : text.trim();
 }
 
 const TEXT_FORM_OPEN = 'Add the text block you are writing, or close its form, before you save.';
@@ -278,7 +277,9 @@ export default function SessionScriptEditor({
   // The title the coach sees is the title sent (reviewer G): the source's as it was read, trimmed and
   // cut to the server's 200, so a later rename of the source cannot change it at save.
   const addCopy = (copied: CopiedBlock) => {
-    const title = copied.block_label.trim().slice(0, 200);
+    // The server counts UTF-16 units (cleanText); the cut never splits a pair, so no half emoji is kept (reviewer F).
+    const cut = copied.block_label.trim().slice(0, 200);
+    const title = (/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut).trimEnd();
     add(title, { kind: 'copy', ...copied, block_label: title });
   };
 

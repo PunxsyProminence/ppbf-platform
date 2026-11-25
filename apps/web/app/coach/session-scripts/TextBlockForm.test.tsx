@@ -12,7 +12,8 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
-import TextBlockForm from './TextBlockForm';
+import TextBlockForm, { INVISIBLE } from './TextBlockForm';
+import { INVISIBLE_FORMAT } from '@/src/server/pilot/feedbackSafetyScan';
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -102,6 +103,20 @@ describe('the text block form', () => {
 
     type('Contact level', 'light_technical');
     expect(screen.queryByRole('alert')).toBeNull();
+
+    // Any field: the title too.
+    type('Title', '');
+    addBlock();
+    expect(screen.getByRole('alert')).toHaveTextContent('The block needs a title.');
+    type('Title', 'Guard talk');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  // Copied, not imported, so the coach page does not carry the safeguarding scanner (reviewer F):
+  // held equal to the server's class here, so the two cannot drift.
+  it('reads invisible characters with exactly the server\'s class', () => {
+    expect(INVISIBLE.source).toBe(INVISIBLE_FORMAT.source);
+    expect(INVISIBLE.flags).toBe(INVISIBLE_FORMAT.flags);
   });
 
   it('is not added without a contact level, and says why', () => {
