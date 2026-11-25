@@ -584,7 +584,13 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
-  test('an age corrected to under 18 while a save waits on the athlete row is seen inside the save: 403, never switched on (Codex on #2169)', async () => {
+  // Codex on #2169: each change the office can make between the save's first
+  // age read and its write, held open on a second connection while the save waits.
+  test.each([
+    ['the date of birth corrected to under 18', `update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, ADULT_ATHLETE],
+    ['the athlete record deleted', 'update pilot.athletes set deleted_at = now() where athlete_id = $1', ADULT_ATHLETE],
+    ['the account unlinked from the athlete record', 'update pilot.accounts set athlete_id = null where account_id = $1', ADULT_ID],
+  ] as const)('%s while a save waits on it is seen inside the save: 403, never switched on', async (_label, change, id) => {
     const client = await freshDatabase('emailsw_age_race');
     activeClient = client;
     activePool = new Pool({ connectionString: connectionStringFor('emailsw_age_race'), max: 4 });
@@ -595,14 +601,14 @@ describe('emailAlertSwitches.ts on a real database', () => {
          values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
         [ORG_ID, ADULT_ID],
       );
-      // The office corrects the date of birth and has not committed yet: the
-      // save's first age read still sees an adult.
+      // The office's change is not committed yet: the save's first age read
+      // still sees a linked adult.
       await office.query('BEGIN');
-      await office.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+      await office.query(change, [id]);
       let settled = false;
       const save = setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW);
       save.then(() => { settled = true; }, () => { settled = true; });
-      // Wait until the save is held on the athlete row (or has finished).
+      // Wait until the save is held on the row the office holds (or has finished).
       for (let i = 0; i < 200 && !settled; i += 1) {
         const { rows } = await client.query(
           `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
