@@ -36,8 +36,11 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  * must never read as failed (Overwatch condition 2 on #2158). A screen callback that throws never
  * stops the queue.
  *
- * Known limit: order holds within one page, not across two devices of the same coach. App
- * Overwatch accepted it for run actions (#2165, comment 7151658028); here taps are asked there.
+ * Known limit, accepted by App Overwatch (#2165, comments 7151658028 and 7152137181): order holds
+ * within one page, not across two devices of the same coach. A late save from one device can undo
+ * a newer change made on the other: a run action, or a here tap or take-back, which on a session
+ * tied to a class also writes or removes that class's register mark. What still holds: a register
+ * change made after a tap wins (condition 1), and each screen reads back what the server holds.
  */
 
 export const RESEND_MS = 15_000;
