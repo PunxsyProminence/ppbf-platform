@@ -17,6 +17,7 @@ import {
   readSaveQueue,
   resetSaveQueueForTests,
   type KeptSave,
+  type SaveAnswer,
   type SendContext,
 } from './saveQueue';
 
@@ -51,12 +52,15 @@ let sessionAccount: string | null | 'unreachable' | 'hang' = 'acct-a';
 let sessionAnswers: Array<string | null> = [];
 let releaseSession: ((account: string | null) => void) | null = null;
 let sessionCalls = 0;
+/** The abort signal each ask of the session route was given. */
+let sessionSignals: Array<AbortSignal | null | undefined> = [];
 
 function mockSessionRoute() {
-  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (!url.endsWith('/api/pilot/auth/session')) throw new Error(`unexpected fetch ${url}`);
     sessionCalls += 1;
+    sessionSignals.push(init?.signal);
     if (sessionAnswers.length > 0) {
       const scripted = sessionAnswers.shift() as string | null;
       return answer(200, scripted === null ? { authenticated: false } : { authenticated: true, account_id: scripted });
@@ -99,6 +103,7 @@ beforeEach(() => {
   sessionAnswers = [];
   releaseSession = null;
   sessionCalls = 0;
+  sessionSignals = [];
   mockSessionRoute();
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -178,19 +183,24 @@ describe('a save that fails on a flaky connection is kept and resent until it la
     expect(order).toEqual(['older', 'newer']);
   });
 
-  test('a send that never answers counts as unknown after the wait, and the save is resent', async () => {
+  test('a send that never answers is aborted after the wait, counts as unknown, and the save is resent', async () => {
     let calls = 0;
+    const signals: AbortSignal[] = [];
     const save: KeptSave = {
       label: 'Hangs once',
-      send: jest.fn(() => {
+      send: jest.fn((context: SendContext) => {
         calls += 1;
+        signals.push(context.signal);
         return calls === 1 ? new Promise<Response>(() => {}) : Promise.resolve(answer(200));
       }),
       onSaved: jest.fn(),
     };
     await keepSave(save);
     await settle();
+    expect(signals[0].aborted).toBe(false);
     await jest.advanceTimersByTimeAsync(ANSWER_WAIT_MS);
+    // Given up on, and aborted: it cannot reach the server after a newer save.
+    expect(signals[0].aborted).toBe(true);
     expect(readSaveQueue().waiting).toEqual(['Hangs once']);
     await jest.advanceTimersByTimeAsync(RESEND_MS);
     expect(save.send).toHaveBeenCalledTimes(2);
@@ -233,6 +243,60 @@ describe('a save that fails on a flaky connection is kept and resent until it la
 });
 
 describe('the queue never stops while saves wait', () => {
+  test('an answer whose body a screen already read: no code to read, and a 2xx still lands once', async () => {
+    const used = {
+      ok: true,
+      status: 200,
+      json: async () => { throw new TypeError('Body has already been used'); },
+      clone: () => { throw new TypeError('Body has already been used'); },
+    } as unknown as Response;
+    const kept = scriptedSave('Ada Reyes: here', [used]);
+    await keepSave(kept.save);
+    await settle();
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(RESEND_MS * 2);
+    expect(kept.save.send).toHaveBeenCalledTimes(1);
+    expect(readSaveQueue().waiting).toEqual([]);
+  });
+
+  test('an account check that never answers is given up after the wait, aborted, and asked again later', async () => {
+    const kept = scriptedSave('Ada Reyes: here', ['throw', answer(200)]);
+    await keepSave(kept.save);
+    await settle();
+    sessionAccount = 'hang';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(sessionSignals.at(-1)?.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(ANSWER_WAIT_MS);
+    expect(sessionSignals.at(-1)?.aborted).toBe(true);
+    sessionAccount = 'acct-a';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('a sign-out while a screen\'s answerOf is still working: the next person\'s save is not taken for it', async () => {
+    let decide: (value: SaveAnswer) => void = () => {};
+    const save: KeptSave = {
+      label: 'Ada Reyes: here',
+      send: jest.fn(async () => answer(200)),
+      answerOf: () => new Promise<SaveAnswer>((resolve) => { decide = resolve; }),
+      onSaved: jest.fn(),
+    };
+    await keepSave(save);
+    await settle();
+    clearRoleSession();
+    sessionAccount = 'acct-b';
+    writeGymTabletSignedOutAt(Date.now());
+    createPersistentRoleSession('coach');
+    await settle();
+    const mine = scriptedSave('Ben Ortiz: here', ['throw', answer(200)]);
+    await keepSave(mine.save);
+    await settle();
+    decide('saved');
+    await settle();
+    expect(save.onSaved).not.toHaveBeenCalled();
+    expect(readSaveQueue().waiting).toEqual(['Ben Ortiz: here']);
+  });
+
   test('a screen\'s answerOf that throws counts as unknown: the save is resent and the queue goes on', async () => {
     let calls = 0;
     const { save } = scriptedSave('Ada Reyes: here', [answer(502), answer(200)], {
@@ -371,19 +435,64 @@ describe('nothing survives a sign-out or an account change', () => {
     await expectNothingSent(kept, 1);
   });
 
-  test('another person signed in without passing through "nobody": the last person\'s words leave the screen at once, and their saves are dropped', async () => {
+  test('another person signed in without passing through "nobody" (the sign-in writes the device mark first): the last person\'s words leave the screen at once, and their saves are dropped', async () => {
     await failedSave('Staff note on Ada Reyes');
     const kept = await waitingSave('Ada Reyes: here');
 
     sessionAccount = 'acct-b';
+    writeGymTabletSignedOutAt(Date.now());
     createPersistentRoleSession('coach');
-    // Nothing of the last person is on screen while the page asks who is signed in.
     expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
     await settle();
     expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
     await expectNothingSent(kept, 1);
 
     // The next person's save is tied to them.
+    const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    await keepSave(mine.save);
+    await settle();
+    expect(mine.contexts.map((context) => context.madeByAccountId)).toEqual(['acct-b']);
+  });
+
+  test('a role session written again with no mark, answered by another account: dropped once the check answers', async () => {
+    await failedSave('Staff note on Ada Reyes');
+    const kept = await waitingSave('Ada Reyes: here');
+    sessionAccount = 'acct-b';
+    createPersistentRoleSession('coach');
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+    await expectNothingSent(kept, 1);
+  });
+
+  test('a role session written again by the same person on flaky wifi (the check cannot answer): the waiting and failed lines stay and new saves are kept', async () => {
+    await failedSave('Staff note on Ada Reyes');
+    const kept = await waitingSave('Ada Reyes: here');
+    sessionAccount = 'unreachable';
+    createPersistentRoleSession('coach');
+    await settle();
+    expect(readSaveQueue().waiting).toEqual(['Ada Reyes: here']);
+    expect(readSaveQueue().failed.map((item) => item.label)).toEqual(['Staff note on Ada Reyes']);
+    const next = scriptedSave('Ada Reyes: not here', [answer(200)]);
+    await expect(keepSave(next.save)).resolves.toBe('kept');
+    expect(readSaveQueue().waiting).toEqual(['Ada Reyes: here', 'Ada Reyes: not here']);
+    sessionAccount = 'acct-a';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
+    expect(next.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('an older answer to "who is signed in" arriving after a newer one is never used', async () => {
+    // The first background ask hangs; a second one answers another account; then the first answers late.
+    sessionAccount = 'hang';
+    createPersistentRoleSession('coach');
+    await settle();
+    const firstRelease = releaseSession;
+    sessionAnswers = ['acct-b'];
+    createPersistentRoleSession('coach');
+    await settle();
+    firstRelease?.('acct-a');
+    await settle();
+    sessionAccount = 'acct-b';
     const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
     await keepSave(mine.save);
     await settle();
@@ -461,17 +570,104 @@ describe('nothing survives a sign-out or an account change', () => {
     expect(readSaveQueue().waiting).toEqual([]);
   });
 
-  test('the page asking again after its role session is written, and finding nobody, drops everything', async () => {
+  test('the page asking again after its role session is written, and finding nobody, drops everything, the count too', async () => {
     const kept = await waitingSave('Ada Reyes: here');
     sessionAccount = null;
     createPersistentRoleSession('coach');
     await settle();
     expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
-    // The same person signs in again: the session that made the save ended, so it stays dropped.
+    // The same person signs in again: the session that made the save ended, so it stays dropped,
+    // and nothing of it survived that sign-out, not even the count.
     sessionAccount = 'acct-a';
     prepareSaveQueue();
     await settle();
-    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 1 });
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+    await expectNothingSent(kept, 1);
+  });
+
+  test('a sign-out from inside a refusal callback: its words are not kept for the next person', async () => {
+    const kept = scriptedSave('Staff note on Ada Reyes', [answer(422)], {
+      onRefused: jest.fn(() => {
+        clearRoleSession();
+        return 'The server refused it.';
+      }),
+    });
+    await keepSave(kept.save);
+    await settle();
+    sessionAccount = 'acct-b';
+    createPersistentRoleSession('coach');
+    await settle();
+    prepareSaveQueue();
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+  });
+
+  test('a sign-in on the device while the page asks who is signed in: that answer is not used', async () => {
+    resetSaveQueueForTests();
+    sessionAccount = 'hang';
+    const kept = scriptedSave('Ada Reyes: here', [answer(200)]);
+    const result = keepSave(kept.save);
+    await settle();
+    writeGymTabletSignedOutAt(Date.now());
+    releaseSession?.('acct-a');
+    await expect(result).resolves.toBe('not_kept');
+    await expectNothingSent(kept, 0);
+  });
+
+  test('a save made while the page asks again who is signed in waits for that answer, and is tied to whoever it names', async () => {
+    sessionAccount = 'hang';
+    createPersistentRoleSession('coach');
+    await settle();
+    const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    const result = keepSave(mine.save);
+    await settle();
+    expect(mine.save.send).not.toHaveBeenCalled();
+    releaseSession?.('acct-b');
+    await expect(result).resolves.toBe('kept');
+    await settle();
+    expect(mine.contexts.map((context) => context.madeByAccountId)).toEqual(['acct-b']);
+  });
+
+  test('a save made while that ask cannot answer is tied to the account last confirmed, and is never sent before a check confirms it', async () => {
+    sessionAccount = 'unreachable';
+    createPersistentRoleSession('coach');
+    await settle();
+    const kept = scriptedSave('Ada Reyes: here', [answer(200)]);
+    await expect(keepSave(kept.save)).resolves.toBe('kept');
+    await settle();
+    expect(kept.save.send).not.toHaveBeenCalled();
+    sessionAccount = 'acct-b';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(kept.save.send).not.toHaveBeenCalled();
+    expect(readSaveQueue().waiting).toEqual([]);
+  });
+
+  test('once a check before a send confirms the account again, a save made at once is sent without asking', async () => {
+    sessionAccount = 'unreachable';
+    createPersistentRoleSession('coach');
+    await settle();
+    const one = scriptedSave('One', [answer(200)]);
+    await keepSave(one.save);
+    await settle();
+    sessionAccount = 'acct-a';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(one.save.onSaved).toHaveBeenCalledTimes(1);
+    const asked = sessionCalls;
+    const two = scriptedSave('Two', [answer(200)]);
+    await keepSave(two.save);
+    await settle();
+    expect(two.save.onSaved).toHaveBeenCalledTimes(1);
+    expect(sessionCalls).toBe(asked);
+  });
+
+  test('a sign-in mark written in this tab while the check before a send is out: nothing is sent', async () => {
+    const kept = await waitingSave('Ada Reyes: here');
+    sessionAccount = 'hang';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    writeGymTabletSignedOutAt(Date.now());
+    releaseSession?.('acct-a');
+    await settle();
+    expect(readSaveQueue().waiting).toEqual([]);
     await expectNothingSent(kept, 1);
   });
 
@@ -534,6 +730,18 @@ describe('nothing survives a sign-out or an account change', () => {
 });
 
 describe('saves dropped while the same person is still signed in', () => {
+  test('the count is forgotten at a sign-out or sign-in on the device, even when the same person comes back', async () => {
+    const kept = scriptedSave('Ada Reyes: here', ['throw']);
+    await keepSave(kept.save);
+    await settle();
+    clearRoleSession();
+    jest.advanceTimersByTime(5);
+    writeGymTabletSignedOutAt(Date.now());
+    createPersistentRoleSession('coach');
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+  });
+
   test('the count, with no names, is shown once the page confirms it is still them; another person never sees it', async () => {
     const kept = scriptedSave('Ada Reyes: here', ['throw', answer(200)]);
     await keepSave(kept.save);

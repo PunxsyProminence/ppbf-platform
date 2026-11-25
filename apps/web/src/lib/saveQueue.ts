@@ -18,16 +18,18 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  *
  * TIED TO THE ACCOUNT THAT MADE IT. A save is kept only once this page knows who is signed in
  * (POST /api/pilot/auth/session); before that it is not kept, and the screen says what it says
- * today. The account is asked again before every send, except a first send made at once with an
- * account confirmed since the role session last changed. Everything kept, waiting or failed, is
- * dropped the moment that account is gone or another is signed in: the role session is cleared
- * (every sign-out in the page does that), a sign-out or sign-in mark on this device newer than what
- * this page holds (the gym tablet's boundary mark, from this tab or another), a 401, the server
- * saying the save was made by another account, or a check before a send that answers with another
- * account or nobody. The words a waiting or failed save showed go with it: the next person sees
+ * today. The account is asked again before every resend, before the first send of a save that
+ * waited, and in the background whenever the role session is written again; until that background
+ * ask confirms the account, a new save waits for its answer and is checked again before it is sent.
+ * Everything kept,
+ * waiting or failed, is dropped the moment that account is gone or another is signed in: the role
+ * session is cleared (every sign-out in the page does that), the device's sign-out / sign-in mark
+ * changes (every sign-in writes it first; this tab or another), a 401, the server saying the save
+ * was made by another account, or a check that answers with another account or nobody. The words a waiting or failed save showed go with it: the next person sees
  * nothing of the last person's saves. Only the person whose saves were dropped, once the page has
- * confirmed it is still them signed in, is told how many were not sent, with no names
- * (AGENT_KERNEL floor: an unknown value never looks complete).
+ * confirmed it is still them signed in with no sign-out or sign-in on the device since, is told how
+ * many were not sent, with no names (AGENT_KERNEL floor: an unknown value never looks complete).
+ * The count, too, is forgotten at a sign-out or sign-in.
  *
  * RESENT every 15 seconds and when the browser says it is online again (the tablet sign-out's
  * pattern, TabletIdleSignOut.tsx), until the server says yes, refuses it, or it is dropped. A
@@ -41,6 +43,10 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  * a newer change made on the other: a run action, or a here tap or take-back, which on a session
  * tied to a class also writes or removes that class's register mark. What still holds: a register
  * change made after a tap wins (condition 1), and each screen reads back what the server holds.
+ *
+ * Known limit, within one page: a send given up on after ANSWER_WAIT_MS is aborted, which stops it
+ * on the network, but not work the server had already started on it. If the server took a request
+ * and is still working on it after 30 seconds, it may write it after a newer save from this page.
  */
 
 export const RESEND_MS = 15_000;
@@ -54,6 +60,8 @@ export const ANSWER_WAIT_MS = 30_000;
 export type SaveAnswer = 'saved' | 'refused' | 'unknown';
 
 export interface SendContext {
+  /** Aborted when the queue stops waiting for this send: pass it to fetch, so a send given up on never lands later. */
+  signal: AbortSignal;
   /**
    * One random id for this save, the same on every send of it: the request key a route takes
    * (request_key), so the server writes the save once however often it is sent.
@@ -125,12 +133,19 @@ let heldAccount: string | null = null;
 /**
  * Whether this page holds anything for an account (since its first confirmation after the last
  * drop), and the device's sign-out / sign-in mark as it read then. Any other mark seen later means a
- * sign-out or sign-in on this device since: compared by value, so no clock decides it.
+ * sign-out or sign-in on this device since. Compared by value; the one clock in it: the mark module
+ * deletes a mark dated in the future (the device clock set back), which reads as a change, so the
+ * saves are dropped, never kept.
  */
 let holding = false;
 let markAtHold: number | null = null;
 let learning: Promise<string | null> | null = null;
-let notSent: { count: number; accountId: string } | null = null;
+/** Each ask of who is signed in gets a number; only the newest one's answer is used. */
+let learnSeq = 0;
+/** The role session was written again and no answer has confirmed the account since. */
+let rechecking = false;
+/** Saves dropped unsent: how many, whose, and the device mark when they were dropped. */
+let notSent: { count: number; accountId: string; mark: number | null } | null = null;
 let generation = 0;
 let busy = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -174,7 +189,11 @@ function later(): void {
 
 /** Everything kept, waiting or failed, goes: the account it was tied to is gone or has changed. */
 function dropAll(): void {
-  if (entries.length > 0) notSent = { count: entries.length, accountId: entries[0].accountId };
+  if (entries.length > 0) {
+    notSent = { count: entries.length, accountId: entries[0].accountId, mark: readGymTabletSignedOutAt() };
+  } else if (notSent && notSent.mark !== readGymTabletSignedOutAt()) {
+    notSent = null;
+  }
   generation += 1;
   entries = [];
   failed = [];
@@ -183,26 +202,35 @@ function dropAll(): void {
   holding = false;
   markAtHold = null;
   learning = null;
+  rechecking = false;
   clearTimer();
   notify();
 }
 
-/** A promise, or a timeout's rejection after ANSWER_WAIT_MS: no request may hold the queue forever. */
-function withinWait<T>(promise: Promise<T>): Promise<T> {
+/**
+ * A request, given up on after ANSWER_WAIT_MS: no request may hold the queue forever. It is ABORTED
+ * then, not left open, so a send given up on cannot reach the server after a newer one.
+ */
+function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
   let wait: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    wait = setTimeout(() => reject(new Error('no answer')), ANSWER_WAIT_MS);
+    wait = setTimeout(() => {
+      controller.abort();
+      reject(new Error('no answer'));
+    }, ANSWER_WAIT_MS);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(wait));
+  return Promise.race([start(controller.signal), timeout]).finally(() => clearTimeout(wait));
 }
 
 /** Who is signed in now: an account id, null for nobody, or 'unreachable'. */
 async function signedInAccount(): Promise<string | null | 'unreachable'> {
   try {
-    const response = await withinWait(fetch(`${apiBase()}/api/pilot/auth/session`, {
+    const response = await withinWait((signal) => fetch(`${apiBase()}/api/pilot/auth/session`, {
       method: 'POST',
       credentials: 'include',
       cache: 'no-store',
+      signal,
     }));
     if (!response.ok) return 'unreachable';
     const body = (await response.json().catch(() => null)) as { authenticated?: unknown; account_id?: unknown } | null;
@@ -223,27 +251,44 @@ function confirmAccount(answer: string): void {
   if (heldAccount !== null && heldAccount !== answer) dropAll();
   accountId = answer;
   heldAccount = answer;
+  rechecking = false;
   if (!holding) {
     holding = true;
     markAtHold = readGymTabletSignedOutAt();
   }
-  if (notSent && notSent.accountId !== answer) notSent = null;
+  // Told only to the same account, and only with no sign-out or sign-in on the device since.
+  if (notSent && (notSent.accountId !== answer || notSent.mark !== readGymTabletSignedOutAt())) notSent = null;
   notify();
 }
 
-function learnAccount(): Promise<string | null> {
+/**
+ * Who is signed in: the account confirmed already, or ask (always, when `again`). While the role
+ * session's background ask is out, its answer; if it cannot answer, the account last confirmed
+ * (a save made then is checked again before it is sent).
+ */
+function learnAccount(again = false): Promise<string | null> {
   if (boundaryNewer()) dropAll();
-  if (accountId) return Promise.resolve(accountId);
-  if (!learning) {
+  if (accountId && !again && !rechecking) return Promise.resolve(accountId);
+  if (!learning || again) {
     const seen = generation;
+    const seq = ++learnSeq;
+    const markAtAsk = readGymTabletSignedOutAt();
     learning = signedInAccount().then((answer) => {
-      if (seen !== generation) return null;
+      // Only the newest ask counts: an older answer arriving late is never used.
+      if (seen !== generation || seq !== learnSeq) return seq === learnSeq ? null : accountId;
       learning = null;
-      if (answer === null) {
-        dropAll();
+      // A sign-out or sign-in on the device while asking: the answer may be about the last person.
+      if (readGymTabletSignedOutAt() !== markAtAsk) {
+        if (holding) dropAll();
         return null;
       }
-      if (answer === 'unreachable') return null;
+      if (answer === null) {
+        dropAll();
+        notSent = null;
+        notify();
+        return null;
+      }
+      if (answer === 'unreachable') return accountId;
       confirmAccount(answer);
       return answer;
     });
@@ -255,16 +300,16 @@ function install(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   subscribeRoleSession(() => {
-    if (!getRoleSessionSnapshot()) {
+    // Signed out, or a sign-in on this device since this page began to hold (every sign-in writes
+    // the device mark before it writes the role session): everything goes, at once.
+    if (!getRoleSessionSnapshot() || boundaryNewer()) {
       dropAll();
       return;
     }
-    // A role session written again (a page load re-reads it) may be someone else's after a sign-in
-    // that never passed through "nobody": nothing is shown or sent until the account is asked again.
-    accountId = null;
-    learning = null;
-    notify();
-    void learnAccount();
+    // The same device with no sign-in since: a page read its session again. Ask in the background;
+    // another account or nobody drops everything, and an unanswered ask leaves the saves as they are.
+    rechecking = true;
+    void learnAccount(true);
   });
   window.addEventListener('storage', () => {
     if (boundaryNewer()) dropAll();
@@ -289,8 +334,13 @@ function msSinceMade(entry: Entry): number {
 }
 
 async function codeOf(response: Response): Promise<unknown> {
-  const body = (await response.clone().json().catch(() => null)) as { code?: unknown; error?: unknown } | null;
-  return body?.code ?? body?.error;
+  try {
+    // clone() throws on a body a screen's send already read: then there is no code to read.
+    const body = (await response.clone().json()) as { code?: unknown; error?: unknown } | null;
+    return body?.code ?? body?.error;
+  } catch {
+    return undefined;
+  }
 }
 
 function defaultAnswer(response: Response): SaveAnswer {
@@ -320,9 +370,13 @@ async function pump(): Promise<void> {
       dropAll();
       return;
     }
-    if (head.sends > 0 || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
+    if (head.sends > 0 || rechecking || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
       const now = await signedInAccount();
       if (seen !== generation) return;
+      if (boundaryNewer()) {
+        dropAll();
+        return;
+      }
       if (now === 'unreachable') {
         later();
         return;
@@ -335,7 +389,8 @@ async function pump(): Promise<void> {
     }
     let response: Response | null = null;
     try {
-      response = await withinWait(head.save.send({
+      response = await withinWait((signal) => head.save.send({
+        signal,
         requestKey: head.requestKey,
         madeByAccountId: head.accountId,
         msSinceMade: msSinceMade(head),

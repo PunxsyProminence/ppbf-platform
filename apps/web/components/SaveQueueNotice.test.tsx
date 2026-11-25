@@ -76,9 +76,9 @@ test('a waiting save is named in a status line; a refused one in an alert with t
   expect(failed).toHaveTextContent(FAILED_WORDS);
   expect(failed).toHaveTextContent('Staff note on Ben Ortiz: This athlete is not marked present in this session.');
 
-  // Floor sizes on any surface, not only inside a kiosk surface (design-system README, rule 5).
-  expect(screen.getByRole('button', { name: 'OK' }).className).toEqual(expect.stringContaining('min-h-[var(--tap)]'));
-  expect(screen.getByRole('button', { name: 'OK' }).className).toEqual(expect.stringContaining('text-[length:var(--t-md)]'));
+  // Floor sizes on any surface: .btn--kiosk sets them in the sheet (Tailwind utilities on a .btn lose
+  // to the unlayered sheet, so a class string of utilities would prove nothing).
+  expect(screen.getByRole('button', { name: 'OK' })).toHaveClass('btn', 'btn--kiosk');
   fireEvent.click(screen.getByRole('button', { name: 'OK' }));
   expect(screen.queryByRole('alert')).toBeNull();
 });
@@ -86,16 +86,19 @@ test('a waiting save is named in a status line; a refused one in an alert with t
 test('signing out takes every word of the last person\'s saves off the screen at once', async () => {
   const { container } = render(<SaveQueueNotice />);
   await act(async () => {
+    await keepSave(save('Staff note on Ben Ortiz', [answer(422)]));
+    await jest.advanceTimersByTimeAsync(0);
     await keepSave(save('Ada Reyes: here', ['throw']));
-    await keepSave(save('Refused', [answer(422)]));
     await jest.advanceTimersByTimeAsync(0);
   });
   expect(screen.getByRole('status')).toHaveTextContent('Ada Reyes: here');
+  expect(screen.getByRole('alert')).toHaveTextContent('Staff note on Ben Ortiz');
 
   act(() => {
     clearRoleSession();
   });
   expect(container).toHaveTextContent(/^$/);
+  expect(container).not.toHaveTextContent('Ben Ortiz');
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
