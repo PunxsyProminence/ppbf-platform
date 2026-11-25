@@ -209,7 +209,8 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * past counts as the posting. A RESTORE SETS IT LIVE AGAIN (Overwatch on
  * #2193, comment 7165858842): restoring a retired notice emails everyone who
  * reads it and has not had it, and nobody twice, because the send log's key
- * is one row per person per notice (OW27-03 B). The restore time is the row's
+ * is one row per person per notice (OW27-03 B); a send skipped because the
+ * notice was retired before it went out is queued again (emailAlertQueue.ts). The restore time is the row's
  * updated_at: setAnnouncementActive is the only write to a notice and stamps
  * it on every call, so a Restore pressed on a notice already live counts the
  * same and reaches only those who have not had it.
@@ -296,13 +297,17 @@ const GYM_NOTICE: AlertEvent = {
  * one rule, guardianLinkedPredicateSql (the guardian link to the live child,
  * and the sign-in checks the session gate makes for a parent of this gym),
  * plus guardianLinkEnded on the child's date of birth: at 18 the link goes
- * dormant and the note drops off the page. The sweep's candidates are every
- * account behind a guardian record linked to the note's child; each is then
- * asked that rule, so the source and the send-time check are one rule.
+ * dormant and the note drops off the page. The author's account is joined as
+ * listParentMessages joins it: a note whose author was purged
+ * (coach_account_id set to null) is not on the page, so it emails nobody. The
+ * sweep's candidates are every account behind a guardian record linked to the
+ * note's child; each is then asked that rule, so the source and the send-time
+ * check are one rule.
  */
 const FAMILY_NOTE_READ = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
    from pilot.coach_observations co
    join pilot.athletes ath on ath.organization_id = co.organization_id and ath.athlete_id = co.athlete_id
+   join pilot.accounts author on author.account_id = co.coach_account_id
   where co.organization_id = $1 and co.note_id = $2::uuid and co.note_type = 'parent_message'
     and ${guardianLinkedPredicateSql('co.organization_id', 'co.athlete_id', '$3')}`;
 
