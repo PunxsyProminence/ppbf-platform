@@ -198,8 +198,8 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * athlete's own board, or everywhere; a sign-in-page notice, gym_notices,
  * emails nobody). Every placement there is one the role may read
  * (mayReadLivePlacement, announcements.ts, the page's own rule); a test holds
- * the table to that rule. A notice retired, or ended, by the send is not sent. Its time is on the database
- * clock, as the sweep's overlap needs:
+ * the table to that rule. A notice retired, or ended, by the send is not sent.
+ * Its time is on the database clock, as the sweep's overlap needs:
  * created_at, or a start time still to come when it was posted (by then the
  * row has committed); a start time already past counts as the posting. So a
  * notice that was retired when it would have gone live is sent if it is
