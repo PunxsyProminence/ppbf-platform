@@ -478,6 +478,20 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
           [ORG, NEW_POST, CO_THREAD, ATHLETE, COACH, GUARDIAN, OFFICE],
         ),
       ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_thread_reads_guardian_own_thread' });
+      // The co-guardian's read of a staff reply recorded BEFORE the reply is stored, in the same
+      // statement: the read's rules cannot be applied to a post that is not there yet, so it is
+      // refused, not left to the foreign key that would look only once the reply exists.
+      await expect(
+        client.query(
+          `with seen as (
+             insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+             values ($1, $2::uuid, $3, 'parent') returning organization_id, post_id)
+           insert into pilot.family_thread_posts
+             (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+           select organization_id, post_id, $4::uuid, $5, $6, 'coach', 'Noted.' from seen`,
+          [ORG, NEW_POST, CO_GUARDIAN, THREAD, ATHLETE, COACH],
+        ),
+      ).rejects.toMatchObject({ code: '23503', constraint: 'pilot_family_thread_reads_post_fk' });
       expect(await count(client, 'family_thread_posts')).toBe(6);
       expect(await count(client, 'family_thread_reads')).toBe(0);
 
