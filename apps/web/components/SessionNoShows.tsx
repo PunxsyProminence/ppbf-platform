@@ -123,14 +123,18 @@ export default function SessionNoShows({
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
-      // Not landed when the server refused after looking the key up. Otherwise landed only if the
-      // coach's live run is this run and none of the names sent is still a no-show of its class.
+      // Not landed when the server refused after looking the key up. Otherwise landed if none of the
+      // names sent is still a no-show of this class on this run, and not known if not. When the live run is another run
+      // or none, or is tied to another class now, that class's no-shows are not read here: not known,
+      // never "not saved" (condition 2; round 14, reviewer B).
       checkLanded: async (signal) => {
         if (refusal.error === KEY_REUSED) return null;
         if (refusal.error && REFUSED_AFTER_KEY.has(refusal.error)) return false;
         const now = await fetchLiveRunClass(signal).catch(() => null);
-        if (now === null) return null;
-        return now.runId === runId && now.view?.class_id === classId && !now.view.no_show_ids.some((id) => named.includes(id));
+        if (now === null || now.runId !== runId || !now.view || now.view.class_id !== classId) return null;
+        // A name still listed does not prove the tap never landed (a mark taken off since, a sign-up
+        // cancelled and made again): not known (round 15, reviewer A).
+        return now.view.no_show_ids.some((id) => named.includes(id)) ? null : true;
       },
       onSaved: (response) => {
         resolved.done = true;

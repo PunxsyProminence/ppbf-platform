@@ -226,14 +226,17 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('None of the athletes this tap named is still listed as a no-show.')).toBeTruthy();
   });
 
-  test('a refused resend while a name it sent is still a no-show is not read as landed: its words are said here', async () => {
+  // Round 15, reviewer A: a name can stay listed after a tap that landed (a mark taken off since, a
+  // sign-up cancelled and made again), so a refusal given before the key lookup is not known then.
+  test('a refused resend while a name it sent is still a no-show is not known, never read as not saved', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+    expect(screen.getByRole('alert').textContent).toMatch(/^Mark the no-shows Absent: .*not known whether it was saved/);
+    expect(screen.queryByText('Not yet.')).toBeNull();
   });
 
   test.each(['SESSION_CLASS_CANCELLED', 'SESSION_CLASS_NOT_STARTED', 'SESSION_CLASS_NOT_YOURS', 'SESSION_RUN_NOT_TIED', 'SESSION_NO_SHOWS_CLASS_CHANGED'])(
@@ -314,7 +317,8 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(readSaveQueue().failed).toEqual([{ label: 'Mark the no-shows Absent', words: expect.stringMatching(/could not be checked/), known: false }]);
   });
 
-  test('a refused resend when the coach\'s live run is tied to another class now is not read as landed: its words are said here', async () => {
+  // Round 14, reviewer B: another class's no-shows say nothing about this class's; never "not saved".
+  test('a refused resend when the coach\'s live run is tied to another class now is not known: its not-known words are said here', async () => {
     jest.useFakeTimers();
     serveKept(
       (send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)),
@@ -326,7 +330,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+    expect(screen.getByRole('alert').textContent).toMatch(/^Mark the no-shows Absent: .*not known whether it was saved/);
     expect(screen.queryByText('None of the athletes this tap named is still listed as a no-show.')).toBeNull();
   });
 
@@ -344,14 +348,36 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
   });
 
-  test('a refused resend when the coach\'s live run is another run is not read as landed: its words are said here', async () => {
+  // Round 14, reviewers A and B: once this run has ended, the live read cannot show what it holds.
+  test('a refused resend when the coach\'s live run is another run is not known: its not-known words are said here', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2), 'run-2');
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+    expect(screen.getByRole('alert').textContent).toMatch(/^Mark the no-shows Absent: .*not known whether it was saved/);
+    expect(screen.queryByText('Not yet.')).toBeNull();
+  });
+
+  test('a resend refused as not found once no run is live is named as not known in the page\'s list, never as not saved', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'SESSION_RUN_NOT_FOUND' }, 404);
+      }
+      return sends === 0 ? json({ run: { run_id: 'run-1' }, class: tiedClass(2) }) : json({ run: null });
+    });
+    const onRunNotLive = await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(readSaveQueue().failed).toEqual([{ label: 'Mark the no-shows Absent', words: expect.stringMatching(/could not be checked/), known: false }]);
   });
 
   test('a tap refused because the session is no longer live hands that to the console, as today', async () => {
@@ -402,7 +428,8 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
 
   test('a refusal after the offer has gone from the page is said in the page\'s list, after the save\'s name', async () => {
     jest.useFakeTimers();
-    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2), 'run-2');
+    // A refusal given after the key lookup: known not landed, so the server's words are said.
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
     await tapMark();
     cleanup();
     await act(async () => {

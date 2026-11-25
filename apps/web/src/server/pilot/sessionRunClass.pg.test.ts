@@ -1163,6 +1163,20 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     );
     expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+
+    // Round 14, reviewer A: Ben's Absent on another class, by chance at the tap's moment, is not the
+    // tap's either, once the run is tied to that class.
+    await addClass(gym.organizationId, 'class-two', gym.coach.accountId);
+    await client.query(
+      `insert into pilot.scheduler_attendance
+         (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role, checked_in_by_account_id, note, checked_in_at, updated_at)
+       values ($1, 'att-two-ben', 'class-two', $2, 'absent', 'admin_override', 'organization_admin', $3, '', $4::timestamptz, $4::timestamptz)`,
+      [gym.organizationId, gym.ben, gym.admin.accountId, tapRecord.marked_at],
+    );
+    await setSessionRunClass(gym.coach, runId, 'class-two');
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
+      .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+    expect(await register(gym, gym.ben, 'class-two')).toMatchObject({ status: 'absent' });
   });
 
   test('a tap for a class the session is no longer tied to marks nobody: refused, and not recorded', async () => {

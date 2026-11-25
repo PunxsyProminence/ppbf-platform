@@ -188,11 +188,13 @@ export default function SessionRunClass({
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
-      // Landed only if the coach's live run is this run, and its class is the one asked for.
+      // Landed only if the coach's live run is this run, and its class is the one asked for. When
+      // the live run is another run or none, this run has ended and what it held is not read here:
+      // not known, never "not saved" (condition 2; round 14, reviewer B).
       checkLanded: async (signal) => {
         const now = await fetchLiveRunClass(signal).catch(() => null);
-        if (now === null) return null;
-        return now.runId === runId && (now.view?.class_id ?? null) === next;
+        if (now === null || now.runId !== runId) return null;
+        return (now.view?.class_id ?? null) === next;
       },
       onSaved: (response) => {
         resolved.done = true;
@@ -214,7 +216,10 @@ export default function SessionRunClass({
         // The run gone, or no longer this line's: said in the page's list, as the console says only
         // that the session ended (and nothing once it settled here), never that this was not saved.
         if (gone || !forThisRun()) {
-          if (landed === null) return unknownOffPage('Check which class the session is tied to before tying it again.');
+          // The session has ended: its class is read under Finished sessions, not on this line.
+          if (landed === null) {
+            return unknownOffPage(gone ? 'Check the class shown for this session under Finished sessions.' : 'Check which class the session is tied to before tying it again.');
+          }
           return gone ? `The class was not changed: ${goneWords(refusal.error as string)}.` : refusal.message ?? 'The class could not be changed.';
         }
         const reason = refusal.message ?? 'The class could not be changed.';
