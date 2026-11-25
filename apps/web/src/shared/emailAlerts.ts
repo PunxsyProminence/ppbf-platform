@@ -14,10 +14,13 @@
  * out role by role so that nobody maps the role 'staff' to the user type
  * 'staff' by name.
  *
- * 'adult_athlete' from this function is only a candidate: the server decides
- * on the athlete's date of birth (src/lib/minorAge.ts isMinor, an unknown
- * date counting as a minor, OD-2026-10-04-010). Shared because /profile (EM-2)
- * reads the same list without loading pg.
+ * 'adult_athlete' from this function is only a candidate: EVERY athlete,
+ * minors included, maps to it. The server decides on the athlete's date of
+ * birth (src/lib/minorAge.ts isMinor, an unknown date counting as a minor,
+ * OD-2026-10-04-010). A screen must never use this to decide whether to show a
+ * switch: it shows one only when GET /api/pilot/email-alerts/me answers
+ * `offered: true`. Shared so screens can name the three user types without
+ * loading pg.
  */
 
 export const EMAIL_ALERT_USER_TYPES = ['staff', 'parent', 'adult_athlete'] as const;

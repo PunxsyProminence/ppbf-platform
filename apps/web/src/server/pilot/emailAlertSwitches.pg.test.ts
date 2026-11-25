@@ -447,7 +447,63 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await switchRows(client)).toEqual([expect.objectContaining({
         account_id: COACH_ID, user_type: 'staff', switched_on: true, pending_address: null, confirmed_address: null,
       })]);
-      expect((await auditRows(client))[0].details).toEqual({ user_type: 'staff', switched_on: true, previous_switched_on: false });
+      // The audit describes the row as stored: it was on, under another user type.
+      expect((await auditRows(client))[0].details).toEqual({
+        user_type: 'staff', switched_on: true, previous_switched_on: true, previous_user_type: 'adult_athlete',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an adult athlete whose date of birth is corrected to under 18: the next read switches the row off and clears the address, audited, and shows nothing', async () => {
+    const client = await freshDatabase('emailsw_retire_read');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, pending_address,
+            confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'typed@example.test', 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+
+      await expect(readEmailAlertSwitch(subject('adult'), NOW)).resolves.toEqual({ offered: false });
+      expect(await switchRows(client)).toEqual([{
+        organization_id: ORG_ID, account_id: ADULT_ID, user_type: 'adult_athlete', switched_on: false,
+        has_on_at: true, has_off_at: true, pending_address: null, confirmed_address: null,
+      }]);
+      const audits = await auditRows(client);
+      expect(audits.map((row) => row.details)).toEqual([{
+        user_type: 'adult_athlete', switched_on: false, previous_switched_on: true,
+        address_cleared: true, reason: 'no_longer_offered',
+      }]);
+      expect(JSON.stringify(audits)).not.toContain('example.test');
+
+      // A second read finds nothing left to retire and writes nothing more.
+      await readEmailAlertSwitch(subject('adult'), NOW);
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a write from someone no longer offered is refused, after their row is switched off', async () => {
+    const client = await freshDatabase('emailsw_retire_write');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'someone@example.test', now())`,
+        [ORG_ID, MINOR_ID],
+      );
+      await expect(setEmailAlertSwitch({ ...subject('minor'), switchedOn: true }, NOW)).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: MINOR_ID, switched_on: false, confirmed_address: null,
+      })]);
+      expect((await auditRows(client)).map((row) => row.details.reason)).toEqual(['no_longer_offered']);
     } finally {
       await client.end();
     }

@@ -22,11 +22,13 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-it('an athlete whose date of birth reads as null is treated as a minor: no switch, and the switch table is never read', async () => {
+it('an athlete whose date of birth reads as null is treated as a minor: no switch, and the date of birth is read once', async () => {
   mockQueryOne.mockResolvedValueOnce({ dob: null });
   await expect(readEmailAlertSwitch(athlete, NOW)).resolves.toEqual({ offered: false });
   expect(mockQueryOne).toHaveBeenCalledTimes(1);
-  expect(mockQueryOne.mock.calls[0][0]).toMatch(/from pilot\.athletes/);
+  expect(mockQueryOne.mock.calls[0][0]).toMatch(/join pilot\.athletes/);
+  // The account's own link is part of the read: the caller's athlete id alone is not trusted.
+  expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'acct-a', 'ath-1']);
 });
 
 it('an athlete with a date of birth 18 or more years back is a candidate adult athlete', async () => {

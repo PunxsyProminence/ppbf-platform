@@ -8692,7 +8692,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "The caller's own email alert switch (lane W4-1 EM-1; OD-2026-11-19-019, OW27-10 A). Returns { offered: false } for an athlete under 18 or with no date of birth (OW27-02 C; OD-2026-10-04-010), else the user type, on/off and, for an adult athlete, whether an address is confirmed. Reads the caller's own athlete date of birth to decide; returns no address.",
+    "notes": "The caller's own email alert switch (lane W4-1 EM-1b; OD-2026-11-19-019, OW27-10 A). Returns { ok: true, offered: false } for an athlete under 18, with no date of birth, with a deleted athlete record or with no athlete record linked to the account (OW27-02 C; OD-2026-10-04-010); for such a caller it also switches off any row left from when they were offered one and clears its address (audited). Otherwise the user type, on/off and, for an adult athlete, whether an address is confirmed. Returns no address.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8723,7 +8723,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Switches the caller's own email alert on or off (lane W4-1 EM-1). Body is exactly { switched_on: boolean }. An adult athlete cannot switch on before an address is confirmed (409; table CHECK too). Upsert and audit row (user type, before and after; no address) in one transaction, not mirrored.",
+    "notes": "Switches the caller's own email alert on or off (lane W4-1 EM-1b). Body is exactly { switched_on: boolean }. An adult athlete cannot switch on before an address is confirmed (409; table CHECK too). A caller no longer offered a switch gets 403 after any leftover row is switched off and its address cleared. Each write and its audit row (user type, before and after; no address) commit together, not mirrored.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
