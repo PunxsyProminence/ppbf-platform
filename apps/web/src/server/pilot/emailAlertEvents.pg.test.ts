@@ -48,9 +48,14 @@ jest.mock('./db', () => ({
 
 import { assertActorCanAccessAthlete, athleteIdsForCoach, requireRole } from './access';
 import type { PilotRole } from './contracts';
-import type { EmailAlertCandidate } from './emailAlertQueue';
-import { EMAIL_ALERT_EVENT_SOURCES, parentReplySource, safetyEscalationSource } from './emailAlertEvents';
-import { runEmailAlertSweep, type EmailAlertSenderDependencies } from './emailAlertSender';
+import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
+import {
+  EMAIL_ALERT_EVENT_SOURCES,
+  emailAlertEventStillReadable,
+  parentReplySource,
+  safetyEscalationSource,
+} from './emailAlertEvents';
+import { emailAlertSenderDependencies, runEmailAlertSweep, type EmailAlertSenderDependencies } from './emailAlertSender';
 import { listEscalations } from './escalationLadder';
 import { listRepliesForStaff } from './familyMessageReplies';
 import type { OutboundMessage } from './graphMailer';
@@ -72,8 +77,9 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 const ORG = 'org-emailevents';
 const OTHER_ORG = 'org-emailevents-other';
 
-// account id, gym, membership role, membership on
-const PEOPLE: Array<[string, string, string, boolean]> = [
+// account id, gym, membership role, membership on, and the account's own
+// role where it differs: resolvePrincipal (auth.ts) signs in as the membership.
+const PEOPLE: Array<[string, string, string, boolean, string?]> = [
   ['acct-ev-admin', ORG, 'admin', true],
   ['acct-ev-orgadmin', ORG, 'organization_admin', true],
   ['acct-ev-admin-off', ORG, 'admin', false],
@@ -87,6 +93,8 @@ const PEOPLE: Array<[string, string, string, boolean]> = [
   ['acct-ev-staff', ORG, 'staff', true],
   ['acct-ev-parent', ORG, 'parent', true],
   ['acct-ev-athlete', ORG, 'athlete', true],
+  ['acct-ev-home-admin', ORG, 'coach', true, 'admin'], // an admin account, a coach here, coaching no one
+  ['acct-ev-home-coach', ORG, 'volunteer', true, 'coach'],
   ['acct-ev-other-admin', OTHER_ORG, 'admin', true],
   ['acct-ev-other-coach', OTHER_ORG, 'coach', true], // coach of record of ATH_OTHER
 ];
@@ -95,7 +103,10 @@ const ATH_A = 'ath-ev-a';
 const ATH_B = 'ath-ev-b';
 const ATH_GONE = 'ath-ev-gone';
 const ATH_GONE_COVERED = 'ath-ev-gone-covered';
-const ATH_OTHER = 'ath-ev-other';
+// One athlete id names a different child in each gym (deletedAthletes.ts):
+// the other gym's live athlete has the id of this gym's deleted one, and the
+// other gym also has a live ATH_B, coached on record by this gym's coach-none.
+const ATH_OTHER = ATH_GONE;
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -139,11 +150,11 @@ async function freshDatabase(name: string): Promise<Client> {
       [org],
     );
   }
-  for (const [accountId, org, role, on] of PEOPLE) {
+  for (const [accountId, org, role, on, homeRole] of PEOPLE) {
     await client.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, login_email)
        values ($1, $2, $3, 'magic_link', null, null)`,
-      [accountId, role, org],
+      [accountId, homeRole ?? role, org],
     );
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
@@ -157,6 +168,8 @@ async function freshDatabase(name: string): Promise<Client> {
     [ATH_GONE, ORG, 'acct-ev-coach-own', true],
     [ATH_GONE_COVERED, ORG, 'acct-ev-coach-none', true],
     [ATH_OTHER, OTHER_ORG, 'acct-ev-other-coach', false],
+    [ATH_B, OTHER_ORG, 'acct-ev-coach-none', false],
+    [ATH_GONE_COVERED, OTHER_ORG, 'acct-ev-other-coach', false],
   ];
   for (const [athleteId, org, coachId, deleted] of athletes) {
     await client.query(
@@ -296,6 +309,34 @@ function sorted(reach: Reach): Array<[string, string[]]> {
   return [...reach.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
+/** The sender's real dependencies, its read check included; Graph is replaced by a recorder. */
+function recorder(): { sent: OutboundMessage[]; dependencies: EmailAlertSenderDependencies } {
+  const sent: OutboundMessage[] = [];
+  const dependencies: EmailAlertSenderDependencies = {
+    ...emailAlertSenderDependencies(),
+    prepareSend: async () => async (message) => {
+      sent.push(message);
+    },
+    gymName: async () => 'GYM',
+  };
+  return { sent, dependencies };
+}
+
+/** A sign-in address (account id + @example.com) and the staff switch on, for each. */
+async function switchOn(client: Client, accountIds: readonly string[]) {
+  await client.query(
+    `update pilot.accounts set login_email = account_id || '@example.com' where account_id = any($1)`,
+    [accountIds],
+  );
+  await client.query(
+    `insert into pilot.email_alert_switches
+       (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at)
+     select organization_id, account_id, 'staff', true, now(), null
+       from pilot.organization_memberships where account_id = any($1)`,
+    [accountIds],
+  );
+}
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
   serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
@@ -411,7 +452,7 @@ describe('email alert staff event sources', () => {
     const { from, to } = await lastHour(client);
     const source = reachOf(await parentReplySource.candidates(from, to), 'parent_reply');
     const inWindow = new Set([onA, onB, onGone, otherGym]);
-    const page = await repliesPageReach([ATH_A, ATH_B, ATH_GONE, ATH_OTHER], inWindow);
+    const page = await repliesPageReach([ATH_A, ATH_B, ATH_GONE], inWindow);
 
     expect(sorted(source)).toEqual(sorted(page));
 
@@ -426,6 +467,8 @@ describe('email alert staff event sources', () => {
       [`${ORG}|acct-ev-coach-expired`, live],
       [`${ORG}|acct-ev-coach-future`, live],
       [`${ORG}|acct-ev-coach-none`, live],
+      // Signed in here as a coach, whatever the account's own role.
+      [`${ORG}|acct-ev-home-admin`, live],
       [`${OTHER_ORG}|acct-ev-other-admin`, [otherGym]],
       [`${OTHER_ORG}|acct-ev-other-coach`, [otherGym]],
     ])));
@@ -448,15 +491,7 @@ describe('email alert staff event sources', () => {
               ($1, 'acct-ev-coach-cover', 'staff', false, null, now())`,
       [ORG],
     );
-    const sent: OutboundMessage[] = [];
-    const dependencies: EmailAlertSenderDependencies = {
-      prepareSend: async () => async (message) => {
-        sent.push(message);
-      },
-      gymName: async () => 'GYM',
-      now: () => new Date(),
-      clockMs: () => Date.now(),
-    };
+    const { sent, dependencies } = recorder();
 
     // The first tick only sets each source's checkpoint.
     expect((await runEmailAlertSweep(dependencies)).queued).toBe(0);
@@ -484,6 +519,90 @@ describe('email alert staff event sources', () => {
     // Once: the next tick finds the same rows in its overlap and sends nothing.
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
     expect(sent).toHaveLength(5);
+  });
+
+  test('just before the send, someone who can no longer read the event is skipped as not_offered; the rest are sent', async () => {
+    const client = await freshDatabase('emailevents_stillreads');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const voiceOnA = await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: 0 });
+    const nearMissOnA = await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: 0 });
+    const painOnB = await escalation(client, ORG, ATH_B, 'pain_report', { minutesAgo: 0 });
+    const replyOnA = await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, 0);
+    const replyOnB = await reply(client, ORG, await parentMessage(client, ORG, ATH_B, 'acct-ev-coach-own'), ATH_B, 0);
+    const label = new Map([
+      [voiceOnA, 'voiceOnA'], [nearMissOnA, 'nearMissOnA'], [painOnB, 'painOnB'],
+      [replyOnA, 'replyOnA'], [replyOnB, 'replyOnB'],
+    ]);
+
+    // Queued while everyone can read them...
+    for (const source of EMAIL_ALERT_EVENT_SOURCES) await sweepEmailAlertSource(source);
+    expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(16);
+
+    // ...then, before the send: the organization admin becomes a coach of no
+    // one, ATH_A moves to another coach, the cover of ATH_B ends, and ATH_B is
+    // deleted.
+    await client.query(`update pilot.accounts set role = 'coach' where account_id = 'acct-ev-orgadmin'`);
+    await client.query(`update pilot.organization_memberships set role = 'coach' where account_id = 'acct-ev-orgadmin'`);
+    await client.query(`update pilot.athletes set coach_id = 'acct-ev-coach-none' where organization_id = $1 and athlete_id = $2`, [ORG, ATH_A]);
+    await client.query(`update pilot.coach_coverage set expires_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ATH_B]);
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ATH_B]);
+
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 7, skipped: 9 });
+    const { rows } = await client.query(
+      `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_id`,
+    );
+    const outcome = (accountId: string) => rows
+      .filter((row) => row.account_id === accountId)
+      .map((row) => `${label.get(row.event_id)} ${row.status === 'sent' ? 'sent' : row.skip_reason}`)
+      .sort();
+    // An admin still sees an open row about a deleted athlete; nobody reads a deleted athlete's replies.
+    expect(outcome('acct-ev-admin')).toEqual([
+      'nearMissOnA sent', 'painOnB sent', 'replyOnA sent', 'replyOnB not_offered', 'voiceOnA sent',
+    ]);
+    expect(outcome('acct-ev-orgadmin')).toEqual([
+      'nearMissOnA not_offered', 'painOnB not_offered', 'replyOnA sent', 'replyOnB not_offered', 'voiceOnA not_offered',
+    ]);
+    expect(outcome('acct-ev-coach-own')).toEqual(['nearMissOnA not_offered', 'replyOnA sent', 'replyOnB not_offered']);
+    expect(outcome('acct-ev-coach-cover')).toEqual(['painOnB not_offered', 'replyOnA sent', 'replyOnB not_offered']);
+    expect(sent).toHaveLength(7);
+
+    // An event kind no source knows, or a user type other than staff, reads as no.
+    const adminReads = { organization_id: ORG, account_id: 'acct-ev-admin', event_id: nearMissOnA };
+    expect(await emailAlertEventStillReadable({ ...adminReads, user_type: 'staff', event_kind: 'safety_escalation' })).toBe(true);
+    expect(await emailAlertEventStillReadable({ ...adminReads, user_type: 'staff', event_kind: 'family_note' })).toBe(false);
+    expect(await emailAlertEventStillReadable({ ...adminReads, user_type: 'parent', event_kind: 'safety_escalation' })).toBe(false);
+  });
+
+  test('a source that fails is logged by class, and the next source still queues and sends', async () => {
+    const client = await freshDatabase('emailevents_failing');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-admin']);
+    const { sent, dependencies } = recorder();
+    const failing: EmailAlertSource = {
+      checkpointKey: 'failing_source',
+      candidates: async () => {
+        throw new Error('the source failed');
+      },
+    };
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runEmailAlertSweep(dependencies, [failing, safetyEscalationSource]); // sets the checkpoints
+      await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: 0 });
+      expect(await runEmailAlertSweep(dependencies, [failing, safetyEscalationSource]))
+        .toMatchObject({ queued: 1, sent: 1 });
+      expect(sent.map((message) => message.to)).toEqual(['acct-ev-admin@example.com']);
+      expect(errors).toHaveBeenCalledWith('Email alert source failed', { source: 'failing_source', errorClass: 'Error' });
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  test('the sender reads these sources and this read check unless told otherwise', () => {
+    expect(emailAlertSenderDependencies().stillReads).toBe(emailAlertEventStillReadable);
   });
 
   test('each source is a staff event on the shared list, read in a fixed order', () => {

@@ -181,6 +181,9 @@ function recorder(fail?: () => Error) {
     gymName: async () => 'GYM',
     now: () => NOW,
     clockMs: () => Date.now(),
+    // These sends name no real event; whether a person can still read one is
+    // emailAlertEvents.ts's rule, tested in emailAlertEvents.pg.test.ts.
+    stillReads: async () => true,
   };
   return { sent, dependencies };
 }

@@ -27,7 +27,8 @@
  * role's sign-in (sessionCredentialFits). The person's role in that gym and
  * age still give that user type (an unknown date of birth is a minor,
  * OD-2026-10-04-010), and any account linked to an athlete record under 18 or
- * deleted gets nothing, whatever its role. The gym still has the event
+ * deleted gets nothing, whatever its role. The person can still read the
+ * event in the app (emailAlertEvents.ts, EM-4a). The gym still has the event
  * ticked; there is an address. Any no: the row is skipped with its reason and
  * nothing is sent.
  *
@@ -58,7 +59,7 @@ import {
   type ClaimedEmailAlertSend,
   type EmailAlertSource,
 } from './emailAlertQueue';
-import { EMAIL_ALERT_EVENT_SOURCES } from './emailAlertEvents';
+import { EMAIL_ALERT_EVENT_SOURCES, emailAlertEventStillReadable } from './emailAlertEvents';
 import { isGymEmailAlertEventTicked } from './emailAlertGymEvents';
 import { emailAlertUserTypeFor } from './emailAlertSwitches';
 import { MailSendError, sendPlainTextMail, type OutboundMessage } from './graphMailer';
@@ -87,6 +88,8 @@ export interface EmailAlertSenderDependencies {
   readonly now: () => Date;
   /** The clock the tick's claim budget reads. */
   readonly clockMs: () => number;
+  /** Whether the person can still read the event in the app (emailAlertEvents.ts). */
+  readonly stillReads: (send: ClaimedEmailAlertSend) => Promise<boolean>;
 }
 
 export function emailAlertSenderDependencies(
@@ -104,6 +107,7 @@ export function emailAlertSenderDependencies(
     gymName: gymShortName,
     now: () => new Date(),
     clockMs: () => Date.now(),
+    stillReads: emailAlertEventStillReadable,
   };
 }
 
@@ -124,7 +128,8 @@ type SkipReason = 'switched_off' | 'gym_unticked' | 'sign_in_off' | 'not_offered
 type Decision = { readonly send: true; readonly to: string } | { readonly send: false; readonly reason: SkipReason };
 
 /** The checks made again just before a send (plan 5.2). */
-async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision> {
+async function recheck(row: ClaimedEmailAlertSend, dependencies: EmailAlertSenderDependencies): Promise<Decision> {
+  const now = dependencies.now();
   const person = await queryOne<{
     active_flag: boolean;
     account_deleted: boolean;
@@ -175,6 +180,7 @@ async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision>
     && (await emailAlertUserTypeFor({ ...subject, role: 'athlete' }, now)) !== 'adult_athlete') {
     return { send: false, reason: 'not_offered' };
   }
+  if (!(await dependencies.stillReads(row))) return { send: false, reason: 'not_offered' };
   if (!(await isGymEmailAlertEventTicked(row.organization_id, userType, row.event_kind))) {
     return { send: false, reason: 'gym_unticked' };
   }
@@ -214,7 +220,7 @@ export async function deliverEmailAlertSend(
   row: ClaimedEmailAlertSend,
   dependencies: EmailAlertSenderDependencies,
 ): Promise<Outcome> {
-  const decision = await recheck(row, dependencies.now());
+  const decision = await recheck(row, dependencies);
   if (!decision.send) {
     const written = await finish(row, `status = 'skipped', skip_reason = $3, finished_at = clock_timestamp()`, [decision.reason]);
     return written ? 'skipped' : 'lost';

@@ -138,6 +138,7 @@ export interface ClaimedEmailAlertSend {
   readonly account_id: string;
   readonly user_type: EmailAlertUserType;
   readonly event_kind: string;
+  readonly event_id: string;
   readonly tries: number;
   readonly lease_token: string;
 }
@@ -159,7 +160,7 @@ export async function claimDueEmailAlertSends(limit: number): Promise<ClaimedEma
             lease_expires_at = clock_timestamp() + make_interval(secs => $2)
        from due
       where s.send_id = due.send_id
-      returning s.send_id, s.organization_id, s.account_id, s.user_type, s.event_kind, s.tries, s.lease_token`,
+      returning s.send_id, s.organization_id, s.account_id, s.user_type, s.event_kind, s.event_id, s.tries, s.lease_token`,
     [limit, EMAIL_ALERT_LEASE_SECONDS],
   );
 }
