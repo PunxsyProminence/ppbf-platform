@@ -176,7 +176,14 @@ function queueIdle(): boolean {
 
 type PendingRun = Partial<Pick<LiveSessionScriptRun, 'is_paused' | 'show_on_wall' | 'current_block_id'>>;
 /** An intervention execution of this run as the ledger lists it (the fields a landed check reads). */
-type RunExecution = { execution_id: string; created_at: string; recorded_by_account_id?: string; version?: number };
+type RunExecution = {
+  execution_id: string;
+  created_at: string;
+  recorded_by_account_id?: string;
+  version?: number;
+  /** The key that started the record's lineage: a kept log's landed check matches by it. */
+  request_key?: string | null;
+};
 /** One kept run action not yet answered: what it asks, and whether it ends the session. */
 type AskedRun = { save: object; asked: PendingRun; finish: boolean };
 
@@ -511,11 +518,6 @@ export default function SessionScriptLiveDelivery({
   const [logsWaiting, setLogsWaiting] = useState<readonly { save: object; key: unknown }[]>([]);
   const logsWaitingCount = new Set(logsWaiting.map((entry) => entry.key)).size;
   const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
-  // The same list for a kept log's landed check, which runs after later renders.
-  const loggedRef = useRef(loggedInterventions);
-  useEffect(() => {
-    loggedRef.current = loggedInterventions;
-  }, [loggedInterventions]);
   // A drop (a sign-out, another account, a 401) tells this screen nothing: once nothing kept is
   // waiting on the page, nothing is asked, no finish waits and no log waits here either. (Each is
   // added only once its save is kept, so the queue's own notices while it takes a save clear nothing
@@ -587,7 +589,6 @@ export default function SessionScriptLiveDelivery({
       protocolId: string,
       athleteName: string,
       protocolTitle: string,
-      before: { execution_id: string; created_at: string }[] | null,
       pairKey: string | null,
       forgetPairKey: () => void,
       resolved: { done: boolean },
@@ -664,14 +665,18 @@ export default function SessionScriptLiveDelivery({
           }
           return response.ok && payload.item ? 'saved' : 'unknown';
         },
-        // A refused resend: is there a log of this pair in this run that was not there before?
+        // A refused resend: does this run hold the log this save's own key started? Matched by the key
+        // only: another tap of the same pair, from another tab or device of the same account, has its
+        // own key and is never taken for this one (Codex P2 and OVERWATCH on #2178).
         checkLanded: async (signal) => {
+          const last = sent;
+          if (last === null) return null;
           const after = await readRunExecutions(athleteId, protocolId, signal);
-          if (before === null || after === null) return null;
-          const known = new Set([...before, ...loggedRef.current].map((item) => item.execution_id));
-          // Another account's uncorrected log of the pair (its own write landing late) is not this one.
-          landedItem = after.find((item) => !known.has(item.execution_id)
-            && (sent === null || item.version !== 1 || item.recorded_by_account_id === sent.by)) ?? null;
+          if (after === null) return null;
+          // Another account's uncorrected log under a shared pair key (first sent on today's path) is
+          // not this one.
+          landedItem = after.find((item) => item.request_key === last.key
+            && (item.version !== 1 || item.recorded_by_account_id === last.by)) ?? null;
           return landedItem !== null;
         },
         onSaved: (response) => {
@@ -740,7 +745,7 @@ export default function SessionScriptLiveDelivery({
       const resolved = { done: false };
       const kept = await keepSave(
         // Forgets the pair's key only while it is still this tap's: never a newer tap's key.
-        keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, before, requestKey, () => {
+        keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, requestKey, () => {
           if (keys.get(pair) === requestKey) keys.delete(pair);
         }, resolved),
       );
