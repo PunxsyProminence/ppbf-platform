@@ -15,17 +15,20 @@ import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopAr
 // SC-2; W4 item 6, app scrub CF-14).
 //
 // Who is on it is the server's (stoppedComing.ts): the gym's athletes not
-// marked as left who have come before and have not come for the gym's number
-// of days (OW27-30 A, OW27-31 A). "Came" is a present day on a class register
-// or a "here" tap the register does not hold (open gym, a tap the class register
-// did not take, or a cancelled class), on this page only (OW27-32 A; App
-// Overwatch on #2172), so the words here say "came", never "present" or
-// "attendance": no attendance figure is shown.
+// marked as left, with an active program membership where the gym records any
+// for them (App Overwatch on #2172), who have come before and have not come for
+// the gym's number of days (OW27-30 A, OW27-31 A). This page shows no membership
+// status. "Came" is a present day on a class register or a "here" tap the
+// register does not hold (open gym, a tap that made no register mark, or a
+// cancelled class), on this page only (OW27-32 A; App Overwatch on #2172), so
+// the words here say "came", never "present" or "attendance": no attendance
+// figure is shown.
 // The server orders the list, longest gone first; this page renders that order
 // as given.
 //
-// The empty state says what was checked, so it never reads as "nobody is
-// slipping" about athletes it did not check (never came, or left the gym).
+// The empty state says what the list covers, so it never reads as "nobody is
+// slipping" about athletes it does not cover (never came, left the gym, or every
+// recorded program membership lapsed or ended).
 //
 // Scope: a coach and the gym admin read the same list (a coach's reach is the
 // whole gym). The gate below is the courtesy copy; the API is the authority.
@@ -153,10 +156,11 @@ export default function CoachStoppedComingPage() {
           ) : list.athletes.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
-                <div className="empty-title">No one who has come before has gone {gap} without coming</div>
+                <div className="empty-title">No one this list covers has gone {gap} without coming</div>
                 <p className="empty-msg mx-auto">
-                  Every athlete on the roster who has come before came within {withinWords(list.gap_days)}. Athletes
-                  who have never come, and athletes marked as left the gym, are not on this list.
+                  Every athlete this list covers came within {withinWords(list.gap_days)}. It does not cover
+                  athletes who have never come, athletes marked as left the gym, or athletes whose program
+                  memberships have all lapsed or ended.
                 </p>
               </div>
             </div>

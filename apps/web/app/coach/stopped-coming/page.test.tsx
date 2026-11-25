@@ -113,7 +113,7 @@ test('the gym\'s number reads in weeks, and says when it is the default', async 
 test('one week reads as "1 week" and "the last week"', async () => {
   await renderPage(mockFetch({ body: { ...LIST, gap_days: 7, is_default: false, athletes: [] } }));
   expect(pageText()).toContain('have not come for 1 week or more');
-  expect(pageText()).toContain('No one who has come before has gone 1 week without coming');
+  expect(pageText()).toContain('No one this list covers has gone 1 week without coming');
   expect(pageText()).toContain('came within the last week.');
 });
 
@@ -141,9 +141,12 @@ test('"Open passbook" hands each row\'s own athlete to the Passbook in page memo
 test('an empty list says what was checked, and who is not on it, never that nobody is slipping', async () => {
   await renderPage(mockFetch({ body: { ...LIST, athletes: [] } }));
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-  expect(pageText()).toContain('No one who has come before has gone 2 weeks without coming');
-  expect(pageText()).toContain('Every athlete on the roster who has come before came within the last 2 weeks.');
-  expect(pageText()).toContain('Athletes who have never come, and athletes marked as left the gym, are not on this list.');
+  expect(pageText()).toContain('No one this list covers has gone 2 weeks without coming');
+  expect(pageText()).toContain('Every athlete this list covers came within the last 2 weeks.');
+  // Who it does not cover (App Overwatch on #2172 for the memberships); no membership status is shown.
+  expect(pageText()).toContain(
+    'It does not cover athletes who have never come, athletes marked as left the gym, or athletes whose program memberships have all lapsed or ended.',
+  );
 });
 
 test.each([
@@ -168,7 +171,7 @@ test.each([
   expect(alert.textContent).toContain('Failed');
   expect(alert.textContent).toContain(READ_FAILED);
   expect(alert.textContent).not.toMatch(/Failed to fetch|Unexpected token|TypeError/);
-  expect(pageText()).not.toContain('No one who has come before');
+  expect(pageText()).not.toContain('No one this list covers');
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
 });
 
