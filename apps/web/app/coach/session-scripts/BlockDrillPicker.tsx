@@ -3,21 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
+import type { DrillLibraryRow } from '@/src/server/pilot/drillLibraryV3';
 
 // Choosing a drill from the gym's library to add to a session plan (SP-2a).
 //
-// Reads GET /api/pilot/drills, which answers the gym's CURRENT drills (retired
-// ones only when include_retired is asked for, and it is not). A search box over
-// the names is the whole filter. Three states are said in words and never shown
-// as a list that looks complete: loading, could not be loaded, and loaded.
+// Reads GET /api/pilot/drill-library: pilot.drill_library, the table a plan
+// block's drill_id names and the server's lockDrills resolves. For a coach or an
+// organization admin it answers the gym's CURRENT versions (active, not
+// superseded) as `drills`. NOT /api/pilot/drills: that is pilot.drills, the
+// operational drills, whose ids are their own (promotion makes a new one), so a
+// pick from it was refused as not this gym's drill (Codex P1 on #2199). A search
+// box over the names is the whole filter. Three states are said in words and
+// never shown as a list that looks complete: loading, could not be loaded, and
+// loaded.
 //
 // Opened, it takes keyboard focus on its heading, as the plan page's own detail
 // heading does, because the button that opened it is gone (Codex on #2199). The
 // search never saves the plan around it, and while the plan saves no drill can be
 // picked, because a pick made then would be lost (Codex on #2199).
 
-export type PickableDrill = Pick<PilotDrill, 'drill_id' | 'name'>;
+export type PickableDrill = Pick<DrillLibraryRow, 'drill_id' | 'name'>;
 
 type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; drills: PickableDrill[] };
 
@@ -44,14 +49,14 @@ export default function BlockDrillPicker({
     let current = true;
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/drills`, { credentials: 'include' });
-        const body = (await response.json().catch(() => null)) as Partial<DrillLibraryResponse> | null;
+        const response = await fetch(`${apiBase()}/api/pilot/drill-library`, { credentials: 'include' });
+        const body = (await response.json().catch(() => null)) as { drills?: PickableDrill[] } | null;
         if (!current) return;
-        if (!response.ok || !body || !Array.isArray(body.items)) {
+        if (!response.ok || !body || !Array.isArray(body.drills)) {
           setLoad({ state: 'failed' });
           return;
         }
-        setLoad({ state: 'ready', drills: body.items.map(({ drill_id, name }) => ({ drill_id, name })) });
+        setLoad({ state: 'ready', drills: body.drills.map(({ drill_id, name }) => ({ drill_id, name })) });
       } catch {
         if (current) setLoad({ state: 'failed' });
       }
