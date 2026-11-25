@@ -192,7 +192,9 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     const patches = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
     expect(patches).toHaveLength(2);
     for (const [, init] of patches) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
-    // Condition 2: the refusal of the resend is checked, and the untie had landed.
+    // Condition 2: the refusal of the resend is checked (with the queue's signal), and the untie had landed.
+    const checks = fetchSpy.mock.calls.filter(([input, init]) => String(input).endsWith('/api/pilot/session-scripts/runs') && (init as RequestInit | undefined)?.signal);
+    expect(checks.length).toBeGreaterThan(0);
     expect(onClassChange).toHaveBeenCalledWith(null);
     expect(screen.getByRole('status').textContent).toContain('No class now (open gym).');
   });

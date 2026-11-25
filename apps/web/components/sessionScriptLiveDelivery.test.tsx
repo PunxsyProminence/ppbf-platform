@@ -1995,6 +1995,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       await jest.advanceTimersByTimeAsync(0);
     });
     expect(within(waitingLine() as HTMLElement).getByText(/Intervention: Round-3 endurance block/)).toBeInTheDocument();
+    // Cleared once kept: a second tap is a new choice, not the same log twice.
+    expect((screen.getByLabelText('Protocol') as HTMLSelectElement).value).toBe('');
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
