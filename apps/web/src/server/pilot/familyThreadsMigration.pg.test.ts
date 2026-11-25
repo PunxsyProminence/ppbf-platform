@@ -46,6 +46,8 @@ const VISITING_COACH = 'acct-fthreads-visiting';
 const LAPSED_COACH = 'acct-fthreads-lapsed';
 const OTHER_GYM_COACH = 'acct-fthreads-other-coach';
 const OTHER_GYM_GUARDIAN = 'acct-fthreads-other-guardian';
+const SIBLING_GUARDIAN = 'acct-fthreads-sibling-guardian';
+const ADMIN = 'acct-fthreads-admin';
 const ATHLETE = 'ATH-FTHREADS-1';
 const SIBLING = 'ATH-FTHREADS-2';
 
@@ -130,6 +132,13 @@ function read(
   );
 }
 
+// A guardian's account removed the way the purge removes it: the guardian record lets go of the
+// login first (pilot.parents.account_id has no delete action), then the account goes.
+async function removeAccount(client: Client, account: string): Promise<void> {
+  await client.query('update pilot.parents set account_id = null where account_id = $1', [account]);
+  await client.query('delete from pilot.accounts where account_id = $1', [account]);
+}
+
 async function count(client: Client, table: string): Promise<number> {
   const result = await client.query(`select count(*)::int as n from pilot.${table}`);
   return result.rows[0].n;
@@ -168,6 +177,8 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
     [LAPSED_COACH, 'coach', OTHER_ORG],
     [OTHER_GYM_COACH, 'coach', OTHER_ORG],
     [OTHER_GYM_GUARDIAN, 'parent', OTHER_ORG],
+    [SIBLING_GUARDIAN, 'parent', ORG],
+    [ADMIN, 'admin', ORG],
   ];
   for (const [account, role, org] of accounts) {
     await client.query(
@@ -186,6 +197,8 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
     [LAPSED_COACH, ORG, 'coach', false],
     [OTHER_GYM_COACH, OTHER_ORG, 'coach', true],
     [OTHER_GYM_GUARDIAN, OTHER_ORG, 'parent', true],
+    [SIBLING_GUARDIAN, ORG, 'parent', true],
+    [ADMIN, ORG, 'admin', true],
   ];
   for (const [account, org, role, active] of seats) {
     await client.query(
@@ -199,6 +212,34 @@ async function freshDatabase(name: string, schema: 'full' | 'none' = 'full'): Pr
          emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, $2, 'Thread Athlete', '2013-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
       [org, athlete, org === ORG ? COACH : OTHER_GYM_COACH],
+    );
+  }
+  // A guardian's reach is a guardian record in the gym, linked to the child (guardianAccess.ts).
+  // The guardian is linked to both children; the co-guardian to the first only; another
+  // guardian to the sibling only; the other gym's guardian to that gym's child.
+  const links: Array<[string, string, string]> = [
+    [ORG, GUARDIAN, ATHLETE],
+    [ORG, GUARDIAN, SIBLING],
+    [ORG, CO_GUARDIAN, ATHLETE],
+    [ORG, SIBLING_GUARDIAN, SIBLING],
+    [OTHER_ORG, OTHER_GYM_GUARDIAN, ATHLETE],
+  ];
+  const guardians: Array<[string, string]> = [
+    [ORG, GUARDIAN],
+    [ORG, CO_GUARDIAN],
+    [ORG, SIBLING_GUARDIAN],
+    [OTHER_ORG, OTHER_GYM_GUARDIAN],
+  ];
+  for (const [org, account] of guardians) {
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Thread Guardian')`,
+      [org, `parent-${account}`, account],
+    );
+  }
+  for (const [org, account, athlete] of links) {
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'guardian')`,
+      [org, `parent-${account}`, athlete],
     );
   }
   await post(client, { postId: THREAD });
@@ -326,10 +367,11 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
           constraint: 'pilot_family_thread_posts_thread_fk',
         });
       }
-      // About a child that is not in this gym.
+      // About a child that is not in this gym: nobody is that child's guardian here, which the
+      // guard says before the athlete key would.
       await expect(post(client, { athleteId: 'ATH-NOWHERE' })).rejects.toMatchObject({
-        code: '23503',
-        constraint: 'pilot_family_thread_posts_athlete_fk',
+        code: '23514',
+        constraint: 'pilot_family_thread_posts_guardian_of_child',
       });
       expect(await count(client, 'family_thread_posts')).toBe(6);
     } finally {
@@ -350,13 +392,104 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
         constraint: 'pilot_family_thread_posts_own_thread',
       });
       // The opener's account removed: the thread stays, and takes no more guardian posts.
-      await client.query('delete from pilot.accounts where account_id = $1', [CO_GUARDIAN]);
+      await removeAccount(client, CO_GUARDIAN);
       await expect(post(client, { threadId: CO_THREAD, author: GUARDIAN })).rejects.toMatchObject({
         code: '23514',
         constraint: 'pilot_family_thread_posts_own_thread',
       });
       await post(client, { threadId: THREAD });
       expect(await count(client, 'family_thread_posts')).toBe(7);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a guardian post or read needs a live guardian of THIS child in this gym', async () => {
+    const client = await freshDatabase('fthreads_guardian_link');
+    try {
+      const refused: Array<[string, string]> = [
+        // A coach writing as a guardian; another gym's guardian naming this gym's child; the
+        // guardian of the sibling only, about this child; a login that is nobody's guardian.
+        [COACH, ATHLETE],
+        [OTHER_GYM_GUARDIAN, ATHLETE],
+        [SIBLING_GUARDIAN, ATHLETE],
+        [ADMIN, SIBLING],
+      ];
+      for (const [author, athleteId] of refused) {
+        await expect(post(client, { author, athleteId })).rejects.toMatchObject({
+          code: '23514',
+          constraint: 'pilot_family_thread_posts_guardian_of_child',
+        });
+      }
+      // A switched-off login and a deleted one, though still linked.
+      await client.query('update pilot.accounts set active_flag = false where account_id = $1', [CO_GUARDIAN]);
+      await expect(post(client, { author: CO_GUARDIAN })).rejects.toMatchObject({
+        constraint: 'pilot_family_thread_posts_guardian_of_child',
+      });
+      await client.query('update pilot.accounts set active_flag = true, deleted_at = now() where account_id = $1', [CO_GUARDIAN]);
+      await expect(post(client, { author: CO_GUARDIAN })).rejects.toMatchObject({
+        constraint: 'pilot_family_thread_posts_guardian_of_child',
+      });
+
+      // The guardian's link to the child ended: no more posts in their own thread, no reads.
+      await client.query(
+        'delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3',
+        [ORG, `parent-${GUARDIAN}`, ATHLETE],
+      );
+      await expect(post(client, { threadId: THREAD })).rejects.toMatchObject({
+        constraint: 'pilot_family_thread_posts_guardian_of_child',
+      });
+      await expect(read(client, { postId: REPLY, reader: GUARDIAN, role: 'parent' })).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'pilot_family_thread_reads_guardian_of_child',
+      });
+      // Still the sibling's guardian.
+      await post(client, { athleteId: SIBLING });
+      expect(await count(client, 'family_thread_posts')).toBe(7);
+      expect(await count(client, 'family_thread_reads')).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the rules hold for rows written together in one statement', async () => {
+    const client = await freshDatabase('fthreads_one_statement');
+    try {
+      // The co-guardian's post in a thread that the same statement opens.
+      await expect(
+        client.query(
+          `insert into pilot.family_thread_posts
+             (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+           values ($1, $2::uuid, $3::uuid, $4, $5, 'parent', 'Mine too.'),
+                  ($1, $3::uuid, $3::uuid, $4, $6, 'parent', 'A new thread.')`,
+          [ORG, '99999999-9999-4999-8999-999999999999', NEW_POST, ATHLETE, CO_GUARDIAN, GUARDIAN],
+        ),
+      ).rejects.toMatchObject({ code: '23503', constraint: 'pilot_family_thread_posts_thread_fk' });
+      // A staff reply in the co-guardian's thread, and this guardian's read of it, in one statement.
+      await expect(
+        client.query(
+          `with reply as (
+             insert into pilot.family_thread_posts
+               (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+             values ($1, $2::uuid, $3::uuid, $4, $5, 'coach', 'Noted.') returning organization_id, post_id)
+           insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+           select organization_id, post_id, $6, 'parent' from reply
+           union all select organization_id, post_id, $7, 'organization_admin' from reply`,
+          [ORG, NEW_POST, CO_THREAD, ATHLETE, COACH, GUARDIAN, OFFICE],
+        ),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_thread_reads_guardian_own_thread' });
+      expect(await count(client, 'family_thread_posts')).toBe(6);
+      expect(await count(client, 'family_thread_reads')).toBe(0);
+
+      // In order, one statement can open a thread and answer it: the opening is already stored.
+      await client.query(
+        `insert into pilot.family_thread_posts
+           (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+         values ($1, $2::uuid, $2::uuid, $3, $4, 'parent', 'A new thread.'),
+                ($1, $5::uuid, $2::uuid, $3, $4, 'parent', 'And more.')`,
+        [ORG, NEW_POST, ATHLETE, GUARDIAN, '99999999-9999-4999-8999-999999999999'],
+      );
+      expect(await count(client, 'family_thread_posts')).toBe(8);
     } finally {
       await client.end();
     }
@@ -387,10 +520,11 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
         constraint: 'pilot_family_thread_posts_staff_of_this_gym',
       });
 
-      // The office, and a coach from the other gym with an active coach seat here.
+      // The office, an admin, and a coach from the other gym with an active coach seat here.
       await post(client, { postId: NEW_POST, threadId: THREAD, author: OFFICE, role: 'organization_admin' });
       await post(client, { postId: '99999999-9999-4999-8999-999999999999', threadId: THREAD, author: VISITING_COACH, role: 'coach' });
-      expect(await count(client, 'family_thread_posts')).toBe(8);
+      await post(client, { postId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', threadId: THREAD, author: ADMIN, role: 'admin' });
+      expect(await count(client, 'family_thread_posts')).toBe(9);
     } finally {
       await client.end();
     }
@@ -399,7 +533,7 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
   test('a post is 1 to 2000 characters of text', async () => {
     const client = await freshDatabase('fthreads_text');
     try {
-      for (const text of ['', '   ', 'x'.repeat(2001)]) {
+      for (const text of ['', '   ', '\n\n\t', 'x'.repeat(2001)]) {
         await expect(post(client, { text })).rejects.toMatchObject({
           code: '23514',
           constraint: 'pilot_family_thread_posts_text_check',
@@ -421,13 +555,15 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
         `thread_id = '${CO_THREAD}'`,
         "created_at = now() - interval '1 day'",
         `author_account_id = '${CO_GUARDIAN}'`,
+        // Detaching the author by hand: only the account's removal does that.
+        'author_account_id = null',
       ]) {
         await expect(
           client.query(`update pilot.family_thread_posts set ${change} where post_id = $1::uuid`, [THREAD]),
         ).rejects.toMatchObject({ code: '23514', constraint: 'pilot_family_thread_posts_append_only' });
       }
       // The guardian's account removed: their posts stay, detached, still a guardian's.
-      await client.query('delete from pilot.accounts where account_id = $1', [GUARDIAN]);
+      await removeAccount(client, GUARDIAN);
       const left = await client.query(
         `select post_id::text, author_account_id, author_role from pilot.family_thread_posts
           where organization_id = $1 and post_id = any($2::uuid[]) order by post_id`,
@@ -526,7 +662,7 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
 
       // A coach's account removed: their read goes; the reply they wrote stays, detached.
       await post(client, { postId: NEW_POST, threadId: THREAD, author: SECOND_COACH, role: 'coach' });
-      await client.query('delete from pilot.accounts where account_id = $1', [SECOND_COACH]);
+      await removeAccount(client, SECOND_COACH);
       expect(await count(client, 'family_thread_reads')).toBe(2);
       const reply = await client.query('select author_account_id, author_role from pilot.family_thread_posts where post_id = $1::uuid', [NEW_POST]);
       expect(reply.rows).toEqual([{ author_account_id: null, author_role: 'coach' }]);
@@ -555,68 +691,113 @@ describe('family threads migration (W4 item 4, PM-1a)', () => {
     expect(sql).not.toMatch(/\bcoach_observations\b|\bfamily_message_replies\b|\bfamily_message_reads\b|\bfamily_reply_reads\b/);
   });
 
-  test('the runner refuses a guard that is there by name but disabled, or replica-only', async () => {
-    const client = await freshDatabase('fthreads_guard_off');
-    try {
-      await expect(
-        applyRunner(client, 'alter table pilot.family_thread_posts disable trigger trg_family_thread_posts_guard'),
-      ).rejects.toThrow('FAMILY_THREADS_NOT_READY: posts_guard_ready');
-      await expect(
-        applyRunner(client, 'alter table pilot.family_thread_reads enable replica trigger trg_family_thread_reads_guard'),
-      ).rejects.toThrow('FAMILY_THREADS_NOT_READY: reads_guard_ready');
-    } finally {
-      await client.end();
-    }
-  });
+  // Every readiness column the runner asserts, in its order: each must be able to refuse.
+  const READINESS = [
+    'posts_table_ready', 'posts_columns_ready', 'posts_primary_key_ready', 'posts_post_athlete_key_ready',
+    'posts_athlete_fk_ready', 'posts_thread_fk_ready', 'posts_author_fk_set_null', 'posts_organization_fk_ready',
+    'posts_role_check_ready', 'posts_opening_check_ready', 'posts_text_check_ready', 'posts_thread_index_ready',
+    'posts_athlete_index_ready', 'posts_author_index_ready', 'posts_guard_ready',
+    'reads_table_ready', 'reads_columns_ready', 'reads_primary_key_ready', 'reads_post_fk_ready',
+    'reads_reader_fk_cascade', 'reads_organization_fk_ready', 'reads_reader_index_ready', 'reads_role_check_ready',
+    'reads_guard_ready',
+  ];
+  const P = 'pilot.family_thread_posts';
+  const R = 'pilot.family_thread_reads';
+  // One change per readiness column that leaves the object there by name but in another shape.
+  // Each runs inside the runner's transaction and is rolled back by its refusal.
+  const SWAPS: Array<[string, string]> = [
+    [`alter table ${P} alter column author_role drop not null`, 'posts_columns_ready'],
+    [`alter table ${R} drop constraint pilot_family_thread_reads_post_fk;
+      alter table ${P} drop constraint pilot_family_thread_posts_pkey,
+        add constraint pilot_family_thread_posts_pkey unique (organization_id, post_id)`, 'posts_primary_key_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_thread_fk,
+        drop constraint pilot_family_thread_posts_post_athlete_key,
+        add constraint pilot_family_thread_posts_post_athlete_key unique (organization_id, athlete_id, post_id)`, 'posts_post_athlete_key_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_athlete_fk,
+        add constraint pilot_family_thread_posts_athlete_fk foreign key (organization_id, athlete_id)
+          references pilot.athletes(organization_id, athlete_id)`, 'posts_athlete_fk_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_thread_fk,
+        add constraint pilot_family_thread_posts_thread_fk foreign key (organization_id, thread_id, athlete_id)
+          references ${P}(organization_id, post_id, athlete_id)`, 'posts_thread_fk_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_thread_fk,
+        add constraint pilot_family_thread_posts_thread_fk foreign key (organization_id, thread_id, athlete_id)
+          references ${P}(organization_id, post_id, athlete_id) on delete cascade deferrable initially deferred`, 'posts_thread_fk_ready'],
+    [`alter table ${P} drop constraint family_thread_posts_author_account_id_fkey,
+        add constraint family_thread_posts_author_account_id_fkey foreign key (author_account_id)
+          references pilot.accounts(account_id) on delete cascade`, 'posts_author_fk_set_null'],
+    [`alter table ${P} drop constraint family_thread_posts_organization_id_fkey,
+        add constraint family_thread_posts_organization_id_fkey foreign key (organization_id)
+          references pilot.organizations(organization_id)`, 'posts_organization_fk_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_role_check,
+        add constraint pilot_family_thread_posts_role_check check (author_role in ('parent', 'coach', 'organization_admin', 'admin', 'athlete'))`, 'posts_role_check_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_opening_check,
+        add constraint pilot_family_thread_posts_opening_check check (post_id <> thread_id or author_role in ('parent', 'coach'))`, 'posts_opening_check_ready'],
+    [`alter table ${P} drop constraint pilot_family_thread_posts_text_check,
+        add constraint pilot_family_thread_posts_text_check check (post_text ~ '[^[:space:]]' and length(post_text) <= 4000)`, 'posts_text_check_ready'],
+    [`drop index pilot.idx_family_thread_posts_thread;
+      create index idx_family_thread_posts_thread on ${P}(organization_id, thread_id)`, 'posts_thread_index_ready'],
+    ['drop index pilot.idx_family_thread_posts_athlete', 'posts_athlete_index_ready'],
+    [`drop index pilot.idx_family_thread_posts_author;
+      create index idx_family_thread_posts_author on ${P}(organization_id, author_account_id)`, 'posts_author_index_ready'],
+    [`alter table ${P} disable trigger trg_family_thread_posts_guard`, 'posts_guard_ready'],
+    [`alter table ${R} alter column first_read_at drop default`, 'reads_columns_ready'],
+    [`alter table ${R} drop constraint pilot_family_thread_reads_pkey,
+        add constraint pilot_family_thread_reads_pkey unique (organization_id, post_id, reader_account_id)`, 'reads_primary_key_ready'],
+    [`alter table ${R} drop constraint pilot_family_thread_reads_post_fk,
+        add constraint pilot_family_thread_reads_post_fk foreign key (organization_id, post_id)
+          references ${P}(organization_id, post_id)`, 'reads_post_fk_ready'],
+    [`alter table ${R} drop constraint family_thread_reads_reader_account_id_fkey,
+        add constraint family_thread_reads_reader_account_id_fkey foreign key (reader_account_id)
+          references pilot.accounts(account_id)`, 'reads_reader_fk_cascade'],
+    [`alter table ${R} drop constraint family_thread_reads_organization_id_fkey,
+        add constraint family_thread_reads_organization_id_fkey foreign key (organization_id)
+          references pilot.organizations(organization_id)`, 'reads_organization_fk_ready'],
+    ['drop index pilot.idx_family_thread_reads_reader', 'reads_reader_index_ready'],
+    [`alter table ${R} drop constraint pilot_family_thread_reads_role_check,
+        add constraint pilot_family_thread_reads_role_check check (reader_role in ('parent', 'coach', 'organization_admin', 'admin', 'athlete'))`, 'reads_role_check_ready'],
+    [`alter table ${R} enable replica trigger trg_family_thread_reads_guard`, 'reads_guard_ready'],
+  ];
 
-  test('the runner refuses checks of these names that admit more, and keys without their cascade', async () => {
+  test('every readiness column refuses an object of its name in another shape', async () => {
     const client = await freshDatabase('fthreads_shape');
     try {
-      const swaps: Array<[string, string]> = [
-        [
-          `alter table pilot.family_thread_posts drop constraint pilot_family_thread_posts_role_check,
-             add constraint pilot_family_thread_posts_role_check check (author_role in ('parent', 'coach', 'organization_admin', 'admin', 'athlete'))`,
-          'posts_role_check_ready',
-        ],
-        [
-          `alter table pilot.family_thread_posts drop constraint pilot_family_thread_posts_opening_check,
-             add constraint pilot_family_thread_posts_opening_check check (post_id <> thread_id or author_role in ('parent', 'coach'))`,
-          'posts_opening_check_ready',
-        ],
-        [
-          `alter table pilot.family_thread_reads drop constraint pilot_family_thread_reads_role_check,
-             add constraint pilot_family_thread_reads_role_check check (reader_role in ('parent', 'coach', 'organization_admin', 'admin', 'athlete'))`,
-          'reads_role_check_ready',
-        ],
-        [
-          `alter table pilot.family_thread_posts drop constraint pilot_family_thread_posts_thread_fk,
-             add constraint pilot_family_thread_posts_thread_fk foreign key (organization_id, thread_id, athlete_id)
-               references pilot.family_thread_posts(organization_id, post_id, athlete_id)`,
-          'posts_thread_fk_ready',
-        ],
-        [
-          `alter table pilot.family_thread_posts drop constraint family_thread_posts_author_account_id_fkey,
-             add constraint family_thread_posts_author_account_id_fkey foreign key (author_account_id)
-               references pilot.accounts(account_id) on delete cascade`,
-          'posts_author_fk_set_null',
-        ],
-      ];
-      for (const [change, missing] of swaps) {
-        // Each swap is rolled back by the runner's own refusal, so the next starts from the
-        // migration's shape.
-        await expect(applyRunner(client, change)).rejects.toThrow(`FAMILY_THREADS_NOT_READY: ${missing}`);
+      for (const [change, missing] of SWAPS) {
+        const refusal = await applyRunner(client, change).then(() => null, (error: Error) => error.message);
+        expect({ change, refused: refusal?.replace('FAMILY_THREADS_NOT_READY: ', '').split(', ') })
+          .toEqual({ change, refused: expect.arrayContaining([missing]) });
       }
+      // Every column but the two table checks (the empty-database test) has a swap of its own.
+      expect(new Set(SWAPS.map(([, missing]) => missing))).toEqual(
+        new Set(READINESS.filter((name) => !name.endsWith('_table_ready'))),
+      );
+      // Each refusal was rolled back: the migration's own shape still passes.
       await applyRunner(client, migrationSql);
     } finally {
       await client.end();
     }
   });
 
-  test('the runner refuses a result it did not produce', async () => {
+  test('the runner refuses a result it did not produce, naming every check', async () => {
     const client = await freshDatabase('fthreads_absent', 'none');
     try {
       await client.query('create schema pilot');
-      await expect(applyRunner(client, 'select 1')).rejects.toThrow(/FAMILY_THREADS_NOT_READY: posts_table_ready/);
+      await expect(applyRunner(client, 'select 1')).rejects.toThrow(`FAMILY_THREADS_NOT_READY: ${READINESS.join(', ')}`);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the release path: the runner creates both tables where they do not exist yet', async () => {
+    const client = await freshDatabase('fthreads_release');
+    try {
+      await client.query(`drop table ${R}; drop table ${P};
+        drop function pilot.family_thread_reads_guard(); drop function pilot.family_thread_posts_guard()`);
+      await applyRunner(client, migrationSql);
+      await post(client, { postId: THREAD });
+      await post(client, { postId: REPLY, threadId: THREAD, author: COACH, role: 'coach' });
+      await read(client, { postId: REPLY, reader: GUARDIAN, role: 'parent' });
+      expect(await count(client, 'family_thread_posts')).toBe(2);
+      expect(await count(client, 'family_thread_reads')).toBe(1);
     } finally {
       await client.end();
     }

@@ -30,13 +30,18 @@
 -- guardian wrote or was written; staff never record reads of staff posts.
 --
 -- WHO MAY READ WHICH THREAD is the application's to enforce, as for the family
--- tables: the guardian link on every request (guardianAccess.ts), staff
--- through assertActorCanAccessAthlete. The database holds the shape: roles,
--- the thread's author, the gym seat.
+-- tables: the guardian link on every request (guardianAccess.ts, which also
+-- ends it at 18 and on a deleted athlete), staff through
+-- assertActorCanAccessAthlete. The database holds the shape: roles, the
+-- thread's author, a guardian's link to THIS child through pilot.parents and
+-- pilot.guardian_links, a staff member's seat in the gym, and a live account.
+-- Each rule is checked against rows that already exist, so a post or a read
+-- whose thread is not yet stored is refused rather than left to a foreign key
+-- that would only look at the end of the statement.
 --
 -- APPEND-ONLY. A post is not edited; a correction is a new post (FC-02 Q3 A).
 -- The one change allowed is author_account_id going to NULL when that account
--- is removed: the post stays, detached from its author (D-9, 2026-08-29: "Keep
+-- is removed (the foreign key's own SET NULL, never a hand UPDATE): the post stays, detached from its author (D-9, 2026-08-29: "Keep
 -- it, detached from the author"), and author_role still says who wrote it. A
 -- read is never changed: the first time is the record (FC-04 Q-B A), and it
 -- goes with the reader's account (FC-04 Q-D A).
@@ -97,16 +102,17 @@ create table if not exists pilot.family_thread_posts (
     check (post_id <> thread_id or author_role = 'parent'),
 
   constraint pilot_family_thread_posts_text_check
-    check (length(btrim(post_text)) > 0 and length(post_text) <= 2000)
+    check (post_text ~ '[^[:space:]]' and length(post_text) <= 2000)
 );
 
--- A thread's posts, oldest first; one athlete's threads; one guardian's own.
+-- A thread's posts, oldest first; one athlete's threads; one author's own
+-- (account first, so an account's removal finds its posts).
 create index if not exists idx_family_thread_posts_thread
   on pilot.family_thread_posts(organization_id, thread_id, created_at);
 create index if not exists idx_family_thread_posts_athlete
   on pilot.family_thread_posts(organization_id, athlete_id, created_at);
 create index if not exists idx_family_thread_posts_author
-  on pilot.family_thread_posts(organization_id, author_account_id);
+  on pilot.family_thread_posts(author_account_id, organization_id);
 
 create or replace function pilot.family_thread_posts_guard()
 returns trigger
@@ -138,17 +144,30 @@ begin
         using errcode = '23514', constraint = 'pilot_family_thread_posts_author_required';
     end if;
 
-    if new.author_role <> 'parent' then
+    if new.author_role = 'parent' then
+      -- A guardian of THIS child in this gym, on a live account (the same
+      -- join as guardianAccess.ts; the 18 rule is the application's).
       if not exists (
-        select 1 from pilot.organization_memberships om
-          join pilot.accounts a on a.account_id = om.account_id
-         where om.account_id = new.author_account_id and om.organization_id = new.organization_id
-           and om.active_flag and om.role = new.author_role
+        select 1 from pilot.parents p
+          join pilot.guardian_links gl
+            on gl.organization_id = p.organization_id and gl.parent_id = p.parent_id
+          join pilot.accounts a on a.account_id = p.account_id
+         where p.organization_id = new.organization_id and p.account_id = new.author_account_id
+           and gl.athlete_id = new.athlete_id
            and a.active_flag and a.deleted_at is null
       ) then
-        raise exception 'FAMILY_THREAD_POST_STAFF_OF_THIS_GYM'
-          using errcode = '23514', constraint = 'pilot_family_thread_posts_staff_of_this_gym';
+        raise exception 'FAMILY_THREAD_POST_GUARDIAN_OF_THIS_CHILD'
+          using errcode = '23514', constraint = 'pilot_family_thread_posts_guardian_of_child';
       end if;
+    elsif not exists (
+      select 1 from pilot.organization_memberships om
+        join pilot.accounts a on a.account_id = om.account_id
+       where om.account_id = new.author_account_id and om.organization_id = new.organization_id
+         and om.active_flag and om.role = new.author_role
+         and a.active_flag and a.deleted_at is null
+    ) then
+      raise exception 'FAMILY_THREAD_POST_STAFF_OF_THIS_GYM'
+        using errcode = '23514', constraint = 'pilot_family_thread_posts_staff_of_this_gym';
     end if;
 
     -- An opening post: the opening check has already said it is a guardian's.
@@ -156,13 +175,17 @@ begin
       return new;
     end if;
 
-    select p.thread_id, p.author_account_id, p.author_role
+    -- The thread, about this child, already stored. Not left to the thread
+    -- foreign key: that looks only at the end of the statement, after this
+    -- guard has passed rows the rules below were never applied to.
+    select p.thread_id, p.author_account_id
       into opening
       from pilot.family_thread_posts p
-     where p.organization_id = new.organization_id and p.post_id = new.thread_id;
-    -- No such post: left to the thread foreign key.
+     where p.organization_id = new.organization_id and p.post_id = new.thread_id
+       and p.athlete_id = new.athlete_id;
     if not found then
-      return new;
+      raise exception 'FAMILY_THREAD_POST_THREAD_NOT_FOUND'
+        using errcode = '23503', constraint = 'pilot_family_thread_posts_thread_fk';
     end if;
     if opening.thread_id <> new.thread_id then
       raise exception 'FAMILY_THREAD_POST_UNDER_AN_OPENING_POST'
@@ -186,7 +209,8 @@ begin
      or new.author_role is distinct from old.author_role
      or new.post_text is distinct from old.post_text
      or new.created_at is distinct from old.created_at
-     or (new.author_account_id is distinct from old.author_account_id and new.author_account_id is not null)
+     or (new.author_account_id is distinct from old.author_account_id
+         and (new.author_account_id is not null or pg_trigger_depth() = 1))
   then
     raise exception 'FAMILY_THREAD_POST_IS_APPEND_ONLY'
       using errcode = '23514', constraint = 'pilot_family_thread_posts_append_only';
@@ -221,9 +245,9 @@ create table if not exists pilot.family_thread_reads (
     check (reader_role in ('parent', 'coach', 'organization_admin', 'admin'))
 );
 
--- A reader's own reads in their gym.
+-- A reader's own reads (account first, so an account's removal finds them).
 create index if not exists idx_family_thread_reads_reader
-  on pilot.family_thread_reads(organization_id, reader_account_id);
+  on pilot.family_thread_reads(reader_account_id, organization_id);
 
 create or replace function pilot.family_thread_reads_guard()
 returns trigger
@@ -247,22 +271,36 @@ begin
       return new;
     end if;
 
-    select p.author_role, o.author_account_id as opener_account_id
+    select p.author_role, p.athlete_id, o.author_account_id as opener_account_id
       into post
       from pilot.family_thread_posts p
       join pilot.family_thread_posts o
         on o.organization_id = p.organization_id and o.post_id = p.thread_id
      where p.organization_id = new.organization_id and p.post_id = new.post_id;
-    -- No such post: left to the post foreign key.
+    -- The post already stored; not left to the foreign key (see the posts guard).
     if not found then
-      return new;
+      raise exception 'FAMILY_THREAD_READ_POST_NOT_FOUND'
+        using errcode = '23503', constraint = 'pilot_family_thread_reads_post_fk';
     end if;
 
     if new.reader_role = 'parent' then
-      -- The guardian who opened the thread, reading what staff wrote in it.
+      -- The guardian who opened the thread, reading what staff wrote in it,
+      -- while still a guardian of the child on a live account.
       if post.author_role = 'parent' or post.opener_account_id is distinct from new.reader_account_id then
         raise exception 'FAMILY_THREAD_READ_GUARDIAN_READS_STAFF_IN_OWN_THREAD'
           using errcode = '23514', constraint = 'pilot_family_thread_reads_guardian_own_thread';
+      end if;
+      if not exists (
+        select 1 from pilot.parents pa
+          join pilot.guardian_links gl
+            on gl.organization_id = pa.organization_id and gl.parent_id = pa.parent_id
+          join pilot.accounts a on a.account_id = pa.account_id
+         where pa.organization_id = new.organization_id and pa.account_id = new.reader_account_id
+           and gl.athlete_id = post.athlete_id
+           and a.active_flag and a.deleted_at is null
+      ) then
+        raise exception 'FAMILY_THREAD_READ_GUARDIAN_OF_THIS_CHILD'
+          using errcode = '23514', constraint = 'pilot_family_thread_reads_guardian_of_child';
       end if;
       return new;
     end if;
