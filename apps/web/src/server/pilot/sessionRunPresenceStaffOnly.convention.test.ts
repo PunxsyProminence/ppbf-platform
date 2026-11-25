@@ -292,6 +292,18 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
     expect([...reached]).toEqual(['listOnTheFloorForStaff']);
     expect(text).not.toMatch(/\b(attendance_reconciled|activity_log|athlete_check_ins)\b|pilot\.attendance(?![\w_])/);
+    // Nor through an import: these seven, and nothing loaded any other way. A new source brought in by
+    // a helper from another module (a wellness check-in, the reconciled view) fails here.
+    expect(Array.from(text.matchAll(/^import .*$/gm), (match) => match[0])).toEqual([
+      "import { GYM_TIME_ZONE, gymDayIso } from '../../lib/gymTime';",
+      "import type { ActorIdentity } from './access';",
+      "import { organizationActionableRoster } from './coachAthleteRoster';",
+      "import { query } from './db';",
+      "import { ForbiddenError } from './errors';",
+      "import { closeIdleSessionRuns } from './sessionScriptRuns';",
+      "import { staffNoteRoleInOrganization } from './sessionStaffNotes';",
+    ]);
+    expect(text).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
   });
 
   it('no route, page, component or other module names either table in its own text', () => {

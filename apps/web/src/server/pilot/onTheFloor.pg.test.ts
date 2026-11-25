@@ -454,6 +454,20 @@ describe('listOnTheFloorForStaff on a real database', () => {
     expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-26T05:00:00Z'))))).toEqual([]); // the next gym day
   });
 
+  test('a staff mark counts from when it is written to the end of the gym day, for a class at either end of the day', async () => {
+    const gym = await newGym('edges');
+    await addAthlete(gym, 'amy', 'Amy');
+    await addAthlete(gym, 'bo', 'Bo');
+    await addClass(gym, 'k-first', TODAY, '00:30'); // 05:30 UTC
+    await addClass(gym, 'k-last', TODAY, '23:30'); // 04:30 UTC on the 26th
+    await registerMark(gym, 'k-first', 'amy', 'present', '2026-11-25T06:00:00Z'); // 01:00 at the gym
+    await registerMark(gym, 'k-last', 'bo', 'present', '2026-11-25T05:45:00Z'); // 00:45 at the gym, for the 23:30 class
+    // 01:00: Bo's class is 22.5 hours away, and his staff mark counts from when it was written.
+    expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-25T06:00:00Z'))))).toEqual(['Amy', 'Bo']);
+    // 23:59: Amy's class began 23.5 hours ago, and her mark still counts to the end of the gym day.
+    expect(names(await listOnTheFloorForStaff(gym.coach, new Date(Date.parse('2026-11-26T04:59:00Z'))))).toEqual(['Amy', 'Bo']);
+  });
+
   test('the gym day follows daylight saving: in July a class just after local midnight is that day\'s, one just before is the day before\'s', async () => {
     const gym = await newGym('summer');
     const summerNoon = new Date(Date.parse('2026-07-15T16:00:00Z')); // 12:00 at the gym (UTC-4 in July)
