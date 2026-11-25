@@ -4,7 +4,9 @@
 // against pilot.attendance_reconciled (the register, through
 // getAttendanceLast28Days), pilot.session_run_athletes,
 // pilot.session_script_runs and pilot.program_memberships (Overwatch on #2172)
-// built by the full schema.
+// built by the full schema. And the reached-out mark end to end (SC-3a-2):
+// setStoppedComingReachedOut through reachedOutMarks.ts into
+// pilot.athlete_reached_out_marks, read back on the list.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -51,7 +53,7 @@ jest.mock('./db', () => ({
 import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { startSessionScriptRun } from './sessionScriptRuns';
-import { listStoppedComing } from './stoppedComing';
+import { listStoppedComing, setStoppedComingReachedOut } from './stoppedComing';
 
 jest.setTimeout(240_000);
 
@@ -216,6 +218,40 @@ async function programMembership(gym: Gym, athleteId: string, program: string, s
   );
 }
 
+/** The display name the gym typed for a staff account (getStaffAuthorName reads it). */
+async function displayName(actor: ActorIdentity, name: string) {
+  await client.query(
+    'insert into pilot.account_profiles (organization_id, account_id, staff_display_name) values ($1, $2, $3)',
+    [actor.organizationId, actor.accountId, name],
+  );
+}
+
+/**
+ * The database stamps a reached-out mark with its own clock and the guard refuses to move it, so a
+ * mark "made N days ago" is made now and moved back with this session's triggers off.
+ */
+async function backdateReachedOut(gym: Gym, athleteId: string, day: string) {
+  await client.query('set session_replication_role = replica');
+  try {
+    await client.query(
+      `update pilot.athlete_reached_out_marks set marked_at = ($3 || ' 12:00')::timestamp at time zone 'America/New_York'
+        where organization_id = $1 and athlete_id = $2 and cleared_at is null`,
+      [gym.organizationId, athleteId, day],
+    );
+  } finally {
+    await client.query('set session_replication_role = origin');
+  }
+}
+
+async function reachedOutRows(gym: Gym, athleteId: string) {
+  const { rows } = await client.query(
+    `select marked_by_account_id, cleared_by_account_id, cleared_kind
+       from pilot.athlete_reached_out_marks where organization_id = $1 and athlete_id = $2 order by marked_at`,
+    [gym.organizationId, athleteId],
+  );
+  return rows;
+}
+
 /** An account with an active membership in this gym, in `role`. */
 async function member(gym: Gym, role: PilotRole): Promise<ActorIdentity> {
   const accountId = `${role}-member@${gym.organizationId}`;
@@ -376,7 +412,7 @@ describe('listStoppedComing on a real database', () => {
       { athlete_id: 'jo', full_name: 'Jo Vance', last_came_day: daysAgo(16), days_since_came: 16 },
       { athlete_id: 'fay', full_name: 'Fay Cole', last_came_day: daysAgo(14), days_since_came: 14 },
       { athlete_id: 'max', full_name: 'Max Dunn', last_came_day: daysAgo(14), days_since_came: 14 },
-    ];
+    ].map((athlete) => ({ ...athlete, reached_out: null }));
     // A membership in the legacy 'admin' name reads it too.
     const legacyAdmin = await member(gym, 'admin');
     for (const reader of [gym.coach, gym.coach2, gym.admin, legacyAdmin]) {
@@ -420,7 +456,7 @@ describe('listStoppedComing on a real database', () => {
 
     const expected = cases
       .filter(([, , , listed]) => listed)
-      .map(([id, name]) => ({ athlete_id: id, full_name: name, last_came_day: daysAgo(20), days_since_came: 20 }))
+      .map(([id, name]) => ({ athlete_id: id, full_name: name, last_came_day: daysAgo(20), days_since_came: 20, reached_out: null }))
       .sort((a, b) => a.full_name.localeCompare(b.full_name));
     expect(expected.map((a) => a.athlete_id)).toEqual(['mae', 'ola', 'pam', 'sid']);
     for (const reader of [gym.coach, gym.admin]) {
@@ -457,7 +493,7 @@ describe('listStoppedComing on a real database', () => {
     );
     await expect(listStoppedComing(gym.coach, TODAY)).resolves.toEqual({
       gap_days: 28, is_default: false, today: TODAY,
-      athletes: [{ athlete_id: 'ben', full_name: 'Ben Ortiz', last_came_day: daysAgo(30), days_since_came: 30 }],
+      athletes: [{ athlete_id: 'ben', full_name: 'Ben Ortiz', last_came_day: daysAgo(30), days_since_came: 30, reached_out: null }],
     });
   });
 
@@ -474,6 +510,104 @@ describe('listStoppedComing on a real database', () => {
     // Members of this gym in a role that is not staff here, each with an active membership.
     for (const role of ['board', 'volunteer', 'staff', 'parent'] as const) {
       await expect(listStoppedComing(await member(gym, role), TODAY)).rejects.toMatchObject({ status: 403 });
+    }
+  });
+
+  test('the reached-out mark end to end (SC-3a-2): mark; came back by open gym or register; stopped again; re-mark replaces; shown only while newer; take back; refusals; no account id', async () => {
+    const gym = await newGym('reached');
+    const other = await newGym('reached-other');
+    await displayName(gym.coach, 'Jordan');
+    await displayName(gym.coach2, 'Sam');
+    await displayName(gym.admin, 'Pat');
+    // A new mark is stamped with the database's day, so this test's day is the database's.
+    const today = (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    const row = async (athleteId: string) => (await listStoppedComing(gym.coach, today)).athletes.find((a) => a.athlete_id === athleteId);
+
+    await addAthlete(gym, 'ada', 'Ada Reyes');
+    await registerDay(gym, 'ada', day(-40), 'present');
+    await addAthlete(gym, 'ben', 'Ben Ortiz');
+    await registerDay(gym, 'ben', day(-40), 'present');
+    await addAthlete(gym, 'eve', 'Eve Long', { deleted: true });
+    await registerDay(gym, 'eve', day(-40), 'present');
+    await addAthlete(other, 'zed', 'Zed Elsewhere');
+    await registerDay(other, 'zed', day(-40), 'present');
+
+    // Mark: the list shows who and the day; a second coach's mark writes nothing.
+    await expect(setStoppedComingReachedOut(gym.coach, 'ada', true, today)).resolves.toBe('marked');
+    await expect(row('ada')).resolves.toEqual({
+      athlete_id: 'ada', full_name: 'Ada Reyes', last_came_day: day(-40), days_since_came: 40,
+      reached_out: { by_name: 'Coach Jordan', on_day: today },
+    });
+    await expect(setStoppedComingReachedOut(gym.coach2, 'ada', true, today)).resolves.toBe('already_marked');
+
+    // The mark was made 30 days ago; Ada came back to open gym 25 days ago and has stopped again.
+    await backdateReachedOut(gym, 'ada', day(-30));
+    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Coach Jordan', on_day: day(-30) } });
+    const openGym = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, {})).run_id;
+    await hereMark(gym, openGym, 'ada', day(-25));
+    await expect(row('ada')).resolves.toMatchObject({ last_came_day: day(-25), days_since_came: 25, reached_out: null });
+    // The stale mark is not taken back: there is nothing on the page to take back.
+    await expect(setStoppedComingReachedOut(gym.admin, 'ada', false, today)).resolves.toBe('not_marked');
+    // A new mark replaces it, in one transaction, the old row ended by the coach making the new one.
+    await expect(setStoppedComingReachedOut(gym.coach2, 'ada', true, today)).resolves.toBe('marked');
+    await expect(row('ada')).resolves.toMatchObject({ reached_out: { by_name: 'Coach Sam', on_day: today } });
+    expect(await reachedOutRows(gym, 'ada')).toEqual([
+      { marked_by_account_id: gym.coach.accountId, cleared_by_account_id: gym.coach2.accountId, cleared_kind: 'replaced' },
+      { marked_by_account_id: gym.coach2.accountId, cleared_by_account_id: null, cleared_kind: null },
+    ]);
+
+    // Ben's comeback is a register present day: the same.
+    await setStoppedComingReachedOut(gym.coach, 'ben', true, today);
+    await backdateReachedOut(gym, 'ben', day(-30));
+    await registerDay(gym, 'ben', day(-20), 'present');
+    await expect(row('ben')).resolves.toMatchObject({ last_came_day: day(-20), reached_out: null });
+    await expect(setStoppedComingReachedOut(gym.admin, 'ben', true, today)).resolves.toBe('marked');
+    await expect(row('ben')).resolves.toMatchObject({ reached_out: { by_name: 'Pat', on_day: today } });
+    expect((await reachedOutRows(gym, 'ben')).map((r) => r.cleared_kind)).toEqual(['replaced', null]);
+
+    // Take back: the row stays, ended; the list shows none; a second take-back has nothing to take.
+    await expect(setStoppedComingReachedOut(gym.coach, 'ada', false, today)).resolves.toBe('taken_back');
+    await expect(row('ada')).resolves.toMatchObject({ reached_out: null });
+    await expect(setStoppedComingReachedOut(gym.coach, 'ada', false, today)).resolves.toBe('not_marked');
+    expect((await reachedOutRows(gym, 'ada')).map((r) => r.cleared_kind)).toEqual(['replaced', 'taken_back']);
+
+    // Refused, nothing written: another gym's athlete, a soft-deleted athlete, no such athlete (404);
+    // a coach whose membership ended, an athlete, another gym's coach claiming this gym (403).
+    for (const athleteId of ['zed', 'eve', 'nobody']) {
+      await expect(setStoppedComingReachedOut(gym.coach, athleteId, true, today)).rejects.toMatchObject({ status: 404 });
+    }
+    await expect(setStoppedComingReachedOut(other.coach, 'ada', true, today)).rejects.toMatchObject({ status: 404 });
+    for (const actor of [gym.exCoach, gym.athleteAccount, { ...other.coach, organizationId: gym.organizationId }]) {
+      await expect(setStoppedComingReachedOut(actor, 'ben', false, today)).rejects.toMatchObject({ status: 403 });
+    }
+    const written = await client.query(
+      `select organization_id, athlete_id from pilot.athlete_reached_out_marks where athlete_id in ('zed', 'eve', 'nobody')`,
+    );
+    expect(written.rows).toEqual([]);
+    expect((await reachedOutRows(gym, 'ben')).map((r) => r.cleared_kind)).toEqual(['replaced', null]);
+
+    // Every write audited, in order, with no note: who, what, and how a mark ended.
+    const audits = await client.query(
+      `select event_type, actor_role, details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'athlete_reached_out_mark' order by audit_id`,
+      [gym.organizationId],
+    );
+    expect(audits.rows).toEqual([
+      { event_type: 'create', actor_role: 'coach', details: { athlete_id: 'ada' } },
+      { event_type: 'update', actor_role: 'coach', details: { athlete_id: 'ada', action: 'clear', cleared_kind: 'replaced' } },
+      { event_type: 'create', actor_role: 'coach', details: { athlete_id: 'ada' } },
+      { event_type: 'create', actor_role: 'coach', details: { athlete_id: 'ben' } },
+      { event_type: 'update', actor_role: 'organization_admin', details: { athlete_id: 'ben', action: 'clear', cleared_kind: 'replaced' } },
+      { event_type: 'create', actor_role: 'organization_admin', details: { athlete_id: 'ben' } },
+      { event_type: 'update', actor_role: 'coach', details: { athlete_id: 'ada', action: 'clear', cleared_kind: 'taken_back' } },
+    ]);
+
+    // No account id anywhere in what the list returns, for any reader.
+    for (const reader of [gym.coach, gym.admin]) {
+      const text = JSON.stringify(await listStoppedComing(reader, today));
+      for (const actor of [gym.coach, gym.coach2, gym.admin, gym.exCoach]) expect(text).not.toContain(actor.accountId);
+      expect(text).not.toMatch(/mark_id|account/);
     }
   });
 });

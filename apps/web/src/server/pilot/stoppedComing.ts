@@ -37,34 +37,48 @@
  *   - Listed when today minus that day is the gym's number of days or more: no
  *     day they came among the last N gym days, today included.
  *
- * ON THIS PAGE ONLY. The two reads are made apart and combined here. Nothing
- * here writes, and no attendance figure, report, board or grant figure reads
- * this (OW27-32 A: "OD-2026-09-28-008 and CT-13 stand"). The answer's words are
- * "came", not "present" or "attendance", for the same reason.
+ * ON THIS PAGE ONLY. The two reads are made apart and combined here. No
+ * attendance figure, report, board or grant figure reads this (OW27-32 A:
+ * "OD-2026-09-28-008 and CT-13 stand"). The answer's words are "came", not
+ * "present" or "attendance", for the same reason.
  *
- * WHO MAY READ: a coach or the gym admin with an ACTIVE staff membership in
- * this gym (staffNoteRoleInOrganization, the rule a session mark is written
- * and read under). Anyone else is refused with 403, never handed an empty list:
- * an empty list here reads as "nobody has stopped coming". A coach's reach is
- * the whole gym (access.ts), so a coach and the gym admin see the same list.
+ * THE "REACHED OUT" MARK (SC-3a-2; OW27-33 B, Overwatch W4-6 Q4 A), the one
+ * write here: setStoppedComingReachedOut, through reachedOutMarks.ts. It is
+ * here so the presence record keeps exactly two readers (Overwatch on #2163,
+ * answer A); the athlete's last day they came is read from both sources on the
+ * write's transaction. A mark shows, and can be taken back, only while newer
+ * than that day; a stale one is replaced by a new mark.
+ *
+ * WHO MAY READ AND MARK: a coach or the gym admin with an ACTIVE staff
+ * membership in this gym (staffNoteRoleInOrganization, the rule a session mark
+ * is written and read under). Anyone else is refused with 403, never handed an
+ * empty list: an empty list here reads as "nobody has stopped coming". A
+ * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
+ * the same list. A mark is for a live athlete of this gym only (404); both are
+ * checked again under lock in the write, as sessionRunAthletes.ts does.
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
  * route as readers of the staff-only presence record (Overwatch, W4-6 GO,
  * condition 1).
  *
- * What leaves this module: athlete id, name, the last day they came and the
- * days since. No date of birth, membership, mark, run or count. Membership
- * records stay admin-only (programMemberships.ts): the one membership read
- * returns ids to leave off, and no status, program or date leaves it.
+ * What leaves this module: athlete id, name, the last day they came, the days
+ * since, and the reached-out mark as who (display name) and the gym day, or
+ * null; a mark write answers one outcome word. No date of birth, membership,
+ * here mark, run, count or account id. Membership records stay admin-only
+ * (programMemberships.ts): the one membership read returns ids to leave off,
+ * and no status, program or date leaves it.
  */
+
+import type { PoolClient } from 'pg';
 
 import { GYM_TIME_ZONE } from '../../lib/gymTime';
 
 import type { ActorIdentity } from './access';
 import { getAttendanceLast28Days } from './attendancePrecedence';
 import { organizationActionableRoster } from './coachAthleteRoster';
-import { query } from './db';
-import { ForbiddenError } from './errors';
-import { staffNoteRoleInOrganization } from './sessionStaffNotes';
+import { query, withTransaction } from './db';
+import { ForbiddenError, NotFoundError } from './errors';
+import { type ReachedOut, type ReachedOutOutcome, readCurrentReachedOut, setReachedOutMark } from './reachedOutMarks';
+import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
 import { readStoppedComingPolicy, type StoppedComingGapDays } from './stoppedComingPolicy';
 
 export interface StoppedComingAthlete {
@@ -74,6 +88,8 @@ export interface StoppedComingAthlete {
   readonly last_came_day: string;
   /** Whole days from last_came_day to today; at least gap_days. */
   readonly days_since_came: number;
+  /** Who reached out and on which gym day, while that mark is newer than last_came_day; else null. */
+  readonly reached_out: ReachedOut | null;
 }
 
 export interface StoppedComingList {
@@ -87,6 +103,13 @@ export interface StoppedComingList {
 
 function dayNumber(isoDay: string): number {
   return Math.round(Date.parse(`${isoDay}T00:00:00Z`) / 86_400_000);
+}
+
+/** The later of the two sources' days (ISO days compare as text); null when neither: never came. */
+function laterDay(registerDay: string | null, openGymDay: string | null): string | null {
+  return registerDay !== null && openGymDay !== null
+    ? (registerDay > openGymDay ? registerDay : openGymDay)
+    : (registerDay ?? openGymDay);
 }
 
 /**
@@ -114,15 +137,19 @@ async function athletesWithNoActiveMembership(
 /**
  * The gym-local day of each athlete's last standing "here" mark that the
  * register does not hold (see the header), up to today. Athletes with none
- * have no row.
+ * have no row. `client` runs it on the caller's transaction (a mark write).
  */
 async function lastOpenGymDays(
   organizationId: string,
   athleteIds: readonly string[],
   today: string,
+  client?: PoolClient,
 ): Promise<Map<string, string>> {
   if (athleteIds.length === 0) return new Map();
-  const rows = await query<{ athlete_id: string; last_day: string }>(
+  type Row = { athlete_id: string; last_day: string };
+  const read = async (text: string, params: unknown[]): Promise<Row[]> =>
+    (client ? (await client.query<Row>(text, params)).rows : query<Row>(text, params));
+  const rows = await read(
     `select m.athlete_id, max((m.marked_at at time zone $4)::date)::text as last_day
        from pilot.session_run_athletes m
        join pilot.session_script_runs r
@@ -163,12 +190,11 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
   const todayNumber = dayNumber(today);
   const athletes: StoppedComingAthlete[] = [];
   for (const athlete of active) {
-    const registerDay = register.get(athlete.athlete_id)?.last_present_day ?? null;
-    const openGymDay = openGym.get(athlete.athlete_id) ?? null;
-    // ISO days compare as text. Neither: never came, so not listed (OW27-31 A).
-    const lastCame = registerDay !== null && openGymDay !== null
-      ? (registerDay > openGymDay ? registerDay : openGymDay)
-      : (registerDay ?? openGymDay);
+    // Neither source: never came, so not listed (OW27-31 A).
+    const lastCame = laterDay(
+      register.get(athlete.athlete_id)?.last_present_day ?? null,
+      openGym.get(athlete.athlete_id) ?? null,
+    );
     if (lastCame === null) continue;
     const daysSince = todayNumber - dayNumber(lastCame);
     if (daysSince < policy.gap_days) continue;
@@ -177,6 +203,7 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
       full_name: athlete.full_name,
       last_came_day: lastCame,
       days_since_came: daysSince,
+      reached_out: null,
     });
   }
   athletes.sort((a, b) =>
@@ -184,5 +211,50 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
     || a.full_name.localeCompare(b.full_name)
     || a.athlete_id.localeCompare(b.athlete_id));
 
-  return { gap_days: policy.gap_days, is_default: policy.is_default, today, athletes };
+  // The listed athletes' current marks, each only while newer than their last day they came.
+  const reachedOut = await readCurrentReachedOut(
+    organizationId,
+    new Map(athletes.map((athlete) => [athlete.athlete_id, athlete.last_came_day])),
+  );
+  return {
+    gap_days: policy.gap_days,
+    is_default: policy.is_default,
+    today,
+    athletes: athletes.map((athlete) => ({ ...athlete, reached_out: reachedOut.get(athlete.athlete_id) ?? null })),
+  };
+}
+
+const NOT_STAFF_TO_MARK = 'Forbidden: only a coach or the gym admin of this gym marks who was reached out to';
+
+/**
+ * Marks that the actor reached out to one athlete (`reachedOut` true), or
+ * takes the mark back (false). The athlete must be a live athlete of this gym.
+ * `today` is the gym-local day (gymDayIso), passed in so tests are fixed.
+ */
+export async function setStoppedComingReachedOut(
+  actor: ActorIdentity,
+  athleteId: string,
+  reachedOut: boolean,
+  today: string,
+): Promise<ReachedOutOutcome> {
+  if (!(await staffNoteRoleInOrganization(actor))) {
+    throw new ForbiddenError(NOT_STAFF_TO_MARK);
+  }
+  const organizationId = actor.organizationId;
+  // Live athletes of this gym only: the table would take a soft-deleted one. 404, as athleteInjuries.ts answers.
+  if (!(await organizationActionableRoster(organizationId)).some((athlete) => athlete.athlete_id === athleteId)) {
+    throw new NotFoundError('Athlete not found.');
+  }
+  return withTransaction(async (client) => {
+    // Both again, under lock, as sessionRunAthletes.ts marks a session: membership and account,
+    // then the athlete row, then (in reachedOutMarks.ts) the mark row. The role is the membership's.
+    const role = await lockStaffMembership(client, actor);
+    if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
+    if (!(await lockLiveAthlete(client, organizationId, athleteId))) throw new NotFoundError('Athlete not found.');
+    // The last day they came, from both sources, on this transaction (Overwatch on #2163, answer A).
+    const register = await getAttendanceLast28Days(organizationId, [athleteId], today, client);
+    const openGym = await lastOpenGymDays(organizationId, [athleteId], today, client);
+    const lastCameDay = laterDay(register.get(athleteId)?.last_present_day ?? null, openGym.get(athleteId) ?? null);
+    return setReachedOutMark(client, { actor, role, athleteId, lastCameDay, reachedOut });
+  });
 }

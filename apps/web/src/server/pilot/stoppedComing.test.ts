@@ -1,9 +1,10 @@
-import { listStoppedComing } from './stoppedComing';
+import { listStoppedComing, setStoppedComingReachedOut } from './stoppedComing';
 import type { ActorIdentity } from './access';
 import { getAttendanceLast28Days } from './attendancePrecedence';
 import { organizationActionableRoster } from './coachAthleteRoster';
-import { query } from './db';
-import { staffNoteRoleInOrganization } from './sessionStaffNotes';
+import { query, withTransaction } from './db';
+import { readCurrentReachedOut, setReachedOutMark } from './reachedOutMarks';
+import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
 import { readStoppedComingPolicy } from './stoppedComingPolicy';
 
 /*
@@ -12,20 +13,34 @@ import { readStoppedComingPolicy } from './stoppedComingPolicy';
  * membership refusal (403, never an empty list), who is listed (OW27-31 A,
  * OW27-32 A; Overwatch W4-6 Q2 A, and on #2172 the program-membership rule),
  * the boundary, the order, and the two reads' own SQL (program memberships
- * with none active; here marks the register does not hold).
+ * with none active; here marks the register does not hold). And the
+ * reached-out mark (SC-3a-2): which marks the list asks for, and who may mark,
+ * for which athlete, with the last day they came read on the mark's own
+ * transaction (Overwatch on #2163, answer A). The mark's own rules are
+ * reachedOutMarks.pg.test.ts.
  */
 
-jest.mock('./db', () => ({ query: jest.fn() }));
-jest.mock('./sessionStaffNotes', () => ({ staffNoteRoleInOrganization: jest.fn() }));
+jest.mock('./db', () => ({ query: jest.fn(), withTransaction: jest.fn() }));
+jest.mock('./sessionStaffNotes', () => ({
+  staffNoteRoleInOrganization: jest.fn(),
+  lockStaffMembership: jest.fn(),
+  lockLiveAthlete: jest.fn(),
+}));
 jest.mock('./coachAthleteRoster', () => ({ organizationActionableRoster: jest.fn() }));
 jest.mock('./attendancePrecedence', () => ({ getAttendanceLast28Days: jest.fn() }));
 jest.mock('./stoppedComingPolicy', () => ({ readStoppedComingPolicy: jest.fn() }));
+jest.mock('./reachedOutMarks', () => ({ readCurrentReachedOut: jest.fn(), setReachedOutMark: jest.fn() }));
 
 const mockQuery = query as jest.Mock;
+const mockTransaction = withTransaction as jest.Mock;
 const mockStaffRole = staffNoteRoleInOrganization as jest.Mock;
+const mockLockMembership = lockStaffMembership as jest.Mock;
+const mockLockAthlete = lockLiveAthlete as jest.Mock;
 const mockRoster = organizationActionableRoster as jest.Mock;
 const mockRegister = getAttendanceLast28Days as jest.Mock;
 const mockPolicy = readStoppedComingPolicy as jest.Mock;
+const mockReadMarks = readCurrentReachedOut as jest.Mock;
+const mockSetMark = setReachedOutMark as jest.Mock;
 
 const TODAY = '2026-11-25';
 const coach: ActorIdentity = { accountId: 'acct-coach', role: 'coach', organizationId: 'org-1', athleteId: null };
@@ -48,6 +63,13 @@ const MEMBERSHIPS = 'from pilot.program_memberships pm';
 const MARKS = 'from pilot.session_run_athletes m';
 let membershipRows: Array<{ athlete_id: string }> = [];
 let marksRows: Array<{ athlete_id: string; last_day: string }> = [];
+/** The mark write's transaction client: it answers only the here-marks read. */
+const txClient = {
+  query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]]>(async (sql) => {
+    if (String(sql).includes(MARKS)) return { rows: marksRows };
+    throw new Error(`test bug: an unexpected read on the transaction: ${sql}`);
+  }),
+};
 
 function callFor(fromClause: string): unknown[] {
   const calls = mockQuery.mock.calls.filter(([sql]) => String(sql).includes(fromClause));
@@ -68,6 +90,11 @@ beforeEach(() => {
     if (String(sql).includes(MARKS)) return marksRows;
     throw new Error(`test bug: an unexpected read: ${sql}`);
   });
+  mockReadMarks.mockResolvedValue(new Map());
+  mockTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(txClient));
+  mockLockMembership.mockResolvedValue('coach');
+  mockLockAthlete.mockResolvedValue(true);
+  mockSetMark.mockResolvedValue('marked');
 });
 
 test('a caller with no active staff membership here is refused (403), and nothing is read', async () => {
@@ -105,9 +132,9 @@ test('who is listed: came before, not for the gym\'s days; open gym counts as co
     is_default: true,
     today: TODAY,
     athletes: [
-      { athlete_id: 'a-reg-20', full_name: 'Ada', last_came_day: daysAgo(20), days_since_came: 20 },
-      { athlete_id: 'a-gym-30-reg-18', full_name: 'Fay', last_came_day: daysAgo(18), days_since_came: 18 },
-      { athlete_id: 'a-gym-16', full_name: 'Eve', last_came_day: daysAgo(16), days_since_came: 16 },
+      { athlete_id: 'a-reg-20', full_name: 'Ada', last_came_day: daysAgo(20), days_since_came: 20, reached_out: null },
+      { athlete_id: 'a-gym-30-reg-18', full_name: 'Fay', last_came_day: daysAgo(18), days_since_came: 18, reached_out: null },
+      { athlete_id: 'a-gym-16', full_name: 'Eve', last_came_day: daysAgo(16), days_since_came: 16, reached_out: null },
     ],
   });
   const activeIds = ['a-reg-20', 'a-reg-20-gym-3', 'a-never', 'a-gym-16', 'a-gym-30-reg-18'];
@@ -175,6 +202,7 @@ test('a roster with no active athlete answers an empty list without reading mark
   expect(list.athletes).toEqual([]);
   expect(mockRegister).toHaveBeenCalledWith('org-1', [], TODAY);
   expect(mockQuery).not.toHaveBeenCalled();
+  expect(mockReadMarks).toHaveBeenCalledWith('org-1', new Map());
 });
 
 test('the marks read: this gym, these athletes, standing marks the register does not hold, up to today, in gym time', async () => {
@@ -193,4 +221,81 @@ test('the marks read: this gym, these athletes, standing marks the register does
   expect(sql).toContain('and (m.marked_at at time zone $4)::date <= $3::date');
   // One day per athlete leaves the read: no run, mark or marker.
   expect(sql).toMatch(/^ ?select m\.athlete_id, max\(\(m\.marked_at at time zone \$4\)::date\)::text as last_day from/);
+});
+
+describe('the reached-out mark on the list (SC-3a-2)', () => {
+  test('the marks are asked for the listed athletes only, each with their last day they came, and shown as the module answers', async () => {
+    mockRoster.mockResolvedValue([athlete('a-1', 'Ada'), athlete('a-2', 'Ben'), athlete('a-recent', 'Cy')]);
+    mockRegister.mockResolvedValue(register({ 'a-1': daysAgo(20), 'a-2': daysAgo(30), 'a-recent': daysAgo(2) }));
+    marksRows = [{ athlete_id: 'a-1', last_day: daysAgo(25) }];
+    mockReadMarks.mockResolvedValue(new Map([['a-2', { by_name: 'Coach Jordan', on_day: daysAgo(3) }]]));
+
+    const list = await listStoppedComing(coach, TODAY);
+
+    expect(mockReadMarks).toHaveBeenCalledTimes(1);
+    expect(mockReadMarks).toHaveBeenCalledWith('org-1', new Map([['a-2', daysAgo(30)], ['a-1', daysAgo(20)]]));
+    expect(list.athletes).toEqual([
+      { athlete_id: 'a-2', full_name: 'Ben', last_came_day: daysAgo(30), days_since_came: 30, reached_out: { by_name: 'Coach Jordan', on_day: daysAgo(3) } },
+      { athlete_id: 'a-1', full_name: 'Ada', last_came_day: daysAgo(20), days_since_came: 20, reached_out: null },
+    ]);
+  });
+});
+
+describe('setStoppedComingReachedOut (SC-3a-2)', () => {
+  test('a caller with no active staff membership here is refused (403), and nothing is read or written', async () => {
+    mockStaffRole.mockResolvedValue(null);
+    await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject({ status: 403 });
+    expect(mockStaffRole).toHaveBeenCalledWith(coach);
+    expect(mockRoster).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockSetMark).not.toHaveBeenCalled();
+  });
+
+  test('an athlete who is not a live athlete of this gym (another gym\'s, deleted, or no such id) is not found (404), before any transaction', async () => {
+    mockRoster.mockResolvedValue([athlete('a-1', 'Ada'), athlete('a-left', 'Dee', false)]);
+    await expect(setStoppedComingReachedOut(coach, 'a-elsewhere', true, TODAY)).rejects.toMatchObject({ status: 404 });
+    expect(mockRoster).toHaveBeenCalledWith('org-1');
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockSetMark).not.toHaveBeenCalled();
+  });
+
+  test('membership and athlete are checked again under lock in the transaction: either gone refuses, nothing written', async () => {
+    mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
+    mockLockMembership.mockResolvedValueOnce(null);
+    await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject({ status: 403 });
+    expect(mockLockAthlete).not.toHaveBeenCalled();
+    mockLockAthlete.mockResolvedValueOnce(false);
+    await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject({ status: 404 });
+    expect(mockLockAthlete).toHaveBeenCalledWith(txClient, 'org-1', 'a-1');
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(mockSetMark).not.toHaveBeenCalled();
+  });
+
+  test('the last day they came is read from both sources on the transaction client, the later one passed with the membership role', async () => {
+    mockRoster.mockResolvedValue([athlete('a-1', 'Ada'), athlete('a-2', 'Ben')]);
+    mockLockMembership.mockResolvedValue('organization_admin');
+    mockRegister.mockResolvedValue(register({ 'a-1': daysAgo(20) }));
+    marksRows = [{ athlete_id: 'a-1', last_day: daysAgo(9) }];
+    mockSetMark.mockResolvedValue('already_marked');
+
+    await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).resolves.toBe('already_marked');
+
+    expect(mockLockMembership).toHaveBeenCalledWith(txClient, coach);
+    expect(mockRegister).toHaveBeenCalledWith('org-1', ['a-1'], TODAY, txClient);
+    const onClient = txClient.query.mock.calls.filter(([sql]) => String(sql).includes(MARKS));
+    expect(onClient).toHaveLength(1);
+    expect(onClient[0][1]).toEqual(['org-1', ['a-1'], TODAY, 'America/New_York']);
+    // Not on a pooled connection outside the transaction.
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockSetMark).toHaveBeenCalledWith(txClient, {
+      actor: coach, role: 'organization_admin', athleteId: 'a-1', lastCameDay: daysAgo(9), reachedOut: true,
+    });
+  });
+
+  test('a take-back for an athlete who never came passes no last day', async () => {
+    mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
+    mockSetMark.mockResolvedValue('not_marked');
+    await expect(setStoppedComingReachedOut(coach, 'a-1', false, TODAY)).resolves.toBe('not_marked');
+    expect(mockSetMark).toHaveBeenCalledWith(txClient, expect.objectContaining({ lastCameDay: null, reachedOut: false }));
+  });
 });
