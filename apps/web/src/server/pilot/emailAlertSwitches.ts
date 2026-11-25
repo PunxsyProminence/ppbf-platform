@@ -196,49 +196,69 @@ export async function setEmailAlertSwitch(
 
   return withTransaction(async (client) => {
     const stored = await lockSwitchRow(client, subject);
-    const previous = stateFrom(userType, stored);
-    // Times and audit describe the row as stored, whatever type it was saved under.
-    const storedOn = stored?.switched_on ?? false;
-    const retyped = stored !== undefined && stored.user_type !== userType;
-
-    if (userType === 'adult_athlete' && switchedOn && previous.address_confirmed !== true) {
-      throw new ConflictError('Confirm an email address before switching email alerts on');
+    try {
+      return await saveSwitch(client, subject, userType, switchedOn, stored);
+    } catch (error) {
+      // A membership removed between sign-in and this save (EM-1a's membership
+      // key): the same answer as anyone not offered a switch, not a raw error.
+      const pgError = error as { code?: unknown; constraint?: unknown };
+      if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
+        throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+      }
+      throw error;
     }
-
-    // UPDATE the locked row, or INSERT when there is none. Not INSERT ... ON
-    // CONFLICT: Postgres checks the CHECKs on the proposed row first, which has
-    // no address, so a confirmed adult athlete could never switch on. A row
-    // saved under another user type loses any address.
-    if (stored) {
-      await client.query(
-        `update pilot.email_alert_switches s set
-           user_type = $3,
-           switched_on = $4,
-           switched_on_at = case when $4 and (not $5 or $6) then clock_timestamp() else s.switched_on_at end,
-           switched_off_at = case when not $4 and $5 then clock_timestamp() else s.switched_off_at end,
-           set_at = clock_timestamp(),
-           ${addressColumns("$3 = 'adult_athlete'")}
-         where s.organization_id = $1 and s.account_id = $2`,
-        [subject.organizationId, subject.accountId, userType, switchedOn, storedOn, retyped],
-      );
-    } else {
-      await client.query(
-        `insert into pilot.email_alert_switches
-           (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at, set_at)
-         values ($1, $2, $3, $4, case when $4 then clock_timestamp() end,
-                 case when not $4 then clock_timestamp() end, clock_timestamp())`,
-        [subject.organizationId, subject.accountId, userType, switchedOn],
-      );
-    }
-    await audit(client, subject, {
-      user_type: userType,
-      switched_on: switchedOn,
-      previous_switched_on: storedOn,
-      ...(retyped && stored ? { previous_user_type: stored.user_type } : {}),
-    });
-
-    return userType === 'adult_athlete'
-      ? { offered: true, user_type: userType, switched_on: switchedOn, address_confirmed: previous.address_confirmed === true }
-      : { offered: true, user_type: userType, switched_on: switchedOn };
   });
+}
+
+async function saveSwitch(
+  client: PoolClient,
+  subject: EmailAlertSwitchSubject,
+  userType: EmailAlertUserType,
+  switchedOn: boolean,
+  stored: SwitchRow | undefined,
+): Promise<EmailAlertSwitchState> {
+  const previous = stateFrom(userType, stored);
+  // Times and audit describe the row as stored, whatever type it was saved under.
+  const storedOn = stored?.switched_on ?? false;
+  const retyped = stored !== undefined && stored.user_type !== userType;
+
+  if (userType === 'adult_athlete' && switchedOn && previous.address_confirmed !== true) {
+    throw new ConflictError('Confirm an email address before switching email alerts on');
+  }
+
+  // UPDATE the locked row, or INSERT when there is none. Not INSERT ... ON
+  // CONFLICT: Postgres checks the CHECKs on the proposed row first, which has
+  // no address, so a confirmed adult athlete could never switch on. A row
+  // saved under another user type loses any address.
+  if (stored) {
+    await client.query(
+      `update pilot.email_alert_switches s set
+         user_type = $3,
+         switched_on = $4,
+         switched_on_at = case when $4 and (not $5 or $6) then clock_timestamp() else s.switched_on_at end,
+         switched_off_at = case when not $4 and $5 then clock_timestamp() else s.switched_off_at end,
+         set_at = clock_timestamp(),
+         ${addressColumns("$3 = 'adult_athlete'")}
+       where s.organization_id = $1 and s.account_id = $2`,
+      [subject.organizationId, subject.accountId, userType, switchedOn, storedOn, retyped],
+    );
+  } else {
+    await client.query(
+      `insert into pilot.email_alert_switches
+         (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at, set_at)
+       values ($1, $2, $3, $4, case when $4 then clock_timestamp() end,
+               case when not $4 then clock_timestamp() end, clock_timestamp())`,
+      [subject.organizationId, subject.accountId, userType, switchedOn],
+    );
+  }
+  await audit(client, subject, {
+    user_type: userType,
+    switched_on: switchedOn,
+    previous_switched_on: storedOn,
+    ...(retyped && stored ? { previous_user_type: stored.user_type } : {}),
+  });
+
+  return userType === 'adult_athlete'
+    ? { offered: true, user_type: userType, switched_on: switchedOn, address_confirmed: previous.address_confirmed === true }
+    : { offered: true, user_type: userType, switched_on: switchedOn };
 }
