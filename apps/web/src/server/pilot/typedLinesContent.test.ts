@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -32,6 +33,19 @@ const LABELLED = [
 // No 's' flag: the app targets ES2017 (tsconfig), and a typed line with a line break is matched by [^]*.
 const STEP_REF = /typed line of ((?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*): '([^]*)'$/;
 const PROVENANCE = 'COACHING-CRAFT DRAFT \u2014 no directly relevant research retrieved; REQUIRES FLOOR VALIDATION';
+
+/**
+ * The typed lines a step PR replaced, pinned before the PR linked them: per template, sha256 of each typed step's
+ * "<ordinal>\t<line>\n" in ordinal order, where the line is the step's free_text_drill, or its block title when the
+ * step held its text only in details. Taken from the committed items at the commit before each step PR (TL-1b:
+ * 89d1dc81). Once a step links its drill, its typed text is gone from the template, so this is what still holds the
+ * drill's quoted line to the original (reviewer B on #2174). A step PR adds its templates here.
+ */
+const LINKED_LINES_SHA256: Record<string, string> = {
+  wtp_43c793b8f90e77: '0ce93376cfc381be8be9e73068f87136e6b238d8f235f82ef21108586c6926d9', // 48-Session Manual, Weeks 1-4 (TL-1b)
+  wtp_ed57bea28de0f7: '5c1fda8d7e279462011757fdb575f8ed2b837d6e6544cc45ad5e6e51f20f0bdb', // Weeks 5-8 (TL-1b)
+  wtp_d861f584584788: '0db4dd011480e5ccfd5f3fc5df45984ebb9f25803a3e26c91e55fa94bb79f2b2', // Weeks 9-12 (TL-1b)
+};
 
 type Row = Record<string, string>;
 
@@ -161,6 +175,22 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
     for (const item of steps) {
       const step = `${item.template_id} ${item.ordinal}`;
       expect({ step, namedBy: (namers.get(step) ?? []).length }).toEqual({ step, namedBy: 1 });
+    }
+  });
+
+  it('quote, for every template whose steps they link, exactly the typed lines it held before, and label that template', () => {
+    const laneById = new Map(laneDrills.map((drill) => [drill.drill_id, drill]));
+    const linkedTemplates = new Set(items.filter((item) => laneById.has(item.drill_id)).map((item) => item.template_id));
+    expect([...linkedTemplates].sort()).toEqual(Object.keys(LINKED_LINES_SHA256).sort());
+    const templateRows = rows('workout-templates/seed_workout_templates.csv');
+    for (const [templateId, expected] of Object.entries(LINKED_LINES_SHA256)) {
+      const linked = items.filter((item) => item.template_id === templateId && laneById.has(item.drill_id))
+        .sort((a, b) => Number(a.ordinal) - Number(b.ordinal));
+      const text = linked.map((item) => `${item.ordinal}\t${namedSteps(laneById.get(item.drill_id) as Row).line}\n`).join('');
+      expect({ templateId, sha256: createHash('sha256').update(text, 'utf8').digest('hex') }).toEqual({ templateId, sha256: expected });
+      // The lane's label is a part of the template's own 'items' label, so the template screen marks the steps as drafts.
+      const label = JSON.parse(templateRows.find((row) => row.template_id === templateId)?.field_labels ?? '{}').items?.drill_id;
+      expect({ templateId, status: label?.status, draft: MARKER.test(label?.draft ?? '') }).toEqual({ templateId, status: 'INFERRED', draft: true });
     }
   });
 
