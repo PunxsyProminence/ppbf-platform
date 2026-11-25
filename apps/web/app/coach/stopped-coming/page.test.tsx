@@ -407,7 +407,10 @@ describe('the "reached out" mark', () => {
     expect(stamp.textContent).toContain('CANNOT BE DONE');
     expect(stamp.textContent).toContain('Rosa D. is no longer on the stopped-coming list, so nothing was marked.');
     expect(within(stamp).queryByRole('button')).toBeNull();
-    expect(announced()).toBe('This action cannot be approved — Rosa D. is no longer on the stopped-coming list, so nothing was marked.');
+    // The stamp is its own role="status" and carries the words; the page's status line stays empty,
+    // so they are not read out twice.
+    expect(stamp.getAttribute('role')).toBe('status');
+    expect(announced()).toBe('');
     expect(pageText()).not.toMatch(/Reload the page|read again/);
     expect(row(0).textContent).toContain('Jordan P.');
   });
@@ -477,6 +480,62 @@ describe('the "reached out" mark', () => {
     await waitFor(() => expect(markButton(row(0)).getAttribute('aria-disabled')).toBe('false'));
     expect(puts(fetchImpl)).toHaveLength(1);
     expect(markButton(row(0)).textContent).toBe('Take back mark');
+  });
+
+  test('the last outcome is gone as soon as the next press starts, before its answer comes', async () => {
+    let answer: (reply: Reply) => void = () => {};
+    const held = new Promise<Reply>((resolve) => { answer = resolve; });
+    const fetchImpl = scriptedFetch(
+      { body: LIST },
+      { status: 409, body: { code: 'NOT_ON_STOPPED_COMING_LIST' } },
+      { body: { ...LIST, athletes: [LIST.athletes[1]] } },
+      held,
+      { body: { ...LIST, athletes: [{ ...LIST.athletes[1], reached_out: MARK }] } },
+    );
+    await renderPage(fetchImpl);
+    await press(markButton(row(0)));
+    await waitFor(() => expect(document.querySelector('[data-refusal-stamp="cannot_be_done"]')).not.toBeNull());
+
+    await press(markButton(row(0)));
+    // The PUT is on its way and unanswered: the old stamp is already gone.
+    expect(puts(fetchImpl)).toHaveLength(2);
+    expect(markButton(row(0)).textContent).toBe('Saving…');
+    expect(document.querySelector('[data-refusal-stamp]')).toBeNull();
+    expect(pageText()).not.toContain('no longer on the stopped-coming list');
+    expect(announced()).toBe('');
+
+    await act(async () => {
+      answer({ body: { ok: true, outcome: 'marked' } });
+    });
+    await waitFor(() => expect(announced()).toBe('Jordan P. is marked as reached out.'));
+  });
+
+  test('a take-back says "Checking…" while its check-read runs, and "Saving…" once the PUT is sent', async () => {
+    let readAnswer: (reply: Reply) => void = () => {};
+    let putAnswer: (reply: Reply) => void = () => {};
+    const heldRead = new Promise<Reply>((resolve) => { readAnswer = resolve; });
+    const heldPut = new Promise<Reply>((resolve) => { putAnswer = resolve; });
+    const fetchImpl = scriptedFetch({ body: firstMarked(MARK) }, heldRead, heldPut, { body: LIST });
+    await renderPage(fetchImpl);
+    await press(markButton(row(0)));
+
+    expect(markButton(row(0)).textContent).toBe('Checking…');
+    expect(markButton(row(0)).getAttribute('aria-label')).toBe('Checking…: Rosa D.');
+    expect(markButton(row(0)).getAttribute('aria-busy')).toBe('true');
+    expect(puts(fetchImpl)).toHaveLength(0);
+
+    await act(async () => {
+      readAnswer({ body: firstMarked(MARK) });
+    });
+    await waitFor(() => expect(puts(fetchImpl)).toHaveLength(1));
+    expect(markButton(row(0)).textContent).toBe('Saving…');
+    expect(markButton(row(0)).getAttribute('aria-busy')).toBe('true');
+
+    await act(async () => {
+      putAnswer({ body: { ok: true, outcome: 'taken_back' } });
+    });
+    await waitFor(() => expect(markButton(row(0)).textContent).toBe('Mark reached out'));
+    expect(markButton(row(0)).getAttribute('aria-busy')).toBe('false');
   });
 
   test('a double click in one task sends one PUT', async () => {

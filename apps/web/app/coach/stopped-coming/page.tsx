@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import RefusalStamp, { REFUSAL_STAMP_COPY } from '@/components/RefusalStamp';
+import RefusalStamp from '@/components/RefusalStamp';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
 import { apiBase } from '@/lib/apiBase';
@@ -137,6 +137,9 @@ function notKnown(name: string, reachedOut: boolean, listRead: boolean): Outcome
 
 const READ_FAILED = 'Could not read who has stopped coming, so no one is shown. This is not an empty list.';
 
+/** The athlete whose request is on its way: the take-back's check-read, or the PUT itself. */
+type Busy = { athleteId: string; phase: 'checking' | 'saving' };
+
 /**
  * A row's mark: who reached out and when, and one button named for its action ("Mark reached out",
  * or "Take back mark" on a marked row), so the words, not colour, say which (Law 3). aria-disabled,
@@ -144,11 +147,12 @@ const READ_FAILED = 'Could not read who has stopped coming, so no one is shown. 
  */
 function ReachedOutMark({ athlete, busy, onPress }: {
   athlete: StoppedComingAthlete;
-  busy: string | null;
+  busy: Busy | null;
   onPress: (athlete: StoppedComingAthlete, reachedOut: boolean) => Promise<void>;
 }) {
   const mark = athlete.reached_out;
-  const words = busy === athlete.athlete_id ? 'Saving…' : mark ? 'Take back mark' : 'Mark reached out';
+  const mine = busy?.athleteId === athlete.athlete_id ? busy.phase : null;
+  const words = mine === 'checking' ? 'Checking…' : mine === 'saving' ? 'Saving…' : mark ? 'Take back mark' : 'Mark reached out';
   return (
     <>
       {mark ? <p className="t-body mt-[var(--s4)] text-[length:var(--t-md)]">{reachedOutWords(mark)}</p> : null}
@@ -156,7 +160,7 @@ function ReachedOutMark({ athlete, busy, onPress }: {
         type="button"
         className="btn btn--ghost mt-[var(--s4)] mr-[var(--s3)] min-h-[var(--tap)] text-[length:var(--t-md)]"
         aria-disabled={busy !== null}
-        aria-busy={busy === athlete.athlete_id}
+        aria-busy={mine !== null}
         aria-label={`${words}: ${athlete.full_name}`}
         onClick={() => void onPress(athlete, mark === null)}
       >
@@ -170,8 +174,8 @@ export default function CoachStoppedComingPage() {
   const [list, setList] = useState<StoppedComingList | null>(null);
   const [refused, setRefused] = useState<'signed_out' | 'wrong_door' | null>(null);
   const [failed, setFailed] = useState(false);
-  // The athlete whose mark is on its way; every row's button waits for it.
-  const [busy, setBusy] = useState<string | null>(null);
+  // The athlete whose mark is on its way, and which step; every row's button waits for it.
+  const [busy, setBusy] = useState<Busy | null>(null);
   // Set and read in the same task, so a double click sends one PUT (state would still read null).
   const inFlight = useRef(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -216,6 +220,7 @@ export default function CoachStoppedComingPage() {
   /** Sends the PUT, then reads the list again (but after a 401 or 403); the outcome is worded after that read. */
   const send = async (athlete: StoppedComingAthlete, reachedOut: boolean): Promise<Outcome | null> => {
     const name = athlete.full_name;
+    setBusy({ athleteId: athlete.athlete_id, phase: 'saving' });
     let response: Response;
     try {
       response = await fetch(`${apiBase()}/api/pilot/stopped-coming`, {
@@ -242,7 +247,11 @@ export default function CoachStoppedComingPage() {
     return { kind: 'said', text: `${confirmedWords(payload?.outcome, name)}${listRead ? '' : ` ${LIST_NOT_READ}`}` };
   };
 
-  /** Takes back only the mark the row showed: another coach may have changed it since it was read. */
+  /**
+   * Sends a take-back only if a fresh read just before it still shows the mark the row showed
+   * (same by_name and on_day). The PUT carries no mark id, so a change between that read and the
+   * PUT is not caught here: the server takes back whatever current mark it holds then.
+   */
   const takeBack = async (athlete: StoppedComingAthlete): Promise<Outcome | null> => {
     const shown = athlete.reached_out;
     const fresh = await read();
@@ -259,7 +268,8 @@ export default function CoachStoppedComingPage() {
   const press = async (athlete: StoppedComingAthlete, reachedOut: boolean) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    setBusy(athlete.athlete_id);
+    // A take-back first checks the mark with a read ("Checking…"); send() says "Saving…" as the PUT goes.
+    setBusy({ athleteId: athlete.athlete_id, phase: reachedOut ? 'saving' : 'checking' });
     // The last outcome stays on screen until this press (Law 7: not dismissed by a timer).
     setOutcome(null);
     try {
@@ -298,11 +308,9 @@ export default function CoachStoppedComingPage() {
             ) : null}
           </header>
 
-          {/* Always present, so each outcome is announced (SessionRunPresence's status line); the
-              words shown below are the same, so they are not read out twice where it can be helped. */}
-          <p role="status" className="sr-only">
-            {outcome?.kind === 'refused' ? REFUSAL_STAMP_COPY.cannot_be_done.body(outcome.detail) : outcome?.text ?? ''}
-          </p>
+          {/* Always present, so each outcome is announced (SessionRunPresence's status line). Empty
+              while a RefusalStamp is shown: the stamp is a role="status" of its own and carries it. */}
+          <p role="status" className="sr-only">{outcome?.kind === 'refused' ? '' : outcome?.text ?? ''}</p>
           {/* A press's outcome stays until the next press (Law 7: a refusal is a stamp, not dismissed). */}
           {outcome?.kind === 'refused' ? (
             <RefusalStamp
