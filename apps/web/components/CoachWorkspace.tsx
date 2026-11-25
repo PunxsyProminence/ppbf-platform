@@ -541,9 +541,10 @@ const BARRIER_TYPE_LABEL: Record<string, string> = {
  * A row of pilot.safety_escalations as GET /api/pilot/escalations returns it
  * to a coach: already scoped server-side to their assigned and covered
  * athletes, with athlete_voice rows excluded entirely (a disclosure-driven
- * escalation may be about the coach). This pull surface is the platform's
- * only notification mechanism -- nothing emails a coach -- so it has to
- * reach them on the workspace they already have open.
+ * escalation may be about the coach). This pull surface is where a coach
+ * reads the alarm -- no email says what happened, and a coach who switches
+ * email alerts on gets only "open the app" (lane W4-1) -- so it has to reach
+ * them on the workspace they already have open.
  */
 interface CoachEscalation {
   escalation_id: string;

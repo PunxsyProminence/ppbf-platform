@@ -453,7 +453,7 @@ test.describe('Coach journey', () => {
      -------------------------------------------------------------------
 
      /api/pilot/escalations is a pull surface by construction; its own header
-     records that this platform sends no email, ever. So an unacknowledged
+     records that no email from this platform says what happened. So an unacknowledged
      high or critical escalation waited for a coach to choose to open the
      escalation inbox. The count now rides the session bar, which is the one
      component mounted on every route.

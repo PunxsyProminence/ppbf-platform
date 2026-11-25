@@ -18,9 +18,10 @@ export const runtime = 'nodejs';
 // this page/route for a near miss, pain report, or safety-gate flag severe
 // enough to have auto-escalated. A staff member who switches email alerts on
 // gets only "open the app" (lane W4-1, emailAlertEvents.ts, which mirrors
-// this route's read rule); the row is read here. Board is deliberately not a role this route serves --
-// see escalationLadder.ts / the safety-escalations migration for why; board
-// reads only the k-anonymity-gated summary via a separate route.
+// this route's read rule); the row is read here. Board is deliberately not a
+// role this route serves -- see escalationLadder.ts / the safety-escalations
+// migration for why; board reads only the k-anonymity-gated summary via a
+// separate route.
 //
 // The coach scope (assigned athletes PLUS actively covered ones, T-002) was
 // born here as a local query and is now the central contract in access.ts:

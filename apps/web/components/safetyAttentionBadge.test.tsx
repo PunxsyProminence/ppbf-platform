@@ -6,7 +6,7 @@
  * A red flag about a child used to wait for somebody to open the right page.
  *
  * /api/pilot/escalations is a pull surface by construction -- its own header
- * records that this platform sends no email, ever -- so an unacknowledged
+ * records that no email from this platform says what happened -- so an unacknowledged
  * high or critical escalation was visible only to a coach who chose to open
  * the escalation inbox or the coach workspace. Everything about the model
  * underneath was, and still is, correct: assigned-plus-covered scope,
