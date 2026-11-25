@@ -7,7 +7,7 @@
 // not the body, that a literal org in a file really blocks, that a plan the
 // database moved away from really cannot be applied, and that an apply really
 // commits the content, its history and one audit row together. It also sends
-// the committed 528-drill package (~5.4 MB) through the route's own body
+// the committed 549-drill package (~5.6 MB) through the route's own body
 // reading, which is the nearest this repository gets to the NOT SURE of
 // whether that size passes -- the Azure ingress itself is not tested here.
 //
@@ -388,7 +388,7 @@ describe('POST /api/pilot/admin/content-import against the real core', () => {
     expect(boxing.rows).toEqual([{ display_name: 'Boxing (edited elsewhere)' }]);
   });
 
-  test('the committed 528-drill package (~5.4 MB) goes through the route\'s own body reading, plans, and applies', async () => {
+  test('the committed 549-drill package (~5.6 MB) goes through the route\'s own body reading, plans, and applies', async () => {
     const gym = await createGym('gym_drills');
     const files = uploadFiles([...REGISTRIES, 'pathway-catalog', 'drill-library']);
     const drillBytes = files
@@ -403,7 +403,7 @@ describe('POST /api/pilot/admin/content-import against the real core', () => {
 
     expect(checked.status).toBe(200);
     expect(checked.body.plan.blocking).toEqual([]);
-    expect(checked.body.plan.counts['drill-library']).toEqual({ new: 528, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(checked.body.plan.counts['drill-library']).toEqual({ new: 549, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
 
     const applyStarted = Date.now();
     const applied = await post(principal(gym.admin, 'gym_drills'), { files, commit: true, plan_hash: checked.body.plan.plan_hash });
@@ -411,7 +411,7 @@ describe('POST /api/pilot/admin/content-import against the real core', () => {
 
     expect(applied.status).toBe(200);
     expect(applied.body.committed).toBe(true);
-    expect((await committedCounts('gym_drills')).drills).toBe(528);
+    expect((await committedCounts('gym_drills')).drills).toBe(549);
     // The measurement the NOT SURE asks for, printed so a run records it.
     console.info(`content-import upload measurement: drill files ${drillBytes} bytes, request body ${bodyBytes} bytes, check ${checkMs} ms, apply ${applyMs} ms`);
   });
