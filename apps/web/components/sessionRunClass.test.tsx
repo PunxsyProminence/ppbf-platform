@@ -6,6 +6,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import SessionClassPicker from './SessionClassPicker';
 import SessionRunClass, { tieSummary } from './SessionRunClass';
+import { createPersistentRoleSession } from '@/components/roleSession';
+import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 // D4 (OD-2026-10-21-002): the class picker and the live screen's class line. The rules are the
 // server's (sessionRunClass.pg.test.ts); this proves what the screen sends and says.
@@ -18,7 +20,8 @@ const ADULT = { class_id: 'class-adult', title: 'Adult boxing', start_at: iso(12
 const HELD = { class_id: 'class-held', title: 'Sparring', start_at: iso(-5), end_at: iso(55), held_by_other_session: true };
 
 function json(body: unknown, status = 200) {
-  return { ok: status < 400, status, json: async () => body } as Response;
+  const response = { ok: status < 400, status, json: async () => body, clone: () => response };
+  return response as unknown as Response;
 }
 
 beforeEach(() => {
@@ -143,4 +146,54 @@ test('tieSummary counts what the register shows without naming anyone', () => {
     { athlete_id: 'b', effect: 'flipped', previous_status: 'excused' },
     { athlete_id: 'c', effect: 'flipped', previous_status: 'excused' },
   ])).toBe('Tied to Youth. 1 was marked Absent and is now Present; 2 were marked Excused and are now Present.');
+});
+
+describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', () => {
+  beforeEach(() => {
+    resetSaveQueueForTests();
+    createPersistentRoleSession('coach');
+  });
+  afterEach(() => {
+    resetSaveQueueForTests();
+    jest.useRealTimers();
+  });
+
+  test('an untie whose send is lost is kept and resent with its signal; a refused resend the server shows as landed reads as done', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    let tiedNow: string | null = 'class-youth';
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) {
+          // The first send reached the server and untied it, but its answer was lost.
+          tiedNow = null;
+          throw new TypeError('Failed to fetch');
+        }
+        return json({ error: 'SESSION_RUN_CLASS_NOT_TIED', message: 'Not tied.' }, 409);
+      }
+      return json({ run: {}, class: tiedNow ? { ...YOUTH, status: 'open', no_shows: 0 } : null });
+    });
+    prepareSaveQueue();
+    const onClassChange = jest.fn();
+    await act(async () => {
+      render(<SessionRunClass runId="run-1" classId="class-youth" onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Untie from the class' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(onClassChange).not.toHaveBeenCalled();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    const patches = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+    expect(patches).toHaveLength(2);
+    for (const [, init] of patches) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    // Condition 2: the refusal of the resend is checked, and the untie had landed.
+    expect(onClassChange).toHaveBeenCalledWith(null);
+    expect(screen.getByRole('status').textContent).toContain('No class now (open gym).');
+  });
 });

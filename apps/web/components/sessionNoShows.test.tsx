@@ -5,6 +5,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import SessionNoShows from './SessionNoShows';
+import { createPersistentRoleSession } from '@/components/roleSession';
+import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 // The End Session no-shows offer (OD-2026-10-21-004 ruling 3, "A: Offer it (Rec.)"). Which athletes
 // it marks, and when the server refuses, are proven in sessionRunClass.pg.test.ts; this proves the
@@ -12,7 +14,10 @@ import SessionNoShows from './SessionNoShows';
 // happened.
 
 const fetchSpy = jest.fn();
-const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body }) as Response;
+const json = (body: unknown, status = 200) => {
+  const response = { ok: status < 400, status, json: async () => body, clone: () => response };
+  return response as unknown as Response;
+};
 const tiedClass = (noShows: number, classId = 'class-youth') =>
   ({ class_id: classId, title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: noShows });
 
@@ -100,4 +105,42 @@ test('a run ended elsewhere is handed back to the live screen', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark them Absent' }));
   });
   expect(onRunNotLive).toHaveBeenCalledTimes(1);
+});
+
+describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
+  beforeEach(() => {
+    resetSaveQueueForTests();
+    createPersistentRoleSession('coach');
+  });
+  afterEach(() => {
+    resetSaveQueueForTests();
+    jest.useRealTimers();
+  });
+
+  test('a no-shows tap whose send is lost is kept and resent with its signal, and says how many were marked once it lands', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ marked: ['a', 'b'] });
+      }
+      return json({ run: {}, class: tiedClass(sends > 1 ? 0 : 2) });
+    });
+    prepareSaveQueue();
+    await show();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all 2 Absent' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(patches()).toHaveLength(1);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(patches()).toHaveLength(2);
+    for (const [, init] of patches()) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
+  });
 });

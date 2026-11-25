@@ -7,13 +7,17 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery from './SessionScriptLiveDelivery';
+import { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400) {
-  return { ok, status, json: async () => body } as Response;
+  const response = { ok, status, json: async () => body, clone: () => response };
+  return response as unknown as Response;
 }
 
 function liveRun(overrides: Partial<LiveSessionScriptRun> = {}): LiveSessionScriptRun {
@@ -106,6 +110,8 @@ interface Handlers {
   drill?: (url: string) => Response | Promise<Response>;
   /** GET /api/pilot/gym-tvs: the TVs the status line reads (lane U2-6a). */
   tvs?: () => Response | Promise<Response>;
+  /** POST /api/pilot/auth/session: who is signed in, for the kept-save queue (W4 item 7). Unset, it fails, so saves go today's way. */
+  session?: () => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -116,6 +122,10 @@ const DEFAULT_LOG_PROTOCOLS = [
 function mockFetch(handlers: Handlers = {}) {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith('/api/pilot/auth/session')) {
+      if (handlers.session) return handlers.session();
+      throw new Error('No session check in this test: the queue does not keep saves');
+    }
     if (url.includes('/api/pilot/coach/intervention-executions')) {
       if (init?.method !== 'POST') return handlers.logGet ? handlers.logGet() : jsonResponse({ items: [] });
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
@@ -1863,5 +1873,169 @@ describe('the console tells the screen the run it holds', () => {
       answer(jsonResponse({ tvs: [{ tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: null }] }));
     });
     expect(await screen.findByText('Not on a TV')).toBeInTheDocument();
+  });
+});
+
+describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on a flaky connection', () => {
+  const signedIn = () => jsonResponse({ authenticated: true, account_id: 'acct-a' });
+
+  beforeEach(() => {
+    resetSaveQueueForTests();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    createPersistentRoleSession('coach');
+  });
+
+  afterEach(() => {
+    resetSaveQueueForTests();
+  });
+
+  function waitingLine(): HTMLElement | null {
+    return (screen.queryByText(WAITING_WORDS)?.closest('[role="status"]') as HTMLElement | null | undefined) ?? null;
+  }
+
+  function patchSignals(fetchMock: jest.Mock): unknown[] {
+    return fetchMock.mock.calls
+      .filter((call) => String(call[0]).endsWith('/api/pilot/session-scripts/runs/ssrun_1'))
+      .map((call) => (call[1] as RequestInit).signal);
+  }
+
+  it('a pause whose send is lost is kept, named while it waits, resent with the queue\'s signal, and lands once', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      patch: () => {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) });
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
+    expect(screen.queryByText('PAUSED')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }, { action: 'pause' }]);
+    for (const signal of patchSignals(fetchMock)) expect(signal).toBeInstanceOf(AbortSignal);
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
+    expect(waitingLine()).toBeNull();
+  });
+
+  it('a refused first send is not resent: the failed line names it with the refusal\'s words', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      patch: () => jsonResponse({ error: 'SESSION_SCRIPT_RUN_BLOCK_NOT_IN_SCRIPT' }, false, 422),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    const failed = screen.getByText(FAILED_WORDS).closest('[role="alert"]') as HTMLElement;
+    expect(failed).toHaveTextContent(/Move to /);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS * 3);
+    });
+    expect(patchCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('a refused RESEND that the server shows had landed reads as saved, never as failed (condition 2)', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      patch: () => {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409);
+      },
+      runsGet: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
+    // The landed check read the live run with the queue's signal.
+    const runReads = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/pilot/session-scripts/runs'));
+    expect(runReads.length).toBeGreaterThan(0);
+    for (const call of runReads.slice(0, 1)) expect((call[1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('the intervention log is kept with the queue\'s request key and the account that made it, resent with the same key, and logged once', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      logPost: () => {
+        posts += 1;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(within(waitingLine() as HTMLElement).getByText(/Intervention: Round-3 endurance block/)).toBeInTheDocument();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    const posted = logPostCalls(fetchMock);
+    expect(posted).toHaveLength(2);
+    expect(posted[0]).toEqual({
+      athlete_id: 'ath-1',
+      protocol_id: 'proto-1',
+      session_run_id: 'ssrun_1',
+      request_key: expect.any(String),
+      made_by_account_id: 'acct-a',
+    });
+    expect(posted[1]).toEqual(posted[0]);
+    const signals = fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/api/pilot/coach/intervention-executions') && (call[1] as RequestInit).method === 'POST')
+      .map((call) => (call[1] as RequestInit).signal);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+    expect(screen.getByText('logged')).toBeInTheDocument();
+    expect(waitingLine()).toBeNull();
+  });
+
+  it('signing out drops a kept run action: its words leave the console, and it is never resent', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      patch: () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(waitingLine()).not.toBeNull();
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.queryByText(WAITING_WORDS)).toBeNull();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS * 4);
+    });
+    expect(patchCalls(fetchMock)).toHaveLength(1);
   });
 });

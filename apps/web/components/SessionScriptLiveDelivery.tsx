@@ -801,68 +801,62 @@ export default function SessionScriptLiveDelivery({
     [applyServerRun, detail, onSettled, readLiveRun, readSettledRun, resyncAfterNotLive, run.run_id],
   );
 
-  // Today's path, for a run action the queue could not keep (the page does not know who is signed in):
-  // sent once, and a lost answer is read back from the server.
-  const sendRunActionNow = useCallback(
-    async (body: Record<string, unknown>): Promise<void> => {
-      let response: Response;
-      try {
-        response = await fetch(
-          `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`,
-          {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          },
-        );
-      } catch {
-        await recoverRunAction(body);
-        return;
-      }
-
-      const payload = (await response.json().catch(() => ({}))) as {
-        run?: LiveSessionScriptRun | SessionScriptRunRow;
-        error?: string;
-      };
-
-      if (isRefusal(response.status)) {
-        if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
-          await resyncAfterNotLive();
-          return;
-        }
-        setActionError(describeRunError(payload.error, response.status));
-        return;
-      }
-
-      if (!response.ok || !payload.run) {
-        await recoverRunAction(body);
-        return;
-      }
-      if (body.action === 'finish') {
-        onSettled(payload.run);
-        return;
-      }
-      applyServerRun(payload.run as LiveSessionScriptRun);
-    },
-    [applyServerRun, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
-  );
-
   const mutateRun = useCallback(
     async (body: Record<string, unknown>, busyKey: string): Promise<void> => {
-      // One tap at a time: a double-tapped control must not race itself. The lock holds while the
-      // queue takes the save (at most KEEP_WAIT_MS), or through today's send and read-back.
+      // One mutation at a time: a double-tapped control must not race itself.
+      // (Pause/resume are additionally idempotent server-side.) The lock holds
+      // through any recovery read below, and while the queue takes the save.
       if (actionBusy) return;
       setActionBusy(busyKey);
       setActionError('');
       try {
+        // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in):
+        // sent once, and a lost answer read back, as before.
         if ((await keepSave(keptRunAction(body))) === 'kept') return;
-        await sendRunActionNow(body);
+        let response: Response;
+        try {
+          response = await fetch(
+            `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`,
+            {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            },
+          );
+        } catch {
+          await recoverRunAction(body);
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as {
+          run?: LiveSessionScriptRun | SessionScriptRunRow;
+          error?: string;
+        };
+
+        if (isRefusal(response.status)) {
+          if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
+            await resyncAfterNotLive();
+            return;
+          }
+          setActionError(describeRunError(payload.error, response.status));
+          return;
+        }
+
+        if (!response.ok || !payload.run) {
+          await recoverRunAction(body);
+          return;
+        }
+        if (body.action === 'finish') {
+          onSettled(payload.run);
+          return;
+        }
+        applyServerRun(payload.run as LiveSessionScriptRun);
       } finally {
         setActionBusy(null);
       }
     },
-    [actionBusy, keptRunAction, sendRunActionNow],
+    [actionBusy, applyServerRun, keptRunAction, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
   );
 
   // ---- Finish / abandon -------------------------------------------------
