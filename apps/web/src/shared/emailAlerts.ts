@@ -50,3 +50,33 @@ export function emailAlertCandidateUserType(role: string): EmailAlertUserType | 
       return null;
   }
 }
+
+/**
+ * Which events can send the email, per user type (lane W4-1, EM-5).
+ *
+ * Overwatch's Q1.9 reading on #2050 (INFERRED, not Jason's words): the gym's
+ * list offers every event named in the OW27-01 card, each only to the user
+ * types who read it in the app. Gym announcements are the 'notice' kind only;
+ * the Chalkboard's 'motivation' kind says of itself "Not a notification"
+ * (Overwatch GO on #2159, condition 1). The organization admin ticks each one
+ * per user type (OW27-10 A); with no choice saved, every one is ticked
+ * (OW27-39 A).
+ *
+ * A parent's new message (W4-4) joins the staff list in EM-4c (GO on #2159,
+ * Q-2 = A); the database checks only the key's shape, so that needs no
+ * migration. Keep each list in the order a screen should show it.
+ */
+export const EMAIL_ALERT_EVENTS = {
+  staff: ['safety_escalation', 'parent_reply', 'gym_notice'],
+  parent: ['family_note', 'gym_notice'],
+  adult_athlete: ['coach_message', 'gym_notice'],
+} as const satisfies Record<EmailAlertUserType, readonly string[]>;
+
+export type EmailAlertEventKind = (typeof EMAIL_ALERT_EVENTS)[EmailAlertUserType][number];
+
+/** Whether this event is on this user type's list. */
+export function isEmailAlertEventFor(userType: unknown, eventKind: unknown): boolean {
+  return isEmailAlertUserType(userType)
+    && typeof eventKind === 'string'
+    && (EMAIL_ALERT_EVENTS[userType] as readonly string[]).includes(eventKind);
+}

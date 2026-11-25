@@ -8675,6 +8675,62 @@
     }
   },
   {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's choice of which events send the opt-in email alert, per user type (lane W4-1 EM-5; OW27-10 A). Every event on every user type's list (src/shared/emailAlerts.ts) with ticked and whether it is still the starting value (no row = ticked, OW27-39 A). A gym setting; no person data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias) + isOrganizationAdminRole again in setGymEmailAlertEvent",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym admin ticks or unticks one event for one user type, for its own gym (organization from the session). Body is exactly { user_type, event_kind, ticked }; the pair must be on the list. Upsert and audit row (old and new value) in one transaction, not mirrored. Lane W4-1 EM-5.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/email-alerts/me/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/email-alerts/me",
