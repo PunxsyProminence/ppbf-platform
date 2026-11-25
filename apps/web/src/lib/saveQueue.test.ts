@@ -467,6 +467,11 @@ describe('nothing survives a sign-out or an account change', () => {
     createPersistentRoleSession('coach');
     await settle();
     expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+    // The same person signs in again: the session that made the save ended, so it stays dropped.
+    sessionAccount = 'acct-a';
+    prepareSaveQueue();
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 1 });
     await expectNothingSent(kept, 1);
   });
 
