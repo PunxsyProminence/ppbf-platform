@@ -180,6 +180,29 @@ describe('FamilyThreadsForStaff', () => {
     expect(await screen.findByRole('button', { name: 'Send reply to First Guardian' })).toBeEnabled();
   });
 
+  test('a reply that fails while its athlete is on screen is told under its thread only; moving on adds no notice', async () => {
+    const fetchMock = jest.fn((url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (key.endsWith('/api/pilot/coach/family-threads') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ error: 'down' }, false, 500));
+      }
+      if (key.includes('athlete_id=ath-1')) return Promise.resolve(jsonResponse({ ok: true, items: [THREAD] }));
+      if (key.includes('athlete_id=ath-2')) return Promise.resolve(jsonResponse({ ok: true, items: [] }));
+      throw new Error(`Unexpected fetch: ${key}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { rerender } = render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    fireEvent.change(await screen.findByLabelText('Reply to First Guardian'), { target: { value: 'See you then.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send reply to First Guardian' }));
+    });
+    expect(await screen.findByText('Your reply was not sent; it is still in the box.')).toBeInTheDocument();
+
+    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/for another athlete/)).toBeNull();
+  });
+
   test('a reply that fails after the coach has moved to another athlete is told on the athlete now on screen', async () => {
     let release: (response: Response) => void = () => {};
     const fetchMock = jest.fn((url: string, init?: RequestInit) => {
