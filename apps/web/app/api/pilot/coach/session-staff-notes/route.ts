@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { type ActorIdentity, requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { refuseSaveMadeByAnotherAccount } from '@/src/server/pilot/queuedSaveAccount';
 import {
   STAFF_NOTE_MAX,
   STAFF_NOTE_ROLES,
@@ -30,6 +31,9 @@ export const dynamic = 'force-dynamic';
  *   POST   { session_id, athlete_id, note }  adds one note of the caller's own
  *   POST   { run_id, athlete_id, note }      adds one on that athlete in a session run; the
  *                                            athlete must be marked present in that run
+ *          optional on either POST: request_key (one tap, one note: a resend of the key returns
+ *          the note it added, replayed: true) and made_by_account_id (a kept save is refused
+ *          when another account is signed in now). W4 item 7, the offline save queue.
  *   PATCH  { note_id, note }                 changes the text of one of the caller's OWN notes
  *   DELETE ?note_id=                         removes one of the caller's OWN notes
  *
@@ -97,6 +101,19 @@ function subjectFrom(sessionId: unknown, runId: unknown): { sessionId: string } 
   return named(runId) ? { runId: textFrom(runId, 'run_id') } : { sessionId: textFrom(sessionId, 'session_id') };
 }
 
+// A request key is text of 1 to 200 characters (pilot_session_staff_notes_request_key_check), used
+// as sent and never trimmed; a NUL is refused here, as Postgres text cannot hold one. A request
+// that sends no key adds a note exactly as before.
+const REQUEST_KEY_MAX = 200;
+
+function readRequestKey(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string' || raw.trim() === '' || raw.length > REQUEST_KEY_MAX || raw.includes(NUL)) {
+    throw new ValidationError(`request_key must be text of 1 to ${REQUEST_KEY_MAX} characters`);
+  }
+  return raw;
+}
+
 // The column is a uuid; a hand-crafted id would otherwise be a database error
 // (22P02) answered as a 500.
 function noteIdFrom(value: unknown): string {
@@ -138,12 +155,14 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...STAFF_NOTE_ROLES]);
     const body = await bodyOf(request);
+    refuseSaveMadeByAnotherAccount(body, principal);
     const subject = subjectFrom(body.session_id, body.run_id);
     const athleteId = textFrom(body.athlete_id, 'athlete_id');
+    const requestKey = readRequestKey(body.request_key);
     const row = 'runId' in subject
-      ? await createRunStaffNote({ actor: actorOf(principal), runId: subject.runId, athleteId, note: body.note as string })
-      : await createSessionStaffNote({ actor: actorOf(principal), sessionId: subject.sessionId, athleteId, note: body.note as string });
-    return NextResponse.json({ ok: true, note_id: row.note_id });
+      ? await createRunStaffNote({ actor: actorOf(principal), runId: subject.runId, athleteId, note: body.note as string, requestKey })
+      : await createSessionStaffNote({ actor: actorOf(principal), sessionId: subject.sessionId, athleteId, note: body.note as string, requestKey });
+    return NextResponse.json({ ok: true, note_id: row.note_id, ...(row.replayed ? { replayed: true } : {}) });
   } catch (error) {
     return jsonError(error);
   }

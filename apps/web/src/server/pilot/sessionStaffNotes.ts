@@ -238,6 +238,67 @@ function noSuchSession(): NotFoundError {
 }
 
 /**
+ * ONE TAP, ONE NOTE (W4 item 7, the offline save queue; OD-2026-11-21-006). A note added on the
+ * live floor whose answer is lost is kept in the open page and sent again with the request key it
+ * was first sent with. The key is optional: an add without one writes a note exactly as before
+ * (the staff-note panels off the floor send none). With one, the key names at most one note in the
+ * gym (pilot_session_staff_notes_one_per_request_key), and another send of it returns that note,
+ * written and audited once.
+ *
+ * The note a key names counts as this send only when it is the same author's, on the same session
+ * or run, about the same athlete; anything else is refused and nothing is written. The text is not
+ * compared: the author may have edited the note after the first send landed, and the resend is
+ * still the same tap. A note since removed is still the one the key added: it is returned, never
+ * added again.
+ */
+export type AddedStaffNote = SessionStaffNoteRow & { replayed?: true };
+type NoteSubject = { sessionId: string } | { runId: string };
+const REQUEST_KEY_INDEX = 'pilot_session_staff_notes_one_per_request_key';
+
+async function noteOfRequestKey(
+  actor: ActorIdentity,
+  subject: NoteSubject,
+  athleteId: string,
+  requestKey: string,
+): Promise<AddedStaffNote | null> {
+  const first = await queryOne<SessionStaffNoteRow>(
+    `select ${FIELDS} from pilot.session_staff_notes
+      where organization_id = $1 and request_key = $2`,
+    [actor.organizationId, requestKey],
+  );
+  if (!first) return null;
+  const sameSubject = 'runId' in subject ? first.run_id === subject.runId : first.session_id === subject.sessionId;
+  if (first.author_account_id !== actor.accountId || first.athlete_id !== athleteId || !sameSubject) {
+    throw new ConflictError('This request was already used to add a different note.', 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED');
+  }
+  return { ...first, replayed: true };
+}
+
+/** Adds once per key: the note the key already added, or the one `write` adds, also when two sends race. */
+async function addOnce(
+  actor: ActorIdentity,
+  subject: NoteSubject,
+  athleteId: string,
+  requestKey: string | null,
+  write: () => Promise<SessionStaffNoteRow>,
+): Promise<AddedStaffNote> {
+  if (requestKey === null) return write();
+  const earlier = await noteOfRequestKey(actor, subject, athleteId, requestKey);
+  if (earlier) return earlier;
+  try {
+    return await write();
+  } catch (error) {
+    // Two sends of one key at once: both missed the other's row, and the index refused the second.
+    const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+    if (code === '23505' && constraint === REQUEST_KEY_INDEX) {
+      const landed = await noteOfRequestKey(actor, subject, athleteId, requestKey);
+      if (landed) return landed;
+    }
+    throw error;
+  }
+}
+
+/**
  * The live staff notes on one session ABOUT one athlete -- the newest
  * LIST_LIMIT, shown oldest first -- for a staff member who reaches that
  * athlete. The athlete is the one the caller names; a session that is not
@@ -318,15 +379,18 @@ export async function createRunStaffNote(input: {
   runId: string;
   athleteId: string;
   note: string;
-}): Promise<SessionStaffNoteRow> {
+  /** Optional: see addOnce. */
+  requestKey?: string | null;
+}): Promise<AddedStaffNote> {
   const shapeError = staffNoteShapeError(input.note);
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
 
   await assertStaffNoteAccess(input.actor, input.athleteId);
   const noteId = randomUUID();
+  const requestKey = input.requestKey ?? null;
 
-  return withTransaction(async (client) => {
+  return addOnce(input.actor, { runId: input.runId }, input.athleteId, requestKey, () => withTransaction(async (client) => {
     // The writer must still be staff here, and the athlete still live, now: not only when the
     // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
     const lockedRole = await relockNoteWriter(client, input.actor, input.athleteId);
@@ -350,10 +414,13 @@ export async function createRunStaffNote(input: {
 
     const inserted = await client.query<SessionStaffNoteRow>(
       `insert into pilot.session_staff_notes
-         (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note${requestKey === null ? '' : ', request_key'})
+       values ($1, $2, $3, $4, $5, $6, $7${requestKey === null ? '' : ', $8'})
        returning ${FIELDS}`,
-      [input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, lockedRole, text],
+      [
+        input.actor.organizationId, noteId, input.runId, input.athleteId, input.actor.accountId, lockedRole, text,
+        ...(requestKey === null ? [] : [requestKey]),
+      ],
     );
     const row = inserted.rows[0];
     if (!row) throw new Error('Session staff note insert returned no row');
@@ -370,7 +437,7 @@ export async function createRunStaffNote(input: {
     }, client);
 
     return row;
-  });
+  }));
 }
 
 /**
@@ -383,15 +450,18 @@ export async function createSessionStaffNote(input: {
   sessionId: string;
   athleteId: string;
   note: string;
-}): Promise<SessionStaffNoteRow> {
+  /** Optional: see addOnce. */
+  requestKey?: string | null;
+}): Promise<AddedStaffNote> {
   const shapeError = staffNoteShapeError(input.note);
   if (shapeError) throw new ValidationError(shapeError, 'SESSION_STAFF_NOTE_INVALID');
   const text = input.note.trim();
 
   const role = await assertStaffNoteAccess(input.actor, input.athleteId);
   const noteId = randomUUID();
+  const requestKey = input.requestKey ?? null;
 
-  return withTransaction(async (client) => {
+  return addOnce(input.actor, { sessionId: input.sessionId }, input.athleteId, requestKey, () => withTransaction(async (client) => {
     const session = await client.query<{ session_id: string }>(
       `select session_id from pilot.sessions
         where organization_id = $1 and session_id = $2 and athlete_id = $3`,
@@ -401,10 +471,13 @@ export async function createSessionStaffNote(input: {
 
     const inserted = await client.query<SessionStaffNoteRow>(
       `insert into pilot.session_staff_notes
-         (organization_id, note_id, session_id, athlete_id, author_account_id, author_role, note)
-       values ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, note_id, session_id, athlete_id, author_account_id, author_role, note${requestKey === null ? '' : ', request_key'})
+       values ($1, $2, $3, $4, $5, $6, $7${requestKey === null ? '' : ', $8'})
        returning ${FIELDS}`,
-      [input.actor.organizationId, noteId, input.sessionId, input.athleteId, input.actor.accountId, role, text],
+      [
+        input.actor.organizationId, noteId, input.sessionId, input.athleteId, input.actor.accountId, role, text,
+        ...(requestKey === null ? [] : [requestKey]),
+      ],
     );
     const row = inserted.rows[0];
     if (!row) throw new Error('Session staff note insert returned no row');
@@ -421,7 +494,7 @@ export async function createSessionStaffNote(input: {
     }, client);
 
     return row;
-  });
+  }));
 }
 
 /**

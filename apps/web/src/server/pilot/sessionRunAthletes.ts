@@ -63,12 +63,19 @@ interface RunOwnership {
 /**
  * Mark an athlete present in the actor's own live run, or take the mark back.
  * Asking for the state the mark already has writes nothing.
+ *
+ * `tappedAt` is when the coach tapped, for a tap sent late (W4 item 7: a tap kept in the open page
+ * while the wifi was down). On a tied session it goes to the register as a tap made earlier, so
+ * an Absent or Excused set there after the tap is a later register change and wins
+ * (OD-2026-10-21-004 ruling 1, "a later register change still wins"; Overwatch condition 1 on
+ * #2158). Without it the tap counts as made now, as before.
  */
 export async function setRunAthletePresent(input: {
   actor: ActorIdentity;
   runId: string;
   athleteId: string;
   present: boolean;
+  tappedAt?: string;
 }): Promise<{ outcome: RunAthleteOutcome; register?: RegisterResult }> {
   const { actor, runId, athleteId } = input;
   // One refusal for "not staff here", "another gym's athlete", "a deleted
@@ -183,7 +190,7 @@ export async function setRunAthletePresent(input: {
     // register). A standing mark asked again writes nothing, so a later register change wins.
     const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
     if (outcome === 'marked' && owned.class_id) {
-      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }) };
+      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, input.tappedAt) };
     }
     if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
       return {
