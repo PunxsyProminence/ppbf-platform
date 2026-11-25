@@ -734,6 +734,9 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   // Days a coach marked a child as resting or away (lane R6-b1). Staff only;
   // no reason is recorded, but an absence pattern is still a child's record.
   'pilot.athlete_rest_marks',
+  // Who on the staff marked that they reached out to an athlete on the stopped-coming list, and
+  // when (lane W4-6, OW27-33 B). Staff only; no note is recorded, but it is still a child's record.
+  'pilot.athlete_reached_out_marks',
   // A workout issued to one child: the coach's note and the contact level
   // beside each step (lane P7c). Two entries: neither name prefixes the other.
   'pilot.workout_issues',
