@@ -11,21 +11,23 @@
  *     (pilot.athletes.active_flag; Overwatch, W4-6 Q3: the card's own words,
  *     "Skips people who signed up and never came, or have left"), and who has
  *     come at least once.
- *   - "Came" (OW27-32 A, "Yes, on this page only"; Overwatch, W4-6 Q2 A): a
- *     present day in the class register (pilot.attendance_reconciled, through
- *     getAttendanceLast28Days, whose last present day is not limited to 28
- *     days) OR a standing "here" mark on an UNTIED, open-gym session run
- *     (pilot.session_run_athletes, removed_at null; session_script_runs.class_id
- *     null). A tied run's tap writes the register, and a later register change
- *     wins there (docs/current/ATTENDANCE_PRECEDENCE.md), so tied runs are left
- *     to the register. The later of the two is the last day they came.
- *     KNOWN EXCEPTIONS (open with Overwatch on #2172). A tap on a tied run
- *     reaches neither source, so that tap does not count here, when: the class
- *     is cancelled after the tap (the view reads no cancelled class, while it
- *     stays cancelled); the tap comes after the cancel (sessionRunClass.ts
- *     skips the write, class_cancelled); or another coach has taken the class's
- *     cover (skipped, not_your_class). And the tie is read as it is now, so a
- *     run untied after a tap counts that tap as open gym.
+ *   - "Came" (OW27-32 A, "Yes, on this page only"; Overwatch, W4-6 Q2 A and
+ *     the answer on #2172): a present day in the class register
+ *     (pilot.attendance_reconciled, through getAttendanceLast28Days, whose last
+ *     present day is not limited to 28 days) OR a standing "here" mark
+ *     (pilot.session_run_athletes, removed_at null) that the register does not
+ *     hold: its run is untied (open gym; session_script_runs.class_id null), or
+ *     the tap's register write did not happen (register_written_at null: the
+ *     class was cancelled before the tap, or another coach had its cover, and
+ *     sessionRunClass.ts skipped the write), or the class it was written to is
+ *     cancelled (the view reads no cancelled class). A tap whose register mark
+ *     stands defers to the register, so a later Absent there wins
+ *     (docs/current/ATTENDANCE_PRECEDENCE.md). The later of the two sources is
+ *     the last day they came.
+ *     STILL AS RULED, NOTED: the tie is read as it is now, so a run untied after
+ *     a tap counts that tap as open gym; and a tap that turned an Absent into
+ *     Present set no register pointer (sessionRunClass.ts), so it counts here
+ *     even if the register is later set back to Absent.
  *   - Listed when today minus that day is the gym's number of days or more: no
  *     day they came among the last N gym days, today included.
  *
@@ -60,7 +62,7 @@ import { readStoppedComingPolicy, type StoppedComingGapDays } from './stoppedCom
 export interface StoppedComingAthlete {
   readonly athlete_id: string;
   readonly full_name: string;
-  /** The gym-local day they last came (register present day or open-gym here mark). */
+  /** The gym-local day they last came (a register present day, or a here mark the register does not hold). */
   readonly last_came_day: string;
   /** Whole days from last_came_day to today; at least gap_days. */
   readonly days_since_came: number;
@@ -80,8 +82,9 @@ function dayNumber(isoDay: string): number {
 }
 
 /**
- * The gym-local day of each athlete's last standing "here" mark on an untied
- * (open-gym) run, up to today. Athletes with none have no row.
+ * The gym-local day of each athlete's last standing "here" mark that the
+ * register does not hold (see the header), up to today. Athletes with none
+ * have no row.
  */
 async function lastOpenGymDays(
   organizationId: string,
@@ -94,10 +97,12 @@ async function lastOpenGymDays(
        from pilot.session_run_athletes m
        join pilot.session_script_runs r
          on r.organization_id = m.organization_id and r.run_id = m.run_id
+       left join pilot.scheduler_classes c
+         on c.organization_id = m.organization_id and c.class_id = m.register_class_id
       where m.organization_id = $1
         and m.athlete_id = any($2::text[])
         and m.removed_at is null
-        and r.class_id is null
+        and (r.class_id is null or m.register_written_at is null or c.status = 'cancelled')
         and (m.marked_at at time zone $4)::date <= $3::date
       group by m.athlete_id`,
     [organizationId, [...athleteIds], today, GYM_TIME_ZONE],
