@@ -23,10 +23,12 @@ function sslConfig() {
 // reported by name: the exact column list; each column by type, nullability
 // and default; exactly one CHECK, validated and compared IN FULL against the
 // text Postgres stores; the primary key on organization_id alone; no other
-// unique constraint; exactly two foreign keys, each by column, target table
-// and column, ON DELETE (cascade for the gym, set null for the setter), ON
-// UPDATE NO ACTION and not deferrable. Each is refused on its own
-// (stoppedComingPolicyMigration.pg.test.ts).
+// unique constraint or unique index; exactly two foreign keys, each by column,
+// target table and column, ON DELETE (cascade for the gym, set null for the
+// setter), ON UPDATE NO ACTION and not deferrable. Each is refused on its own
+// (stoppedComingPolicyMigration.pg.test.ts), except the target COLUMN of each
+// foreign key, which no test drifts: neither target table has a second unique
+// column to point a foreign key at.
 const EXPECTED_CHECK_NAME = 'pilot_org_stopped_coming_gap_days_check';
 const EXPECTED_CHECK = 'CHECK ((gap_days = ANY (ARRAY[7, 14, 21, 28, 42, 56])))';
 
@@ -69,7 +71,9 @@ const READINESS_QUERY = `
       select 1 from con c, t where c.contype = 'p'
         and c.conkey = array[(select attnum from pg_attribute where attrelid = t.oid and attname = 'organization_id')]::int2[]
     ) as primary_key_ready,
-    not exists (select 1 from con where contype in ('u', 'x')) as no_other_unique_ready,
+    not exists (select 1 from con where contype in ('u', 'x'))
+      and not exists (select 1 from pg_index i, t where i.indrelid = t.oid and i.indisunique and not i.indisprimary)
+      as no_other_unique_ready,
     (select count(*) from con where contype = 'f') = 2 as foreign_key_count_ready,
     exists (
       select 1 from con c, t where c.contype = 'f' and c.convalidated
