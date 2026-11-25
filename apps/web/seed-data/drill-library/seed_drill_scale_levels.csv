@@ -1646,3 +1646,24 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_fe7d7fcc6abfd1,drl_5093325d1b6985,A,false,The coach asks one of the three questions.,One question.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_67123301205083,drl_5093325d1b6985,B,true,"The three questions and the closing line, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_61665b1347b0a4,drl_5093325d1b6985,C,false,An athlete asks the questions and the coach closes.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_50cf835323077e,drl_26a97e355c0e0a,A,false,The coach places athletes in their spots before speaking.,Coach-placed.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6ac7296aab3744,drl_26a97e355c0e0a,B,true,"The Say line, then watch and fix, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6ceefb0a97f4a4,drl_26a97e355c0e0a,C,false,Athletes space themselves and settle with no fix needed.,No fix.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7aeffee81e8b77,drl_c7e4c5ae475b65,A,false,Forward and back only.,Two directions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6e4b56ccdd97aa,drl_c7e4c5ae475b65,B,true,"Four directions, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f5de8f13349506,drl_c7e4c5ae475b65,C,false,Direction changes on the coach's call.,Called directions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_40c35d75b0d12e,drl_1d6dcdeb8b8013,A,false,Jab and keep moving at a slow walking pace.,Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_efb0c6e375cb36,drl_1d6dcdeb8b8013,B,true,"Jab and keep moving, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f19763cc8d3069,drl_1d6dcdeb8b8013,C,false,Double jab and keep moving.,Double jab.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a6ca4e0e2d61b7,drl_bae413a2338d17,A,false,"A slow, clear cue to one side only.",One side.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_af45a6756ce0c0,drl_bae413a2338d17,B,true,"Slip on the visual cue, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f7b418bed4ea88,drl_bae413a2338d17,C,false,The coach varies the side and timing of the cue.,Varied cue.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9aacf78722ce88,drl_13242d8acf3944,A,false,All three rounds jab only.,Jab only.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3a636f2e0e05ed,drl_13242d8acf3944,B,true,"Jab only, jab and cross, open but controlled, as written.",,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f6862c7e62d799,drl_13242d8acf3944,C,false,In round 3 the coach calls the tools mid-round (jab only / jab and cross / open but controlled); one coaching focus per round; contact stays controlled sparring.,Tools called mid-round.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2d32c5f73d3cb6,drl_0126497cf4649f,A,false,"Defense before score only, for every round.",One situation.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6d417bdba99cea,drl_0126497cf4649f,B,true,"The three situations, as written.",,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7a8758ea002cca,drl_0126497cf4649f,C,false,"The coach calls the next situation mid-round, not only at the bell (a ropes situation starts at the bell or after a stop); contact stays controlled sparring.",Called mid-round.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_927bdcd1742cef,drl_558fc9e8f7ddc3,A,false,Shorter work periods with longer rests.,More rest.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f27f460f3b4c3c,drl_558fc9e8f7ddc3,B,true,The finish as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_27c7b460ea9915,drl_558fc9e8f7ddc3,C,false,"Longer work periods, defense before offense in every one.",Longer work.,none,,scaffold_needs_coach_review
