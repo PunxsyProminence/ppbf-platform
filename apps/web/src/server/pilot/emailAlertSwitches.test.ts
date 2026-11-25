@@ -1,5 +1,6 @@
-import { emailAlertUserTypeFor, readEmailAlertSwitch } from './emailAlertSwitches';
+import { emailAlertUserTypeFor, readEmailAlertSwitch, setEmailAlertSwitch } from './emailAlertSwitches';
 import { queryOne, withTransaction } from './db';
+import { ForbiddenError } from './errors';
 
 /*
  * The age rule in code (lane W4-1, EM-1). pilot.athletes.dob is NOT NULL in the
@@ -47,4 +48,30 @@ it('an athlete id of only spaces is no athlete: nothing is read', async () => {
 it('a coach is decided by role alone: no date of birth is read', async () => {
   await expect(emailAlertUserTypeFor({ ...athlete, role: 'coach', athleteId: null }, NOW)).resolves.toBe('staff');
   expect(mockQueryOne).not.toHaveBeenCalled();
+});
+
+/*
+ * Only the membership key's 23503 becomes the plain 403 (a membership row
+ * deleted mid-save; emailAlertSwitches.pg.test.ts proves that case on a real
+ * database). Any other database error on the save stays an error, so a wider
+ * catch cannot quietly turn a real fault into "not offered".
+ */
+it.each([
+  ['a 23503 from another key', { code: '23503', constraint: 'email_alert_switches_account_id_fkey' }],
+  ['another code on the membership key', { code: '23514', constraint: 'pilot_email_alert_switch_membership_fk' }],
+])('%s on the save is not turned into the 403', async (_label, fields) => {
+  const dbError = Object.assign(new Error('database error'), fields);
+  const client = {
+    query: jest.fn()
+      .mockResolvedValueOnce({ rows: [] }) // the account lock
+      .mockResolvedValueOnce({ rows: [] }) // no switch row yet
+      .mockRejectedValueOnce(dbError), // the insert
+  };
+  (withTransaction as jest.Mock).mockImplementation((work: (c: typeof client) => unknown) => work(client));
+  const coach = { organizationId: 'org-1', accountId: 'acct-c', role: 'coach' as const, athleteId: null };
+  const attempt = setEmailAlertSwitch({ ...coach, switchedOn: true }, NOW);
+  await expect(attempt).rejects.toBe(dbError);
+  await expect(attempt).rejects.not.toBeInstanceOf(ForbiddenError);
+  expect(client.query).toHaveBeenCalledTimes(3);
+  expect(client.query.mock.calls[2][0]).toMatch(/insert into pilot\.email_alert_switches/);
 });

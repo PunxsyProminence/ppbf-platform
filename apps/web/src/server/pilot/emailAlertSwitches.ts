@@ -199,8 +199,9 @@ export async function setEmailAlertSwitch(
     try {
       return await saveSwitch(client, subject, userType, switchedOn, stored);
     } catch (error) {
-      // A membership removed between sign-in and this save (EM-1a's membership
-      // key): the same answer as anyone not offered a switch, not a raw error.
+      // A membership row deleted between sign-in and this save (EM-1a's
+      // membership key): the same answer as anyone not offered a switch, not a
+      // raw error. Only that key's 23503; anything else stays an error.
       const pgError = error as { code?: unknown; constraint?: unknown };
       if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
         throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
