@@ -567,7 +567,9 @@ function CoachSessionScripts() {
           <button
             type="button"
             onClick={() => void startDelivery(null)}
-            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving || classChoice === undefined}
+            // Not while a plan is being edited: starting would put the form away and lose its changes
+            // (App Overwatch, A, on #2199).
+            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving || editing || classChoice === undefined}
             className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
@@ -643,7 +645,9 @@ function CoachSessionScripts() {
                 <button
                   type="button"
                   onClick={() => void openScript(script.script_id)}
-                  disabled={saving}
+                  // Not while a plan is being edited: opening a plan puts the form away and loses its
+                  // changes (App Overwatch, A, on #2199).
+                  disabled={saving || editing}
                   className="btn btn--ghost mt-[var(--s4)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {openScriptId === script.script_id ? 'Showing plan' : 'Open plan'}
@@ -805,13 +809,18 @@ function CoachSessionScripts() {
                 <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">The plan</h3>
 
                 {editing && (
-                  <SessionScriptEditor
-                    key={detail.script_id}
-                    script={detail}
-                    onSaved={planSaved}
-                    onCancel={() => setEditing(false)}
-                    onBusyChange={setSaving}
-                  />
+                  <>
+                    <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                      Save or cancel your changes to open another plan or start a class.
+                    </p>
+                    <SessionScriptEditor
+                      key={detail.script_id}
+                      script={detail}
+                      onSaved={planSaved}
+                      onCancel={() => setEditing(false)}
+                      onBusyChange={setSaving}
+                    />
+                  </>
                 )}
 
                 {!editing && detail.blocks.length === 0 && (
