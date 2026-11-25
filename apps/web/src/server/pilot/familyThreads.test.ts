@@ -35,7 +35,7 @@ describe('familyThreads: an unknown date of birth reads as a minor (OD-2026-10-0
     ).resolves.toEqual({ thread_id: 'p-1', post_id: 'p-1', created_at: '2026-11-25T03:00:00.000Z' });
     const [insertSql, insertParams] = mockQueryOne.mock.calls[1];
     expect(String(insertSql)).toContain('insert into pilot.family_thread_posts');
-    expect(insertParams.slice(3)).toEqual(['ath-unknown-dob', 'guardian-1', 'Hello']);
+    expect(insertParams.slice(3)).toEqual(['ath-unknown-dob', 'guardian-1', 'parent', 'Hello']);
   });
 
   test('the same child, 18 or over by a known date of birth, is refused', async () => {
