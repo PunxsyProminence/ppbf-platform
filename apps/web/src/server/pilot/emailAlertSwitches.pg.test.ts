@@ -632,6 +632,54 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  // Codex on #2169: the login or the membership changed by the office while
+  // the save waits on the account row; every such writer locks the account first.
+  test.each([
+    ['the login switched off', [
+      'update pilot.accounts set active_flag = false where account_id = $1',
+      'update pilot.organization_memberships set active_flag = false where account_id = $1',
+    ]],
+    ['the membership switched off', [
+      'update pilot.accounts set updated_at = now() where account_id = $1',
+      'update pilot.organization_memberships set active_flag = false where account_id = $1',
+    ]],
+    ['the membership made a volunteer', [
+      'update pilot.accounts set updated_at = now() where account_id = $1',
+      "update pilot.organization_memberships set role = 'volunteer' where account_id = $1",
+    ]],
+  ] as const)('%s while a coach\'s save waits on the account is seen inside the save: 403, never switched on', async (_label, changes) => {
+    const client = await freshDatabase('emailsw_member_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_member_race'), max: 4 });
+    const office = await activePool.connect();
+    try {
+      await office.query('BEGIN');
+      await office.query(changes[0], [COACH_ID]);
+      let settled = false;
+      const save = setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      save.then(() => { settled = true; }, () => { settled = true; });
+      let waited = false;
+      for (let i = 0; i < 200 && !settled; i += 1) {
+        const { rows } = await client.query(
+          `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if (rows[0].n > 0) {
+          waited = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(waited).toBe(true);
+      await office.query(changes[1], [COACH_ID]);
+      await office.query('COMMIT');
+      await expect(save).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([]);
+    } finally {
+      office.release(true);
+      await client.end();
+    }
+  });
+
   test('an athlete deleted the way the office deletes one, while a save waits, does not deadlock: the deletion commits and the save gets 403', async () => {
     const client = await freshDatabase('emailsw_delete_order');
     activeClient = client;

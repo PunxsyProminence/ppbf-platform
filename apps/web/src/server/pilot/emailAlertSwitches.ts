@@ -25,6 +25,7 @@ import { emailAlertCandidateUserType, type EmailAlertUserType } from '@/src/shar
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { queryOne, withTransaction } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { ConflictError, ForbiddenError, ValidationError } from './errors';
 
 export interface EmailAlertSwitchSubject {
@@ -206,6 +207,20 @@ export async function setEmailAlertSwitch(
       ]);
     }
     const stored = await lockSwitchRow(client, subject);
+    // The person again, now the account row is locked: every writer of an
+    // account's state or memberships takes the account row first
+    // (auth.ts setAccountActiveStatus, dataDeletion.ts, guardianLoginMove.ts),
+    // so a login or membership switched off since sign-in is seen here, and
+    // none can change until this commits (Codex on #2169).
+    const member = await client.query<{ role: string }>(
+      `select m.role
+         from pilot.accounts a
+         join pilot.organization_memberships m
+           on m.account_id = a.account_id and m.organization_id = $2 and m.active_flag
+        where a.account_id = $1 and a.active_flag and not ${accountDeletedSql('a')}`,
+      [subject.accountId, subject.organizationId],
+    );
+    if (!member.rows[0] || emailAlertCandidateUserType(member.rows[0].role) !== userType) return null;
     // The age again, inside the save: the account row is locked (a re-link
     // waits) and the athlete row is held, so a date of birth corrected to under
     // 18 or a record deleted since the read above is seen here (Codex on
