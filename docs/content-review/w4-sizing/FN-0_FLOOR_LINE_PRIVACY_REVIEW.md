@@ -114,9 +114,11 @@ file on the floor line.
   coach's own live lookup, a start, the two history reads, and in `gymTvs.ts`
   the paired TV's read, the Paired TVs list and a send to a TV
   (`sessionScriptRuns.ts:146-152`). A search of `apps/web/src`,
-  `apps/web/app`, `apps/web/scripts`, `scripts/` and `.github/` found its
-  non-test callers only in `sessionScriptRuns.ts` (`:343`, `:457`, `:790`,
-  `:837`) and `apps/web/src/server/pilot/gymTvs.ts` (`:200`, `:416`, `:689`).
+  `apps/web/app`, `apps/web/scripts`, `scripts/` and `.github/` found the
+  close (`closeIdleSessionRuns`) called only through its wrapper
+  `sweepIdleRuns` (`:324`), whose non-test callers are in
+  `sessionScriptRuns.ts` (`:343`, `:457`, `:790`, `:837`) and
+  `apps/web/src/server/pilot/gymTvs.ts` (`:200`, `:416`, `:689`).
   A failed close is logged and swallowed (`sessionScriptRuns.ts:322-335`).
   OBSERVED. So a run nobody opens can stay `in_progress` long past 3 hours
   (before the close existed, one sat 29 hours, `:115-119`), and a line that
@@ -324,7 +326,7 @@ smaller, but not free:
   attendance summary (`apps/web/app/api/pilot/scheduler/attendance-summary/route.ts:48`,
   role gate `:58-65`).
   On their signed-in home, staff-role and volunteer accounts see no count
-  today; the public wall's count is open to anyone for the default gym.
+  today (the page's one fetch is announcements, `apps/web/app/workspace/page.tsx:85`); the public wall's count is open to anyone for the default gym.
 OBSERVED. Q12 A puts the line "on every home" (`OWNER_DECISIONS.md:2498`;
 repeated as already ruled on the card, `:1218`). The research Q12 came from
 (the App Scrub) points both ways. Its stage 3 uses "the three homes" as the
@@ -429,7 +431,7 @@ OBSERVED. Nor are the other attendance records: `pilot.activity_log`, the
 legacy `pilot.attendance`, and CT-13's combined view
 `pilot.attendance_reconciled`, which ranks `activity_log` first and the
 legacy table third and gives one row per athlete-day
-(`ATTENDANCE_PRECEDENCE.md:113-120`). OBSERVED. CT-13's guard test makes that
+(`ATTENDANCE_PRECEDENCE.md:113-120`, `:124-126`). OBSERVED. CT-13's guard test makes that
 view the default for new attendance readers
 (`apps/web/src/server/pilot/attendancePrecedence.test.ts:21-23`), and the
 coach "marked today" read uses it (`attendance-today/route.ts:17-21`).
@@ -552,10 +554,17 @@ screen sets or reads the flag today. OBSERVED. Holding the line back from one gu
 concerns. INFERRED. Nor is ending the link always open: staff removal of a
 link is refused when it is a signed-in guardian's only link, and while that
 guardian's media consent is withdrawn
-(`apps/web/src/server/pilot/staffProvisioning.ts:1138-1140`, `:1151-1153`);
-the remaining lever then is switching off that guardian's whole login
-(`apps/web/app/api/pilot/admin/accounts/deactivate/route.ts`). OBSERVED. This
-review recommends no new gate. Whether this, with F1, goes to
+(`apps/web/src/server/pilot/staffProvisioning.ts:1138-1140`, `:1151-1153`).
+The gym cannot switch a parent's login off either: the organization admin's
+deactivate route admits only coach, staff, volunteer and athlete accounts,
+and sends a guardian back to "the people console's link controls"
+(`apps/web/app/api/pilot/admin/accounts/deactivate/route.ts:28-34`,
+`:88-91`), as OD-2026-10-07-009 ruling 1 (`OWNER_DECISIONS.md:8653`, coach,
+staff, volunteer) and OD-2026-11-19-025 (athletes) set it. Only the platform
+owner's status route can switch a parent's login off
+(`apps/web/app/api/pilot/platform/users/status/route.ts:30-38`, which refuses
+only athletes). OBSERVED. So in those two cases the gym itself has no lever.
+INFERRED. This review recommends no new gate (L1 rule). Whether this, with F1, goes to
 Jason before FN-1 is FN0-Q4.
 
 **F15. A failed read must not look like "nobody".** The kernel floor says
@@ -591,7 +600,7 @@ OBSERVED.
     (`AthleteWorkspace.tsx:3296`, `ParentHub.tsx:1474`). His words were about
     loading: "a quote and a loading .... under the quote"
     (`:11255-11257`); the lane read them as "whenever there's nothing real to
-    show (still loading, or the read failed)" (`:11258-11260`); and PR #1144,
+    show (still loading, or the read failed)" (`:11259-11260`); and PR #1144,
     as the entry reports it, built a saying above "Can't read the board right
     now." after a failed read (OD-2026-10-03-010, `:11268-11270`). This is
     the same two homes the line goes on; the failed-read words there are the
@@ -752,8 +761,9 @@ Why it is asked here: the record leaves this case to the build and to FN-0.
 Backbone's note on Q3.1 C: "The card's con stands for the build to handle:
 a register mark has no end time" (`OWNER_DECISIONS.md:1227`); the sizing:
 "Not ruled: ... what it says for a person who has only a register mark (no
-end time). Left to FN-0." (`W4_SIZING.md:542-543`); the brief puts "the
-register-only case" to App Overwatch. That is why this goes to App Overwatch
+end time). Left to FN-0." (`W4_SIZING.md:542-543`), the whole register-only
+case and not only its end; the brief puts "the register-only case" to App
+Overwatch. That is why this goes to App Overwatch
 while FN0-Q6, about a run mark, which nothing leaves to the build, goes to
 Jason. The card's con is about the end ("after they have gone home"); A and
 D also cut the start, which F2 supports for family check-ins made from home,
@@ -869,8 +879,9 @@ sections, waits on Q12 (F3). The navigation map is not in this repository.
   Cons: departs from Overwatch's 10-13 note that a run mark feeds no "board or
   grant figure", which OW27-32 treated as needing your ruling (F1); the
   platform owner was taken off the session-run routes (OD-2026-10-07-011
-  ruling 2) and is kept from the board's compliance and escalation summaries
-  (OD-2026-10-05-006, F-003); not sized.
+  ruling 2) and nine more gym-data routes (OD-2026-10-10-004 ruling 3,
+  `OWNER_DECISIONS.md:8072`), and is kept from the board's compliance and
+  escalation summaries (OD-2026-10-05-006, F-003); not sized.
 - **E: your own words.**
 - Not offered: names on any of the three homes, which would show minors'
   names to the board and the platform owner, whose limits forbid it (F3;
@@ -884,7 +895,8 @@ starts?**
 Plain: with the line, a parent learns their child is in an open-gym session,
 which only staff see today, and every linked guardian sees it; the app has no
 way today to hold it back from one guardian, adding one would be a new gate,
-and staff often cannot remove a guardian's link either (F14). The cards Jason
+and when the gym cannot remove a guardian's link, it cannot switch that
+parent's login off either; only the platform owner can (F14). The cards Jason
 answered did not say either thing. Should he hear it, and when?
 The rules on how he is told are both Overwatch's readings, not his words.
 OD-2026-10-10-007 ruling 3 (`OWNER_DECISIONS.md:7996`, `:7999`): Overwatch
