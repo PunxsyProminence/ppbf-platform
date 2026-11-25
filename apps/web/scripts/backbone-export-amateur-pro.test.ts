@@ -475,7 +475,9 @@ describe('the committed amateur + pro rows', () => {
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('refuse a rerun from the frozen Backbone over lane W4-8\'s linked steps, naming exactly them, and regenerate byte for byte with them put back (skipped where that folder is absent)', () => {
-    const laneSteps = rows(ITEMS).filter((row) => row.template_id === LANE_W48_TEMPLATE && LANE_W48_STEPS.includes(Number(row.ordinal)));
+    // The steps that link a lane W4-8 drill are exactly LANE_W48_STEPS.
+    const laneDrills = new Set(rows(DRILLS).filter((row) => row.content_class.startsWith('AI DRAFT - lane W4-8')).map((row) => row.drill_id));
+    const laneSteps = rows(ITEMS).filter((row) => row.template_id === LANE_W48_TEMPLATE && laneDrills.has(row.drill_id));
     expect(laneSteps.map((row) => Number(row.ordinal))).toEqual(LANE_W48_STEPS);
     const typedStop = [
       `refused: this run would write ${laneSteps.length} typed line(s) back over a step that links a drill (OW26-05 B, OW27-09 B). Nothing was written, and --allow-overwrite does not change that.`,
