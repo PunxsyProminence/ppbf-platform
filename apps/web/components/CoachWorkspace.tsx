@@ -6,6 +6,7 @@ import AnnouncementBanner from './AnnouncementBanner';
 import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
 import CoachNeedsYouStrip, { type NeedsYouCount } from './CoachNeedsYouStrip';
+import OnTheFloorStaffLine from './OnTheFloorStaffLine';
 import PainReportsPanel, {
   PAIN_PROVENANCE,
   painDetailAbsent,
@@ -2845,6 +2846,11 @@ export default function CoachWorkspace() {
             ))}
           </div>
         </div>
+
+        {/* WHO IS ON THE FLOOR NOW (lane W4-3, FN-3; Jason Q3.3 A): names only, read
+            once when the page opens. On every tab, under the tab row, like the
+            safety lists: a head count is not a Dashboard-only fact. */}
+        <OnTheFloorStaffLine />
 
         {/* NEEDS YOU NOW, THE HOME'S STRIP (stage 2 section 3.4 row 11; Q6 = A;
             lane 6C7 7b): the board's card, moved to the top of the home and
