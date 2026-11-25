@@ -116,3 +116,10 @@ Source: the 7 typed steps of `wtp_9fbf7f8edf5016` (Wednesday – Gold Standard C
 - Stop: Technique breaks down under fatigue (stance lost, guard dropped): stop, rest, then restart at level A. (fatigue)
 - Cue: "Defense before offense always"
 - Bases: discipline: conditioning: the step's block (finish_block, the conditioning finish); standard_setup: AI draft; 'shadow' and 'after the sparring' are this lane's reading (the step is contact none, in the contact hour); execution: the typed line; the sheet names no exercises, so the work is the coach's; target_behavior: AI draft from the typed line and the step's block title; cues: the typed line's own words, word for word; stop_rules: AI draft from the typed line ('Technique while tired')
+
+## Durations (the rule App Overwatch set on #2177, and its extension to title minutes on #2186)
+
+- Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose details state a time of its own (its `block_time` range, or, where it has none of its own, the minutes its own `block_title` states), held by no other step of its template, carries it as its duration, at contact none or light_technical.
+- Steps 1-4 ("4:00–4:02", "4:02–4:04", "4:04–4:06", "4:06–4:08") carry 2 minutes each. Steps 6 and 7 are controlled sparring (the duration column may not hold sparring volume) and state no time; step 8 states none. They stay blank.
+- The template's own `items` label gains a lane `duration_minutes` part (INFERRED; its basis names each step, its block time and its minutes). `typedLinesContent.test.ts` pins the steps (`TIMED_STEPS`); the frozen youth-recreational case expects `drill_id, duration_minutes` on them (`LANE_W48_DURATIONS`; UNVERIFIED here).
+- Not changed here (an owner item): step 5, linked before this lane, also holds its own block time ("4:08–4:20") and a blank duration.
