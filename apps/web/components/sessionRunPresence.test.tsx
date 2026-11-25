@@ -855,6 +855,73 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
   });
 
+  test('refusals that come back together are all said, each named, until OK; an athlete\'s next saved tap takes theirs away', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        // Both first sends are lost; on the way back both are refused; Ada's next tap goes through.
+        if (send <= 2) return 'lost';
+        if (send <= 4) return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
+        present = [ADA];
+        return answer({ outcome: 'marked' });
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    await wait(RESEND_MS);
+    expect(screen.getByText('Ada Reyes: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
+    expect(screen.getByText('Ben Ortiz: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
+    await tapKept('Mark here Ada Reyes');
+    expect(screen.queryByText(/^Ada Reyes: This account cannot/)).toBeNull();
+    expect(screen.getByText('Ben Ortiz: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    });
+    expect(screen.queryByText(/This account cannot mark/)).toBeNull();
+  });
+
+  test('a refused tap gives back only its own row while another athlete\'s tap still waits', async () => {
+    jest.useFakeTimers();
+    let refuseAda: ((response: Response) => void) | undefined;
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          return new Promise<Response>((resolve) => {
+            refuseAda = resolve;
+          });
+        }
+        return 'lost';
+      },
+      present: () => [],
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    await act(async () => {
+      refuseAda?.(answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+  });
+
+  test('a sign-out takes the named refusals off the screen', async () => {
+    jest.useFakeTimers();
+    serveKept({ tap: () => answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403), present: () => [] });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    expect(screen.getByText(/^Ada Reyes: This account cannot/)).toBeTruthy();
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.queryByText(/^Ada Reyes: This account cannot/)).toBeNull();
+  });
+
   test('a waiting tap stays in view in a large gym\'s list, said on its row and described to the button, and counted for screen readers', async () => {
     jest.useFakeTimers();
     const gym = Array.from({ length: 31 }, (_, index) => ({ athlete_id: `ath-${index + 10}`, full_name: `Athlete ${String(index + 10)}` }));

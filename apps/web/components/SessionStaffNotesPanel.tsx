@@ -102,6 +102,13 @@ export default function SessionStaffNotesPanel(
   // read started, is dropped -- so a panel never reopens itself.
   const latestRead = useRef(0);
   const isOpen = useRef(false);
+  // A loaded list is on the screen: only then may a kept note's landing read it again quietly.
+  const listShown = useRef(false);
+  useEffect(() => {
+    listShown.current = reading.state === 'loaded';
+  }, [reading.state]);
+  // A kept note refused while the panel is closed: said beside its button (the reason shows inside).
+  const [closedWords, setClosedWords] = useState('');
   // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
   // page (a sign-out drop tells this panel nothing otherwise).
   const [waitingWrites, setWaitingWrites] = useState(0);
@@ -185,6 +192,7 @@ export default function SessionStaffNotesPanel(
       // the panel is still there to read when it is opened again.
       setRefusal(null);
     } else {
+      setClosedWords('');
       void read();
     }
   }, [read]);
@@ -204,6 +212,7 @@ export default function SessionStaffNotesPanel(
       let reason = '';
       // A resend refused because this save's own key already added a note (one edited since): it landed.
       let ownKeyUsed = false;
+      let refusedCode: unknown;
       // No note text and no name: the line can outlive this panel on a shared floor screen.
       const label = 'Staff note';
       const settle = () => {
@@ -233,12 +242,15 @@ export default function SessionStaffNotesPanel(
           if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
           const payload = (await response.clone().json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
           reason = typeof payload?.error === 'string' && payload.error ? payload.error : `The note was not ${failed.verb} (${response.status}).`;
+          refusedCode = payload?.code;
           if (payload?.code === 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED') ownKeyUsed = true;
           return 'refused';
         },
         // A refused resend: do the notes now show what this write asked?
         checkLanded: async (signal) => {
           if (ownKeyUsed) return true;
+          // Refused after the server's key lookup found nothing: it did not land.
+          if (refusedCode === 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT') return false;
           const notes = await readNotes(signal);
           if (notes === null) return null;
           const text = what.text.trim();
@@ -248,18 +260,24 @@ export default function SessionStaffNotesPanel(
         },
         onSaved: () => {
           settle();
-          if (onPage.current && isOpen.current) void read(true);
+          if (onPage.current && isOpen.current) void read(listShown.current);
         },
         // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the
         // draft (a not-known one may have been written, so it does not).
         onRefused: (_response, landed) => {
           settle();
           if (landed === false) setDraft((current) => (current === '' ? what.text : current));
-          // Off the page, with the panel closed, or while a kept finish waits: said in the page's list.
-          if (!onPage.current || !isOpen.current || isFinishWaiting?.()) {
+          // Off the page, or while a kept finish waits: said in the page's list.
+          if (!onPage.current || isFinishWaiting?.()) {
             return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
           }
           setRefusal(landed === null ? { heading: 'NOT KNOWN', text: unknownOutcomeWords(label) } : { heading: failed.heading, text: reason });
+          // The panel closed: said beside its button, so the coach knows whose notes to open.
+          if (!isOpen.current) {
+            setClosedWords(landed === null
+              ? 'Whether a new note was saved is not known. Open the notes to check before writing it again.'
+              : 'A new note was not saved. Open the notes to see why; its words are back in the box.');
+          }
           // The list as last read stays (a read again that fails would hide the words).
           return undefined;
         },
@@ -383,12 +401,15 @@ export default function SessionStaffNotesPanel(
         {open ? 'Hide staff notes' : subjectWords}
       </button>
       {/* Beside the button, open or closed, and mounted always, so a screen reader announces it when it fills. */}
-      <p className={waitingWrites > 0 ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
-        {waitingWrites === 0
-          ? ''
-          : waitingWrites === 1
-            ? 'One change to these notes is not saved yet. This page keeps sending it while it stays open.'
-            : `${waitingWrites} changes to these notes are not saved yet. This page keeps sending them while it stays open.`}
+      <p className={waitingWrites > 0 || closedWords ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
+        {[
+          waitingWrites === 0
+            ? ''
+            : waitingWrites === 1
+              ? 'One new note is not saved yet. This page keeps sending it while it stays open.'
+              : `${waitingWrites} new notes are not saved yet. This page keeps sending them while it stays open.`,
+          closedWords,
+        ].filter(Boolean).join(' ')}
       </p>
 
       {open ? (

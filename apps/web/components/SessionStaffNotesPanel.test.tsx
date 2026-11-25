@@ -516,7 +516,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
   };
-  const NOTES_WAITING = 'One change to these notes is not saved yet. This page keeps sending it while it stays open.';
+  const NOTES_WAITING = 'One new note is not saved yet. This page keeps sending it while it stays open.';
 
   beforeEach(() => {
     window.localStorage.clear();
@@ -752,7 +752,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(draftField().value).toBe('Second');
   });
 
-  test('with the panel closed, the waiting line stays beside its button, and a refusal is said in the page\'s list; the words come back to the draft', async () => {
+  test('with the panel closed, the waiting line stays beside its button, and a refusal is said there, not in the page\'s list; its reason and words are in the panel when opened', async () => {
     jest.useFakeTimers();
     serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
     await openKept();
@@ -762,12 +762,85 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     });
     expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
     await wait(RESEND_MS);
-    expect(screen.getByText('Staff note: That athlete is not marked here.')).toBeTruthy();
+    expect(screen.getByText('A new note was not saved. Open the notes to see why; its words are back in the box.')).toBeTruthy();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
     });
+    expect(screen.getByText('NOT SAVED')).toBeTruthy();
+    expect(screen.getByText('That athlete is not marked here.')).toBeTruthy();
     expect(draftField().value).toBe('Wrist taped.');
+    expect(screen.queryByText(/^A new note was not saved/)).toBeNull();
+  });
+
+  test('a note landing while the panel is reopening reads the list in full: a failed read says so, never stuck on Reading', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    let holdSecond: ((response: Response) => void) | undefined;
+    serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ ok: true, note_id: 'note-9' })) });
+    const base = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET' && String(input).startsWith(ROUTE) && !init?.signal) {
+        reads += 1;
+        // The reopening read is slow; the landing's read fails.
+        if (reads === 2) {
+          return new Promise<Response>((resolve) => {
+            holdSecond = resolve;
+          });
+        }
+        if (reads === 3) return answer({}, 500);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await openKept();
+    await addNote('Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('Reading…')).toBeTruthy();
+    await wait(RESEND_MS);
+    expect(holdSecond).toBeDefined();
+    expect(screen.queryByText('Reading…')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+  });
+
+  test('a quiet read after a landing that fails leaves the list as it was', async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    serveKept({ notes: () => [MINE], write: (send) => (send === 1 ? 'lost' : answer({ ok: true, note_id: 'note-9' })) });
+    const base = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'GET' && String(input).startsWith(ROUTE) && !init?.signal) {
+        reads += 1;
+        if (reads > 1) return answer({}, 500);
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await openKept();
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(reads).toBeGreaterThan(1);
+    expect(screen.queryByText(/could not be read just now/)).toBeNull();
+    expect(screen.getByText(/Before: tight shoulders/)).toBeTruthy();
+    expect(draftField()).toBeTruthy();
+  });
+
+  test('a resend refused because the athlete is not marked here did not land, even beside an earlier note of the same words', async () => {
+    jest.useFakeTimers();
+    const earlier = { ...MINE, note_id: 'note-0', note: 'Wrist taped.' };
+    serveKept({
+      notes: () => [earlier],
+      write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409)),
+    });
+    await openKept();
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(await screen.findByText('NOT SAVED')).toBeTruthy();
   });
 
   test('a refusal after the panel has left the screen is said in the page\'s list; a not-known one apart, with where to check', async () => {
