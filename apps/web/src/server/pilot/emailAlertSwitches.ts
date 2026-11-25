@@ -1,29 +1,21 @@
 /**
- * EACH PERSON'S EMAIL ALERT SWITCH (lane W4-1, EM-1; W4 item 1).
+ * EACH PERSON'S EMAIL ALERT SWITCH (lane W4-1, EM-1b). OD-2026-11-19-019: an
+ * opt-in email that says only "open the app"; OW27-10 A: one switch on each
+ * person's own settings page. Reads and writes the caller's own switch only.
  *
- * Jason, OD-2026-11-19-019: an opt-in, content-free email that says only
- * "open the app". OW27-10 A: "Each person turns their own email on or off with
- * one switch on their own settings page." This module reads and writes that
- * switch, for the caller's own account only. Which events send, the sender
- * and the email itself are other PRs (EM-5, EM-3, EM-4a/b).
+ * WHO (OW27-02 C): coach, admin, organization admin ('staff'), parents
+ * ('parent'), and athletes 18 or over ('adult_athlete'), judged on the athlete
+ * record linked to this account; no date of birth counts as a minor
+ * (OD-2026-10-04-010). Anyone else gets `{ offered: false }` and nothing more
+ * (no new warning, L1 rule); a row left from when they were offered one is
+ * switched off and its address cleared then (retireSwitchIfAny).
  *
- * WHO IS OFFERED A SWITCH (OW27-02 C): coach, admin and organization admin
- * (user type 'staff'), parents ('parent'), and athletes 18 or over
- * ('adult_athlete'). An athlete's age is read from their own athlete record on
- * every call; no date of birth, or no live athlete record, counts as a minor
- * (OD-2026-10-04-010). A person who is not offered one gets `{ offered: false }`
- * and nothing else: no reason, no warning (the brief's L1 rule). If they still
- * have a row from when they were offered one, it is switched off and any
- * address cleared at that moment (retireSwitchIfAny, below).
- *
- * AN ADULT ATHLETE NEEDS A CONFIRMED ADDRESS FIRST (OW27-38 B; Overwatch GO on
- * #2159, condition 3). Athletes have no sign-in address; the address and its
- * code are EM-2b. Until a confirmed address exists, switching on is refused
- * here, and the table's CHECK refuses it again.
- *
- * Every save writes one audit row (user type, on/off before and after) in the
- * same transaction. No address is ever written to the audit stream.
+ * An adult athlete cannot switch on before an address is confirmed (OW27-38 B;
+ * GO on #2159, condition 3); the table's CHECK refuses it too. Every change is
+ * audited in the same transaction, never with an address.
  */
+
+import type { PoolClient } from 'pg';
 
 import { isMinor } from '@/src/lib/minorAge';
 import { emailAlertCandidateUserType, type EmailAlertUserType } from '@/src/shared/emailAlerts';
@@ -52,10 +44,8 @@ export type EmailAlertSwitchState =
   };
 
 /**
- * The user type this account may switch under right now, or null. For an
- * athlete, null unless the athlete record linked to this very account, in this
- * gym, is live and says 18 or over. The link is read from pilot.accounts, so a
- * caller cannot point the age check at somebody else's record.
+ * The user type this account may switch under now, or null. An athlete's age
+ * is read through pilot.accounts, so a caller cannot point it at another record.
  */
 export async function emailAlertUserTypeFor(
   subject: EmailAlertSwitchSubject,
@@ -84,8 +74,17 @@ interface SwitchRow {
   holds_address: boolean;
 }
 
+const HOLDS_ADDRESS = 'pending_address is not null or pending_code_hash is not null or confirmed_address is not null';
 const SWITCH_ROW_COLUMNS = `user_type, switched_on, confirmed_address is not null as address_confirmed,
-            (pending_address is not null or pending_code_hash is not null or confirmed_address is not null) as holds_address`;
+            (${HOLDS_ADDRESS}) as holds_address`;
+
+/** The address columns, kept where `keep` is true and cleared where it is not. */
+function addressColumns(keep: string): string {
+  return ['pending_address', 'pending_code_hash', 'pending_code_expires_at', 'confirmed_address', 'confirmed_at']
+    .map((column) => `${column} = case when ${keep} then s.${column} end`)
+    .concat(`pending_code_attempts = case when ${keep} then s.pending_code_attempts else 0 end`)
+    .join(',\n           ');
+}
 
 type OfferedState = Extract<EmailAlertSwitchState, { offered: true }>;
 
@@ -98,65 +97,69 @@ function stateFrom(userType: EmailAlertUserType, row: SwitchRow | null | undefin
 }
 
 /**
- * A person who is no longer offered a switch (an athlete whose date of birth
- * was corrected to under 18, a record deleted, a changed role that still
- * reaches this module) keeps no switch that is on and no address. Done quietly,
- * with nothing shown to the person, the next time they read or write their own
- * switch; the same lazy clean-up the escalations read does for ended holds
- * (escalations/route.ts, closeEndedHoldNotices). The sender (EM-3) is to check
- * eligibility again before every send whether or not this has run.
+ * Locks the person's account row, then reads their switch row for update.
+ * With no switch row yet there is nothing else to lock: without the account
+ * lock two first saves would both INSERT and the second would fail on the
+ * primary key (23505). FOR NO KEY UPDATE holds up no row that only references
+ * the account (tabletIdlePolicy.ts's rule).
+ */
+async function lockSwitchRow(client: PoolClient, subject: EmailAlertSwitchSubject): Promise<SwitchRow | undefined> {
+  await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
+  const before = await client.query<SwitchRow>(
+    `select ${SWITCH_ROW_COLUMNS} from pilot.email_alert_switches
+      where organization_id = $1 and account_id = $2 for update`,
+    [subject.organizationId, subject.accountId],
+  );
+  return before.rows[0];
+}
+
+function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Record<string, unknown>) {
+  return writePilotAuditEvent({
+    event_type: 'update',
+    actor_account_id: subject.accountId,
+    actor_role: subject.role,
+    organization_id: subject.organizationId,
+    entity_type: 'email_alert_switch',
+    entity_id: subject.accountId,
+    details,
+    // A person's own preference: nothing for SHADOW to learn from.
+    shadow_mirror: false,
+  }, client);
+}
+
+/**
+ * Someone no longer offered a switch (date of birth corrected to under 18,
+ * record deleted) keeps none that is on and no address: cleared quietly at
+ * their next own read or write, the lazy clean-up the escalations read does for
+ * ended holds. The sender (EM-3) re-checks every person before every send anyway.
  */
 async function retireSwitchIfAny(subject: EmailAlertSwitchSubject): Promise<void> {
-  // Most people not offered a switch (every athlete under 18) never had one:
-  // one plain read, and no transaction or lock, unless there is something to do.
+  // Most never had a row (every athlete under 18): one read, no lock.
   const leftover = await queryOne<{ found: boolean }>(
     `select true as found from pilot.email_alert_switches
-      where organization_id = $1 and account_id = $2
-        and (switched_on or pending_address is not null or pending_code_hash is not null or confirmed_address is not null)`,
+      where organization_id = $1 and account_id = $2 and (switched_on or ${HOLDS_ADDRESS})`,
     [subject.organizationId, subject.accountId],
   );
   if (!leftover) return;
   await withTransaction(async (client) => {
-    await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
-    const before = await client.query<SwitchRow>(
-      `select ${SWITCH_ROW_COLUMNS}
-         from pilot.email_alert_switches
-        where organization_id = $1 and account_id = $2
-        for update`,
-      [subject.organizationId, subject.accountId],
-    );
-    const row = before.rows[0];
+    const row = await lockSwitchRow(client, subject);
     if (!row || (!row.switched_on && !row.holds_address)) return;
     await client.query(
       `update pilot.email_alert_switches s set
-         switched_on = false,
-         switched_off_at = case when s.switched_on then clock_timestamp() else s.switched_off_at end,
-         set_at = clock_timestamp(),
-         pending_address = null,
-         pending_code_hash = null,
-         pending_code_expires_at = null,
-         pending_code_attempts = 0,
-         confirmed_address = null,
-         confirmed_at = null
-       where s.organization_id = $1 and s.account_id = $2`,
+           switched_on = false,
+           switched_off_at = case when s.switched_on then clock_timestamp() else s.switched_off_at end,
+           set_at = clock_timestamp(),
+           ${addressColumns('false')}
+         where s.organization_id = $1 and s.account_id = $2`,
       [subject.organizationId, subject.accountId],
     );
-    await writePilotAuditEvent({
-      event_type: 'update',
-      actor_account_id: subject.accountId,
-      actor_role: subject.role,
-      organization_id: subject.organizationId,
-      entity_type: 'email_alert_switch',
-      entity_id: subject.accountId,
-      details: {
-        user_type: row.user_type,
-        switched_on: false,
-        previous_switched_on: row.switched_on,
-        address_cleared: row.holds_address,
-        reason: 'no_longer_offered',
-      },
-      shadow_mirror: false,
-    }, client);
+    await audit(client, subject, {
+      user_type: row.user_type,
+      switched_on: false,
+      previous_switched_on: row.switched_on,
+      address_cleared: row.holds_address,
+      reason: 'no_longer_offered',
+    });
   });
 }
 
@@ -170,8 +173,7 @@ export async function readEmailAlertSwitch(
     return { offered: false };
   }
   const row = await queryOne<SwitchRow>(
-    `select ${SWITCH_ROW_COLUMNS}
-       from pilot.email_alert_switches
+    `select ${SWITCH_ROW_COLUMNS} from pilot.email_alert_switches
       where organization_id = $1 and account_id = $2`,
     [subject.organizationId, subject.accountId],
   );
@@ -193,25 +195,9 @@ export async function setEmailAlertSwitch(
   }
 
   return withTransaction(async (client) => {
-    // Lock the person's own account row first: with no switch row yet there
-    // is nothing for the select below to lock, and two first saves at once
-    // would both take the INSERT branch, and the second would fail on the
-    // primary key (23505, a 500 to the person). With the lock the second waits,
-    // then reads the first's committed row and takes the UPDATE branch. FOR NO
-    // KEY UPDATE, so rows that only reference the account are not held up
-    // (tabletIdlePolicy.ts's rule).
-    await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
-    const before = await client.query<SwitchRow>(
-      `select ${SWITCH_ROW_COLUMNS}
-         from pilot.email_alert_switches
-        where organization_id = $1 and account_id = $2
-        for update`,
-      [subject.organizationId, subject.accountId],
-    );
-    const stored = before.rows[0];
+    const stored = await lockSwitchRow(client, subject);
     const previous = stateFrom(userType, stored);
-    // The row as stored, whatever user type it was saved under: the times and
-    // the audit describe what the row did, not what this switch reads as.
+    // Times and audit describe the row as stored, whatever type it was saved under.
     const storedOn = stored?.switched_on ?? false;
     const retyped = stored !== undefined && stored.user_type !== userType;
 
@@ -219,14 +205,10 @@ export async function setEmailAlertSwitch(
       throw new ConflictError('Confirm an email address before switching email alerts on');
     }
 
-    // An UPDATE of the locked row, or an INSERT when there is none; not
-    // INSERT ... ON CONFLICT, because Postgres checks the CHECKs against the
-    // proposed new row before the conflict is found, and that row carries no
-    // address, so an adult athlete with a confirmed address could never switch
-    // on. switched_on_at moves when it goes on (or comes on under a new user
-    // type), switched_off_at when a row that was on goes off. A row saved under
-    // another user type loses any address, which only an adult athlete's row
-    // may hold.
+    // UPDATE the locked row, or INSERT when there is none. Not INSERT ... ON
+    // CONFLICT: Postgres checks the CHECKs on the proposed row first, which has
+    // no address, so a confirmed adult athlete could never switch on. A row
+    // saved under another user type loses any address.
     if (stored) {
       await client.query(
         `update pilot.email_alert_switches s set
@@ -235,12 +217,7 @@ export async function setEmailAlertSwitch(
            switched_on_at = case when $4 and (not $5 or $6) then clock_timestamp() else s.switched_on_at end,
            switched_off_at = case when not $4 and $5 then clock_timestamp() else s.switched_off_at end,
            set_at = clock_timestamp(),
-           pending_address = case when $3 = 'adult_athlete' then s.pending_address end,
-           pending_code_hash = case when $3 = 'adult_athlete' then s.pending_code_hash end,
-           pending_code_expires_at = case when $3 = 'adult_athlete' then s.pending_code_expires_at end,
-           pending_code_attempts = case when $3 = 'adult_athlete' then s.pending_code_attempts else 0 end,
-           confirmed_address = case when $3 = 'adult_athlete' then s.confirmed_address end,
-           confirmed_at = case when $3 = 'adult_athlete' then s.confirmed_at end
+           ${addressColumns("$3 = 'adult_athlete'")}
          where s.organization_id = $1 and s.account_id = $2`,
         [subject.organizationId, subject.accountId, userType, switchedOn, storedOn, retyped],
       );
@@ -248,29 +225,17 @@ export async function setEmailAlertSwitch(
       await client.query(
         `insert into pilot.email_alert_switches
            (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at, set_at)
-         values ($1, $2, $3, $4,
-                 case when $4 then clock_timestamp() end,
-                 case when not $4 then clock_timestamp() end,
-                 clock_timestamp())`,
+         values ($1, $2, $3, $4, case when $4 then clock_timestamp() end,
+                 case when not $4 then clock_timestamp() end, clock_timestamp())`,
         [subject.organizationId, subject.accountId, userType, switchedOn],
       );
     }
-    await writePilotAuditEvent({
-      event_type: 'update',
-      actor_account_id: subject.accountId,
-      actor_role: subject.role,
-      organization_id: subject.organizationId,
-      entity_type: 'email_alert_switch',
-      entity_id: subject.accountId,
-      details: {
-        user_type: userType,
-        switched_on: switchedOn,
-        previous_switched_on: storedOn,
-        ...(retyped && stored ? { previous_user_type: stored.user_type } : {}),
-      },
-      // A person's own notification preference: nothing for SHADOW to learn from.
-      shadow_mirror: false,
-    }, client);
+    await audit(client, subject, {
+      user_type: userType,
+      switched_on: switchedOn,
+      previous_switched_on: storedOn,
+      ...(retyped && stored ? { previous_user_type: stored.user_type } : {}),
+    });
 
     return userType === 'adult_athlete'
       ? { offered: true, user_type: userType, switched_on: switchedOn, address_confirmed: previous.address_confirmed === true }
