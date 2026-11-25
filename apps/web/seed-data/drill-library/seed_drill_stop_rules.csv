@@ -1660,6 +1660,9 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_e2a08a5d5001e7,drl_b7720d791b970b,1,"Stop/regress when guessing, blind reset, stance collapse, guard abandonment, or target-skill disappearance prevents training transfer",drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_00f4d88d11a1f0,drl_e7279a0244efa5,1,"Stop/regress when guessing, blind reset, stance collapse, guard abandonment, or target-skill disappearance prevents training transfer",drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_e7d733e0f45a79,drl_6d21ac893974ec,1,Stop any part that hurts; the coach checks before the athlete goes on.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_4f8c4502ff8709,drl_6d21ac893974ec,2,Stop the set when the push or the bag tap stops being light and controlled; reset the force before continuing.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_a68e84702cc6c4,drl_6d21ac893974ec,3,Stop the set when the brace comes late (after the push) on repeated reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d8e0a6a53d5695,drl_6d21ac893974ec,4,"Stop and regress when the drill becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_f52870659f8f3c,drl_6529e148d4b491,1,"If fatigue breaks decisions, downgrade before intensity rises further.",drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_b859b61f8a626d,drl_6529e148d4b491,2,"If the room loses purpose, simplify before adding.",drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_b9ba70a8c0cad8,drl_02c1253c606e21,1,"Stop the finisher when the efforts stop being high quality (shadow form breaks, or the hard intervals turn into paced ones); do not add more.",drill_specific,fatigue
