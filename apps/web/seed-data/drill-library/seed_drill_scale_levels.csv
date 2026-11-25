@@ -1723,14 +1723,14 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_2fdc009d628d94,drl_e7279a0244efa5,C,false,"As written, and the athlete names their own first failure before the coach's note.",Athlete names it.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2ce677ea870dac,drl_6d21ac893974ec,A,false,"The four parts at an easy pace, the neck holds gentle.",Easy pace.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_e696cc2140e488,drl_6d21ac893974ec,B,true,The warm-up as written.,,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_bc3445c569cab0,drl_6d21ac893974ec,C,false,"As written, the activation part at full speed with the jab flurries still at 50%.",Faster activation.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_bc3445c569cab0,drl_6d21ac893974ec,C,false,"As written, the fast feet and the medicine-ball passes at full speed; the jab flurries stay at 50%.",Faster activation.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_35a6fedf77c0e4,drl_6529e148d4b491,A,false,"One theme for every round (a theme may repeat), at a controlled pace.",One theme.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_b7073505037b91,drl_6529e148d4b491,B,true,"Five themed rounds with their KPIs, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_b2ee94fe586045,drl_6529e148d4b491,C,false,"As written, the coach counting each round's KPI and telling the athlete the count in the rest.",KPI counted.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_25077fc1b8bc9b,drl_02c1253c606e21,A,false,"The bike or treadmill option, hard but not all-out.",Not all-out.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_25077fc1b8bc9b,drl_02c1253c606e21,A,false,"Fewer efforts of either option (the coach cuts the count), each still hard.",Fewer efforts.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2c4ef713fbb1d5,drl_02c1253c606e21,B,true,Either option as written.,,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_471f836cbb74dc,drl_02c1253c606e21,C,false,"Either option at maximal intent in every effort, quality held.",Maximal throughout.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_a2e518921ae281,drl_a5f52ff0aa9d2e,A,false,Easy movement and the breathing; a shorter stretch set.,Shorter stretch.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_471f836cbb74dc,drl_02c1253c606e21,C,false,"Both options in one finisher: the bike or treadmill set, then the shadow set, inside the 8 minutes.",Both options.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a2e518921ae281,drl_a5f52ff0aa9d2e,A,false,"Easy movement, the breathing and the log; a shorter stretch set.",Shorter stretch.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_495a8f4a5cd1d4,drl_a5f52ff0aa9d2e,B,true,The cool-down as written.,,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_781188775d020e,drl_a5f52ff0aa9d2e,C,false,"As written, the athlete writing their own log line before the coach reads it.",Athlete-logged.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_a667ff5dde8e30,drl_4845ed05215e9b,A,false,The coach gives the evaluation and the reset.,Coach-led.,none,,scaffold_needs_coach_review
