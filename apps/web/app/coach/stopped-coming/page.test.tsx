@@ -10,8 +10,15 @@
 // role gets a stamp, not an error banner (Law 7); a genuine failure admits
 // athletes may be missing; "Open passbook" hands the athlete over in page
 // memory; and the page shows no attendance figure.
+//
+// The "reached out" mark (SC-3b; OW27-33 B, Q4 A): a row's button sends PUT
+// with exactly { athlete_id, reached_out } and then reads the list again, so a
+// row shows the server's mark, never one set by the press; the button's words
+// and aria-pressed both say whether it is marked; a marker the server cannot
+// name is not named; a refusal is a stamp that stays; and the button waits
+// while its request is on its way.
 
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { PASSBOOK_PAGE } from '@/components/athleteRecordPages';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -49,10 +56,46 @@ const LIST = {
   today: '2026-03-10',
   // Longest gone first, and NOT in name order, so a page that re-sorted by name would show it.
   athletes: [
-    { athlete_id: 'ath-2', full_name: 'Rosa D.', last_came_day: '2026-02-08', days_since_came: 30 },
-    { athlete_id: 'ath-1', full_name: 'Jordan P.', last_came_day: '2026-02-24', days_since_came: 14 },
+    { athlete_id: 'ath-2', full_name: 'Rosa D.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: null },
+    { athlete_id: 'ath-1', full_name: 'Jordan P.', last_came_day: '2026-02-24', days_since_came: 14, reached_out: null },
   ],
 };
+
+// Synthetic staff names only (public repository).
+const MARK = { by_name: 'Coach Ana T.', on_day: '2026-03-09' };
+
+/** LIST with the first row (Rosa D., ath-2) carrying `mark`. */
+const firstMarked = (mark: unknown) => ({
+  ...LIST,
+  athletes: LIST.athletes.map((athlete, index) => (index === 0 ? { ...athlete, reached_out: mark } : athlete)),
+});
+
+type Reply = { status?: number; body?: unknown } | 'network';
+
+/** Answers each request in turn (the read, the PUT, the read again); a promise holds its answer until resolved. */
+function scriptedFetch(...replies: Array<Reply | Promise<Reply>>) {
+  const queue = [...replies];
+  return jest.fn(async () => {
+    const reply = await queue.shift();
+    if (reply === undefined) throw new Error('no reply scripted for this request');
+    if (reply === 'network') throw new TypeError('Failed to fetch');
+    const status = reply.status ?? 200;
+    return { ok: status >= 200 && status < 300, status, json: async () => reply.body };
+  }) as unknown as typeof fetch;
+}
+
+const requests = (fetchImpl: typeof fetch) =>
+  (fetchImpl as jest.Mock).mock.calls as Array<[string, RequestInit | undefined]>;
+
+const puts = (fetchImpl: typeof fetch) => requests(fetchImpl).filter(([, init]) => init?.method === 'PUT');
+
+const markButton = (row: HTMLElement) => within(row).getByRole('button') as HTMLButtonElement;
+
+async function press(button: HTMLElement) {
+  await act(async () => {
+    fireEvent.click(button);
+  });
+}
 
 function mockFetch(options: { body?: unknown; status?: number; badJson?: boolean }) {
   const status = options.status ?? 200;
@@ -222,4 +265,194 @@ test.each([
       + 'athletes marked as left the gym, or athletes whose program memberships have all lapsed or ended.',
     );
   }
+});
+
+describe('the "reached out" mark', () => {
+  test('a row with no mark shows "Mark reached out", not pressed, and no reached-out line', async () => {
+    await renderPage(mockFetch({}));
+    const rows = screen.getAllByRole('listitem');
+    for (const row of rows) {
+      expect(markButton(row).textContent).toBe('Mark reached out');
+      expect(markButton(row).getAttribute('aria-pressed')).toBe('false');
+      expect(row.textContent).not.toMatch(/Reached out (by|on)/);
+    }
+    expect(markButton(rows[0]).getAttribute('aria-label')).toBe('Mark reached out: Rosa D.');
+  });
+
+  test('pressing it sends PUT with exactly { athlete_id, reached_out: true }, then shows what a fresh read says', async () => {
+    const fetchImpl = scriptedFetch({ body: LIST }, { body: { ok: true, outcome: 'marked' } }, { body: firstMarked(MARK) });
+    await renderPage(fetchImpl);
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(requests(fetchImpl)).toHaveLength(3));
+    const [url, init] = requests(fetchImpl)[1];
+    expect(url).toMatch(/\/api\/pilot\/stopped-coming$/);
+    expect(init).toMatchObject({ method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+    expect(JSON.parse(String(init?.body))).toStrictEqual({ athlete_id: 'ath-2', reached_out: true });
+    // The third request is the list read again (a GET), and the row shows that answer: the name
+    // and the day come only from it, so a row marked by the press itself would not have them.
+    expect(requests(fetchImpl)[2][0]).toMatch(/\/api\/pilot\/stopped-coming$/);
+    expect(requests(fetchImpl)[2][1]?.method).toBeUndefined();
+    await waitFor(() => expect(markButton(screen.getAllByRole('listitem')[0]).getAttribute('aria-pressed')).toBe('true'));
+    const [first, second] = screen.getAllByRole('listitem');
+    expect(first.textContent).toContain(`Reached out by Coach Ana T. on ${formatCalendarDay('2026-03-09')}.`);
+    expect(markButton(first).textContent).toBe('Reached out');
+    expect(markButton(second).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('"already_marked" (another coach got there first): the fresh read shows their mark, and nothing is refused', async () => {
+    const theirs = { by_name: 'Coach Bo R.', on_day: '2026-03-08' };
+    const fetchImpl = scriptedFetch({ body: LIST }, { body: { ok: true, outcome: 'already_marked' } }, { body: firstMarked(theirs) });
+    await renderPage(fetchImpl);
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')[0].textContent).toContain(
+      `Reached out by Coach Bo R. on ${formatCalendarDay('2026-03-08')}.`,
+    ));
+    expect(markButton(screen.getAllByRole('listitem')[0]).getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-refusal-stamp]')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a marked row says who and when, its button is pressed, and pressing it sends reached_out: false', async () => {
+    const fetchImpl = scriptedFetch({ body: firstMarked(MARK) }, { body: { ok: true, outcome: 'taken_back' } }, { body: LIST });
+    await renderPage(fetchImpl);
+    const first = screen.getAllByRole('listitem')[0];
+    expect(first.textContent).toContain(`Reached out by Coach Ana T. on ${formatCalendarDay('2026-03-09')}.`);
+    expect(markButton(first).getAttribute('aria-pressed')).toBe('true');
+    expect(markButton(first).textContent).toBe('Reached out');
+    expect(markButton(first).getAttribute('aria-label')).toBe('Reached out: Rosa D.');
+
+    await press(markButton(first));
+    await waitFor(() => expect(requests(fetchImpl)).toHaveLength(3));
+    expect(requests(fetchImpl)[1][1]?.method).toBe('PUT');
+    expect(JSON.parse(String(requests(fetchImpl)[1][1]?.body))).toStrictEqual({ athlete_id: 'ath-2', reached_out: false });
+    // Taken back, by the fresh read: the row stays on the list, unmarked.
+    await waitFor(() => expect(markButton(screen.getAllByRole('listitem')[0]).getAttribute('aria-pressed')).toBe('false'));
+    expect(screen.getAllByRole('listitem')[0].textContent).not.toMatch(/Reached out (by|on)/);
+    expect(markButton(screen.getAllByRole('listitem')[0]).textContent).toBe('Mark reached out');
+  });
+
+  test.each([
+    ['null', null],
+    ['blank', '  '],
+  ])('a marker the server cannot name (%s) reads "Reached out on <date>", with no name in its place', async (_label, byName) => {
+    await renderPage(mockFetch({ body: firstMarked({ by_name: byName, on_day: '2026-03-09' }) }));
+    const first = screen.getAllByRole('listitem')[0];
+    expect(first.textContent).toContain(`Reached out on ${formatCalendarDay('2026-03-09')}.`);
+    expect(first.textContent).not.toMatch(/Reached out by|null|undefined|unknown|your coach|staff/i);
+    expect(markButton(first).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('a 409 (no longer on the list) is a refusal stamp that stays, and the list is read again', async () => {
+    const fetchImpl = scriptedFetch(
+      { body: LIST },
+      {
+        status: 409,
+        body: { error: 'This athlete is not on the stopped-coming list now. Reload the page.', code: 'NOT_ON_STOPPED_COMING_LIST' },
+      },
+      { body: { ...LIST, athletes: [LIST.athletes[1]] } },
+    );
+    await renderPage(fetchImpl);
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1));
+    expect(requests(fetchImpl)[2][1]?.method).toBeUndefined();
+    const stamp = document.querySelector('[data-refusal-stamp="cannot_be_done"]') as HTMLElement;
+    expect(stamp).not.toBeNull();
+    // Words, not colour alone (Law 3), and nothing on it to dismiss it.
+    expect(stamp.textContent).toContain('CANNOT BE DONE');
+    expect(stamp.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Rosa D. is no longer on the stopped-coming list, so nothing was marked; the list has been read again.',
+    );
+    expect(within(stamp).queryByRole('button')).toBeNull();
+    expect(pageText()).not.toContain('Reload the page');
+    expect(screen.getAllByRole('listitem')[0].textContent).toContain('Jordan P.');
+  });
+
+  test('a 409 for another reason does not say they left the list', async () => {
+    const fetchImpl = scriptedFetch(
+      { body: LIST },
+      { status: 409, body: { error: 'The reached-out mark changed while it was being saved.', code: 'REACHED_OUT_MARK_CHANGED' } },
+      { body: LIST },
+    );
+    await renderPage(fetchImpl);
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(requests(fetchImpl)).toHaveLength(3));
+    const stamp = await waitFor(() => document.querySelector('[data-refusal-stamp="cannot_be_done"]') as HTMLElement);
+    expect(stamp.textContent).toContain('the server refused the change for Rosa D., so nothing was saved');
+    expect(stamp.textContent).not.toContain('no longer on the stopped-coming list');
+  });
+
+  test('the button waits while its request is on its way: no second PUT', async () => {
+    let answer: (reply: Reply) => void = () => {};
+    const held = new Promise<Reply>((resolve) => { answer = resolve; });
+    const fetchImpl = scriptedFetch({ body: LIST }, held, { body: firstMarked(MARK) });
+    await renderPage(fetchImpl);
+    const [first, second] = screen.getAllByRole('listitem');
+    await press(markButton(first));
+
+    expect(markButton(first).disabled).toBe(true);
+    expect(markButton(first).getAttribute('aria-busy')).toBe('true');
+    expect(markButton(first).textContent).toBe('Saving…');
+    expect(markButton(second).disabled).toBe(true);
+    await press(markButton(first));
+    await press(markButton(second));
+    expect(puts(fetchImpl)).toHaveLength(1);
+
+    await act(async () => {
+      answer({ body: { ok: true, outcome: 'marked' } });
+    });
+    await waitFor(() => expect(markButton(screen.getAllByRole('listitem')[0]).disabled).toBe(false));
+    expect(puts(fetchImpl)).toHaveLength(1);
+    expect(markButton(screen.getAllByRole('listitem')[0]).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test.each([
+    ['a dropped connection', 'network' as Reply],
+    ['a server error', { status: 500, body: { error: 'Internal' } } as Reply],
+  ])('%s on the press says it is not known whether it saved, and reads the list again', async (_label, reply) => {
+    const fetchImpl = scriptedFetch({ body: LIST }, reply, { body: LIST });
+    await renderPage(fetchImpl);
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(requests(fetchImpl)).toHaveLength(3));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('It is not known whether Rosa D. was marked as reached out; the list has been read again.');
+    expect(alert.textContent).not.toMatch(/Failed to fetch|Internal|500/);
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  test.each([
+    [401, 'signed_out'],
+    [403, 'wrong_door'],
+  ])('a press refused (%i) is the page\'s %s stamp, as a refused read is, and no rows stay', async (status, kind) => {
+    await renderPage(scriptedFetch({ body: LIST }, { status, body: { error: 'Forbidden' } }));
+    await press(markButton(screen.getAllByRole('listitem')[0]));
+
+    await waitFor(() => expect(document.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe(kind));
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  test.each([
+    ['no reached_out field', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30 }],
+    ['a mark with no day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Coach Ana T.' } }],
+  ])('a row with %s is not shown as unmarked: the page says it could not read the list', async (_label, athlete) => {
+    await renderPage(mockFetch({ body: { ...LIST, athletes: [athlete] } }));
+    expect(screen.getByRole('alert').textContent).toContain(READ_FAILED);
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  test('the mark button keeps the floor: a .btn at --tap with --t-md words, never the medical-stop mark', async () => {
+    await renderPage(mockFetch({ body: firstMarked(MARK) }));
+    for (const row of screen.getAllByRole('listitem')) {
+      const button = markButton(row);
+      // .btn is what the kiosk surface floors at --tap (kioskTapFloor.test.tsx; this page's layout is on its list).
+      expect(button.classList.contains('btn')).toBe(true);
+      expect(button.className).toContain('min-h-[var(--tap)]');
+      expect(button.className).toContain('text-[length:var(--t-md)]');
+      expect(button.className).not.toMatch(/locked|danger/);
+    }
+  });
 });
