@@ -382,6 +382,55 @@ describe('the queue never stops while saves wait', () => {
     expect(newer.save.onSaved).toHaveBeenCalledTimes(1);
   });
 
+  test('a sign-out while the same coach\'s save waits for their earlier request: the next person\'s save goes at once, and the waiting save is never sent', async () => {
+    const older: KeptSave = { label: 'Ada Reyes: here', send: jest.fn(() => new Promise<Response>(() => {})), onSaved: jest.fn() };
+    await keepSave(older);
+    await settle();
+    clearRoleSession();
+    createPersistentRoleSession('coach');
+    prepareSaveQueue();
+    await settle();
+    const newer = scriptedSave('Ada Reyes: not here', [answer(200)]);
+    await keepSave(newer.save);
+    await settle();
+    expect(newer.save.send).not.toHaveBeenCalled();
+    clearRoleSession();
+    sessionAccount = 'acct-b';
+    writeGymTabletSignedOutAt(Date.now());
+    createPersistentRoleSession('coach');
+    await settle();
+    const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    await keepSave(mine.save);
+    await settle();
+    expect(mine.save.onSaved).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(ANSWER_WAIT_MS);
+    expect(newer.save.send).not.toHaveBeenCalled();
+  });
+
+  test('after waiting for an earlier request, the account is checked again before the send', async () => {
+    let release: (value: Response) => void = () => {};
+    const older: KeptSave = {
+      label: 'Ada Reyes: here',
+      send: jest.fn(() => new Promise<Response>((resolve) => { release = resolve; })),
+      onSaved: jest.fn(),
+    };
+    await keepSave(older);
+    await settle();
+    clearRoleSession();
+    createPersistentRoleSession('coach');
+    prepareSaveQueue();
+    await settle();
+    const newer = scriptedSave('Ada Reyes: not here', [answer(200)]);
+    await keepSave(newer.save);
+    await settle();
+    // Meanwhile, someone else signed in (no mark): the check after the wait finds them.
+    sessionAccount = 'acct-b';
+    release(answer(200));
+    await settle();
+    expect(newer.save.send).not.toHaveBeenCalled();
+    expect(readSaveQueue().waiting).toEqual([]);
+  });
+
   test('a send that throws at once counts as unknown and is resent, leaving no stray timer', async () => {
     let calls = 0;
     const save: KeptSave = {

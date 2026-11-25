@@ -508,7 +508,23 @@ async function pump(): Promise<void> {
       dropAll();
       return;
     }
-    if (head.sends > 0 || rechecking || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
+    // This account's own earlier request, left running by a drop, lands first (or is given up on).
+    // A drop ends the wait, and after it the account is checked again before the send.
+    const earlier = leftRunning.filter((record) => record.owner === head.accountId).map((record) => record.done);
+    if (earlier.length > 0) {
+      let release: () => void = () => {};
+      const dropped = new Promise<void>((resolve) => {
+        release = resolve;
+        dropWaiters.add(resolve);
+      });
+      try {
+        await Promise.race([Promise.all(earlier), dropped]);
+      } finally {
+        dropWaiters.delete(release);
+      }
+      if (seen !== generation) return;
+    }
+    if (earlier.length > 0 || head.sends > 0 || rechecking || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
       const now = await signedInAccount();
       if (seen !== generation) return;
       if (boundaryNewer()) {
@@ -526,12 +542,6 @@ async function pump(): Promise<void> {
         return;
       }
       confirmAccount(now);
-    }
-    // This account's own earlier request, left running by a drop, lands first (or is given up on).
-    const earlier = leftRunning.filter((record) => record.owner === head.accountId).map((record) => record.done);
-    if (earlier.length > 0) {
-      await Promise.all(earlier);
-      if (seen !== generation) return;
     }
     let response: Response | null = null;
     let accountGone = false;
