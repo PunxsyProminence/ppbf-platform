@@ -1952,7 +1952,7 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
   });
 
   test("refused and nothing written: a copy of a withdrawn drill, a copy above its drill's current contact, another gym's block", async () => {
-    const { gym, scriptId, jab, spar } = await plan('copy-refused');
+    const { gym, scriptId, jab, mirror, spar } = await plan('copy-refused');
     const theirs = await plan('copy-theirs');
     const bytes = await storedBytes(gym, scriptId);
     const copyOf = (blockId: string) => edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: blockId, ...place }] });
@@ -1964,6 +1964,14 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     await expectRefused(copyOf(spar), 'SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL', 422);
     await expectRefused(copyOf(theirs.jab), 'SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND', 422);
     expect(await storedBytes(gym, scriptId)).toBe(bytes);
+    // A level off the ladder, which only a write outside the app could leave, is not carried (reviewer D).
+    await client.query(`update pilot.session_script_blocks set contact_level = 'full_contact' where organization_id = $1 and block_id = $2`, [
+      gym.organizationId,
+      mirror,
+    ]);
+    const withOddLevel = await storedBytes(gym, scriptId);
+    await expectRefused(copyOf(mirror), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
+    expect(await storedBytes(gym, scriptId)).toBe(withOddLevel);
   });
 
   test("a copy's drill is locked before the plan, so an import holding that drill then the plan queues with it", async () => {
