@@ -205,6 +205,18 @@ test('the count tiles still read zero when the read succeeded and nothing is ope
   expect(tileValues()).toEqual(['0', '0', '0', '0']);
 });
 
+test('the page says no email says what happened, and an alert email is only "open the app" (lane W4-1)', async () => {
+  mockAdminFetch({ escalations: [] });
+
+  const { container } = render(<EscalationsPage />);
+
+  await screen.findByText('Nothing in this view');
+  const text = container.textContent ?? '';
+  expect(text).toContain('No email says what happened');
+  expect(text).toContain('Staff who switch email alerts on get only “open the app”.');
+  expect(text).not.toContain('sends no email');
+});
+
 test('the count tiles count what was read', async () => {
   mockAdminFetch();
 
