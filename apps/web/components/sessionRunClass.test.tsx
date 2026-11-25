@@ -2,11 +2,12 @@
  * @jest-environment jsdom
  */
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import SessionClassPicker from './SessionClassPicker';
 import SessionRunClass, { tieSummary } from './SessionRunClass';
-import { createPersistentRoleSession } from '@/components/roleSession';
+import SaveQueueNotice from './SaveQueueNotice';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 // D4 (OD-2026-10-21-002): the class picker and the live screen's class line. The rules are the
@@ -252,5 +253,40 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     });
     expect(onClassChange).not.toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toBe('That class cannot be tied now.');
+  });
+
+  test('signing out drops a kept tie: its waiting words go', async () => {
+    jest.useFakeTimers();
+    serveTie('run-1', [], () => null);
+    await tieToYouth();
+    expect(screen.getByRole('status').textContent).toContain('not saved yet');
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  test('a refusal after the class line has gone from the page is said in the page\'s list, after the save\'s name', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    serveTie('run-2', [], () => 'class-youth');
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409);
+      }
+      return base(input, init);
+    });
+    await tieToYouth();
+    cleanup();
+    await act(async () => {
+      render(<SaveQueueNotice />);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText('Tie the session to Youth boxing: That class cannot be tied now.')).toBeTruthy();
   });
 });

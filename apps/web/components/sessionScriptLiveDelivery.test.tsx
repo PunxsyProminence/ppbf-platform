@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery';
 import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import { UNKNOWN_OUTCOME } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
@@ -2244,5 +2245,207 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(patchCalls(fetchMock)).toHaveLength(1);
     // The log waited behind the pause (one save at a time) and was dropped unsent.
     expect(logPostCalls(fetchMock)).toHaveLength(0);
+  });
+  async function logPair() {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await tap('Log intervention');
+  }
+
+  async function openLog() {
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+  }
+
+  const lost = (): never => {
+    throw new TypeError('Failed to fetch');
+  };
+
+  it('while a save waits, the console says beside its controls what is asked and not saved; the switch is described by it', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    await renderKept(liveRun(), {
+      patch: () => {
+        sends += 1;
+        return sends === 1 ? lost() : jsonResponse({ run: liveRun({ show_on_wall: true }) });
+      },
+    });
+    await tap('Allow on a TV', 'switch');
+    const line = screen.getByText(/^Not saved yet: Allow on a TV: on\. The buttons follow what you asked/);
+    expect(line.id).not.toBe('');
+    expect(screen.getByRole('switch', { name: 'Allow on a TV' })).toHaveAttribute('aria-describedby', line.id);
+    await wait(RESEND_MS);
+    expect(screen.queryByText(/^Not saved yet:/)).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Allow on a TV' })).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('a refused save gives back only what it asked while another save still waits', async () => {
+    jest.useFakeTimers();
+    let refusePause: ((response: Response) => void) | undefined;
+    await renderKept(liveRun(), {
+      patch: (body) => (body.action === 'pause'
+        ? new Promise<Response>((resolve) => {
+          refusePause = resolve;
+        })
+        : lost()),
+    });
+    await tap('Pause session');
+    await tap('Allow on a TV', 'switch');
+    expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
+    await act(async () => {
+      refusePause?.(jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    // The TV switch still waits; the pause is back to what the server holds.
+    expect(within(waitingLine() as HTMLElement).getByText('Allow on a TV: on')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Allow on a TV' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/^Not saved yet: Allow on a TV: on\./)).toBeInTheDocument();
+  });
+
+  it('a refused finish frees the controls at once, even while another save still waits', async () => {
+    jest.useFakeTimers();
+    let refuseFinish: ((response: Response) => void) | undefined;
+    await renderKept(liveRun(), {
+      patch: () => new Promise<Response>((resolve) => {
+        refuseFinish = resolve;
+      }),
+      logPost: lost,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await openLog();
+    await logPair();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    await act(async () => {
+      refuseFinish?.(jsonResponse({ error: 'SESSION_SCRIPT_RUN_NOT_IN_PROGRESS' }, false, 409));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause session' })).not.toBeDisabled();
+    expect(screen.queryByText(/^Ending this session is not saved yet/)).toBeNull();
+  });
+
+  it('signing out while a finish waits frees the controls and takes its words away', async () => {
+    jest.useFakeTimers();
+    await renderKept(liveRun(), { patch: lost });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.getByRole('button', { name: 'Pause session' })).not.toBeDisabled();
+    expect(screen.queryByText(/^Ending this session is not saved yet/)).toBeNull();
+  });
+
+  it('after a sign-out drops kept saves, the next kept save starts clean: nothing they asked, no count of them', async () => {
+    jest.useFakeTimers();
+    await renderKept(liveRun(), { patch: lost, logPost: lost });
+    await tap('Pause session');
+    await openLog();
+    await logPair();
+    await act(async () => {
+      clearRoleSession();
+    });
+    await act(async () => {
+      createPersistentRoleSession('coach');
+    });
+    await logPair();
+    expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeInTheDocument();
+    expect(screen.getByText('One intervention is not saved yet. This page keeps sending it while it stays open.')).toBeInTheDocument();
+  });
+
+  it('a refusal that comes after the console has gone is said in the page\'s list, its name once', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    const fetchMock = mockFetch({
+      session: signedIn,
+      patch: () => {
+        sends += 1;
+        return sends === 1 ? lost() : jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409);
+      },
+      runsGet: () => jsonResponse({}, false, 500),
+    });
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(
+        <>
+          <SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await tap('Pause session');
+    await act(async () => {
+      view?.rerender(<SaveQueueNotice />);
+    });
+    await wait(RESEND_MS);
+    expect(patchCalls(fetchMock)).toHaveLength(2);
+    expect(within(screen.getByRole('alert')).getByText(FAILED_WORDS)).toBeInTheDocument();
+    expect(screen.getByText(`Pause session: ${UNKNOWN_OUTCOME}`)).toBeInTheDocument();
+  });
+
+  it('a log refused because its key was another log\'s forgets that key: the next tap of the pair is a new log', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1
+          ? jsonResponse({ error: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED', code: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED' }, false, 409)
+          : jsonResponse({ item: { execution_id: 'exec-2', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+    });
+    await openLog();
+    await logPair();
+    await logPair();
+    const keys = logPostCalls(fetchMock).map((body) => body.request_key);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
+  it('a log answered 429 is "not now", not "no": kept and sent again with the same key', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1
+          ? jsonResponse({ error: 'RATE_LIMITED' }, false, 429)
+          : jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+    });
+    await openLog();
+    await logPair();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await wait(RESEND_MS);
+    const posted = logPostCalls(fetchMock);
+    expect(posted).toHaveLength(2);
+    expect(posted[1].request_key).toBe(posted[0].request_key);
+    expect(screen.getByText('logged')).toBeInTheDocument();
+  });
+
+  it('a refused log RESEND the ledger could not be checked for says the outcome is not known, in the log panel', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        return reads === 1 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
+      },
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain(`Intervention log: Round-3 endurance block: ${UNKNOWN_OUTCOME}`);
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
   });
 });

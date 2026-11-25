@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import { keepSave, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import type { ClassChoice } from '@/src/shared/sessionClassChoice';
 import SessionClassPicker, { classTimes, type ClassChoiceInfo } from './SessionClassPicker';
 
@@ -27,8 +27,10 @@ type Copied = { athlete_id: string; effect: string; previous_status?: string };
  * Words for a kept save whose resend was refused and could not be checked (W4 item 7): whether it
  * was saved is not known, so it is not called failed. Said where the coach tapped.
  */
+export const UNKNOWN_OUTCOME =
+  'the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.';
 export function unknownOutcomeWords(label: string): string {
-  return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
+  return `${label}: ${UNKNOWN_OUTCOME}`;
 }
 
 /**
@@ -102,6 +104,25 @@ export default function SessionRunClass({
   useEffect(() => {
     currentRun.current = runId;
   }, [runId]);
+  // A kept tie not yet saved, in words on this line. A drop (a sign-out) tells this line nothing:
+  // once nothing kept waits on the page, the words go.
+  const [waitingWords, setWaitingWords] = useState('');
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        const state = readSaveQueue();
+        if (state.waiting.length === 0 && state.checking === 0) setWaitingWords('');
+      }),
+    [],
+  );
+  // While this line is on the page; a refusal after it has gone gives its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
 
   // The class's name and times, read when the session is (or becomes) tied.
   useEffect(() => {
@@ -160,6 +181,7 @@ export default function SessionRunClass({
         return now.runId === runId && (now.view?.class_id ?? null) === next;
       },
       onSaved: (response) => {
+        setWaitingWords('');
         if (!forThisRun()) return;
         void (async () => {
           const payload = response
@@ -170,12 +192,16 @@ export default function SessionRunClass({
       },
       // Refused: said on this line, where the coach tapped.
       onRefused: (_response, landed) => {
+        setWaitingWords('');
         if (!forThisRun()) return undefined;
         if (refusal.error && RUN_GONE.has(refusal.error)) {
           onRunNotLive();
           return undefined;
         }
-        setMessage(landed === null ? unknownOutcomeWords(label) : refusal.message ?? 'The class could not be changed.');
+        const reason = refusal.message ?? 'The class could not be changed.';
+        // Off the page, the page's list says it, after the save's own name.
+        if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+        setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;
       },
     };
@@ -189,7 +215,7 @@ export default function SessionRunClass({
       const kept = keptTie(next);
       if ((await keepSave(kept)) === 'kept') {
         setChoosing(false);
-        setMessage(`${kept.label}: not saved yet. This page keeps sending it while it stays open.`);
+        setWaitingWords(`${kept.label}: not saved yet. This page keeps sending it while it stays open.`);
         return;
       }
       // Not kept (the page does not know who is signed in): sent once, as before.
@@ -265,7 +291,7 @@ export default function SessionRunClass({
         </div>
       )}
       <p role="status" className="t-body mt-[var(--s2)] text-[color:var(--brass-300)]">
-        {message}
+        {waitingWords || message}
       </p>
     </div>
   );

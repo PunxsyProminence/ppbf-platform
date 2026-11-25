@@ -13,7 +13,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
-import SessionRunClass, { unknownOutcomeWords } from '@/components/SessionRunClass';
+import SessionRunClass, { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import {
   emptySaveQueueState,
@@ -23,12 +23,6 @@ import {
   subscribeSaveQueue,
   type KeptSave,
 } from '@/src/lib/saveQueue';
-
-/** Nothing kept is waiting on this page (saved, refused, or dropped at a sign-out). */
-function queueIdle(): boolean {
-  const state = readSaveQueue();
-  return state.waiting.length === 0 && state.checking === 0;
-}
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 import type { GymTvListItem } from '@/src/server/pilot/gymTvs';
@@ -173,6 +167,12 @@ function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun
     default:
       return null;
   }
+}
+
+/** Nothing kept is waiting on this page (saved, refused, or dropped at a sign-out). */
+function queueIdle(): boolean {
+  const state = readSaveQueue();
+  return state.waiting.length === 0 && state.checking === 0;
 }
 
 type PendingRun = Partial<Pick<LiveSessionScriptRun, 'is_paused' | 'show_on_wall' | 'current_block_id'>>;
@@ -370,7 +370,8 @@ export default function SessionScriptLiveDelivery({
   // Run actions kept and not yet saved (W4 item 7): what they ask for, so the next tap works from
   // what the coach asked, not from the run as last read. What is shown as the run stays the server's.
   const [pendingRun, setPendingRun] = useState<PendingRun>({});
-  // A sign-out drops kept saves without a word to this screen: with nothing waiting, nothing is asked.
+  // What was asked shows only while the page holds a kept save: before the queue takes a tap, and
+  // on today's path (not kept), the console shows the server's run as before.
   const savesState = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
   const nothingWaiting = savesState.waiting.length === 0 && savesState.checking === 0;
   const asked = nothingWaiting ? run : { ...run, ...pendingRun };
@@ -424,7 +425,28 @@ export default function SessionScriptLiveDelivery({
   // No run action while one is in hand, or once a finish is kept: it cannot be taken back, and an
   // action queued behind it would only be refused once the session has ended.
   const finishWaiting = finishKept && !nothingWaiting;
-  const controlsLocked = actionBusy !== null || finishWaiting;
+  const controlsLocked = actionBusy !== null || finishKept;
+  // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
+  // the badge, the block and the switch's state as saved are the server's.
+  const askedNotSaved = [
+    asked.is_paused !== run.is_paused ? (asked.is_paused ? 'Pause session' : 'Resume session') : null,
+    asked.current_block_id !== run.current_block_id
+      ? runActionLabel({ action: 'advance', to_block_id: asked.current_block_id }, blocks)
+      : null,
+    asked.show_on_wall !== run.show_on_wall
+      ? runActionLabel({ action: 'show_on_wall', show: asked.show_on_wall }, blocks)
+      : null,
+  ].filter((words): words is string => words !== null);
+  const askedLineId = `asked-not-saved-${run.run_id}`;
+  // While this console is on the page; a save that resolves after it has gone gives its words to
+  // the page's list instead, so they are said somewhere.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
   const settledByThisConsole = useCallback((settled: SettledRunSummary) => {
     settledHere.current = true;
     onSettled(settled);
@@ -484,6 +506,18 @@ export default function SessionScriptLiveDelivery({
   useEffect(() => {
     loggedRef.current = loggedInterventions;
   }, [loggedInterventions]);
+  // A drop (a sign-out, another account, a 401) tells this screen nothing: once nothing kept is
+  // waiting on the page, nothing is asked, no finish waits and no log waits here either.
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        if (!queueIdle()) return;
+        setPendingRun({});
+        setFinishKept(false);
+        setLogsWaiting(0);
+      }),
+    [],
+  );
 
   // ONE TAP, ONE INTERVENTION (finding F-135). A read that finds nothing does not prove a write
   // still in flight will not commit after it, so a retry must not be a new log. Each tap of an
@@ -604,11 +638,10 @@ export default function SessionScriptLiveDelivery({
         onRefused: (response, landed) => {
           settleOnce();
           if (refusal.code === 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED') forgetPairKey();
-          setLogError(
-            landed === null
-              ? unknownOutcomeWords(label)
-              : refusalWords({ error: refusal.error, status: response.status }, {}, 'The intervention was not logged.'),
-          );
+          const reason = refusalWords({ error: refusal.error, status: response.status }, {}, 'The intervention was not logged.');
+          // Off the page, the page's list says it, after the save's own name.
+          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+          setLogError(landed === null ? unknownOutcomeWords(label) : reason);
           return undefined;
         },
       };
@@ -656,7 +689,10 @@ export default function SessionScriptLiveDelivery({
       const queueWasIdle = queueIdle();
       setLogsWaiting((count) => (queueWasIdle ? 0 : count) + 1);
       const kept = await keepSave(
-        keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, before, requestKey, () => keys.delete(pair)),
+        // Forgets the pair's key only while it is still this tap's: never a newer tap's key.
+        keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, before, requestKey, () => {
+          if (keys.get(pair) === requestKey) keys.delete(pair);
+        }),
       );
       if (kept === 'kept') {
         setLogProtocolId('');
@@ -895,7 +931,10 @@ export default function SessionScriptLiveDelivery({
             return undefined;
           }
           // A refused resend that could not be checked: whether an earlier send landed is not known.
-          setActionError(landed === null ? unknownOutcomeWords(label) : describeRunError(refusal.error, response.status));
+          const reason = describeRunError(refusal.error, response.status);
+          // Off the page, the page's list says it, after the save's own name.
+          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+          setActionError(landed === null ? unknownOutcomeWords(label) : reason);
           return undefined;
         },
       };
@@ -1109,6 +1148,12 @@ export default function SessionScriptLiveDelivery({
         )}
       </div>
 
+      {askedNotSaved.length > 0 && (
+        <p id={askedLineId} role="status" className="t-body mt-[var(--s2)] text-[length:var(--t-md)]">
+          Not saved yet: {askedNotSaved.join('; ')}. The buttons follow what you asked; the session shown is what the server holds.
+        </p>
+      )}
+
       {/* The coach's "Allow on a TV" switch (Overwatch's 6a ruling; Q2 = A). Off by default on
           every run: a private lesson stays off the gym wall unless the coach allows it. The button
           sends the value it wants, not "toggle", so a retried tap cannot flip it back; its state is
@@ -1120,6 +1165,7 @@ export default function SessionScriptLiveDelivery({
           type="button"
           role="switch"
           aria-checked={asked.show_on_wall}
+          aria-describedby={asked.show_on_wall !== run.show_on_wall ? askedLineId : undefined}
           onClick={() => void mutateRun({ action: 'show_on_wall', show: !asked.show_on_wall }, 'show-on-wall')}
           disabled={controlsLocked}
           className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"

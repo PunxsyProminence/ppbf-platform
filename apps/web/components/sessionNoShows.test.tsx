@@ -2,10 +2,11 @@
  * @jest-environment jsdom
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import SessionNoShows from './SessionNoShows';
-import { createPersistentRoleSession } from '@/components/roleSession';
+import SaveQueueNotice from './SaveQueueNotice';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 // The End Session no-shows offer (OD-2026-10-21-004 ruling 3, "A: Offer it (Rec.)"). Which athletes
@@ -195,5 +196,31 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     serveKept(() => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409), () => 2);
     const onRunNotLive = await tapMark();
     expect(onRunNotLive).toHaveBeenCalledTimes(1);
+  });
+
+  test('signing out drops a kept tap: the button is free again and its waiting words go', async () => {
+    jest.useFakeTimers();
+    serveKept(() => 'throw', () => 2);
+    await tapMark();
+    expect((screen.getByRole('button', { name: 'Mark all 2 Absent' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect((screen.getByRole('button', { name: 'Mark all 2 Absent' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/not saved yet/)).toBeNull();
+  });
+
+  test('a refusal after the offer has gone from the page is said in the page\'s list, after the save\'s name', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2), 'run-2');
+    await tapMark();
+    cleanup();
+    await act(async () => {
+      render(<SaveQueueNotice />);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText('Mark the no-shows Absent: Not yet.')).toBeTruthy();
   });
 });

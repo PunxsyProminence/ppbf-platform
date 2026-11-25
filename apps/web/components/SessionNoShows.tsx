@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
-import { type RunClassView, fetchLiveRunClass, fetchRunClass, unknownOutcomeWords } from './SessionRunClass';
+import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { type RunClassView, fetchLiveRunClass, fetchRunClass, UNKNOWN_OUTCOME, unknownOutcomeWords } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
 // it (Rec.)"): one tap marks Absent everyone signed up for the class who has no mark. Never
@@ -60,8 +60,22 @@ export default function SessionNoShows({
   // A kept tap not yet saved: the button waits too, so the same tap is not kept twice. A sign-out
   // drops it without a word here, so with nothing waiting on the page, nothing waits here either.
   const [waiting, setWaiting] = useState(false);
-  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
-  const waitingShown = waiting && (saves.waiting.length > 0 || saves.checking > 0);
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        const state = readSaveQueue();
+        if (state.waiting.length === 0 && state.checking === 0) setWaiting(false);
+      }),
+    [],
+  );
+  // While this offer is on the page; a refusal after it has gone gives its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
 
   // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Marking the no-shows
   // again marks nobody new (OQ-1's repeat proofs). A refused RESEND is checked against the count the
@@ -115,7 +129,10 @@ export default function SessionNoShows({
           onRunNotLive();
           return undefined;
         }
-        setMessage(landed === null ? unknownOutcomeWords(label) : refusal.message ?? 'Nobody was marked Absent.');
+        const reason = refusal.message ?? 'Nobody was marked Absent.';
+        // Off the page, the page's list says it, after the save's own name.
+        if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+        setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;
       },
     };
@@ -175,12 +192,12 @@ export default function SessionNoShows({
           <p className="t-body">
             {view.no_shows} signed up for {view.title} {view.no_shows === 1 ? 'has' : 'have'} no mark on its register or in any session today.
           </p>
-          <button type="button" onClick={() => void markNoShows()} disabled={busy || waitingShown} className="btn btn--ghost disabled:opacity-60">
+          <button type="button" onClick={() => void markNoShows()} disabled={busy || waiting} className="btn btn--ghost disabled:opacity-60">
             {busy ? 'Marking…' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
           </button>
         </div>
       )}
-      {waitingShown && (
+      {waiting && (
         <p role="status" className="t-body">Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.</p>
       )}
       {message && <p role="alert" className="t-body font-semibold">{message}</p>}
