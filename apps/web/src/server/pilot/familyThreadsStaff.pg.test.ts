@@ -487,4 +487,41 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     }
     expect((await counts(client)).posts).toBe(2);
   });
+  test("the unseen count (Q4.5 A): the child's coach and an active covering coach, admins the gym; guardian posts this staff member has not seen, on live athletes", async () => {
+    const client = await freshDatabase('fts_unseen');
+    const first = await open(GUARDIAN);
+    await reply(COACH, first.thread_id); // a staff post: never counted
+    await threads.writeAgainInFamilyThread({ organizationId: ORG, accountId: GUARDIAN, threadId: first.thread_id, text: 'Thank you!' });
+    await open(CO_GUARDIAN);
+    await open(GUARDIAN, SIBLING);
+    await open(OTHER_GYM_GUARDIAN, CHILD, OTHER_ORG);
+    // The second coach covers the sibling now; their cover of the child has ended.
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour'),
+              ($1, $5, $3, $4, now() - interval '2 hours', now() - interval '1 hour')`,
+      [ORG, SIBLING, SECOND_COACH, GYM_ADMIN, CHILD],
+    );
+    const count = (account: string, role: PilotRole = 'coach', org = ORG) =>
+      threads.countUnseenFamilyThreadPostsForStaff(staff(account, role, org));
+
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(SECOND_COACH)).toEqual([{ athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(OTHER_GYM_COACH, 'coach', OTHER_ORG)).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    expect(await count(SEATLESS_COACH)).toEqual([]);
+
+    // Each staff member's own reads; a staff post is never counted.
+    await threads.recordFamilyThreadReadByStaff(staff(COACH), first.post_id);
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 2 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, SIBLING]);
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 2 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }]);
+
+    for (const role of ['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
+      await expect(count(GUARDIAN, role)).rejects.toThrow('Forbidden');
+    }
+  });
 });
