@@ -555,7 +555,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     }) as unknown as typeof fetch;
   }
 
-  async function openKept(props: { kept?: boolean; finishWaiting?: boolean; onKeptRefused?: (words: string) => void } = {}) {
+  async function openKept(props: { kept?: boolean; finishWaiting?: boolean; onKeptRefused?: (words: string, noteText: string) => void } = {}) {
     prepareSaveQueue();
     let view: ReturnType<typeof render> | undefined;
     await act(async () => {
@@ -753,26 +753,51 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(draftField().value).toBe('Second');
   });
 
-  test('with the panel closed, the waiting line stays beside its button, and a refusal is handed to the live list, not the page\'s; its reason and words are in the panel when opened', async () => {
+  test('with the panel closed, the waiting line stays beside its button, and a refusal is handed to the live list with its words kept apart; they come back into the box when the notes are opened', async () => {
     jest.useFakeTimers();
-    const onKeptRefused = jest.fn();
+    let returned: string | undefined;
+    const onKeptRefused = jest.fn((_words: string, noteText: string) => {
+      returned = noteText;
+    });
     serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
-    await openKept({ onKeptRefused });
+    const view = await openKept({ onKeptRefused });
     await addNote('Wrist taped.');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
     });
     expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
     await wait(RESEND_MS);
-    expect(onKeptRefused).toHaveBeenCalledWith('a new note was not saved: That athlete is not marked here. Its words: “Wrist taped.”');
+    expect(onKeptRefused).toHaveBeenCalledWith(
+      'a new note was not saved: That athlete is not marked here. Its words are back in the box when the notes are opened.',
+      'Wrist taped.',
+    );
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    // The list hands the words back; opening puts them in the box, once.
+    const onWordsReturned = jest.fn();
+    await act(async () => {
+      view.rerender(
+        <>
+          <SessionStaffNotesPanel
+            runId="ssrun 1"
+            athleteId="ath-1"
+            buttonLabel="Staff notes on Ada Reyes"
+            keptOnThisPage
+            onKeptRefused={onKeptRefused}
+            returnedWords={returned}
+            onWordsReturned={onWordsReturned}
+          />
+          <SaveQueueNotice />
+        </>,
+      );
+    });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByText('NOT SAVED')).toBeTruthy();
-    expect(screen.getByText('That athlete is not marked here. Its words: “Wrist taped.”')).toBeTruthy();
     expect(draftField().value).toBe('Wrist taped.');
+    expect(onWordsReturned).toHaveBeenCalledTimes(1);
+    // Said once, in the list: not again in the panel.
+    expect(screen.queryByText('NOT SAVED')).toBeNull();
   });
 
   test('a refused note whose box now holds the next note keeps its words in the refusal; the next note stays', async () => {
@@ -804,7 +829,8 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
     });
     await wait(RESEND_MS);
-    expect(onKeptRefused).toHaveBeenCalledWith('whether a new note was saved is not known. Check the notes before writing it again. Its words: “Wrist taped.”');
+    // Not known, and its words are not handed back: it may have been written.
+    expect(onKeptRefused).toHaveBeenCalledWith('whether a new note was saved is not known. Check the notes before writing it again.', '');
   });
 
   test('a closed panel with no live list to tell says its refusal in the page\'s list', async () => {

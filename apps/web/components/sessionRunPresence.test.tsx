@@ -1168,7 +1168,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
 });
 
 
-test('on the live floor, a note refused with its panel closed is said named in the list\'s alert and outlasts a filter', async () => {
+test('on the live floor, notes refused with the panel closed are each said, named, without their words, through a filter; the words come back into the box', async () => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   createPersistentRoleSession('coach');
@@ -1186,9 +1186,12 @@ test('on the live floor, a note refused with its panel closed is said named in t
       if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
         if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
         posts += 1;
+        // The first note's first send is lost; every send after is refused.
         if (posts === 1) throw new TypeError('Failed to fetch');
         return answer({ error: 'That athlete is not marked here.' }, 409);
       }
+      // A tap of Ada is refused: its words sit beside her notes' refusals, never in their place.
+      if (url === URL_FOR && init?.method === 'POST') return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
       if (url === URL_FOR) return answer({ present: [{ ...ADA, marked_at: 'x' }], gym: [ADA, BEN, CY] });
       return answer({});
     }) as unknown as typeof fetch;
@@ -1206,23 +1209,38 @@ test('on the live floor, a note refused with its panel closed is said named in t
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
     });
-    fireEvent.change(screen.getByLabelText(/New note/), { target: { value: 'Wrist taped.' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
+    for (const words of ['First note.', 'Second note.']) {
+      fireEvent.change(screen.getByLabelText(/New note/), { target: { value: words } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+        await jest.advanceTimersByTimeAsync(0);
+      });
+    }
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
     });
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS);
+      await jest.advanceTimersByTimeAsync(RESEND_MS * 2);
     });
-    const words = 'Ada Reyes: a new note was not saved: That athlete is not marked here. Its words: “Wrist taped.”';
-    expect(screen.getByText(words)).toBeTruthy();
-    // Filtered away and back: the row remounts; the words stay.
+    const said = 'Ada Reyes: a new note was not saved: That athlete is not marked here. Its words are back in the box when the notes are opened.';
+    expect(screen.getAllByText(said)).toHaveLength(2);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Here Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('Ada Reyes: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
+    expect(screen.getAllByText(said)).toHaveLength(2);
+    // The words are not shown on the floor.
+    expect(screen.queryByText(/First note\.|Second note\./)).toBeNull();
+    // Filtered away and back: the row remounts; the words are still kept, and come back when the notes open.
     fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: 'Ben' } });
     fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: '' } });
-    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.getAllByText(said)).toHaveLength(2);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('First note.\n\nSecond note.');
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
   } finally {
     act(() => {

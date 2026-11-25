@@ -290,14 +290,40 @@ export default function SessionRunPresence({
   // several at once when the connection returns: each stays until that athlete's next tap is saved or
   // the coach taps OK, never cleared by an unrelated tap.
   const [keptRefusals, setKeptRefusals] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
+  // Refused new notes' words, by athlete, out of sight until that athlete's notes are opened.
+  const [noteWords, setNoteWords] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
+  const noteRefusals = useRef(0);
   // They name athletes: a sign-out takes them off the screen at once (a shared floor tablet).
   useEffect(
     () =>
       subscribeRoleSession(() => {
-        if (!getRoleSessionSnapshot()) setKeptRefusals(NO_REFUSALS);
+        if (!getRoleSessionSnapshot()) {
+          setKeptRefusals(NO_REFUSALS);
+          setNoteWords(NO_REFUSALS);
+        }
       }),
     [],
   );
+  // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
+  // words kept for the box.
+  const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string) => {
+    noteRefusals.current += 1;
+    const key = `note ${athlete.athlete_id} ${noteRefusals.current}`;
+    setKeptRefusals((current) => new Map(current).set(key, `${athlete.full_name}: ${words}`));
+    if (!noteText) return;
+    setNoteWords((current) => {
+      const earlier = current.get(athlete.athlete_id);
+      return new Map(current).set(athlete.athlete_id, earlier ? `${earlier}\n\n${noteText}` : noteText);
+    });
+  }, []);
+  const wordsReturned = useCallback((athleteId: string) => {
+    setNoteWords((current) => {
+      if (!current.has(athleteId)) return current;
+      const next = new Map(current);
+      next.delete(athleteId);
+      return next;
+    });
+  }, []);
   const forgetRefusal = useCallback((athleteId: string) => {
     setKeptRefusals((current) => {
       if (!current.has(athleteId)) return current;
@@ -684,7 +710,9 @@ export default function SessionRunPresence({
                               buttonLabel={`Staff notes on ${athlete.full_name}`}
                               keptOnThisPage
                               isFinishWaiting={isFinishWaiting}
-                              onKeptRefused={(words) => setKeptRefusals((current) => new Map(current).set(`note ${athlete.athlete_id}`, `${athlete.full_name}: ${words}`))}
+                              onKeptRefused={(words, noteText) => noteRefused(athlete, words, noteText)}
+                              returnedWords={noteWords.get(athlete.athlete_id)}
+                              onWordsReturned={() => wordsReturned(athlete.athlete_id)}
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                           </>

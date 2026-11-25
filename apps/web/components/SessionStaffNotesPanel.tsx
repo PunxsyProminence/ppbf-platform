@@ -87,10 +87,13 @@ export default function SessionStaffNotesPanel(
      * The live floor: a kept note refused while this panel is closed is handed to the list that mounts
      * it, which names the athlete and keeps the words through a remount of this row.
      */
-    onKeptRefused?: (words: string) => void;
+    onKeptRefused?: (words: string, noteText: string) => void;
+    /** Refused notes' words the list kept while this panel was closed: they go back into the box when it opens. */
+    returnedWords?: string;
+    onWordsReturned?: () => void;
   },
 ) {
-  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting, onKeptRefused } = props;
+  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting, onKeptRefused, returnedWords, onWordsReturned } = props;
   const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
   const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
@@ -107,11 +110,6 @@ export default function SessionStaffNotesPanel(
   // read started, is dropped -- so a panel never reopens itself.
   const latestRead = useRef(0);
   const isOpen = useRef(false);
-  // A loaded list is on the screen: only then may a kept note's landing read it again quietly.
-  const listShown = useRef(false);
-  useEffect(() => {
-    listShown.current = reading.state === 'loaded';
-  }, [reading.state]);
   // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
   // page (a sign-out drop tells this panel nothing otherwise).
   const [waitingWrites, setWaitingWrites] = useState(0);
@@ -196,9 +194,14 @@ export default function SessionStaffNotesPanel(
       // the panel is still there to read when it is opened again.
       setRefusal(null);
     } else {
+      // Refused notes' words kept by the list come back into the box, after anything already in it.
+      if (returnedWords) {
+        setDraft((current) => (current === '' ? returnedWords : `${current}\n\n${returnedWords}`));
+        onWordsReturned?.();
+      }
       void read();
     }
-  }, [read]);
+  }, [onWordsReturned, read, returnedWords]);
 
   // One write path for add, change and remove. `done` runs only on the
   // server's own yes; the list is then re-read (unless the coach closed the
@@ -263,29 +266,34 @@ export default function SessionStaffNotesPanel(
         },
         onSaved: () => {
           settle();
-          if (onPage.current && isOpen.current) void read(listShown.current);
+          if (onPage.current && isOpen.current) void read(true);
         },
         // Refused: said in this panel, where the coach wrote, with the note's own words (the box may hold
         // the next note by now); a refused note's words also go back into an empty box (a not-known one
         // may have been written, so they do not).
         onRefused: (_response, landed) => {
           settle();
+          // The panel closed: handed to the list, which names the athlete (never the note's words, which
+          // stay out of sight on the floor) and keeps a refused note's words for the box until the
+          // notes are opened, even if this row is filtered away and back.
+          if (onPage.current && !isFinishWaiting?.() && !isOpen.current && onKeptRefused) {
+            onKeptRefused(
+              landed === null
+                ? 'whether a new note was saved is not known. Check the notes before writing it again.'
+                : `a new note was not saved: ${reason} Its words are back in the box when the notes are opened.`,
+              landed === null ? '' : what.text.trim(),
+            );
+            return undefined;
+          }
           if (landed === false) setDraft((current) => (current === '' ? what.text : current));
-          const itsWords = ` Its words: “${what.text.trim()}”`;
           // Off the page, or while a kept finish waits (or with no list to tell): said in the page's list.
-          if (!onPage.current || isFinishWaiting?.() || (!isOpen.current && !onKeptRefused)) {
+          if (!onPage.current || isFinishWaiting?.() || !isOpen.current) {
             return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
           }
+          const itsWords = ` Its words: “${what.text.trim()}”`;
           setRefusal(landed === null
             ? { heading: 'NOT KNOWN', text: `${unknownOutcomeWords(label)}${itsWords}` }
             : { heading: failed.heading, text: `${reason}${itsWords}` });
-          // The panel closed: handed to the list, which names the athlete and keeps the words even if
-          // this row is filtered away and back.
-          if (!isOpen.current) {
-            onKeptRefused?.(landed === null
-              ? `whether a new note was saved is not known. Check the notes before writing it again.${itsWords}`
-              : `a new note was not saved: ${reason}${itsWords}`);
-          }
           // The list as last read stays (a read again that fails would hide the words).
           return undefined;
         },
