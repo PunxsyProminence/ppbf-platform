@@ -2647,6 +2647,73 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(last.request_key).not.toBe(posted[0].request_key);
   });
 
+  it('a pair key first sent on today\'s path that replays the last person\'s log is theirs: the next account\'s log is sent again under its own key, and written', async () => {
+    jest.useFakeTimers();
+    let checks = 0;
+    let firstKey: unknown;
+    const { fetchMock } = await renderKept(liveRun(), {
+      // The page cannot tell who is signed in at first, so the first log goes today's way.
+      session: () => {
+        checks += 1;
+        return checks <= 2 ? jsonResponse({}, false, 500) : jsonResponse({ authenticated: true, account_id: 'acct-b' });
+      },
+      logPost: (body) => {
+        if (firstKey === undefined) {
+          // Today's path: it reached the server and wrote the last person's log; the answer was lost.
+          firstKey = body.request_key;
+          return lost();
+        }
+        if (body.request_key === firstKey) {
+          return jsonResponse({ item: { execution_id: 'exec-a', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-a' }, replayed: true });
+        }
+        return jsonResponse({ item: { execution_id: 'exec-b', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-b' } });
+      },
+    });
+    await openLog();
+    await logPair();
+    expect(logPostCalls(fetchMock)[0].made_by_account_id).toBeUndefined();
+    // Someone else, now known to the page, logs the same pair.
+    await logPair();
+    await wait(RESEND_MS);
+    const posted = logPostCalls(fetchMock);
+    expect(posted).toHaveLength(3);
+    expect(posted[1]).toEqual(expect.objectContaining({ request_key: firstKey, made_by_account_id: 'acct-b' }));
+    expect(posted[2]).toEqual(expect.objectContaining({ made_by_account_id: 'acct-b' }));
+    expect(posted[2].request_key).not.toBe(firstKey);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
+  it('the next account\'s two taps of a pair whose key is not theirs carry one key of their own: one log, never two (F-135)', async () => {
+    jest.useFakeTimers();
+    let account = 'acct-a';
+    let bPosts = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      session: () => jsonResponse({ authenticated: true, account_id: account }),
+      logPost: (body) => {
+        if (body.made_by_account_id === 'acct-a') return lost();
+        bPosts += 1;
+        if (bPosts === 1) return lost();
+        return jsonResponse({ item: { execution_id: 'exec-b', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-b' } });
+      },
+    });
+    await openLog();
+    await logPair();
+    account = 'acct-b';
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await logPair();
+    await logPair();
+    await wait(RESEND_MS);
+    const posted = logPostCalls(fetchMock);
+    const bKeys = posted.filter((body) => body.made_by_account_id === 'acct-b').map((body) => body.request_key);
+    expect(bKeys.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(bKeys).size).toBe(1);
+    expect(bKeys[0]).not.toBe(posted[0].request_key);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
   it('the same coach keeps a pair\'s key across a drop: a log retried after a 401 is the same log, never a second', async () => {
     jest.useFakeTimers();
     let posts = 0;
