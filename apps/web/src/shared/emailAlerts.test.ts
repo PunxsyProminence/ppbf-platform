@@ -63,6 +63,15 @@ describe('the events each user type can be sent (EM-5)', () => {
     });
   });
 
+  it('the gym-choice table allows exactly the same three user types', () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_email_alert_events_migration.sql'),
+      'utf8',
+    );
+    const match = sql.match(/check \(user_type in \(([^)]*)\)\)/);
+    expect(match?.[1].split(',').map((part) => part.trim().replace(/'/g, ''))).toEqual([...EMAIL_ALERT_USER_TYPES]);
+  });
+
   it('every key has the shape the table CHECK allows', () => {
     const sql = fs.readFileSync(
       path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_email_alert_events_migration.sql'),

@@ -5,8 +5,8 @@
 // send the email alert; OW27-39 A: every event starts ticked). './db' is mocked
 // to route into the embedded server (the tabletIdlePolicy.pg.test.ts pattern;
 // withTransaction runs a real BEGIN/COMMIT/ROLLBACK), so the module's real SQL
-// and audit.ts's run against real rows. The runner is driven through its real
-// entrypoint, so its readiness check runs against a real Postgres here.
+// and audit.ts's run against real rows. The table is made through the runner's
+// applyMigrationTransaction, so its readiness check runs here too.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -116,7 +116,6 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** The full schema, two gyms, and one account of each kind in the first. */
 
 /** The full schema, two gyms, two gym admins and a coach in the first. */
 async function freshDatabase(name: string, { preMigration = false } = {}): Promise<Client> {
@@ -322,6 +321,83 @@ describe('emailAlertGymEvents.ts on a real database', () => {
       await expect(isGymEmailAlertEventTicked(ORG_ID, 'parent', 'coach_message')).resolves.toBe(false);
       await expect(isGymEmailAlertEventTicked(ORG_ID, 'staff', 'retired_event')).resolves.toBe(false);
       await expect(readGymEmailAlertEvents(ORG_ID)).resolves.toEqual(ALL_TICKED);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every user type stores its own choices: staff, parents and adult athletes', async () => {
+    const client = await freshDatabase('emailev_types');
+    activeClient = client;
+    try {
+      for (const [userType, eventKind] of [['staff', 'safety_escalation'], ['parent', 'gym_notice'], ['adult_athlete', 'coach_message']]) {
+        await setGymEmailAlertEvent({
+          organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin', userType, eventKind, ticked: false,
+        });
+        await expect(isGymEmailAlertEventTicked(ORG_ID, userType as 'staff', eventKind)).resolves.toBe(false);
+      }
+      expect((await choiceRows(client)).map((row) => `${row.user_type}:${row.event_kind}:${row.ticked}`)).toEqual([
+        'adult_athlete:coach_message:false', 'parent:gym_notice:false', 'staff:safety_escalation:false',
+      ]);
+      // Each user type's gym notice is its own choice.
+      await expect(isGymEmailAlertEventTicked(ORG_ID, 'staff', 'gym_notice')).resolves.toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('saving the value that already applies writes no row and no audit', async () => {
+    const client = await freshDatabase('emailev_unchanged');
+    activeClient = client;
+    try {
+      // Ticked is the starting value: ticking it again changes nothing.
+      await expect(setGymEmailAlertEvent({
+        organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin',
+        userType: 'staff', eventKind: 'gym_notice', ticked: true,
+      })).resolves.toEqual({ user_type: 'staff', event_kind: 'gym_notice', ticked: true, is_default: true });
+      expect(await choiceRows(client)).toEqual([]);
+
+      await setGymEmailAlertEvent({
+        organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin',
+        userType: 'staff', eventKind: 'gym_notice', ticked: false,
+      });
+      await expect(setGymEmailAlertEvent({
+        organizationId: ORG_ID, actorAccountId: SECOND_ADMIN_ID, actorRole: 'organization_admin',
+        userType: 'staff', eventKind: 'gym_notice', ticked: false,
+      })).resolves.toEqual({ user_type: 'staff', event_kind: 'gym_notice', ticked: false, is_default: false });
+      // One change, one audit row; the second admin's save of the same value is not a change.
+      expect((await auditRows(client)).map((row) => row.actor_account_id)).toEqual([ADMIN_ID]);
+      expect((await choiceRows(client))[0].set_by_account_id).toBe(ADMIN_ID);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('two admins save at once, on separate connections: both succeed and the audit chain is consistent', async () => {
+    const client = await freshDatabase('emailev_concurrent');
+    activePool = new Pool({ connectionString: connectionStringFor('emailev_concurrent'), max: 4 });
+    try {
+      const results = await Promise.allSettled([
+        [ADMIN_ID, false], [SECOND_ADMIN_ID, true], [ADMIN_ID, false],
+      ].map(([actorAccountId, ticked]) => setGymEmailAlertEvent({
+        organizationId: ORG_ID, actorAccountId: actorAccountId as string, actorRole: 'organization_admin',
+        userType: 'staff', eventKind: 'gym_notice', ticked,
+      })));
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+      // Saves of an unchanged value write nothing, so the chain may be shorter
+      // than three, but each audit row's old value is the one before it wrote,
+      // and only the first can have started from the starting value.
+      const chain = (await auditRows(client)).map((row) => row.details as {
+        ticked: boolean; previous_ticked: boolean; previous_was_default: boolean;
+      });
+      expect(chain.length).toBeGreaterThanOrEqual(1);
+      expect(chain[0]).toMatchObject({ previous_ticked: true, previous_was_default: true });
+      for (let i = 1; i < chain.length; i += 1) {
+        expect(chain[i].previous_ticked).toBe(chain[i - 1].ticked);
+        expect(chain[i].previous_was_default).toBe(false);
+      }
+      const { rows } = await client.query('select count(*)::int as n from pilot.organization_email_alert_events');
+      expect(rows[0].n).toBe(1);
     } finally {
       await client.end();
     }

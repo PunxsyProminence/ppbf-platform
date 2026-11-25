@@ -16,7 +16,8 @@
  * isGymEmailAlertEventTicked with no person attached.
  *
  * Each change writes one audit row (user type, event, ticked before and after)
- * in the same transaction. No person data is stored or audited here.
+ * in the same transaction; saving the value that already applies writes
+ * nothing. No person data is stored or audited here.
  */
 
 import {
@@ -59,6 +60,13 @@ export async function readGymEmailAlertEvents(organizationId: string): Promise<G
 /**
  * Whether this gym sends this event to this user type. An event not on the
  * user type's list is never sent, whatever is stored.
+ *
+ * A GYM-LEVEL ANSWER ONLY. With no row it answers true for any gym id, an
+ * unknown or suspended one included, and for 'adult_athlete' it says nothing
+ * about any person's age. The sender (EM-3, EM-4) must still check, before
+ * every send, the person's own switch, their role, their age (isMinor, an
+ * unknown date of birth counting as a minor), that their sign-in is on and
+ * that the gym is active.
  */
 export async function isGymEmailAlertEventTicked(
   organizationId: string,
@@ -107,6 +115,14 @@ export async function setGymEmailAlertEvent(input: {
         for update`,
       [input.organizationId, userType, eventKind],
     );
+    const previous = before.rows[0];
+    const previousTicked = previous ? previous.ticked : true;
+    // Only a change is written and audited: saving the value that already
+    // applies (a stored choice, or the starting value) leaves the row and the
+    // audit stream as they are.
+    if (previousTicked === ticked) {
+      return { user_type: userType, event_kind: eventKind, ticked, is_default: !previous };
+    }
     await client.query(
       `insert into pilot.organization_email_alert_events
          (organization_id, user_type, event_kind, ticked, set_by_account_id, set_at)
@@ -117,7 +133,6 @@ export async function setGymEmailAlertEvent(input: {
              set_at = excluded.set_at`,
       [input.organizationId, userType, eventKind, ticked, input.actorAccountId],
     );
-    const previous = before.rows[0];
     await writePilotAuditEvent({
       event_type: 'update',
       actor_account_id: input.actorAccountId,
@@ -129,7 +144,7 @@ export async function setGymEmailAlertEvent(input: {
         user_type: userType,
         event_kind: eventKind,
         ticked,
-        previous_ticked: previous ? previous.ticked : true,
+        previous_ticked: previousTicked,
         previous_was_default: !previous,
       },
       // A gym setting, not a person's record: nothing for SHADOW to learn from.

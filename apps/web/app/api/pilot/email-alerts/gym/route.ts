@@ -49,8 +49,9 @@ export async function PUT(request: NextRequest) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new ValidationError('Request body must be a JSON object with user_type, event_kind and ticked');
     }
-    const fields = Object.keys(body).sort();
-    if (fields.join(',') !== 'event_kind,ticked,user_type') {
+    const fields = Object.keys(body);
+    const allowed = new Set(['user_type', 'event_kind', 'ticked']);
+    if (fields.length !== allowed.size || !fields.every((field) => allowed.has(field))) {
       throw new ValidationError('Unsupported fields: send user_type, event_kind and ticked only');
     }
     const fieldValues = body as { user_type: unknown; event_kind: unknown; ticked: unknown };

@@ -101,6 +101,8 @@ describe('PUT', () => {
     ['an array', [{ user_type: 'parent', event_kind: 'family_note', ticked: false }]],
     ['a missing field', { user_type: 'parent', event_kind: 'family_note' }],
     ['a field naming another gym', { user_type: 'parent', event_kind: 'family_note', ticked: false, organization_id: 'org-2' }],
+    ['a key that joins two field names', { 'event_kind,ticked': 1, user_type: 'staff' }],
+    ['a field twice over under another name', { user_type: 'parent', event_kind: 'family_note', Ticked: false }],
   ])('refuses %s without writing', async (_label, body) => {
     mockPrincipal.mockResolvedValue(principal('organization_admin'));
     const response = await put(body);
