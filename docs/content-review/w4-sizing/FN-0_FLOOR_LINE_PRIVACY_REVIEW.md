@@ -1161,8 +1161,13 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
     (F13). The close reads only mark timestamps, one per run
     (`sessionScriptRuns.ts:126`, `:209-210`), and returns only run ids,
     which the convention test allows by design
-    (`sessionRunPresenceStaffOnly.convention.test.ts:96-101`), so check 7's
-    guard holds for these reads. None shows a name, initials or an athlete
+    (`sessionRunPresenceStaffOnly.convention.test.ts:96-101`). The read's own
+    idle check needs a new export from `sessionScriptRuns.ts`, since the
+    idle rule is not exported today (`sessionScriptRuns.ts:206`); it returns
+    only whether each run is live and is pinned in the test like the
+    floor-line read, because the test does not catch a new export added to a
+    file already on its lists (`sessionRunPresenceStaffOnly.convention.test.ts:16-17`;
+    check 7). So check 7's guard holds for these reads. None shows a name, initials or an athlete
     id. On the board's and the platform owner's homes, any count below 5
     (0 included, by this review's reading) shows as suppressed, live or not,
     and no number below 5 is in the response (flag 3). A failed read shows
