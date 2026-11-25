@@ -23,11 +23,13 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 afterEach(() => {
+  // Restore first, so a failed check below cannot leak a mock into the next test.
+  global.fetch = originalFetch;
+  jest.useRealTimers();
   // Nothing from the line is kept on the device, on any path (FN-0 F10).
   expect(window.localStorage.length).toBe(0);
   expect(window.sessionStorage.length).toBe(0);
-  global.fetch = originalFetch;
-  jest.useRealTimers();
+  expect(document.cookie).toBe('');
 });
 
 function respond(status: number, body: unknown) {
@@ -113,7 +115,7 @@ test('leaving the page while the read is in progress cancels it', async () => {
   expect(signal?.aborted).toBe(true);
 });
 
-test('it reads once when the page opens: no timer, focus, visibility or network change reads it again', async () => {
+test('it reads once when the page opens: no timer, focus, visibility, page-show or network change reads it again', async () => {
   jest.useFakeTimers();
   respond(200, LINE);
   render(<OnTheFloorStaffLine />);
@@ -121,10 +123,12 @@ test('it reads once when the page opens: no timer, focus, visibility or network 
     await Promise.resolve();
   });
   await act(async () => {
-    jest.advanceTimersByTime(60 * 60 * 1000);
+    jest.advanceTimersByTime(25 * 60 * 60 * 1000);
     window.dispatchEvent(new Event('focus'));
     window.dispatchEvent(new Event('online'));
-    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('pageshow'));
+    // Bubbles from the document to the window, as a browser's does.
+    document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
   });
   expect(global.fetch).toHaveBeenCalledTimes(1);
 });
@@ -135,6 +139,9 @@ test('one neutral line at the floor size: no warning, hold or medical colour (FN
   const line = await screen.findByText('On the floor now: Ada Reyes, Ben Ortiz');
   expect((line as HTMLElement).style.fontSize).toBe('var(--t-md)');
   expect((line as HTMLElement).style.color).toBe('');
-  expect(container.innerHTML).not.toMatch(/restricted|locked|warn|danger|alert|monitor/i);
-  expect(screen.getByRole('region', { name: 'Who is on the floor' })).toBeTruthy();
+  // Exactly the page's neutral classes: any colour class, by whatever name, fails here.
+  expect(line.className).toBe('t-body');
+  const region = screen.getByRole('region', { name: 'Who is on the floor' });
+  expect(region.className).toBe('mat-leather rounded-[var(--r-lg)] p-[var(--s4)]');
+  expect(container.innerHTML).not.toMatch(/restricted|locked|warn|danger|alert|monitor|red-highlight|rust|blood/i);
 });
