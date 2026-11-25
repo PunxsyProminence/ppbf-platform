@@ -6,10 +6,11 @@ may show and what it must never show, over the two sources Jason chose. Six
 points were not ruled, and were put as questions in section 6: a register
 mark on a cancelled class, the words of the line (including what a
 register-only mark is called and from when it counts), what the line shows
-on the homes no answer covered, whether two findings go to Jason, what a
+on the homes this review found no answer for, whether two findings go to Jason, what a
 family sees when the read fails, and a clash between a run mark and a later
-register mark. App Overwatch has answered four on this PR (FN0-Q1, FN0-Q3,
-FN0-Q4 and FN0-Q5's shape; section 1); two are with Jason (FN0-Q2, with
+register mark. App Overwatch's already-ruled check found FN0-Q3 answered by
+Jason's Q12 A and FN0-Q5's shape ruled by OW25-35 A, and it answered FN0-Q1
+and FN0-Q4 itself (section 1); two are with Jason (FN0-Q2, with
 FN0-Q5's words, and FN0-Q6).
 
 - **Who signs it off:** Jason's answer: "B: Overwatch, after two reviewers
@@ -94,7 +95,7 @@ later and is about FN-0: the card asks "Who signs off the privacy review
 (FN-0)" (`OWNER_DECISIONS.md:1307`), Jason answered "B: Overwatch, after two reviewers pass it"
 (`OWNER_DECISIONS.md:1314`) with the con above in front of him (`:1312`), and the recorded
 ruling names FN-0 (`OWNER_DECISIONS.md:1501`). I read Q3.5 B as governing this review and
-one of its questions, whether two findings go to Jason (FN0-Q4). Five are
+one of its questions, whether two findings go to Jason (FN0-Q4). Five were
 put to Jason, each because its recommended answer narrows one of his
 answers or the record sends that kind of question to him: a register mark
 on a cancelled class (FN0-Q1, which narrows Q3.1 C for families through an
@@ -125,9 +126,9 @@ so both go to him, under G8 (`OWNER_DECISIONS.md:15070-15072`) and the
 kernel. FN0-Q1 rides with FN0-Q2 because both are about which register
 marks count. App Overwatch signs off this review (Q3.5 B) and can withdraw
 either question in this PR if it reads the brief as governing; this review
-does not recommend that. INFERRED. App Overwatch has since answered FN0-Q1,
-FN0-Q3, FN0-Q4 and FN0-Q5's shape itself, and put FN0-Q2 and FN0-Q6 to Jason
-(below).
+does not recommend that. INFERRED. App Overwatch has since answered FN0-Q1
+itself as its application, found FN0-Q3 and FN0-Q5's shape already ruled,
+answered FN0-Q4, and put FN0-Q2 and FN0-Q6 to Jason (below).
 
 **On OD-2026-10-13-013 ("asked once, ruled once").** It has a standing ruling
 applied to every case its words or plain principle reach, without asking
@@ -507,7 +508,8 @@ the board's and the platform owner's included (section 1).
 The sizing builds the line on four homes
 (`W4_SIZING.md:551-554`). What the line shows on the other three homes (the
 board's, the platform owner's, and the one staff-role and volunteer accounts
-share) was question FN0-Q3, now answered by App Overwatch (section 6).
+share) was question FN0-Q3, now answered by Jason's Q12 A as App Overwatch
+applied it (section 6).
 
 **F4. No mark is not absence.** "A ROW MEANS A MARK. NO ROW MEANS NO MARK --
 NOT ABSENCE" (`attendance-today/route.ts:33-38`); the wall has no absent row
@@ -572,8 +574,9 @@ about the line. Information for App Overwatch; no action.
 
 **F8. The line and the wall count can disagree, by design.** The public wall
 counts present marks over the whole gym day and never reads run marks
-(`wallDisplayDb.ts:86-119`); the line reads both, and leaves out a cancelled
-class only on the coach line (FN0-Q1 A, App Overwatch's answer). INFERRED: the wall's count can differ from the
+(`wallDisplayDb.ts:86-119`); the line reads both, and keeps a cancelled
+class's marks only on the coach line, leaving them off the family line
+(FN0-Q1 A, App Overwatch's answer). INFERRED: the wall's count can differ from the
 number of names on the coach line. Neither is wrong; they count different
 things, so the line should not reuse the wall's count. Information; see
 FN0-Q3 (counts) and
@@ -873,7 +876,9 @@ excused mark; a run mark taken back; a settled run; a register mark for a
 class on another day. The same rule feeds the coach line, the parent's line,
 the athlete's line, and its register half the count on the three homes
 FN0-Q3 covers (no run marks there), except for a cancelled class, which
-FN0-Q1 A splits by reader and which those counts leave out.
+FN0-Q1 A splits by reader and which those counts leave out (this review's
+reading of OD-2026-10-22-001's applied "a cancelled class's attendance stops
+counting", `OWNER_DECISIONS.md:5974`).
 
 | Role (home) | May show | Must never show |
 |---|---|---|
@@ -919,7 +924,7 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    chosen), and an athlete's no run, class or time of the mark either
    (section 4's athlete row; recommended, not ruled by Q3.4 A).
 4. A coach, organization admin or admin without an active staff membership
-   here (the empty list `sessionRunAthletes.ts:296-299` returns), a board
+   here (the empty list `sessionRunAthletes.ts:297-299` returns), a board
    member, the platform owner and a staff-role or volunteer account are
    refused by the line's read (a request naming another organization gets its own gym's answer,
    check 8), not given an empty answer,
@@ -932,7 +937,8 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    completed or abandoned; a run idle past 3 hours that no read has closed
    (F13); a run mark on a tied class whose register later says Absent or
    Excused, if FN0-Q6 so rules (F16); a register mark on a cancelled class, except as FN0-Q1
-   A has it (on the coach line only, section 4); an absent or excused
+   A has it (on the coach line only; the three homes' counts leave it out, by
+   this review's reading, section 4); an absent or excused
    mark; a register mark for a class on another day; an `activity_log` or
    legacy `pilot.attendance` row alone (F2, F4, F9, section 4).
 6. A register-only mark is shown in the words FN0-Q2 rules, only for a class
@@ -1000,21 +1006,21 @@ FN0-Q4 was for App Overwatch; FN0-Q1, Q2, Q3, Q5 and Q6 were for Jason
 (section 1, "On G8 and Q3.5 B"). Each was posted in the PR as its own comment,
 headed `QUESTION FOR App Overwatch:` or `QUESTION FOR Jason:`. App Overwatch
 has answered FN0-Q1, Q3, Q4 and Q5's shape, and put FN0-Q2 and Q6 to Jason
-(section 1); each heading below says which. If App
-Overwatch reads FN0-Q4, or any finding above, as narrowing one of Jason's
-answers or as product intent under G8, it goes to Jason in this PR.
+(section 1); each heading below says which.
 
 Every question was checked against the same sources. **Checked, not answered
 in:** `docs/current/OWNER_DECISIONS.md` (OD-2026-11-21-006 cards OW27-19 to
 OW27-23; OD-2026-11-19-009; the searches in section 7), `docs/research/`,
-`W4_SIZING.md` section 3, the brief, this PR's comments. **Not checked:**
+`W4_SIZING.md` section 3, the brief, this PR's comments. (Q12 A's full text,
+which answered FN0-Q3, is in a file not in this repository; section 1.) **Not checked:**
 `findings/2026-11-19-online-gym-as-a-room.md` (cited at `OWNER_DECISIONS.md:2665`;
 no copy in this repository).
 
 **What each question holds up (INFERRED, from the sizing's PR split,
-`W4_SIZING.md:549-554`).** FN-1, the read: FN0-Q1, FN0-Q6 and FN0-Q2's
-start time change which marks count. FN-1 can build those three as separate
-conditions before they are answered, serving staff only until FN-2; FN-2 and
+`W4_SIZING.md:549-554`).** FN-1, the read: FN0-Q1 (answered A), FN0-Q6 and
+FN0-Q2's start time change which marks count. FN-1 can build the two open
+ones as separate conditions before they are answered, serving staff only
+until FN-2; FN-2 and
 FN-3 ship after (section 4), and under FN0-Q4 A Jason hears F1 and F14 in
 one line before FN-2. This moves the opening of the family cuts, which the sizing
 puts in FN-1 (`W4_SIZING.md:552`), to FN-2, sized as screens only (`:553`):
@@ -1174,9 +1180,9 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
 - Families get nothing from the read, and no screen shows the line, until
   you answer (section 4).
 
-**FN0-Q3 (put to Jason; answered by App Overwatch from Jason's Q12 A, section
-1). What does the line show on the board's home, the platform owner's home,
-and the home staff-role and volunteer accounts share?**
+**FN0-Q3 (put to Jason; answered by Jason's Q12 A as App Overwatch applied
+it, section 1): what the line shows on the board's home, the platform
+owner's home, and the home staff-role and volunteer accounts share.**
 The answer, as App Overwatch applied Q12 A ("from the same live session the
 TV shows: the class, the round and how many are here. Names appear only
 where the person may already see them"; quoted from a file not in this
@@ -1186,7 +1192,11 @@ repository, section 1), with what each part rests on here:
   the class schedule: a class whose `start_at` is at or before now and whose
   `end_at` is after now, and which is not cancelled
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:15-16`,
-  `:22`); title and times only, no coach or room. The round is the live
+  `:22`); title and times only, no coach or room. Q12 A takes "the class"
+  from "the same live session the TV shows"; reading it from the schedule
+  shows a scheduled class with no live session and leaves out an untied
+  (open-gym) session. This review flags that for App Overwatch's sign-off,
+  like the titles below. INFERRED. The round is the live
   run's round clock, which the paired TV already shows and which carries no
   account id (`apps/web/src/server/pilot/gymTvs.ts:574-577`). "How many are
   here", as the TV shows it, counts present register marks only
@@ -1211,9 +1221,7 @@ repository, section 1), with what each part rests on here:
   puts names "only where the person may already see them": the board's tier
   is "never a row, never a name" (`privacyTiers.ts:84-86`), the platform
   owner's is "no athlete ids, no names" (`privacyTiers.ts:73-79`), and
-  staff-role and volunteer accounts read no athlete record by name today
-  (`pilotRoleRouting.ts:51-52`, a code comment) and read nobody's presence
-  by name (the wall of names gives every signed-in role initials and years,
+  staff-role and volunteer accounts read nobody's presence by name today (the wall of names gives every signed-in role initials and years,
   by its route's comment; F3). "No person" also rests on class titles naming
   none: a title is staff-written text
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:14`) and
@@ -1226,13 +1234,17 @@ repository, section 1), with what each part rests on here:
   INFERRED.
 - **The board's count holds the board's floor.** Below 5 it reads as the
   existing hidden figure (`privacyTiers.ts:84-86`; F3). That floor is a repo
-  contract, not an owner ruling (F3), and it is not a narrowing App
-  Overwatch removed: it is how every board figure reads today.
+  contract, not an owner ruling (F3); it is how the board's figures in
+  `boardSummary.ts` and its privacy tier read today (F3). Below 5 it gives
+  no count, so this review flags it for App Overwatch's sign-off as its own
+  reading, since App Overwatch dropped narrowings Q12 A does not support.
+  INFERRED.
 - **The platform owner's home is de-identified and aggregate,** per
   OD-2026-09-28-005, gym by gym, and holds the floor of 5 that the platform
   routes' comments say every platform figure holds (F3, comments read, code
   path not traced; App Overwatch: "with its small-count floor if one
-  applies").
+  applies"). OD-2026-09-28-005 itself sets no floor
+  (`OWNER_DECISIONS.md:16049-16066`); the floor is the platform routes'.
   App Overwatch applied Q12 A's "On every screen" to this home, past the
   review's earlier reading of "platform for platform gym for gym"
   (OD-2026-10-02-013, F3). OD-2026-10-07-011 ruling 2 took the platform owner
