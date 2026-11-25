@@ -19,8 +19,11 @@ const json = (body: unknown, status = 200) => {
   const response = { ok: status < 400, status, json: async () => body, clone: () => response };
   return response as unknown as Response;
 };
-const tiedClass = (noShows: number, classId = 'class-youth') =>
-  ({ class_id: classId, title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: noShows });
+/** The class view; its no-shows are ath-1, ath-2, … unless named. */
+const tiedClass = (noShows: number | readonly string[], classId = 'class-youth') => {
+  const ids = typeof noShows === 'number' ? Array.from({ length: noShows }, (_, i) => `ath-${i + 1}`) : [...noShows];
+  return { class_id: classId, title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: ids.length, no_show_ids: ids };
+};
 
 function serve(noShows: number | 'fail', patch: () => Response = () => json({ marked: ['a', 'b'] }), classId = 'class-youth') {
   fetchSpy.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -30,6 +33,8 @@ function serve(noShows: number | 'fail', patch: () => Response = () => json({ ma
 }
 
 const patches = () => fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+/** Reads of the live run and its class. */
+const classReads = () => fetchSpy.mock.calls.filter(([input, init]) => !(init as RequestInit | undefined)?.method && String(input).endsWith('/session-scripts/runs'));
 
 async function show(props: Partial<{ presentCount: number | null; onRunNotLive: () => void }> = {}) {
   let rerender: (ui: React.ReactElement) => void = () => {};
@@ -53,7 +58,8 @@ test('offers the tap with the count, sends nothing until it is tapped, then says
     fireEvent.click(screen.getByRole('button', { name: 'Mark all 2 Absent' }));
   });
   expect(String(patches()[0][0])).toContain('/api/pilot/session-scripts/runs/run-1');
-  expect(JSON.parse(String((patches()[0][1] as RequestInit).body))).toEqual({ action: 'mark_no_shows' });
+  // Today's path: the names on screen, sent once, with no key.
+  expect(JSON.parse(String((patches()[0][1] as RequestInit).body))).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'] });
   expect(screen.getByRole('status').textContent).toBe('2 signed-up athletes were marked Absent on the class register.');
 });
 
@@ -121,7 +127,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     jest.useRealTimers();
   });
 
-  function serveKept(patch: (send: number) => 'throw' | Response, noShowsAfter: (sends: number) => number, liveRunId = 'run-1') {
+  function serveKept(patch: (send: number) => 'throw' | Response, noShowsAfter: (sends: number) => number | readonly string[], liveRunId = 'run-1') {
     let sends = 0;
     fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
@@ -160,26 +166,96 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
   });
 
-  test('a resend answered with nobody marked (an earlier send marked them) does not say nobody needed marking', async () => {
+  // OVERWATCH 7160191377: the resend names what the first send named, with the same key, even after the
+  // screen has read a different set of no-shows; the server answers a landed key with its first answer.
+  test('every send names the athletes shown at the tap, with one key, even after the screen reads others', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ marked: ['ath-1', 'ath-2'] })), (sends) => (sends > 0 ? ['ath-3'] : 2));
+    const rerender = await (async () => {
+      prepareSaveQueue();
+      const later = await show();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Mark all 2 Absent' }));
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      return later;
+    })();
+    // The marks here change while it waits: the screen reads the class again, and shows only Ath 3 now.
+    await act(async () => {
+      rerender(<SessionNoShows runId="run-1" classId="class-youth" presentCount={1} onRunNotLive={jest.fn()} />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('button', { name: 'Mark them Absent' })).toBeTruthy();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    const bodies = patches().map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'], request_key: expect.any(String) });
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(String(bodies[0].request_key).length).toBeGreaterThan(0);
+    // The answer the server replays is the first send's: it says how many that send marked.
+    expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
+  });
+
+  test('a resend answered with nobody marked says nobody needed marking: the server would have replayed a send that landed', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ marked: [] })), (sends) => (sends > 0 ? 0 : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.queryByText(/Nobody needed marking/)).toBeNull();
-    expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
+    expect(screen.getByText('Nobody needed marking: everyone signed up already has a mark.')).toBeTruthy();
   });
 
-  test('a refused resend the server shows as landed (this run, no no-shows left) reads as done (condition 2)', async () => {
+  test('a refused resend the server shows as landed (this run, none of the names sent still a no-show) reads as done (condition 2)', async () => {
     jest.useFakeTimers();
-    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2));
+    // Ath 9 became a no-show since; the tap never named them, so they do not count.
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-9'] : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
+  });
+
+  test('a refused resend while a name it sent is still a no-show is not read as landed: its words are said here', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
+    await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+  });
+
+  test.each(['SESSION_CLASS_CANCELLED', 'SESSION_CLASS_NOT_STARTED', 'SESSION_CLASS_NOT_YOURS', 'SESSION_RUN_NOT_TIED', 'SESSION_NO_SHOWS_KEY_REUSED'])(
+    'a resend refused with %s, given only after the server looked the key up, is known not landed, though the class shows no no-shows',
+    async (error) => {
+      jest.useFakeTimers();
+      serveKept((send) => (send === 1 ? 'throw' : json({ error, message: 'Refused.' }, 409)), (sends) => (sends > 0 ? 0 : 2));
+      await tapMark();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(RESEND_MS);
+      });
+      expect(screen.getByRole('alert').textContent).toBe('Refused.');
+      expect(screen.queryByText('The class register now shows no no-shows.')).toBeNull();
+      // Read nothing to decide: only the class read before the tap.
+      expect(classReads()).toHaveLength(1);
+    },
+  );
+
+  test('a resend refused as no longer live, given after the key was looked up, hands that to the console without reading the class', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_RUN_NOT_LIVE' }, 409)), (sends) => (sends > 0 ? 0 : 2));
+    const onRunNotLive = await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('The class register now shows no no-shows.')).toBeNull();
+    expect(classReads()).toHaveLength(1);
   });
 
   test('a refused resend when the coach\'s live run is another run is not read as landed: its words are said here', async () => {

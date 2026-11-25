@@ -2258,7 +2258,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       },
       runsGet: () => (settled
         ? jsonResponse({ run: null })
-        : jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 } })),
+        : jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2, no_show_ids: ['ath-1', 'ath-2'] } })),
     });
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await tap('Record as completed');
@@ -3083,7 +3083,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
         marks += 1;
         return marks === 1 ? lost() : jsonResponse({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, false, 409);
       },
-      runsGet: () => jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 } }),
+      runsGet: () => jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2, no_show_ids: ['ath-1', 'ath-2'] } }),
     });
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await wait(0);

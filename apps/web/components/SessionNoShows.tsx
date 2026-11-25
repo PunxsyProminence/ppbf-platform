@@ -12,8 +12,20 @@ import { type RunClassView, fetchLiveRunClass, fetchRunClass, unknownOffPage, un
 // server's (`class.no_shows`), read again whenever the marks here change; it is 0, and nothing is
 // offered, whenever the server would refuse (the class has not started, was cancelled, or is not
 // this coach's). The server skips anyone marked in any session of the gym that day. Wording PROPOSED.
+// The tap names the athletes the screen showed (`class.no_show_ids`), and only those can be marked:
+// a resend never reaches anyone who became a no-show later (W4 item 7, OVERWATCH 7160191377).
 
 const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
+// Refusals the server gives only after looking the tap's key up (sessionRunClass.ts): a send
+// of this key that had landed would have been answered with its first answer instead.
+const REFUSED_AFTER_KEY = new Set([
+  'SESSION_RUN_NOT_LIVE',
+  'SESSION_RUN_NOT_TIED',
+  'SESSION_CLASS_CANCELLED',
+  'SESSION_CLASS_NOT_YOURS',
+  'SESSION_CLASS_NOT_STARTED',
+  'SESSION_NO_SHOWS_KEY_REUSED',
+]);
 
 type Read = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; view: RunClassView | null };
 
@@ -81,37 +93,35 @@ export default function SessionNoShows({
     };
   }, []);
 
-  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Marking the no-shows
-  // again marks nobody new (OQ-1's repeat proofs). A refused RESEND is checked against the count the
-  // server holds before any failed words (Overwatch condition 2).
-  const keptNoShows = useCallback((resolved: { done: boolean }): KeptSave => {
+  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Every send carries the
+  // names shown at the tap and the tap's one key: the server marks only those, and answers a resend of
+  // a key that landed with the first answer, writing nothing (OVERWATCH 7160191377). A refused RESEND
+  // is checked before any failed words (Overwatch condition 2).
+  const keptNoShows = useCallback((resolved: { done: boolean }, named: readonly string[]): KeptSave => {
     let refusal: { error?: string; message?: string } = {};
-    let sends = 0;
     const label = 'Mark the no-shows Absent';
     return {
       label,
-      send: ({ signal }) => {
-        sends += 1;
-        return (
+      send: ({ signal, requestKey }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'mark_no_shows' }),
+          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, request_key: requestKey }),
           signal,
-        })
-        );
-      },
+        }),
       answerOf: async (response) => {
         if (response.ok) return 'saved';
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
-      // Landed only if the coach's live run is this run and its class shows no no-shows left.
+      // Not landed when the server refused after looking the key up. Otherwise landed only if the
+      // coach's live run is this run and none of the names sent is still a no-show of its class.
       checkLanded: async (signal) => {
+        if (refusal.error && REFUSED_AFTER_KEY.has(refusal.error)) return false;
         const now = await fetchLiveRunClass(signal).catch(() => null);
         if (now === null) return null;
-        return now.runId === runId && now.view?.class_id === classId && now.view.no_shows === 0;
+        return now.runId === runId && now.view?.class_id === classId && !now.view.no_show_ids.some((id) => named.includes(id));
       },
       onSaved: (response) => {
         resolved.done = true;
@@ -121,10 +131,9 @@ export default function SessionNoShows({
             showMarked(null);
             return;
           }
+          // A resend of a send that landed is answered with that send's answer.
           const payload = (await response.json().catch(() => ({}))) as { marked?: string[] };
-          const done = payload.marked?.length ?? 0;
-          // A resend answers with nobody marked when an earlier send already marked them.
-          showMarked(done === 0 && sends > 1 ? null : done);
+          showMarked(payload.marked?.length ?? 0);
         })();
       },
       // Refused: said here, where the coach tapped.
@@ -146,7 +155,8 @@ export default function SessionNoShows({
     };
   }, [classId, isFinishWaiting, onRunNotLive, runId, showMarked]);
 
-  const markNoShows = useCallback(async () => {
+  // named: the no-shows this screen shows now, which the coach is tapping on.
+  const markNoShows = useCallback(async (named: readonly string[]) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -155,16 +165,16 @@ export default function SessionNoShows({
       // Waiting once kept (the account check settles first, under this tap's busy lock), unless it
       // was answered already.
       const resolved = { done: false };
-      if ((await keepSave(keptNoShows(resolved))) === 'kept') {
+      if ((await keepSave(keptNoShows(resolved, named))) === 'kept') {
         if (!resolved.done) setWaiting(true);
         return;
       }
-      // Not kept (the page does not know who is signed in): sent once, as before.
+      // Not kept (the page does not know who is signed in): sent once, as before, naming the same athletes.
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_no_shows' }),
+        body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named }),
       });
       const payload = (await response.json().catch(() => ({}))) as { marked?: string[]; error?: string; message?: string };
       if (!response.ok) {
@@ -206,7 +216,7 @@ export default function SessionNoShows({
           <p className="t-body">
             {view.no_shows} signed up for {view.title} {view.no_shows === 1 ? 'has' : 'have'} no mark on its register or in any session today.
           </p>
-          <button type="button" onClick={() => void markNoShows()} disabled={busy || waiting} className="btn btn--ghost disabled:opacity-60">
+          <button type="button" onClick={() => void markNoShows(view.no_show_ids)} disabled={busy || waiting} className="btn btn--ghost disabled:opacity-60">
             {busy ? 'Marking…' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
           </button>
         </div>
