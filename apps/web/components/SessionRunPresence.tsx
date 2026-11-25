@@ -123,6 +123,8 @@ function isAthlete(value: unknown): value is Athlete {
 export interface RegisterAnswer {
   effect: string;
   previous_status?: string;
+  /** register_newer: what the register holds, set there after the tap. */
+  status?: string;
   reason?: string;
 }
 
@@ -135,6 +137,7 @@ export function holdAnswer(value: unknown): HoldAnswer {
 }
 
 const WAS: Record<string, string> = { absent: 'marked Absent', excused: 'marked Excused' };
+const STAYS: Record<string, string> = { absent: 'Absent', excused: 'Excused' };
 const NOT_ADDED: Record<string, string> = { class_cancelled: 'the class was cancelled', not_your_class: 'you no longer run this class' };
 
 /** The line a tap leaves for the coach: what the class register now shows, and a hold if one stands. */
@@ -151,6 +154,8 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     removed: `${name} is off the class register too.`,
     kept: `The class register was changed after your tap, so ${name}'s mark there was left as it is.`,
     unchanged: 'Only the mark here was taken back; the class register was not changed.',
+    // A tap sent late, after the register was changed (OD-2026-10-21-004 ruling 1: the later change wins).
+    register_newer: `${name} is marked here, but the class register was changed after your tap, so it stays ${STAYS[register.status ?? ''] ?? 'as it is'} there. Change it on the register if ${name} is here.`,
   };
   return `${words[register.effect] ?? ''}${holdWords}`.trim();
 }

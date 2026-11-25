@@ -345,6 +345,9 @@ describe('a session tied to a class', () => {
     [{ effect: 'flipped', previous_status: 'excused' }, 'Ada Reyes was marked Excused on the class register; now Present.'],
     [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here but not on the class register: the class was cancelled.'],
     [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here but not on the class register: you no longer run this class.'],
+    [{ effect: 'register_newer', status: 'absent' }, 'Ada Reyes is marked here, but the class register was changed after your tap, so it stays Absent there. Change it on the register if Ada Reyes is here.'],
+    [{ effect: 'register_newer', status: 'excused' }, 'Ada Reyes is marked here, but the class register was changed after your tap, so it stays Excused there. Change it on the register if Ada Reyes is here.'],
+    [{ effect: 'register_newer' }, 'Ada Reyes is marked here, but the class register was changed after your tap, so it stays as it is there. Change it on the register if Ada Reyes is here.'],
   ])('a tap answered %j says so', async (register, words) => {
     serve(() => read([]), () => respond({ outcome: 'marked', register }));
     await show();
@@ -1004,6 +1007,27 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
     expect(screen.getAllByText('Ada Reyes is Present on the class register. Ada Reyes has an active Training Hold; the mark was NOT blocked.').length).toBeGreaterThan(0);
+  });
+
+  // Both merge-check reviewers of round 11: a kept tap carries its tap time, so the register can keep
+  // an Absent or Excused set there after the tap (register_newer); the coach is told, never left
+  // believing the register shows Present.
+  test('a kept tap that lands after the register was changed says the register stays as it was set', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) return 'lost';
+        present = [ADA];
+        return answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'excused' } });
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(sent[1].body).toMatchObject({ tapped_ms_ago: expect.any(Number) });
+    expect(screen.getAllByText('Ada Reyes is marked here, but the class register was changed after your tap, so it stays Excused there. Change it on the register if Ada Reyes is here.').length).toBeGreaterThan(0);
   });
 
   test('a not-known outcome after this list has gone is listed apart in the page\'s list, with where to check', async () => {
