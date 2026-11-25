@@ -16,6 +16,13 @@ export const dynamic = 'force-dynamic';
  * by alias), parent, athlete. An athlete under 18, or with no date of birth,
  * gets `{ offered: false }` on GET and 403 on PUT. PUT { switched_on }: an adult
  * athlete with no confirmed address gets 409 (EM-2b adds the address).
+ *
+ * GET WRITES, for a caller no longer offered a switch only: the store switches
+ * off any row left from when they were offered one and clears its address,
+ * audited in the same transaction (retireSwitchIfAny; apiRouteInventory.json
+ * marks it writing). It takes no fields, touches only the caller's own row, can
+ * only switch off a switch the caller is no longer offered, and changes nothing
+ * when repeated, so it needs no same-origin check.
  */
 
 export async function GET(request: NextRequest) {
