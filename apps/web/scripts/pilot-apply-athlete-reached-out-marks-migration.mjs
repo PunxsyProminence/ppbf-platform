@@ -21,7 +21,7 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt, each piece looked up ON
 // pilot.athlete_reached_out_marks and reported by name: the table; the exact
-// column list; each column by type, nullability and default; exactly three
+// column list; each column by type, collation, nullability and default; exactly three
 // CHECKs, validated and compared IN FULL against the text Postgres stores; the
 // primary key on (organization_id, mark_id), not deferrable; exactly one other
 // unique index, the current-mark index on (organization_id, athlete_id) WHERE
@@ -60,9 +60,15 @@ const attnum = (table, column) => `(select attnum from pg_attribute where attrel
 const attnums = (table, columns) => `array[${columns.map((column) => attnum(table, column)).join(', ')}]::int2[]`;
 const attcollations = (table, columns) =>
   `array[${columns.map((column) => `(select attcollation from pg_attribute where attrelid = to_regclass('${table}') and attname = '${column}')`).join(', ')}]::oid[]`;
+// The database's default collation: a text column declared with no COLLATE
+// has it. Another one (a case-insensitive one, say) could let 'REPLACED' past
+// the kind's CHECK while pg_get_constraintdef prints the same text (reviewer G,
+// #2176), so readiness pins it; a uuid or timestamptz column has none (0).
+const DEFAULT_COLLATION = "(select oid from pg_collation where collname = 'default' and collnamespace = 'pg_catalog'::regnamespace)";
 // type: a regtype; notNull: boolean; defaultText: what pg_get_expr prints, or null.
 const column = (name, type, notNull, defaultText = null) => `
     exists (select 1 from col where attname = '${name}' and atttypid = '${type}'::regtype
+              and attcollation = ${type === 'text' ? DEFAULT_COLLATION : '0'}
               and ${notNull ? '' : 'not '}attnotnull
               and default_text ${defaultText === null ? 'is null' : `= '${defaultText}'`}) as ${name}_ready`;
 // onDelete: pg_constraint.confdeltype ('c' cascade, 'n' set null).
@@ -78,7 +84,7 @@ const foreignKey = (name, columns, target, targetColumns, onDelete) => `
 const READINESS_QUERY = `
   with t as (select to_regclass('${OWN}') as oid),
   col as (
-    select a.attname, a.atttypid, a.attnotnull, pg_get_expr(d.adbin, d.adrelid) as default_text
+    select a.attname, a.atttypid, a.attcollation, a.attnotnull, pg_get_expr(d.adbin, d.adrelid) as default_text
       from pg_attribute a
       join t on a.attrelid = t.oid
       left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum

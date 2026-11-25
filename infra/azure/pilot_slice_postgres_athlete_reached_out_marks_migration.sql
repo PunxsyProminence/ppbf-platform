@@ -59,11 +59,17 @@
 -- current, and takes the database's time; the one change a mark takes is its
 -- end (a take-back or a replacement), once, naming who and how, at the
 -- database's time; nothing undoes or relabels an end; and a mark is not
--- deleted on its own (it goes with its athlete or gym). The account foreign keys' own SET NULL is the one other update. The
--- runner refuses any other trigger or rule on the table. TRUNCATE, a
--- statement-level command, is not guarded (as on the behaviour windows): pg
--- suites truncate pilot.organizations and pilot.accounts with cascade, and no
--- app code truncates a pilot table.
+-- deleted on its own (it goes with its athlete or gym). The account foreign
+-- keys' own SET NULL is the one other update. The runner refuses any other
+-- trigger or rule on this table. Two gaps, neither reached by app code:
+-- TRUNCATE, a statement-level command, is not guarded (as on the behaviour
+-- windows; pg suites truncate pilot.organizations and pilot.accounts with
+-- cascade, and no app code truncates a pilot table). And the guard knows an
+-- athlete or account is gone only by its key: a statement that renames the
+-- athlete's or account's key and, in the same statement, deletes the mark or
+-- clears the name (a writable CTE, or a trigger on pilot.athletes or
+-- pilot.accounts) gets past it (reviewer G, #2176). Holding that would mean
+-- refusing key changes on those tables, which this file does not touch.
 --
 -- WHO MAY WRITE AND READ is the module's rule (SC-3a-2), not this file's:
 -- coach, organization admin and admin with an active staff membership here,
@@ -117,8 +123,9 @@ returns trigger
 language plpgsql
 as $athlete_reached_out_marks_guard$
 begin
-  -- Each exception is tested on the data, not on the trigger depth, so no other
-  -- trigger, wherever it sits, can delete a mark or clear a name either.
+  -- Each exception is tested on the data, not on the trigger depth, so a
+  -- write from another table's trigger is held the same way (except the
+  -- same-statement key rename named in the header).
   if tg_op = 'DELETE' then
     -- Only once the mark's athlete row is gone: the athlete's delete, or the
     -- gym's (which needs its athletes gone first), by cascade.

@@ -336,6 +336,9 @@ describe('athlete reached-out marks migration', () => {
     ['cleared_by_account_id_ready', 'cleared_by_account_id with a default', `alter table ${T} alter column cleared_by_account_id set default 'x'`],
     ['cleared_kind_ready', 'cleared_kind with a default', `alter table ${T} alter column cleared_kind set default 'taken_back'`],
     ['cleared_kind_ready', 'cleared_kind as a varchar', `alter table ${T} alter column cleared_kind type varchar(20)`, ['cleared_kind_ready', 'checks_ready']],
+    // Another collation leaves the CHECK's printed text as it was; only the column check sees it.
+    ['cleared_kind_ready', 'cleared_kind under another collation', `alter table ${T} alter column cleared_kind type text collate "C"`],
+    ['marked_by_role_ready', 'marked_by_role under another collation', `alter table ${T} alter column marked_by_role type text collate "C"`],
     ['checks_ready', 'a role list that is not the answered one',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_role_check,
          add constraint pilot_athlete_reached_out_marks_role_check check (marked_by_role in ('coach', 'organization_admin', 'admin', 'parent'))`],
