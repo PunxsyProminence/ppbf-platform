@@ -1867,24 +1867,45 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     expect(after!.contact_structure).toBe('contact');
   });
 
-  test('a transition, arrival or close may hold no words; no other kind may, and none holds more than a coach note', async () => {
-    const { gym, scriptId } = await plan('text-rules');
-    await edit(gym, scriptId, { add: [text({ block_kind: 'transition', text: '  ' })] });
-    const added = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3];
-    expect(added).toMatchObject({ block_kind: 'transition', what_to_say: null, contact_level: 'none' });
+  // Reviewer D on #2196: every kind, and the cap measured as a coach note's is.
+  test.each(['arrival', 'transition', 'close'])('a %s may hold no words', async (kind) => {
+    const { gym, scriptId } = await plan(`text-empty-${kind}`);
+    await edit(gym, scriptId, { add: [text({ block_kind: kind, text: '  ' })] });
+    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3]).toMatchObject({ block_kind: kind, what_to_say: null });
+  });
 
+  test("no other kind may hold no words (nor only invisible characters), none holds more than a coach note, and drill_round or a contact level off the ladder is refused", async () => {
+    const { gym, scriptId } = await plan('text-rules');
     const bytes = await storedBytes(gym, scriptId);
-    await expectRefused(edit(gym, scriptId, { add: [text({ text: '' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    for (const kind of ['instruction', 'demonstration', 'reset_minute', 'teaching_minute', 'conditioning', 'reflection']) {
+      await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: kind, text: '' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    }
+    await expectRefused(edit(gym, scriptId, { add: [text({ text: '\u200B \u2060' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ text: 'x'.repeat(1001) })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: 'drill_round' })] }), 'SESSION_SCRIPT_BLOCK_KIND_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: 'full_contact' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: '' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
     expect(await storedBytes(gym, scriptId)).toBe(bytes);
+
+    // Exactly 1000 is a coach note's length; 600 decomposed é are 600 characters once normalised; CRLF is LF.
+    await edit(gym, scriptId, { add: [text({ ref: 'a', text: 'x'.repeat(1000) })] });
+    await edit(gym, scriptId, { add: [text({ ref: 'b', text: 'e\u0301'.repeat(600) })] });
+    await edit(gym, scriptId, { add: [text({ ref: 'c', text: 'one\r\ntwo' })] });
+    const says = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks.slice(3).map((block) => block.what_to_say);
+    expect(says.map((say) => say?.length)).toEqual([1000, 600, 7]);
+    expect(says[2]).toBe('one\ntwo');
   });
 
   test("a copy from another plan of the gym carries everything its source says, its contact level included, under a new id", async () => {
     const { gym, scriptId, jab } = await plan('copy');
     const other = await create(gym, 'Another plan');
+    const sparId = (await getSessionScriptWithDetail(gym.organizationId, other.script_id))!.blocks[2].block_id;
+    // Watch and Fix written on the source too (reviewer D on #2196), so every line is carried and checked.
+    await client.query(
+      `update pilot.session_script_blocks set what_to_watch = 'Chin down', what_to_fix = 'Reset to stance'
+        where organization_id = $1 and block_id = $2`,
+      [gym.organizationId, sparId],
+    );
     const source = (await getSessionScriptWithDetail(gym.organizationId, other.script_id))!.blocks[2];
     const sourceBytes = await storedBytes(gym, other.script_id);
 
@@ -1895,6 +1916,7 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     const carried = ({ block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level }: typeof source) =>
       ({ block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level });
     expect(carried(blocks[3])).toEqual(carried(source));
+    expect(blocks[3]).toMatchObject({ what_to_watch: 'Chin down', what_to_fix: 'Reset to stance' });
     expect(blocks[3]).toMatchObject({ block_order: 4, start_offset_min: 16, end_offset_min: 20, contact_level: 'controlled_sparring' });
     expect(blocks[3].block_id).not.toBe(source.block_id);
     // A block of the same plan can be copied too, retitled.

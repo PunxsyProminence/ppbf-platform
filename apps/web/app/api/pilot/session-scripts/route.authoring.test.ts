@@ -370,6 +370,9 @@ describe('PATCH /api/pilot/session-scripts adding text blocks and copies', () =>
     for (const add of [
       noContact,
       { ...TEXT, contact_level: 2 },
+      { ...TEXT, text: 5 },
+      { ...TEXT, text: undefined },
+      { ...TEXT, block_kind: 7 },
       { ...TEXT, drill_id: 'drl-1' },
       { ...TEXT, block_label: undefined },
       { ...COPY, contact_level: 'none' },

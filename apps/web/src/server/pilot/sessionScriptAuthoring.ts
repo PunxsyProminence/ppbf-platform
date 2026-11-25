@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
 import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels';
+import { normalizeCell } from './contentImport/values';
 import { VOCABULARIES } from './contentImport/vocabularies';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
@@ -371,11 +372,14 @@ function cleanAdd(add: SessionScriptBlockAdd): SessionScriptBlockAdd {
   if (!TEXT_BLOCK_KINDS.includes(add.block_kind)) refuse('SESSION_SCRIPT_BLOCK_KIND_INVALID');
   // Q1 = C: required, from the ladder, no default -- a text block written for contact work must not read as none.
   if (!CONTACT_LADDER.includes(add.contact_level)) refuse('SESSION_SCRIPT_BLOCK_CONTACT_INVALID');
-  const text = add.text.trim();
-  if (text.length > MAX_BLOCK_TEXT_LENGTH || (text === '' && !MAY_HOLD_NO_TEXT.includes(add.block_kind))) {
+  // Read and measured as a template step's coach note is (normalizeCell: NFC, LF, no edge space); words
+  // that are only invisible characters are no words.
+  const text = normalizeCell(add.text);
+  const empty = text.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim() === '';
+  if (text.length > MAX_BLOCK_TEXT_LENGTH || (empty && !MAY_HOLD_NO_TEXT.includes(add.block_kind))) {
     refuse('SESSION_SCRIPT_BLOCK_TEXT_INVALID');
   }
-  return { ...add, block_label: cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID'), text };
+  return { ...add, block_label: cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID'), text: empty ? '' : text };
 }
 
 export interface EditedSessionScript {
@@ -700,6 +704,7 @@ export async function editSessionScript(
         const { block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level } =
           sources.get(add.block_id) as SessionScriptBlockRow;
         const drill = drill_id === null ? null : (copyDrills.get(drill_id) as DrillForBlock);
+        if (!CONTACT_LADDER.includes(contact_level)) refuse('SESSION_SCRIPT_BLOCK_CONTACT_INVALID');
         if (drill && CONTACT_LADDER.indexOf(contact_level) > CONTACT_LADDER.indexOf(drill.contact_level)) {
           refuse('SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL');
         }
