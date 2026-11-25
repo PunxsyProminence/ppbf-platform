@@ -9790,6 +9790,87 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/family-threads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/family-threads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that reads the threads (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns; only threads the caller opened (familyThreads.ts listOwnFamilyThreads)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The threads this guardian opened about children linked to them now, with the staff replies in them and which replies this guardian has not yet seen (W4 item 4, OW27-24 A). A co-guardian's thread is never listed (OD-2026-10-12-024). Staff account ids stay on the server; staff are named by getStaffAuthorName.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-threads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-threads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that writes (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, rolled back for an adult; on the child (new thread) or on the thread's child for its opener (writing again), in familyThreads.ts",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian opens a thread about a child linked to them on this request (403 otherwise), or writes again in a thread they opened (Overwatch Q2 A on #2161; anyone else's thread or an ended link is the same 404). Append-only table with a database guard that also requires a live guardian of the child (migration family-threads). No audit row, no SHADOW event, nothing sent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-thread-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-thread-reads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that records the read (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, on the post's child, the post a staff reply in a thread the caller opened (familyThreads.ts recordFamilyThreadReadByGuardian)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The guardian who opened a thread records the first time they saw a staff reply in it (half on screen, the FC-05 rule). Anything else is the same 404; written on conflict do nothing, so the first time stays.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/family-goals/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/family-goals",
@@ -11926,7 +12007,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name and blocks. A script another coach saved since the editor read it is refused (409), not overwritten. With `retired` instead of name and blocks (item H) it retires the script or brings it back (setSessionScriptRetired): authoring_state changed in place, never a new version, the row and its blocks kept; refused together with name or blocks. A script that has any run is not changed by an edit: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
+    "notes": "Lane L1; lane W4-5 (SP-1a, #2191). A coach or organization admin changes a session script's name, its blocks' titles and minutes, and its blocks themselves: a library drill added (add_blocks), blocks removed (remove_block_ids), the running order set (order) (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name, blocks, add_blocks, remove_block_ids, order, retired and reviewed, and no field names a gym or a contact level (a new drill block carries its drill's own). A script another coach saved since the editor read it is refused (409), not overwritten. With `retired` instead of name and blocks (item H) it retires the script or brings it back (setSessionScriptRetired): authoring_state changed in place, never a new version, the row and its blocks kept; refused together with name or blocks. A script that has any run, or an edit that removes a block, is not changed in place: the edit is written as version + 1 in the same lineage, one transaction, audited, and no block row is ever deleted; the answer says why (because: run | removal). No athlete data. platform_owner and every reader-only role refused.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

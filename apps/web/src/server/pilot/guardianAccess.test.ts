@@ -5,6 +5,7 @@ import { queryOne, query } from './db';
 import {
   guardianAthleteIds,
   guardianLinkEnded,
+  guardianLinkedPredicateSql,
   guardianParentIdForAthlete,
   guardianParentIds,
   isGuardianLinkedToAthlete,
@@ -230,6 +231,50 @@ describe('consolidation holds: no new hand-written viewer-scoped guardian join a
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  test('a file that uses guardianLinkedPredicateSql also applies the 18 rule (guardianLinkEnded)', () => {
+    // The predicate carries the link and the deleted child, never the 18 rule: a reader that took
+    // the one without the other would show an adult's records to a guardian (OD-2026-10-07-008).
+    const webRoot = path.resolve(__dirname, '../../..');
+    const missing: string[] = [];
+    for (const root of [__dirname, path.join(webRoot, 'app/api/pilot')]) {
+      for (const file of walk(root)) {
+        if (file.endsWith('guardianAccess.ts')) continue;
+        const source = readFileSync(file, 'utf8');
+        if (source.includes('guardianLinkedPredicateSql(') && !source.includes('guardianLinkEnded(')) {
+          missing.push(path.relative(webRoot, file));
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('guardianLinkedPredicateSql (one statement, Codex P2 on #2179)', () => {
+  test('organization-scoped on both levels, the child still live, the account the placeholder given', () => {
+    const sql = guardianLinkedPredicateSql('o.organization_id', 'o.athlete_id', '$2').replace(/\s+/g, ' ');
+    expect(sql).toContain('gp.organization_id = gl.organization_id and gp.parent_id = gl.parent_id');
+    expect(sql).toContain('ga.organization_id = gl.organization_id and ga.athlete_id = gl.athlete_id and ga.deleted_at is null');
+    expect(sql).toContain('where gl.organization_id = o.organization_id and gl.athlete_id = o.athlete_id and gp.account_id = $2');
+  });
+
+  test("carries what the session gate checked: a live account, an active parent membership in this gym, the gym active (Overwatch on #2179)", () => {
+    const sql = guardianLinkedPredicateSql('o.organization_id', 'o.athlete_id', '$2').replace(/\s+/g, ' ');
+    expect(sql).toContain('gc.account_id = gp.account_id and gc.active_flag and not (gc.deleted_at is not null)');
+    expect(sql).toContain("gm.account_id = gp.account_id and gm.organization_id = gl.organization_id and gm.role = 'parent' and gm.active_flag");
+    expect(sql).toContain("gy.organization_id = gl.organization_id and (gy.status = 'active' or gc.is_platform_owner)");
+  });
+
+  test.each([
+    ['an unqualified column', ['organization_id', 'o.athlete_id', '$2']],
+    ['a column of its own aliases', ['gl.organization_id', 'o.athlete_id', '$2']],
+    ['a column of its membership alias', ['o.organization_id', 'gm.athlete_id', '$2']],
+    ['a column of its gym alias', ['gy.organization_id', 'o.athlete_id', '$2']],
+    ['an expression', ['o.organization_id', "o.athlete_id or true", '$2']],
+    ['a value in place of a placeholder', ['o.organization_id', 'o.athlete_id', "'acct'"]],
+  ])('refuses %s', (_label, [org, athlete, account]) => {
+    expect(() => guardianLinkedPredicateSql(org, athlete, account)).toThrow('alias.column');
   });
 });
 
