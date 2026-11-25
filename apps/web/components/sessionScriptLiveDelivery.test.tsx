@@ -2388,6 +2388,39 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.getByText(`Pause session: ${UNKNOWN_OUTCOME}`)).toBeInTheDocument();
   });
 
+  it('a log refused after the console has gone is said in the page\'s list, without the athlete', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    mockFetch({
+      session: signedIn,
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      // The landed check finds no new log of the pair: refused, not landed.
+      logGet: () => jsonResponse({ items: [] }),
+    });
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(
+        <>
+          <SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await openLog();
+    await logPair();
+    await act(async () => {
+      view?.rerender(<SaveQueueNotice />);
+    });
+    await wait(RESEND_MS);
+    const alert = screen.getByRole('alert');
+    expect(within(alert).getByText(/^Intervention log: Round-3 endurance block: /)).toBeInTheDocument();
+    expect(alert).not.toHaveTextContent('Jordan');
+  });
+
   it('a log refused because its key was another log\'s forgets that key: the next tap of the pair is a new log', async () => {
     jest.useFakeTimers();
     let posts = 0;
