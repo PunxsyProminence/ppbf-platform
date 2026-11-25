@@ -241,6 +241,8 @@ describe('POST', () => {
       sessionId: 'sess-1',
       athleteId: 'ath-1',
       note: '  Before: tight shoulders, keep it light.  ',
+      // No request_key sent: none handed down, so the note is added exactly as before (W4 item 7).
+      requestKey: null,
     });
     const body = await response.json();
     expect(body).toEqual({ ok: true, note_id: NOTE_ID });
