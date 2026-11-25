@@ -119,9 +119,10 @@ export default function CoachStoppedComingPage() {
             <ClusterNav cluster="who-needs-me" />
             <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
               Athletes on the roster who have come before but have not come for{' '}
-              {gap ? <strong>{gap}</strong> : 'the gym’s number of days'} or more, longest gone first. Coming
-              means a present day on a class register, or a &ldquo;here&rdquo; tap the register does not hold:
-              open gym, or a class where the tap made no register mark, or that was cancelled.
+              {gap ? <strong>{gap}</strong> : 'the gym’s number of days'} or more, longest gone first. It leaves
+              out athletes marked as left the gym and athletes whose program memberships have all lapsed or
+              ended. Coming means a present day on a class register, or a &ldquo;here&rdquo; tap the register
+              does not hold: open gym, or a class where the tap made no register mark, or that was cancelled.
             </p>
             {list ? (
               <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-400)]">

@@ -11,7 +11,7 @@
 // athletes may be missing; "Open passbook" hands the athlete over in page
 // memory; and the page shows no attendance figure.
 
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { PASSBOOK_PAGE } from '@/components/athleteRecordPages';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -182,6 +182,34 @@ test('the page shows no attendance figure or rate', async () => {
 
 test('a listed athlete shows no membership status (App Overwatch on #2172: membership records stay admin-only)', async () => {
   await renderPage(mockFetch({}));
-  expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
-  expect(pageText()).not.toMatch(/membership|lapsed|ended|program/i);
+  const rows = screen.getAllByRole('listitem');
+  expect(rows).toHaveLength(2);
+  // A row on this list has an active membership or none, so "active" is the status a row could show.
+  for (const row of rows) expect(row.textContent).not.toMatch(/member|status|active|lapsed|ended|program|enrol/i);
+});
+
+test('the intro says who the list leaves out, as a rule, above any list', async () => {
+  await renderPage(mockFetch({}));
+  expect(pageText()).toContain(
+    'It leaves out athletes marked as left the gym and athletes whose program memberships have all lapsed or ended.',
+  );
+});
+
+test.each([
+  [7, '1 week', 'the last week'],
+  [14, '2 weeks', 'the last 2 weeks'],
+  [21, '3 weeks', 'the last 3 weeks'],
+  [28, '4 weeks', 'the last 4 weeks'],
+  [42, '6 weeks', 'the last 6 weeks'],
+  [56, '8 weeks', 'the last 8 weeks'],
+])('the empty state at %i days says what it covers, whoever set the number', async (gapDays, gap, within) => {
+  for (const isDefault of [true, false]) {
+    cleanup();
+    await renderPage(mockFetch({ body: { ...LIST, gap_days: gapDays, is_default: isDefault, athletes: [] } }));
+    expect(pageText()).toContain(
+      `No one this list covers has gone ${gap} without coming`
+      + `Every athlete this list covers came within ${within}. It does not cover athletes who have never come, `
+      + 'athletes marked as left the gym, or athletes whose program memberships have all lapsed or ended.',
+    );
+  }
 });
