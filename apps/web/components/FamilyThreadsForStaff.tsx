@@ -26,7 +26,9 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * Everything shown is tagged with the athlete it was read for: after a switch,
  * the last child's messages are never left on screen under the next. Unsent
  * reply drafts are kept per message across switches, as the page keeps its own
- * drafts per athlete (UXB-13).
+ * drafts per athlete (UXB-13). A reply that fails after the coach has moved to
+ * another athlete is told on the athlete now on screen too, as the page tells a
+ * late failure for the athlete before (PREVIOUS_ATHLETE_WRITE_FAILED).
  */
 
 export interface StaffThreadPostView {
@@ -65,7 +67,14 @@ export default function FamilyThreadsForStaff({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Record<string, boolean>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
+  // A reply that failed for another athlete than the one on screen: told here until the coach goes back.
+  const [elsewhere, setElsewhere] = useState<{ athleteId: string; text: string } | null>(null);
   const seq = useRef(0);
+  // The athlete on screen now, for a reply that answers after a switch.
+  const onScreen = useRef(athleteId);
+  useEffect(() => {
+    onScreen.current = athleteId;
+  }, [athleteId]);
   const listRef = useRef<HTMLDivElement>(null);
   // Held in a ref so a caller's new function does not re-start the watch.
   const onSeenRef = useRef(onSeen);
@@ -87,6 +96,8 @@ export default function FamilyThreadsForStaff({
     // A re-read after a reply keeps this athlete's list on screen; anything else reads as loading.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? held : { state: 'loading' }));
+    // Back on the athlete whose reply failed: the message is under its thread again.
+    setElsewhere((held) => (held && held.athleteId === athleteId ? null : held));
     void (async () => {
       try {
         const response = await fetch(
@@ -115,6 +126,7 @@ export default function FamilyThreadsForStaff({
   /* SEEING A GUARDIAN'S POST: at least half of it on screen, or, for a post
      taller than the screen, half the screen filled with it. */
   useEffect(() => {
+    // read.athleteId: a second line; `shown` below already keeps another athlete's posts off the page.
     if (read.state !== 'loaded' || read.athleteId !== athleteId || !listRef.current) return;
     if (typeof IntersectionObserver === 'undefined') return;
     const sent = visit.current.readsSent;
@@ -159,6 +171,17 @@ export default function FamilyThreadsForStaff({
   }, [read, athleteId]);
 
   async function sendReply(threadId: string) {
+    const sentFor = athleteId;
+    const failed = (message: string) => {
+      setReplyErrors((held) => ({ ...held, [threadId]: message }));
+      if (onScreen.current !== sentFor) {
+        setElsewhere({
+          athleteId: sentFor,
+          // No name, as the page's own notice for a late failure: another athlete's people stay off this one's screen.
+          text: 'A reply you wrote for another athlete was not sent. It is still in its box under their messages.',
+        });
+      }
+    };
     const text = (drafts[threadId] ?? '').trim();
     if (!text) {
       setReplyErrors((held) => ({ ...held, [threadId]: 'Write a reply before sending.' }));
@@ -177,13 +200,13 @@ export default function FamilyThreadsForStaff({
         const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
         // The server's own words only for a refusal of this request (4xx), never a server fault.
         const reason = response.status < 500 && typeof payload.error === 'string' ? ` ${payload.error}` : '';
-        setReplyErrors((held) => ({ ...held, [threadId]: `Your reply was not sent; it is still in the box.${reason}` }));
+        failed(`Your reply was not sent; it is still in the box.${reason}`);
         return;
       }
       setDrafts((held) => ({ ...held, [threadId]: '' }));
       setAttempt((n) => n + 1);
     } catch {
-      setReplyErrors((held) => ({ ...held, [threadId]: 'Your reply was not sent; it is still in the box. Check the connection and send again.' }));
+      failed('Your reply was not sent; it is still in the box. Check the connection and send again.');
     } finally {
       setSending((held) => ({ ...held, [threadId]: false }));
     }
@@ -200,6 +223,9 @@ export default function FamilyThreadsForStaff({
         Messages a guardian started to the coach. The gym&apos;s staff can read them; of the family, only the guardian
         who wrote one sees it and the replies under it.
       </p>
+      {elsewhere && elsewhere.athleteId !== athleteId ? (
+        <p role="alert" className="t-body mt-[var(--s2)]">{elsewhere.text}</p>
+      ) : null}
       {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading messages from the family…</p>
       ) : shown.state === 'failed' ? (
@@ -244,7 +270,9 @@ export default function FamilyThreadsForStaff({
                     value={drafts[thread.thread_id] ?? ''}
                     onChange={(event) => setDrafts((held) => ({ ...held, [thread.thread_id]: event.target.value }))}
                     maxLength={2000}
-                    className="textarea min-h-[56px]"
+                    // Words typed while sending would be cleared when it succeeds.
+                    readOnly={Boolean(sending[thread.thread_id])}
+                    className="textarea"
                   />
                 </label>
                 <button
@@ -275,7 +303,8 @@ type UnseenState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded
  * athlete (`onChoose`, the page's own selection). Read from GET
  * /api/pilot/coach/family-threads/unread whenever `refreshKey` changes; names
  * come from the page's roster, and an athlete not on it is left out. Nothing
- * shows when there is nothing new; a failed read says so.
+ * shows when there is nothing new; until the first answer it says it is
+ * checking, and a failed read says so.
  */
 export function FamilyThreadsUnread({
   athletes,
@@ -306,7 +335,10 @@ export function FamilyThreadsUnread({
     })();
   }, [refreshKey, attempt]);
 
-  if (read.state === 'loading') return null;
+  // Not yet answered: says so, never reads as "nothing new" (an unknown value never looks like none).
+  if (read.state === 'loading') {
+    return <p className="t-muted mt-[var(--s3)]">Checking for new messages from families…</p>;
+  }
   if (read.state === 'failed') {
     return (
       <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">

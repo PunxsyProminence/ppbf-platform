@@ -5,6 +5,7 @@ import path from 'node:path';
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
 import { readCsv } from './contentImport/csv';
 import { MINT } from './contentImport/ids';
+import { VOCABULARIES } from './contentImport/vocabularies';
 import { normalizeName } from './contentImport/warnings';
 
 // Lane W4-8 (OD-2026-11-19-030, OW26-05 "B: Turn typed lines into library drills"; OD-2026-11-20-001 OW27-09,
@@ -26,6 +27,8 @@ const CUES = 'drill-library/seed_drill_cues.csv';
 const ITEMS = 'workout-templates/seed_workout_template_items.csv';
 const CLASS = 'AI DRAFT - lane W4-8';
 const MARKER = /^AI draft, lane W4-8, \d{4}-\d{2}-\d{2} \(OD-2026-11-19-030; OD-2026-11-20-001 OW27-09; OD-2026-11-15-011\)$/;
+/** Least to most contact (contentImport/vocabularies.ts). */
+const CONTACT: readonly string[] = VOCABULARIES.contact_level.values;
 const LABELLED = [
   'category', 'contact_level', 'cues', 'difficulty', 'discipline', 'equipment_needed', 'execution', 'name', 'purpose',
   'scale_levels', 'standard_setup', 'stop_rules', 'target_behavior', 'what_good_looks_like',
@@ -46,11 +49,17 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_ed57bea28de0f7: '5c1fda8d7e279462011757fdb575f8ed2b837d6e6544cc45ad5e6e51f20f0bdb', // Weeks 5-8 (TL-1b)
   wtp_d861f584584788: '0db4dd011480e5ccfd5f3fc5df45984ebb9f25803a3e26c91e55fa94bb79f2b2', // Weeks 9-12 (TL-1b)
   wtp_900c0a3fd4422a: '76781c9612b5ad2c1e003308dafa24cf78438f64140c99b5ffaa2180ff21f03e', // Scripted 60-Minute Class (TL-2; at d9514532)
+  wtp_1ad3c846b03ecc: '8bfaffbfcb34d4f272ca36e03e104c4cd51954e5e1b65be5f83638c29105298d', // Friday Sparring Coach Sheet (TL-3a; at 746bc1a5)
+  wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 746bc1a5)
+  wtp_9fbf7f8edf5016: '444687bba7a13750b9447cf569728336345eac5c5dbb1cedeaedc048b190eee8', // Wednesday Gold Standard Coach Script (TL-3b; at 746bc1a5)
 };
 
-/** The lane-linked steps that carry their own block time as their duration (#2177); a step PR adds its templates here. */
+/** The lane-linked steps that carry their own stated time as their duration (#2177); a step PR adds its templates here. */
 const TIMED_STEPS: Record<string, number[]> = {
   wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+  wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a; step 9's own block time is open sparring, so it stays blank)
+  wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a; the minutes in each step's own title)
+  wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b; steps 6 and 7 are controlled sparring)
 };
 
 type Row = Record<string, string>;
@@ -181,7 +190,16 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
         else expect({ step, drill: item.drill_id }).toEqual({ step, drill: drill.drill_id });
         expect({ step, contact: item.contact_level || 'none' }).toEqual({ step, contact: drill.contact_level });
       }
-      for (const level of scales.get(drill.drill_id) ?? []) expect(level.contact_level).toBe(drill.contact_level);
+      // No scale level runs above the drill's own contact (a step's limit, GO condition 5); level B, the drill as
+      // designed, runs at it. An easier level may sit lower (the open sparring drill's level A is controlled sparring).
+      // A blank level contact is 'none' (the import's blankDefault); a value outside the vocabulary ranks -1 and fails.
+      const rank = (value: string) => CONTACT.indexOf(value || 'none');
+      for (const level of scales.get(drill.drill_id) ?? []) {
+        const at = { drill: drill.drill_id, level: level.scale_level };
+        expect({ ...at, known: rank(level.contact_level) >= 0, above: rank(level.contact_level) > rank(drill.contact_level) })
+          .toEqual({ ...at, known: true, above: false });
+        if (level.scale_level === 'B') expect({ ...at, b: rank(level.contact_level) }).toEqual({ ...at, b: rank(drill.contact_level) });
+      }
     }
   });
 
@@ -216,29 +234,45 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
     }
   });
 
-  it('give each linked step its own block time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
+  it('give each linked step its own stated time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
     // Issuing, timers and presets read duration_minutes, never details (workoutTemplates.ts, WorkoutTemplateItemRow
-    // .details). A linked step whose details hold a block_time of its own (a time range no other step of its template
-    // shares) runs for that many minutes. A block time several steps share is the block's, not a step's; and only a
-    // step at contact none or light_technical may hold a duration (the import's rule, specs/templates.ts). Durations
-    // a step states some other way (details.time, or minutes inside its typed line) are not read here.
+    // .details). A linked step whose details state a time of its own runs for that many minutes: its block_time range,
+    // or, where it has none of its own, the minutes its block_title states ("(5 MIN)"), either held by no other step of
+    // its template (the title's minutes are matched as written, "(N MIN)"). A time several steps share is the block's,
+    // not a step's; and only a step at contact none or light_technical may hold a duration (the import's rule,
+    // specs/templates.ts). Durations a step states some other way (details.time, or minutes inside its typed line) are
+    // not read here.
     const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
-    const blockTime = (item: Row) => (item.details ? JSON.parse(item.details).block_time : undefined);
+    const detail = (item: Row, key: string) => (item.details ? JSON.parse(item.details)[key] : undefined);
     const holders = new Map<string, number>();
-    for (const item of items) holders.set(`${item.template_id} ${blockTime(item)}`, (holders.get(`${item.template_id} ${blockTime(item)}`) ?? 0) + 1);
-    const timed = items.filter((item) => laneIds.has(item.drill_id) && blockMinutes(blockTime(item)) !== null
-      && holders.get(`${item.template_id} ${blockTime(item)}`) === 1 && ['none', 'light_technical'].includes(item.contact_level));
+    for (const item of items) {
+      for (const key of ['block_time', 'block_title']) {
+        const at = `${item.template_id} ${key} ${detail(item, key)}`;
+        holders.set(at, (holders.get(at) ?? 0) + 1);
+      }
+    }
+    const own = (item: Row, key: string) => holders.get(`${item.template_id} ${key} ${detail(item, key)}`) === 1;
+    const statedTime = (item: Row): { text: string; minutes: number } | null => {
+      const range = own(item, 'block_time') ? blockMinutes(detail(item, 'block_time')) : null;
+      if (range !== null) return { text: detail(item, 'block_time'), minutes: range };
+      const title = own(item, 'block_title') ? String(detail(item, 'block_title') ?? '') : '';
+      const found = [...title.matchAll(/\((\d{1,2}) MIN\)/g)];
+      const minutes = found.length === 1 ? Number(found[0][1]) : 0;
+      return minutes >= 1 && minutes <= 90 ? { text: found[0][0], minutes } : null;
+    };
+    const timed = items.filter((item) => laneIds.has(item.drill_id) && statedTime(item) !== null
+      && ['none', 'light_technical'].includes(item.contact_level));
     const byTemplate: Record<string, number[]> = {};
     for (const item of timed) (byTemplate[item.template_id] ??= []).push(Number(item.ordinal));
     expect(byTemplate).toEqual(TIMED_STEPS);
     const templateRows = rows('workout-templates/seed_workout_templates.csv');
     for (const item of timed) {
       const step = `${item.template_id} ${item.ordinal}`;
-      const minutes = blockMinutes(blockTime(item));
+      const { text, minutes } = statedTime(item) as { text: string; minutes: number };
       expect({ step, duration: item.duration_minutes }).toEqual({ step, duration: String(minutes) });
       const label = JSON.parse(templateRows.find((row) => row.template_id === item.template_id)?.field_labels ?? '{}').items?.duration_minutes;
       const basis = String(label?.basis ?? '');
-      expect({ step, status: label?.status, lane: basis.startsWith('lane W4-8'), named: basis.includes(`${item.ordinal} ('${blockTime(item)}' → ${minutes})`) })
+      expect({ step, status: label?.status, lane: basis.startsWith('lane W4-8'), named: basis.includes(`${item.ordinal} ('${text}' → ${minutes})`) })
         .toEqual({ step, status: 'INFERRED', lane: true, named: true });
     }
   });

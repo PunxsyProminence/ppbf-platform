@@ -314,10 +314,7 @@ const COACH_RUN: Record<string, number[]> = {
  */
 const TYPED_IN_MIXED: Record<string, number[]> = {
   wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min
-  wtp_1ad3c846b03ecc: [1, 2, 9, 10, 11], // Friday Sparring Coach Sheet
-  wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day
   wtp_456e418b1741b8: [6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21], // Iso + Plyo 60-Minute Boxing Session – FULL Coach Execution Manual
-  wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday – Gold Standard Coach Script
   wtp_bc964fe230d8f3: [1, 2, 6, 9], // Phase 2 — Competitive Amateur — Archetype tactical session — vs. press
   wtp_c2c4bec001a56b: [1, 4, 5, 6, 7], // Phase 1 — Foundation / Novice — Boxing skill session, 90 minutes (mont
 };
