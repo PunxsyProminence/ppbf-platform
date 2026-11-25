@@ -179,3 +179,9 @@ test('the page shows no attendance figure or rate', async () => {
   await renderPage(mockFetch({}));
   expect(pageText()).not.toMatch(/attendance|%/i);
 });
+
+test('a listed athlete shows no membership status (App Overwatch on #2172: membership records stay admin-only)', async () => {
+  await renderPage(mockFetch({}));
+  expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
+  expect(pageText()).not.toMatch(/membership|lapsed|ended|program/i);
+});
