@@ -1315,47 +1315,62 @@ describe('email alert staff event sources', () => {
   test('a restore offers a notice again only where no try can have reached the person: a first-try refusal yes, a try Graph may have taken no', async () => {
     const client = await freshDatabase('emailevents_notice_restore_certainty');
     activeClient = client;
-    await switchOn(client, ['acct-ev-parent', 'acct-ev-coach-own']);
-    // The parent's first try is a 503 (Graph may have taken the mail); the
-    // coach's is a 403, a final refusal.
-    const refusals = new Map<string, MailSendError>([
-      ['acct-ev-parent@example.com', new MailSendError('GRAPH_SEND_FAILED', 503, 'ServiceUnavailable')],
-      ['acct-ev-coach-own@example.com', new MailSendError('GRAPH_SEND_FAILED', 403, 'ErrorAccessDenied')],
+    await switchOn(client, ['acct-ev-parent', 'acct-ev-coach-own', 'acct-ev-orgadmin']);
+    // Each address's answers, try by try. The parent's first try is a 503
+    // (Graph may have taken the mail); the coach's a 403, a final refusal; the
+    // organization admin's a 503 and then a 403, so it fails on its second try.
+    const answers = new Map<string, MailSendError[]>([
+      ['acct-ev-parent@example.com', [new MailSendError('GRAPH_SEND_FAILED', 503, 'ServiceUnavailable')]],
+      ['acct-ev-coach-own@example.com', [new MailSendError('GRAPH_SEND_FAILED', 403, 'ErrorAccessDenied')]],
+      ['acct-ev-orgadmin@example.com', [
+        new MailSendError('GRAPH_SEND_FAILED', 503, 'ServiceUnavailable'),
+        new MailSendError('GRAPH_SEND_FAILED', 403, 'ErrorAccessDenied'),
+      ]],
     ]);
     const calls: string[] = [];
     const dependencies: EmailAlertSenderDependencies = {
       ...emailAlertSenderDependencies(),
       prepareSend: async () => async (message) => {
         calls.push(message.to);
-        const refusal = refusals.get(message.to);
+        const refusal = answers.get(message.to)?.shift();
         if (refusal) throw refusal;
       },
       gymName: async () => 'GYM',
     };
+    const due = (accountId: string) =>
+      client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp() where account_id = $1`, [accountId]);
     await runEmailAlertSweep(dependencies); // sets the checkpoints
 
     const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
-    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 2, sent: 0, retried: 1, failed: 1 });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 3, sent: 0, retried: 2, failed: 1 });
+    await due('acct-ev-orgadmin');
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, failed: 1 });
     // Retired; the parent's retry comes due and is skipped as not_offered.
     await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: false, onlyAuthorAccountId: null });
-    await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp() where account_id = 'acct-ev-parent'`);
+    await due('acct-ev-parent');
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 1 });
 
-    // Restored, with Graph now taking both: the coach, refused at once, is
-    // offered again and sent; the parent, whose try Graph may have taken, is
-    // not. Then nothing more.
-    refusals.clear();
+    // Restored, with Graph now taking every address: the coach, refused on
+    // its only try, is offered again and sent; the parent and the
+    // organization admin, each with a try Graph may have taken, are not.
+    // Then nothing more.
+    answers.clear();
     await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: true, onlyAuthorAccountId: null });
     await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 1 });
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
-    expect(calls.sort()).toEqual(['acct-ev-coach-own@example.com', 'acct-ev-coach-own@example.com', 'acct-ev-parent@example.com']);
+    expect(calls.sort()).toEqual([
+      'acct-ev-coach-own@example.com', 'acct-ev-coach-own@example.com',
+      'acct-ev-orgadmin@example.com', 'acct-ev-orgadmin@example.com',
+      'acct-ev-parent@example.com',
+    ]);
     const { rows } = await client.query(
       `select account_id, status, skip_reason, tries, last_status_code from pilot.email_alert_sends order by account_id`,
     );
     expect(rows).toEqual([
-      // The coach's two tries in all; the parent's 503 is kept as the record of its try.
+      // The coach's two tries in all; each other row keeps its last status as the record of its tries.
       { account_id: 'acct-ev-coach-own', status: 'sent', skip_reason: null, tries: 2, last_status_code: null },
+      { account_id: 'acct-ev-orgadmin', status: 'failed', skip_reason: null, tries: 2, last_status_code: 403 },
       { account_id: 'acct-ev-parent', status: 'skipped', skip_reason: 'not_offered', tries: 2, last_status_code: 503 },
     ]);
   });
