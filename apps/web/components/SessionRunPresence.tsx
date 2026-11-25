@@ -169,6 +169,11 @@ function refusalText(code: unknown): string {
 
 const NO_REFUSALS: ReadonlyMap<string, string> = new Map();
 
+/** The key of an athlete's register_newer line in the list's alert, beside their refusal (keyed by id). */
+function registerAlertKey(athleteId: string): string {
+  return `register ${athleteId}`;
+}
+
 /** One kept here tap not yet answered: whom it marks, and how. */
 type AskedTap = { save: object; athleteId: string; present: boolean };
 
@@ -344,11 +349,13 @@ export default function SessionRunPresence({
       return next;
     });
   }, []);
+  // An athlete's saved tap takes away their kept refusal and their register line (registerAlertKey below).
   const forgetRefusal = useCallback((athleteId: string) => {
     setKeptRefusals((current) => {
-      if (!current.has(athleteId)) return current;
+      if (!current.has(athleteId) && !current.has(registerAlertKey(athleteId))) return current;
       const next = new Map(current);
       next.delete(athleteId);
+      next.delete(registerAlertKey(athleteId));
       return next;
     });
   }, []);
@@ -435,7 +442,17 @@ export default function SessionRunPresence({
             const answer = response
               ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null)
               : null;
-            setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, holdAnswer(answer?.hold_warning)) });
+            const hold = holdAnswer(answer?.hold_warning);
+            // The register kept what was set there after the tap: kept taps land in a burst when the
+            // connection returns, and the row's one note would be overwritten by the next, so this goes
+            // in the list's named alert, until OK, this athlete's next saved tap, or a drop (R11-S1).
+            if (answer?.register?.effect === 'register_newer') {
+              const words = registerNote(athlete.full_name, answer.register, null);
+              setKeptRefusals((current) => new Map(current).set(registerAlertKey(athlete.athlete_id), words));
+              setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, undefined, hold) });
+              return;
+            }
+            setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, hold) });
           })();
         },
         // Refused: said in this list, where the coach tapped.

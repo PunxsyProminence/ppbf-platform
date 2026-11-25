@@ -1030,6 +1030,103 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getAllByText('Ada Reyes is marked here, but the class register was changed after your tap, so it stays Excused there. Change it on the register if Ada Reyes is here.').length).toBeGreaterThan(0);
   });
 
+  // Reviewer B, round 11 (R11-S1): kept taps land in a burst when the connection returns. The row's
+  // one note is overwritten by the next tap's, so a register_newer answer is also kept in the list's
+  // named alert, until OK, that athlete's next saved tap, or a drop of the queue.
+  const ADA_STAYS = 'Ada Reyes is marked here, but the class register was changed after your tap, so it stays Excused there. Change it on the register if Ada Reyes is here.';
+  function serveBurst() {
+    let present: Array<typeof ADA> = [];
+    let lost = true;
+    serveKept({
+      tap: () => {
+        // The first send is lost; then everything kept lands, Ada's answered register_newer.
+        if (lost) {
+          lost = false;
+          return 'lost';
+        }
+        const body = sent[sent.length - 1].body;
+        const athlete = [ADA, BEN, CY].find((one) => one.athlete_id === body.athlete_id) as typeof ADA;
+        present = body.present ? [...present.filter((one) => one !== athlete), athlete] : present.filter((one) => one !== athlete);
+        if (!body.present) return answer({ outcome: 'unmarked', register: { effect: 'unchanged' } });
+        return athlete === ADA && sent.length <= 3
+          ? answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'excused' } })
+          : answer({ outcome: 'marked', register: { effect: 'created' } });
+      },
+      present: () => present,
+    });
+  }
+
+  test('two kept taps landing together: the register_newer words stay named in the list\'s alert after the next tap\'s note, until OK', async () => {
+    jest.useFakeTimers();
+    serveBurst();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(sent.map((call) => call.body.athlete_id)).toEqual(['ath-1', 'ath-1', 'ath-2']);
+    // Ben's note took the row's one slot; Ada's register line is in the alert.
+    expect(screen.getAllByText('Ben Ortiz is Present on the class register.').length).toBeGreaterThan(0);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(ADA_STAYS);
+    // Said once: not also left in Ada's row.
+    expect(screen.getAllByText(ADA_STAYS)).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    });
+    expect(screen.queryByText(ADA_STAYS)).toBeNull();
+  });
+
+  test('a register_newer line goes with that athlete\'s next saved tap, not with another athlete\'s', async () => {
+    jest.useFakeTimers();
+    serveBurst();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain(ADA_STAYS);
+    // Cy's saved tap leaves Ada's line; Ada's own next saved tap takes it away.
+    await tapKept('Mark here Cy Marsh');
+    expect(screen.getByRole('alert').textContent).toContain(ADA_STAYS);
+    await tapKept('Here Ada Reyes');
+    expect(screen.queryByText(ADA_STAYS)).toBeNull();
+  });
+
+  test('a refused next tap of the same athlete is said beside their register line, not over it', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) return 'lost';
+        if (send === 2) {
+          present = [ADA];
+          return answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'excused' } });
+        }
+        return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    await tapKept('Here Ada Reyes');
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(ADA_STAYS);
+    expect(alert.textContent).toContain('Ada Reyes: This account cannot mark that athlete here. Nothing was saved.');
+  });
+
+  test('a sign-out takes a register_newer line off the screen', async () => {
+    jest.useFakeTimers();
+    serveBurst();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain(ADA_STAYS);
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.queryByText(ADA_STAYS)).toBeNull();
+  });
+
   test('a not-known outcome after this list has gone is listed apart in the page\'s list, with where to check', async () => {
     jest.useFakeTimers();
     let reads = 0;
