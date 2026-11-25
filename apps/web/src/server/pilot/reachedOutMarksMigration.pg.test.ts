@@ -570,7 +570,7 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(`update ${T} set marked_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
         .rejects.toMatchObject(refused);
       await expect(client.query(`update ${T} set athlete_id = 'ben' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
-      // Only an account's delete (the foreign key's own SET NULL, deeper than 1) may clear a name.
+      // A name is cleared only once its account row is gone (an account's delete: the foreign key's own SET NULL).
       await expect(client.query(`update ${T} set marked_by_account_id = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       // An end that does not say how it ended, or says it in another word, is refused.
       await expect(client.query(`update ${T} set cleared_at = now(), cleared_by_account_id = $1 where athlete_id = 'ada'`, [COACH_ID]))
@@ -603,7 +603,7 @@ describe('athlete reached-out marks migration', () => {
     }
   });
 
-  test('the guard holds against a write from inside another table\'s trigger: no delete, no name cleared while its account lives', async () => {
+  test('the guard holds against a write from inside another table\'s trigger (not a same-statement key rename): no delete, no name cleared while its account lives', async () => {
     const { client } = await freshDatabase();
     try {
       await mark(client, 'ada');

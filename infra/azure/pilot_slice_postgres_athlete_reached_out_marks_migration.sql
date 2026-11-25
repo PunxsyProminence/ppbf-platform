@@ -30,10 +30,11 @@
 -- Without the second way the stale mark would stay current and this index
 -- would refuse the new absence's mark (Codex, #2176). An athlete who comes
 -- back and keeps coming keeps their last mark, current, until it is taken back
--- or replaced; the page shows it only while it is newer than their last day
--- they came. The fixed word follows the athlete pathway's end_reason
--- 'replaced', but this table does not link an ended mark to the mark that
--- replaced it (the pathway holds that link with a deferred self-reference).
+-- or replaced; the page (SC-3b, not built yet) is to show it only while it is
+-- newer than their last day they came. The fixed word follows the athlete
+-- pathway's end_reason 'replaced', but this table does not link an ended mark
+-- to the mark that replaced it (the pathway holds that link with a deferred
+-- self-reference).
 -- So this file checks neither that a 'replaced' mark was stale (the database
 -- cannot see the athlete's last day they came) nor that a new mark followed
 -- it: the module ends the old mark and inserts the new one in one
