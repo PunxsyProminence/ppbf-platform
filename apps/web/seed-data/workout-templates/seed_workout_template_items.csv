@@ -398,7 +398,7 @@ POST-SESSION WATCH: Check for delayed injury signs. Document incidents. Note ath
 {{PPBF_ORG_ID}},wti_770ea73c4b30b9,wtp_456e418b1741b8,18,applied_rounds,drl_4f2ac372a75483,,,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
 {{PPBF_ORG_ID}},wti_225fe1384aefc9,wtp_456e418b1741b8,19,conditioning,drl_5ab30784188e04,,,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
 {{PPBF_ORG_ID}},wti_aee314f3ed659a,wtp_456e418b1741b8,20,conditioning,drl_3891ec6a6a49f6,,,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
-{{PPBF_ORG_ID}},wti_ac4ab08a82ecb0,wtp_456e418b1741b8,21,cooldown,drl_15ebfe7736b8eb,,,,none,,,"{""block_time"":""58:00–60:00"",""block_title"":""58:00–60:00 Reset""}"
+{{PPBF_ORG_ID}},wti_ac4ab08a82ecb0,wtp_456e418b1741b8,21,cooldown,drl_15ebfe7736b8eb,,2,,none,,,"{""block_time"":""58:00–60:00"",""block_title"":""58:00–60:00 Reset""}"
 {{PPBF_ORG_ID}},wti_a22fc036566395,wtp_4b192f174699bc,1,technical,,Mirror awareness,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
 {{PPBF_ORG_ID}},wti_3a31a44a12c4eb,wtp_4b192f174699bc,2,technical,,Mirror movement,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
 {{PPBF_ORG_ID}},wti_a00c2b3898001f,wtp_4b192f174699bc,3,technical,,Shadowboxing application,,,none,,,"{""phase"":""SESSION PROGRESSION""}"

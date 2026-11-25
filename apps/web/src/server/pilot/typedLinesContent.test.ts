@@ -61,6 +61,7 @@ const TIMED_STEPS: Record<string, number[]> = {
   wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a; step 9's own block time is open sparring, so it stays blank)
   wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a; the minutes in each step's own title)
   wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b; steps 6 and 7 are controlled sparring)
+  wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4; its other linked steps share their block times)
 };
 
 type Row = Record<string, string>;

@@ -199,3 +199,9 @@ Source: the 13 typed steps of `wtp_456e418b1741b8` (Iso + Plyo 60-Minute Boxing 
 - Stop: Dizziness or light-headedness: stop the bounce and breathe normally. (safety)
 - Cue: none (conditioning)
 - Bases: name: the step's block title ('Reset') and its typed line; discipline: a cool-down is filed under conditioning in the library (as Post-Session Mobility); category: cooldown: the step's block; standard_setup: AI draft; 'standing' is this lane's reading; contact none, as the step's own contact level; stop_rules: the lane's Breathing Reset stop (drl_0967cc300cfc5e, 'Dizziness or light-headedness: stop the count and breathe normally.'), with 'the bounce' for 'the count'; cues: none: a conditioning drill needs no cue (OD-2026-10-06-026 ruling 2)
+
+## Durations (the rule App Overwatch set on #2177, and its extension to title minutes on #2186)
+
+- Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose details state a time of its own (its `block_time` range, or, where it has none of its own, the minutes its own `block_title` states), held by no other step of its template, carries it as its duration, at contact none or light_technical.
+- Step 21 ("58:00–60:00", the Reset block) carries 2 minutes. Every other linked step shares its block time and its block title with other steps (0:00–8:00, 8:00–18:00, 18:00–35:00, 35:00–50:00, 50:00–58:00), so it stays blank.
+- The template's own `items` label gains a lane `duration_minutes` part (INFERRED; its basis names the step, its block time and its minutes). `typedLinesContent.test.ts` pins the step (`TIMED_STEPS`); the frozen youth-recreational case expects `drill_id, duration_minutes` on it (`LANE_W48_DURATIONS`; UNVERIFIED here).

@@ -549,6 +549,7 @@ describe('the committed youth + recreational rows', () => {
     wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
     wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b)
+    wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
