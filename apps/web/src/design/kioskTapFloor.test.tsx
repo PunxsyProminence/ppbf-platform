@@ -159,6 +159,7 @@ const FLOOR_ROUTES = [
   'coach/transfer-check', // app scrub CF-24 (lane U1, SC2-2)
   'coach/passbook', // app scrub CF-24 (lane U1, SC2-2)
   'coach/passbook-gaps', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/stopped-coming', // W4 item 6 (lane W4-6, SC-2)
   'coach/one-percent-club', // app scrub CF-24 (lane U1, SC2-2)
   'coach/mental-skills', // app scrub CF-24 (lane U1, SC2-2)
   'coach/development-blocks', // app scrub CF-24 (lane U1, SC2-2)
