@@ -1837,6 +1837,11 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
   async function plan(label: string) {
     const gym = await newGym(label);
     await insertTemplate(gym);
+    // The fixture's sparring step runs at controlled_sparring; its drill says so too, as the importer's
+    // step_contact_above_drill rule requires of any committed step (reviewer C on #2196).
+    await client.query(`update pilot.drill_library set contact_level = 'controlled_sparring' where organization_id = $1 and drill_id = 'ref-spar'`, [
+      gym.organizationId,
+    ]);
     const created = await create(gym);
     const before = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
     const [jab, mirror, spar] = before!.blocks.map((block) => block.block_id);
@@ -1897,21 +1902,45 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     expect(await storedBytes(gym, other.script_id)).toBe(sourceBytes);
   });
 
-  test("a copy keeps the drill version its source links, even a replaced one; another gym's block is not found and nothing is written", async () => {
+  test("a copy links its drill's current version, as a template step does; the audit names the source block", async () => {
     const { gym, scriptId, jab } = await plan('copy-version');
+    // A drill edit's shape: the old version superseded, then the new one written in its lineage.
     await client.query(`update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-jab'`, [
       gym.organizationId,
     ]);
-    await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: jab, ...place }] });
-    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3].drill_id).toBe('ref-jab');
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, version, supersedes_drill_id, name, discipline, category, difficulty,
+          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, field_provenance, active)
+       values ($1, 'ref-jab-v2', 'ref-jab', 2, 'ref-jab', 'Jab Drill, revised', 'boxing', 'footwork', 'advanced',
+               'target', 'purpose', 'setup', 'execution', 'good', 'bad', 'PPBF source manual v3', true)`,
+      [gym.organizationId],
+    );
 
+    await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: jab, ...place }] });
+
+    const copy = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3];
+    expect(copy).toMatchObject({ drill_id: 'ref-jab-v2', block_label: 'Jab Drill', contact_level: 'none' });
+    const { rows } = await client.query(
+      `select details from pilot.audit_events where organization_id = $1 and entity_type = 'session_script'
+        order by created_at desc, audit_id desc limit 1`,
+      [gym.organizationId],
+    );
+    expect(rows[0].details).toMatchObject({ blocks_added: 1, copied_from: [jab] });
+  });
+
+  test("refused and nothing written: a copy of a withdrawn drill, a copy above its drill's current contact, another gym's block", async () => {
+    const { gym, scriptId, jab, spar } = await plan('copy-refused');
     const theirs = await plan('copy-theirs');
     const bytes = await storedBytes(gym, scriptId);
-    await expectRefused(
-      edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: theirs.jab, ...place }] }),
-      'SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND',
-      422,
-    );
+    const copyOf = (blockId: string) => edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: blockId, ...place }] });
+
+    await client.query(`update pilot.drill_library set active = false where organization_id = $1 and drill_id = 'ref-jab'`, [gym.organizationId]);
+    await expectRefused(copyOf(jab), 'SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
+    // The gym lowered its sparring drill to no contact; a block that ran it at controlled sparring cannot be copied above it.
+    await client.query(`update pilot.drill_library set contact_level = 'none' where organization_id = $1 and drill_id = 'ref-spar'`, [gym.organizationId]);
+    await expectRefused(copyOf(spar), 'SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL', 422);
+    await expectRefused(copyOf(theirs.jab), 'SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND', 422);
     expect(await storedBytes(gym, scriptId)).toBe(bytes);
   });
 

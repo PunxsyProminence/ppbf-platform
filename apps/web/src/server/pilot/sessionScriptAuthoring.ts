@@ -518,8 +518,6 @@ async function drillsForNewBlocks(
   client: PoolClient,
   organizationId: string,
   drillIds: readonly string[],
-  /** Copies keep the drill version their source links, current or not; only these must be current. */
-  mustBeCurrent: readonly string[],
 ): Promise<Map<string, DrillForBlock>> {
   if (drillIds.length === 0) return new Map();
   const found = await client.query<DrillForBlock & { current: boolean }>(
@@ -531,7 +529,7 @@ async function drillsForNewBlocks(
     [organizationId, [...new Set(drillIds)]],
   );
   const byId = new Map(found.rows.map((row) => [row.drill_id, row]));
-  for (const drillId of mustBeCurrent) {
+  for (const drillId of drillIds) {
     const drill = byId.get(drillId);
     if (!drill) refuse('SESSION_SCRIPT_DRILL_NOT_FOUND');
     if (!drill.current) throw new SessionScriptAuthoringError('SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
@@ -562,6 +560,36 @@ async function blocksNamedElsewhere(client: PoolClient, organizationId: string, 
     [organizationId, [...blockIds], keys],
   );
   return (named.rowCount ?? 0) > 0;
+}
+
+/**
+ * A copied block's drill, taken as the template editor takes a new item's drill (workoutTemplateEdit.ts,
+ * the importer's withdrawn_drill and step_contact_above_drill rules): the CURRENT version of its
+ * lineage, share-locked against a drill edit, which must be one the gym runs. Keyed by the source's
+ * drill id. The copy links that version, and its contact may not be above that version's.
+ */
+async function currentDrillsForCopies(
+  client: PoolClient,
+  organizationId: string,
+  drillIds: readonly string[],
+): Promise<Map<string, DrillForBlock>> {
+  if (drillIds.length === 0) return new Map();
+  const found = await client.query<DrillForBlock & { source_id: string; active: boolean }>(
+    `select d.drill_id as source_id, h.drill_id, h.name, h.contact_level, h.active
+       from pilot.drill_library d
+       join pilot.drill_library h
+         on h.organization_id = d.organization_id and h.lineage_id = d.lineage_id and h.superseded_at is null
+      where d.organization_id = $1 and d.drill_id = any($2::text[])
+      order by h.drill_id
+        for share of h`,
+    [organizationId, [...new Set(drillIds)]],
+  );
+  const bySource = new Map(found.rows.map((row) => [row.source_id, row]));
+  for (const drillId of drillIds) {
+    // None current: replaced while this edit waited on its lock. Not active: the gym withdrew it.
+    if (!bySource.get(drillId)?.active) throw new SessionScriptAuthoringError('SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
+  }
+  return bySource;
 }
 
 /** The blocks a copy is made from: any block of the gym's plans, this one included. Not locked. */
@@ -611,12 +639,12 @@ export async function editSessionScript(
 
   return withTransaction(async (client) => {
     // The drills first, then the plan: content import locks drill rows before plan rows, so taking
-    // them the other way round here could deadlock against it. A copy's drill is locked too: its
-    // insert's foreign key check would otherwise wait on it under the plan's lock.
+    // them the other way round here could deadlock against it. A copy's drill (its current version)
+    // is locked too: its insert's foreign key check would otherwise wait on it under the plan's lock.
     const sources = await copySources(client, params.organizationId, adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])));
-    const drillAdds = adds.flatMap((add) => (add.kind === 'drill' ? [add.drill_id] : []));
+    const drills = await drillsForNewBlocks(client, params.organizationId, adds.flatMap((add) => (add.kind === 'drill' ? [add.drill_id] : [])));
     const copiedDrills = [...sources.values()].flatMap((block) => (block.drill_id === null ? [] : [block.drill_id]));
-    const drills = await drillsForNewBlocks(client, params.organizationId, [...drillAdds, ...copiedDrills], drillAdds);
+    const copyDrills = await currentDrillsForCopies(client, params.organizationId, copiedDrills);
     const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -667,12 +695,17 @@ export async function editSessionScript(
         };
       }
       if (add.kind === 'copy') {
-        // Everything the source block says, its contact level included (the sizing); a new id, its own place.
+        // Everything the source block says, its contact level included (the sizing); a new id, its own
+        // place; its drill's current version (currentDrillsForCopies), never below its contact.
         const { block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level } =
           sources.get(add.block_id) as SessionScriptBlockRow;
+        const drill = drill_id === null ? null : (copyDrills.get(drill_id) as DrillForBlock);
+        if (drill && CONTACT_LADDER.indexOf(contact_level) > CONTACT_LADDER.indexOf(drill.contact_level)) {
+          refuse('SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL');
+        }
         return {
-          ...place, block_label: add.block_label ?? block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix,
-          block_kind, drill_id, scale_level, contact_level,
+          ...place, block_label: add.block_label ?? block_label.slice(0, MAX_TEXT_LENGTH), what_to_say, what_to_explain, what_to_watch,
+          what_to_fix, block_kind, drill_id: drill?.drill_id ?? null, scale_level, contact_level,
         };
       }
       const drill = drills.get(add.drill_id) as DrillForBlock;
@@ -847,6 +880,7 @@ export async function editSessionScript(
           edited_script_id: script.script_id,
           blocks_changed: changed.length,
           blocks_added: adds.length,
+          ...(sources.size > 0 && { copied_from: adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])) }),
           blocks_removed: remove.length,
           order_changed: orderChanged,
           ...(removedNamed && !hasRun && { new_version_because: 'a removed block is named elsewhere' }),
