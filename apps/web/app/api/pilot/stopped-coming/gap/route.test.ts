@@ -81,6 +81,7 @@ describe('PUT', () => {
     mockPrincipal.mockResolvedValue(principal(role));
     const response = await put({ gap_days: 28 });
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(await response.json()).toEqual({ ok: true, gap_days: 28, is_default: false, choices: CHOICES });
     expect(mockSet).toHaveBeenCalledWith({ organizationId: 'org-1', actorAccountId: `acct-${role}`, actorRole: role, gapDays: 28 });
   });
@@ -89,8 +90,18 @@ describe('PUT', () => {
     mockPrincipal.mockResolvedValue(principal('organization_admin'));
     const response = await put({ gap_days: null });
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(await response.json()).toEqual({ ok: true, gap_days: 14, is_default: true, choices: CHOICES });
     expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ gapDays: null }));
+  });
+
+  it.each(['coach', 'athlete'])('a %s sending a broken body is refused for its role (403), not for its body', async (role) => {
+    mockPrincipal.mockResolvedValue(principal(role));
+    for (const body of ['not json', [14], { gap_days: 30, extra: true }]) {
+      const response = await put(body);
+      expect(response.status).toBe(403);
+    }
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it.each(NOT_THE_GYM_ADMIN)('a %s cannot change it', async (role) => {

@@ -76,6 +76,12 @@ test.each(['coach', 'athlete', 'parent', 'board', 'platform_owner', 'volunteer',
   },
 );
 
+test('the role is checked before the value: a coach with a number off the list is refused for the role (403)', async () => {
+  await expect(setStoppedComingPolicy({ organizationId: 'org-1', actorAccountId: 'a', actorRole: 'coach', gapDays: 30 }))
+    .rejects.toMatchObject({ status: 403 });
+  expect(mockWithTransaction).not.toHaveBeenCalled();
+});
+
 test.each([0, 30, '14', undefined, 14.5])('a value off the list (%p) is refused before anything is written', async (gapDays) => {
   await expect(setStoppedComingPolicy({ organizationId: 'org-1', actorAccountId: 'a', actorRole: 'organization_admin', gapDays }))
     .rejects.toMatchObject({ status: 400 });

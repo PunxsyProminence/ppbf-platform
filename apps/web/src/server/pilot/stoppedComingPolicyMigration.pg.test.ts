@@ -68,8 +68,12 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** The full schema, two gyms and a gym admin in the first. */
-async function freshDatabase(name: string, { preMigration = false } = {}): Promise<Client> {
+/**
+ * The full schema, two gyms and a gym admin in the first. `runRunner: false`
+ * leaves the table exactly as the full schema (the workflow's `all` list)
+ * built it, so a test can see what that list alone produces.
+ */
+async function freshDatabase(name: string, { preMigration = false, runRunner = true } = {}): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
@@ -96,7 +100,7 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
 
   if (preMigration) {
     await client.query('drop table if exists pilot.organization_stopped_coming_policy cascade');
-  } else {
+  } else if (runRunner) {
     // Idempotent: a no-op once the workflow's `all` list carries it.
     await applyMigrationTransaction(client, migrationSql);
   }
@@ -156,11 +160,12 @@ afterAll(async () => {
 });
 
 describe('organization stopped-coming policy migration', () => {
-  test('the full schema (the workflow\'s `all` list) already carries the table', async () => {
-    const client = await freshDatabase('stoppedcoming_all');
+  test('the full schema (the workflow\'s `all` list) carries the table on its own, and it passes readiness', async () => {
+    const client = await freshDatabase('stoppedcoming_all', { runRunner: false });
     try {
       const { rows } = await client.query(`select to_regclass('pilot.organization_stopped_coming_policy') is not null as present`);
       expect(rows[0].present).toBe(true);
+      await expect(applyMigrationTransaction(client, 'select 1')).resolves.toBeUndefined();
     } finally {
       await client.end();
     }
@@ -189,25 +194,66 @@ describe('organization stopped-coming policy migration', () => {
     }
   });
 
-  test('the readiness check refuses a table whose list is not the answered one, and rolls back', async () => {
-    const client = await freshDatabase('stoppedcoming_drift');
+  test('a refused readiness check rolls back everything the run did', async () => {
+    const client = await freshDatabase('stoppedcoming_rollback');
     try {
       await client.query(
         `alter table pilot.organization_stopped_coming_policy
            drop constraint pilot_org_stopped_coming_gap_days_check,
            add constraint pilot_org_stopped_coming_gap_days_check check (gap_days in (1, 7, 14, 21, 28, 42, 56))`,
       );
-      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow('ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY');
+      await expect(applyMigrationTransaction(client, 'create table pilot.zz_stopped_coming_probe (x integer)'))
+        .rejects.toThrow('ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY: check_ready');
+      const { rows } = await client.query(`select to_regclass('pilot.zz_stopped_coming_probe') is null as gone`);
+      expect(rows[0].gone).toBe(true);
     } finally {
       await client.end();
     }
   });
 
-  test('the readiness check refuses a table with an extra column', async () => {
-    const client = await freshDatabase('stoppedcoming_column');
+  // Each piece of the readiness check, refused on its own and named in the error.
+  const T = 'pilot.organization_stopped_coming_policy';
+  test.each([
+    ['check_ready', 'a CHECK whose list is not the answered one',
+      `alter table ${T} drop constraint pilot_org_stopped_coming_gap_days_check,
+         add constraint pilot_org_stopped_coming_gap_days_check check (gap_days in (1, 7, 14, 21, 28, 42, 56))`],
+    ['check_ready', 'the CHECK not validated',
+      `alter table ${T} drop constraint pilot_org_stopped_coming_gap_days_check,
+         add constraint pilot_org_stopped_coming_gap_days_check check (gap_days in (7, 14, 21, 28, 42, 56)) not valid`],
+    ['check_ready', 'a second CHECK', `alter table ${T} add constraint zz_extra_check check (gap_days <> 14)`],
+    ['columns_ready', 'an extra column', `alter table ${T} add column note text`],
+    ['gap_days_ready', 'gap_days nullable', `alter table ${T} alter column gap_days drop not null`],
+    ['gap_days_ready', 'gap_days a bigint', `alter table ${T} alter column gap_days type bigint`],
+    ['gap_days_ready', 'gap_days with a default', `alter table ${T} alter column gap_days set default 14`],
+    ['set_at_ready', 'set_at nullable', `alter table ${T} alter column set_at drop not null`],
+    ['set_at_ready', 'set_at with no default', `alter table ${T} alter column set_at drop default`],
+    ['set_at_ready', 'set_at as text', `alter table ${T} alter column set_at type text using set_at::text`],
+    ['set_by_account_id_ready', 'set_by_account_id not null', `alter table ${T} alter column set_by_account_id set not null`],
+    ['primary_key_ready', 'no primary key',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_pkey cascade`],
+    ['no_other_unique_ready', 'an extra unique constraint', `alter table ${T} add constraint zz_unique_gap unique (gap_days)`],
+    ['foreign_key_count_ready', 'a third foreign key',
+      `alter table ${T} add constraint zz_org_again foreign key (organization_id)
+         references pilot.organizations(organization_id) on delete restrict`],
+    ['organization_fk_ready', 'the gym foreign key with no action on delete',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_organization_id_fkey,
+         add constraint organization_stopped_coming_policy_organization_id_fkey foreign key (organization_id)
+           references pilot.organizations(organization_id)`],
+    ['set_by_fk_ready', 'the setter foreign key cascading on delete',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_set_by_account_id_fkey,
+         add constraint organization_stopped_coming_policy_set_by_account_id_fkey foreign key (set_by_account_id)
+           references pilot.accounts(account_id) on delete cascade`],
+    ['set_by_fk_ready', 'the setter foreign key deferrable',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_set_by_account_id_fkey,
+         add constraint organization_stopped_coming_policy_set_by_account_id_fkey foreign key (set_by_account_id)
+           references pilot.accounts(account_id) on delete set null deferrable`],
+  ])('readiness refuses %s: %s', async (piece, _label, alteration) => {
+    const client = await freshDatabase(`stoppedcoming_r${Math.random().toString(36).slice(2, 10)}`);
     try {
-      await client.query('alter table pilot.organization_stopped_coming_policy add column note text');
-      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow('ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY');
+      await client.query(alteration);
+      const refusal = applyMigrationTransaction(client, 'select 1');
+      await expect(refusal).rejects.toThrow('ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY');
+      await expect(refusal).rejects.toThrow(piece);
     } finally {
       await client.end();
     }
@@ -243,7 +289,7 @@ describe('organization stopped-coming policy migration', () => {
     }
   });
 
-  test('one row per gym; a gym that does not exist is refused; a removed admin leaves the setting with no setter', async () => {
+  test('one row per gym; a gym that does not exist is refused; a removed admin leaves the setting with no setter; a removed gym takes its row', async () => {
     const client = await freshDatabase('stoppedcoming_keys');
     try {
       await client.query(
@@ -261,7 +307,32 @@ describe('organization stopped-coming policy migration', () => {
       await client.query('delete from pilot.accounts where account_id = $1', [ADMIN_ID]);
       const { rows } = await client.query('select organization_id, gap_days, set_by_account_id from pilot.organization_stopped_coming_policy');
       expect(rows).toEqual([{ organization_id: ORG_ID, gap_days: 14, set_by_account_id: null }]);
+
+      await client.query(`insert into pilot.organization_stopped_coming_policy (organization_id, gap_days) values ($1, 28)`, [OTHER_ORG_ID]);
+      await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG_ID]);
+      const after = await client.query('select organization_id from pilot.organization_stopped_coming_policy order by 1');
+      expect(after.rows).toEqual([{ organization_id: ORG_ID }]);
     } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner gives up after its lock timeout instead of queueing writes behind a busy accounts table', async () => {
+    const client = await freshDatabase('stoppedcoming_lock', { preMigration: true });
+    const holder = new Client({ connectionString: connectionStringFor('stoppedcoming_lock') });
+    await holder.connect();
+    try {
+      // A write in progress on pilot.accounts: the table's foreign key would wait for it.
+      await holder.query('BEGIN');
+      await holder.query('lock table pilot.accounts in row exclusive mode');
+      const started = Date.now();
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toMatchObject({ code: '55P03' });
+      expect(Date.now() - started).toBeGreaterThanOrEqual(9_000);
+      const { rows } = await client.query(`select to_regclass('pilot.organization_stopped_coming_policy') is null as absent`);
+      expect(rows[0].absent).toBe(true);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => {});
+      await holder.end();
       await client.end();
     }
   });

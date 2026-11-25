@@ -1,5 +1,6 @@
 -- The gym's "no present mark for" number for the "who has stopped coming" page,
--- per organization (pilot.organization_stopped_coming_policy): lane W4-6, PR SC-0a.
+-- per organization (pilot.organization_stopped_coming_policy): lane W4-6, PR SC-0a-1
+-- (the table; its module and routes are SC-0a-2).
 --
 -- WHY. The stopped-coming page lists the gym's active athletes who have come
 -- before and have not come for this many days (W4 item 6, app scrub CF-14).
@@ -8,8 +9,9 @@
 -- one setting. The list itself is read elsewhere (lane W4-6, SC-1).
 --
 -- ABSENCE MEANS TWO WEEKS. An organization with no row gets 14 days, stated
--- once in stoppedComingPolicy.ts. Deploying this migration writes no row, so
--- every gym starts at the ruled first value; "Use the default" deletes the row.
+-- once in stoppedComingPolicy.ts (SC-0a-2). Deploying this migration writes no
+-- row, so every gym starts at the ruled first value; "Use the default" deletes
+-- the row (SC-0a-2).
 --
 -- A FIXED LIST, NOT ANY NUMBER. Overwatch's answer to W4-6 Q1 (2026-11-25):
 -- 7, 14, 21, 28, 42 or 56 days (1, 2, 3, 4, 6 or 8 weeks), held by a CHECK,
@@ -22,7 +24,8 @@
 --
 -- WHO SET IT. set_by_account_id names the gym admin who saved the value; on
 -- delete set null, so a departed admin does not delete the setting. The audit
--- stream holds each change with the old and new value.
+-- stream holds each change with the old and new value (written by
+-- stoppedComingPolicy.ts, SC-0a-2).
 --
 -- NO PERSON DATA. One number per gym and who set it. No athlete, attendance
 -- or session is stored here.
