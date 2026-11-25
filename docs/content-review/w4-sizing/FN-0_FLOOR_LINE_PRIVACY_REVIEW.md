@@ -127,7 +127,7 @@ FN0-Q2's words only if it reads so. INFERRED.
 applied to every case its words or plain principle reach, without asking
 again, and "when he picks against the recommendation ... what he chose is
 built". Jason picked Q3.1 C ("either record counts as on the floor", the
-recorded ruling, `:1501`) and Q3.5 B against the recommendation. So this
+recorded ruling, `OWNER_DECISIONS.md:1501`) and Q3.5 B against the recommendation. So this
 review recommends building C as chosen: a register-only mark shows as "on
 the floor now", with the card's con (after they have gone home) as he
 accepted it. It recommends three narrowings of Q3.1 C, each for a case the
