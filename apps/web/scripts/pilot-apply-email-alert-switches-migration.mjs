@@ -17,11 +17,14 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the table, its exact column list, every CHECK compared IN FULL
-// against the text Postgres stores (emailAlertSwitches.pg.test.ts drives this
-// runner against a real database, so a deparse mismatch fails there first),
-// the two-column primary key, both foreign keys by column, target and delete
-// rule (both cascade), and the partial index the sender reads through.
+// Asserts the table, its exact column list, switched_on NOT NULL with default
+// false (every switch starts off, OD-2026-11-19-019), exactly the CHECKs below
+// and no others, each compared IN FULL against the text Postgres stores
+// (emailAlertSwitchesMigration.pg.test.ts drives this runner against a real
+// database, so a deparse mismatch fails there first), the two-column primary
+// key in order, both foreign keys by column, target and delete rule (both
+// cascade), and the partial index the sender reads through, by its full
+// definition.
 export const EXPECTED_CHECKS = {
   pilot_email_alert_switch_user_type_check:
     "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))",
@@ -37,7 +40,12 @@ export const EXPECTED_CHECKS = {
     'CHECK (((confirmed_address IS NULL) = (confirmed_at IS NULL)))',
   pilot_email_alert_switch_attempts_check:
     'CHECK ((pending_code_attempts >= 0))',
+  pilot_email_alert_switch_code_needs_address_check:
+    'CHECK (((pending_code_hash IS NULL) OR (pending_address IS NOT NULL)))',
 };
+
+export const EXPECTED_INDEX_DEF =
+  'CREATE INDEX idx_email_alert_switches_on ON pilot.email_alert_switches USING btree (organization_id, account_id) WHERE switched_on';
 
 export const EXPECTED_COLUMNS = [
   'organization_id',
@@ -77,6 +85,11 @@ const READINESS_QUERY = `
       from information_schema.columns
       where table_schema = 'pilot' and table_name = 'email_alert_switches'
     ) = $4::text[] as columns_ready,
+    exists (
+      select 1 from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'email_alert_switches'
+        and column_name = 'switched_on' and is_nullable = 'NO' and column_default = 'false'
+    ) as switched_on_starts_off,
     (
       select count(*) = $1 from pg_constraint c
       join unnest($2::text[], $3::text[]) as expected(conname, condef) on expected.conname = c.conname
@@ -84,6 +97,10 @@ const READINESS_QUERY = `
         and c.contype = 'c' and c.convalidated
         and pg_get_constraintdef(c.oid) = expected.condef
     ) as checks_ready,
+    (
+      select count(*) = $1 from pg_constraint c
+      where c.conrelid = ${TABLE} and c.contype = 'c'
+    ) as no_other_checks,
     exists (
       select 1 from pg_constraint c
       where c.conrelid = ${TABLE} and c.contype = 'p'
@@ -98,7 +115,7 @@ const READINESS_QUERY = `
       select 1 from pg_indexes
       where schemaname = 'pilot' and tablename = 'email_alert_switches'
         and indexname = 'idx_email_alert_switches_on'
-        and indexdef like '%WHERE switched_on'
+        and indexdef = $5
     ) as on_index_ready
 `;
 const READINESS_PARAMS = [
@@ -106,6 +123,7 @@ const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKS),
   Object.values(EXPECTED_CHECKS),
   EXPECTED_COLUMNS,
+  EXPECTED_INDEX_DEF,
 ];
 
 export async function applyMigrationTransaction(client, sql) {

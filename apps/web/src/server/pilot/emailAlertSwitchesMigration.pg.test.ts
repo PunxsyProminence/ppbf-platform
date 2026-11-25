@@ -242,6 +242,23 @@ describe('email alert switches migration', () => {
          add constraint email_alert_switches_account_id_fkey foreign key (account_id) references pilot.accounts(account_id)`,
     ],
     ['no partial index for the sender', 'drop index pilot.idx_email_alert_switches_on'],
+    [
+      'the sender\'s index on other columns',
+      `drop index pilot.idx_email_alert_switches_on;
+       create index idx_email_alert_switches_on on pilot.email_alert_switches (account_id) where switched_on`,
+    ],
+    ['a switch that starts on', 'alter table pilot.email_alert_switches alter column switched_on set default true'],
+    ['a switch that may be null', 'alter table pilot.email_alert_switches alter column switched_on drop not null'],
+    [
+      'an extra CHECK that would block the address step',
+      'alter table pilot.email_alert_switches add constraint pilot_email_alert_switch_extra check (pending_address is null)',
+    ],
+    [
+      'the primary key in the other column order',
+      `alter table pilot.email_alert_switches
+         drop constraint email_alert_switches_pkey,
+         add primary key (account_id, organization_id)`,
+    ],
   ])('the readiness check refuses %s', async (_label, drift) => {
     const client = await freshDatabase('emailsw_drift');
     try {
@@ -253,20 +270,25 @@ describe('email alert switches migration', () => {
   });
 
   test.each([
-    ['a user type off the list', `($1, $2, 'volunteer', false, null, null, null)`, VOLUNTEER_ID],
-    ['an adult athlete switched on with no confirmed address', `($1, $2, 'adult_athlete', true, now(), null, null)`, ADULT_ID],
-    ['an address on a parent row', `($1, $2, 'parent', false, null, null, 'someone@example.test')`, PARENT_ID],
-    ['an address typed on a staff row', `($1, $2, 'staff', false, null, 'someone@example.test', null)`, COACH_ID],
-    ['a switch on with no time it went on', `($1, $2, 'parent', true, null, null, null)`, PARENT_ID],
-  ])('the database refuses %s', async (_label, values, accountId) => {
+    ['a user type off the list', `($1, $2, 'volunteer', false, null, null, null, null)`, VOLUNTEER_ID,
+      'pilot_email_alert_switch_user_type_check'],
+    ['an adult athlete switched on with no confirmed address', `($1, $2, 'adult_athlete', true, now(), null, null, null)`, ADULT_ID,
+      'pilot_email_alert_switch_athlete_confirmed_check'],
+    ['a confirmed address on a parent row', `($1, $2, 'parent', false, null, null, 'someone@example.test', now())`, PARENT_ID,
+      'pilot_email_alert_switch_address_athlete_only_check'],
+    ['an address typed on a staff row', `($1, $2, 'staff', false, null, 'someone@example.test', null, null)`, COACH_ID,
+      'pilot_email_alert_switch_address_athlete_only_check'],
+    ['a switch on with no time it went on', `($1, $2, 'parent', true, null, null, null, null)`, PARENT_ID,
+      'pilot_email_alert_switch_on_time_check'],
+  ])('the database refuses %s, by its own CHECK', async (_label, values, accountId, constraint) => {
     const client = await freshDatabase('emailsw_check');
     try {
       await expect(client.query(
         `insert into pilot.email_alert_switches
-           (organization_id, account_id, user_type, switched_on, switched_on_at, pending_address, confirmed_address)
+           (organization_id, account_id, user_type, switched_on, switched_on_at, pending_address, confirmed_address, confirmed_at)
          values ${values}`,
         [ORG_ID, accountId],
-      )).rejects.toMatchObject({ code: '23514' });
+      )).rejects.toMatchObject({ code: '23514', constraint });
       const { rows } = await client.query('select count(*)::int as n from pilot.email_alert_switches');
       expect(rows[0].n).toBe(0);
     } finally {
@@ -274,7 +296,7 @@ describe('email alert switches migration', () => {
     }
   });
 
-  test('the database refuses half a code, half a confirmation and a negative try count; it takes an adult athlete on with a confirmed address', async () => {
+  test('the database refuses half a code, a code with no typed address, half a confirmation and a negative try count; it takes an adult athlete on with a confirmed address', async () => {
     const client = await freshDatabase('emailsw_pairs');
     try {
       const insert = (columns: string, values: string) => client.query(
@@ -282,11 +304,23 @@ describe('email alert switches migration', () => {
          values ($1, $2, 'adult_athlete'${values})`,
         [ORG_ID, ADULT_ID],
       );
-      await expect(insert(', pending_code_hash', ", 'h'")).rejects.toMatchObject({ code: '23514' });
-      await expect(insert(', pending_code_expires_at', ', now()')).rejects.toMatchObject({ code: '23514' });
-      await expect(insert(', confirmed_address', ", 'someone@example.test'")).rejects.toMatchObject({ code: '23514' });
-      await expect(insert(', confirmed_at', ', now()')).rejects.toMatchObject({ code: '23514' });
-      await expect(insert(', pending_code_attempts', ', -1')).rejects.toMatchObject({ code: '23514' });
+      const pair = 'pilot_email_alert_switch_code_pair_check';
+      const confirmedPair = 'pilot_email_alert_switch_confirmed_pair_check';
+      await expect(insert(', pending_address, pending_code_hash', ", 'typed@example.test', 'h'"))
+        .rejects.toMatchObject({ code: '23514', constraint: pair });
+      await expect(insert(', pending_address, pending_code_expires_at', ", 'typed@example.test', now()"))
+        .rejects.toMatchObject({ code: '23514', constraint: pair });
+      await expect(insert(', pending_code_hash, pending_code_expires_at', ", 'h', now()"))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_email_alert_switch_code_needs_address_check' });
+      await expect(insert(', confirmed_address', ", 'someone@example.test'"))
+        .rejects.toMatchObject({ code: '23514', constraint: confirmedPair });
+      await expect(insert(', confirmed_at', ', now()')).rejects.toMatchObject({ code: '23514', constraint: confirmedPair });
+      await expect(insert(', pending_code_attempts', ', -1'))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_email_alert_switch_attempts_check' });
+
+      // The states the address step (EM-2b) needs: a typed address with its code, before any confirm.
+      await insert(', pending_address, pending_code_hash, pending_code_expires_at', ", 'typed@example.test', 'h', now()");
+      await client.query('delete from pilot.email_alert_switches');
 
       await insert(
         ', switched_on, switched_on_at, confirmed_address, confirmed_at',
@@ -312,6 +346,38 @@ describe('email alert switches migration', () => {
       await client.query('delete from pilot.accounts where account_id = $1', [ADULT_ID]);
       const { rows } = await client.query('select account_id from pilot.email_alert_switches');
       expect(rows).toEqual([{ account_id: PARENT_ID }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a deleted gym takes its switches with it', async () => {
+    const client = await freshDatabase('emailsw_gym_cascade');
+    try {
+      // OTHER_ORG_ID holds no accounts in this fixture, so its row in
+      // pilot.organizations can be deleted; the switch names it as its gym.
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type)
+         values ($1, $2, 'parent'), ($3, $2, 'parent')`,
+        [OTHER_ORG_ID, PARENT_ID, ORG_ID],
+      );
+      await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG_ID]);
+      const { rows } = await client.query('select organization_id from pilot.email_alert_switches');
+      expect(rows).toEqual([{ organization_id: ORG_ID }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a new row starts off when nothing says otherwise', async () => {
+    const client = await freshDatabase('emailsw_default');
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type) values ($1, $2, 'parent')`,
+        [ORG_ID, PARENT_ID],
+      );
+      const { rows } = await client.query('select switched_on, pending_code_attempts from pilot.email_alert_switches');
+      expect(rows).toEqual([{ switched_on: false, pending_code_attempts: 0 }]);
     } finally {
       await client.end();
     }

@@ -38,16 +38,26 @@
 --     #2159, condition 3: no control that does nothing);
 --   * an address on a staff or parent row (their address is the sign-in one);
 --   * a switch on with no time it was turned on;
---   * a code without its expiry, or the reverse; a confirmed address without
---     its time, or the reverse; a negative try count.
+--   * a code without its expiry, or the reverse; a code with no typed address;
+--     a confirmed address without its time, or the reverse; a negative try
+--     count.
 --
--- DELETION (Overwatch GO on #2159, condition 4). Both keys cascade:
---   * the gym's row in pilot.organizations is deleted -> its switches go;
---   * the account's row in pilot.accounts is hard-deleted (the cleanup purge,
---     docs/DATA_RETENTION.md Method 1) -> its switch goes, address included.
--- A soft-deleted account (accounts.deleted_at set, Method 2) keeps its row
--- until that purge; the sender (EM-3, not yet built) is to refuse a deleted
--- account before every send.
+-- DELETION (Overwatch GO on #2159, condition 4). Both keys cascade, so a row
+-- goes when its gym's pilot.organizations row is deleted, or when its
+-- pilot.accounts row is deleted. Which accounts are ever deleted
+-- (scripts/pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md Method 1):
+--   * a parent account is hard-deleted by the purge -> its row goes;
+--   * an athlete login is NOT deleted: the purge keeps it, retired, and clears
+--     its email, PIN and password by UPDATE, so the cascade never fires and
+--     the switch row, and from EM-2b an adult athlete's confirmed address,
+--     would stay. EM-1 writes no address. Removing the row in the purge's
+--     athlete branch is put to Overwatch on #2168 (the purge already deletes
+--     such a login's SHADOW memory corrections there for the same reason);
+--   * a staff account (coach, admin) is never hard-deleted: its row stays,
+--     holding only on/off and times (no address can be stored on it).
+-- A soft-deleted account (accounts.deleted_at set, Method 2) keeps its row;
+-- the sender (EM-3, not yet built) is to refuse a deleted account before
+-- every send.
 -- The retention period is not ruled (docs/DATA_RETENTION.md row).
 --
 -- AUDIT. Every change of the switch writes an audit row (on/off, before and
@@ -88,7 +98,9 @@ create table if not exists pilot.email_alert_switches (
   constraint pilot_email_alert_switch_confirmed_pair_check
     check ((confirmed_address is null) = (confirmed_at is null)),
   constraint pilot_email_alert_switch_attempts_check
-    check (pending_code_attempts >= 0)
+    check (pending_code_attempts >= 0),
+  constraint pilot_email_alert_switch_code_needs_address_check
+    check (pending_code_hash is null or pending_address is not null)
 );
 
 -- The sender (EM-3, not yet built) is to read the switched-on rows of one gym;
