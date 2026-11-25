@@ -13,8 +13,8 @@ import { ConflictError, ValidationError } from './errors';
  *
  * Only on the two routes whose writes are not already tied to their owner: adding a staff note
  * and logging an intervention. A run's actions (sessionScriptRuns.ts requireOwnLiveRun,
- * sessionRunClass.ts lockOwnLiveRun) and here taps (sessionRunAthletes.ts setRunAthletePresent,
- * which checks the run's delivering coach itself) act only on the caller's own live run, so
+ * sessionRunClass.ts lockOwnLiveRun) and here taps (the presence module, which checks the run's
+ * delivering coach itself) act only on the caller's own live run, so
  * another account's resend there is refused already. Starting a run is not tied that way, and it is
  * not one of the run actions the page keeps (the actions of runs/[runId]/route.ts, as the plan of
  * record, W4_SIZING.md item 7, names them).

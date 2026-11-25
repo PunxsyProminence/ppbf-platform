@@ -103,7 +103,7 @@ function subjectFrom(sessionId: unknown, runId: unknown): { sessionId: string } 
   return named(runId) ? { runId: textFrom(runId, 'run_id') } : { sessionId: textFrom(sessionId, 'session_id') };
 }
 
-// A request key is text of 1 to 200 characters (pilot_session_staff_notes_request_key_check), used
+// A request key is text of 1 to 200 characters (the staff-note request-key migration's check), used
 // as sent and never trimmed; a NUL is refused here, as Postgres text cannot hold one. A request
 // that sends no key adds a note exactly as before.
 const REQUEST_KEY_MAX = 200;
