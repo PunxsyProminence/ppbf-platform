@@ -9881,7 +9881,7 @@
     "id": "app/api/pilot/parent/family-threads/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/family-threads",
-    "gate": "requirePrincipal + requireRole(parent) + guardianAthleteIds scope on this request; only threads the caller opened (familyThreads.ts listOwnFamilyThreads)",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that reads the threads (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns; only threads the caller opened (familyThreads.ts listOwnFamilyThreads)",
     "rolesAdmitted": [
       "parent"
     ],
@@ -9908,7 +9908,7 @@
     "id": "app/api/pilot/parent/family-threads/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/parent/family-threads",
-    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the child (new thread) or on the thread's child for its opener (writing again), in familyThreads.ts",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that writes (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, rolled back for an adult; on the child (new thread) or on the thread's child for its opener (writing again), in familyThreads.ts",
     "rolesAdmitted": [
       "parent"
     ],
@@ -9935,7 +9935,7 @@
     "id": "app/api/pilot/parent/family-thread-reads/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/parent/family-thread-reads",
-    "gate": "requirePrincipal + requireRole(parent) + isGuardianLinkedToAthlete on the post's child, the post a staff reply in a thread the caller opened (familyThreads.ts recordFamilyThreadReadByGuardian)",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that records the read (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, on the post's child, the post a staff reply in a thread the caller opened (familyThreads.ts recordFamilyThreadReadByGuardian)",
     "rolesAdmitted": [
       "parent"
     ],
