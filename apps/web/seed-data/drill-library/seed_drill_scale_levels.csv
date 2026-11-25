@@ -1621,7 +1621,7 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_73491efcf23c71,drl_005bea3042938a,C,false,Athletes plan their own block (tasks and order) before it starts and keep to it.,Own plan.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_d89f45ed751a76,drl_7654a30ec2e74c,A,false,"Rounds at weekday technical sparring intensity, the same rotation and round length.",Weekday technical intensity.,controlled_sparring,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_1c92672232b0a0,drl_7654a30ec2e74c,B,true,"Open sparring as written: slightly higher than weekday technical sparring, still controlled.",,open_sparring,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_ba9fe6a1b8a3ed,drl_7654a30ec2e74c,C,false,"3-minute rounds, each with one of the week's skills named as its focus before the bell.",Named focus.,open_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ba9fe6a1b8a3ed,drl_7654a30ec2e74c,C,false,"The same round length, each round with one of the week's skills named as its focus before the bell.",Named focus.,open_sparring,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_6d702d16e7b05a,drl_c846f6c648b34e,A,false,Track one of the six items for the whole block.,One item.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_0a440907fe65fd,drl_c846f6c648b34e,B,true,"Track the six items, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_d70a6050c63752,drl_c846f6c648b34e,C,false,"Name one pattern that worked again and again, and tell the coach after the block.",Report a pattern.,none,,scaffold_needs_coach_review
@@ -1642,7 +1642,7 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_70352eec259137,drl_a5d2a79b8224ab,C,false,The coach calls the start of each sequence.,Called start.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2a8b92dee96b40,drl_8b5cad86b115a9,A,false,Phantom rope; plank from the knees.,Easier stations.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_69b45ad0c1fe37,drl_8b5cad86b115a9,B,true,Two rounds as written.,,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_9bf80734bd942c,drl_8b5cad86b115a9,C,false,"A third round, the same stations and rest.",Third round.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9bf80734bd942c,drl_8b5cad86b115a9,C,false,"The same two rounds, athletes keeping their own steady breathing count through each station.",Self-counted breathing.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_fe7d7fcc6abfd1,drl_5093325d1b6985,A,false,The coach asks one of the three questions.,One question.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_67123301205083,drl_5093325d1b6985,B,true,"The three questions and the closing line, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_61665b1347b0a4,drl_5093325d1b6985,C,false,An athlete asks the questions and the coach closes.,Athlete-led.,none,,scaffold_needs_coach_review
