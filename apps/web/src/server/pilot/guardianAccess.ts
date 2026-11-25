@@ -136,17 +136,26 @@ export async function isGuardianLinkedToAthlete(
  * rows must be authorised in the same snapshot that returns them (Codex P2
  * and Overwatch on #2179: a link that ends between a scope read and the read
  * that uses it must not return the child's rows). The same join as
- * linkedAthleteRows, organization-scoped on both levels; the caller joins
- * the live athlete row (deleted_at is null) and selects its date of birth as
- * to_char(dob, 'YYYY-MM-DD') for guardianLinkEnded, so the 18 rule stays this
- * module's one rule. The arguments are column references and a placeholder
- * written in code, never caller input.
+ * linkedAthleteRows, organization-scoped on both levels, with the child's
+ * row still live (deleted_at is null). The 18 rule is NOT here: the caller
+ * selects the child's date of birth as to_char(dob, 'YYYY-MM-DD') in the same
+ * statement and passes it to guardianLinkEnded, this module's one rule
+ * (guardianAccess.test.ts fails a file that calls this without it). The
+ * arguments are a qualified column (alias.column) and a $n placeholder written
+ * in code, never caller input; anything else throws.
  */
+const QUALIFIED_COLUMN = /^(?!g[lpa]\.)[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
 export function guardianLinkedPredicateSql(organizationColumn: string, athleteColumn: string, accountParam: string): string {
+  if (!QUALIFIED_COLUMN.test(organizationColumn) || !QUALIFIED_COLUMN.test(athleteColumn) || !/^\$\d+$/.test(accountParam)) {
+    throw new Error('guardianLinkedPredicateSql takes alias.column references and a $n placeholder');
+  }
   return `exists (select 1
                     from pilot.guardian_links gl
                     join pilot.parents gp
                       on gp.organization_id = gl.organization_id and gp.parent_id = gl.parent_id
+                    join pilot.athletes ga
+                      on ga.organization_id = gl.organization_id and ga.athlete_id = gl.athlete_id
+                     and ga.deleted_at is null
                    where gl.organization_id = ${organizationColumn}
                      and gl.athlete_id = ${athleteColumn}
                      and gp.account_id = ${accountParam})`;
