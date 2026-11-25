@@ -697,6 +697,8 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     await wait(RESEND_MS);
     expect(screen.queryByText('NOT SAVED')).toBeNull();
     expect(await screen.findByText('Wrist taped.')).toBeTruthy();
+    // The landed check read the list with the queue's signal (the panel's own reads carry none).
+    expect(noteReads.some((signal) => signal instanceof AbortSignal)).toBe(true);
   });
 
   test('the landed check does not take someone else\'s note, or one listed before the tap, as this one', async () => {
