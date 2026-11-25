@@ -36,19 +36,24 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 // Routes familyThreads.ts's, guardianAccess.ts's and achievements.ts's queries into whichever
 // embedded database the current test opened. Declared before the import so jest's hoisting sees it.
 let activeClient: Client | null = null;
+// A second connection to the same database: another session, whose changes commit on their own.
+let sideClient: Client | null = null;
 // Runs once, just before the next statement that reads the guardian's threads: the moment between
 // any earlier read and the one that returns the posts (Codex P2 and Overwatch on #2179).
 let beforeThreadsRead: ((client: Client) => Promise<unknown>) | null = null;
-// Runs once, committed, just before the guardian's next write: before the transaction that makes
-// it, or before a bare insert of a post or a read, whichever comes first. With a check made in an
-// earlier statement, that is the moment between the check and the write (Codex P2 on c77aed08).
+// Runs once, committed from the second connection, just before the statement that writes the
+// guardian's post or read, wherever it runs: alone, or inside the store's transaction after any
+// earlier statement of it. A check made in any earlier statement, in or out of that transaction,
+// has then already been read (Codex P2 4693715678; reviewer A's check-then-act-in-one-transaction).
 let beforeGuardianWrite: ((client: Client) => Promise<unknown>) | null = null;
 
 jest.mock('./db', () => {
-  const landWriteChange = async (client: Client) => {
+  const landWriteChange = async () => {
     const change = beforeGuardianWrite;
     beforeGuardianWrite = null;
-    if (change) await change(client);
+    if (!change) return;
+    if (!sideClient) throw new Error('test bug: no second connection');
+    await change(sideClient);
   };
   const isGuardianWrite = (text: string) => /insert into pilot\.family_thread_(posts|reads)/.test(text);
   return {
@@ -59,13 +64,13 @@ jest.mock('./db', () => {
         beforeThreadsRead = null;
         await change(activeClient);
       }
-      if (isGuardianWrite(text)) await landWriteChange(activeClient);
+      if (isGuardianWrite(text)) await landWriteChange();
       const result = await activeClient.query(text, params);
       return result.rows;
     }),
     queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
       if (!activeClient) throw new Error('test bug: no active embedded client');
-      if (isGuardianWrite(text)) await landWriteChange(activeClient);
+      if (isGuardianWrite(text)) await landWriteChange();
       const result = await activeClient.query(text, params);
       return result.rows[0] ?? null;
     }),
@@ -73,10 +78,14 @@ jest.mock('./db', () => {
     withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
       if (!activeClient) throw new Error('test bug: no active embedded client');
       const client = activeClient;
-      await landWriteChange(client);
       await client.query('BEGIN');
       try {
-        const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+        const result = await fn({
+          query: async (text: string, values: unknown[]) => {
+            if (isGuardianWrite(text)) await landWriteChange();
+            return client.query(text, values);
+          },
+        });
         await client.query('COMMIT');
         return result;
       } catch (error) {
@@ -208,6 +217,8 @@ async function freshDatabase(name: string): Promise<Client> {
     );
   }
   activeClient = client;
+  sideClient = new Client({ connectionString: connectionStringFor(name) });
+  await sideClient.connect();
   return client;
 }
 
@@ -260,6 +271,8 @@ beforeAll(async () => {
 afterEach(async () => {
   beforeThreadsRead = null;
   beforeGuardianWrite = null;
+  if (sideClient) await sideClient.end();
+  sideClient = null;
   if (activeClient) await activeClient.end();
   activeClient = null;
 });
@@ -540,9 +553,16 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     ['the account marked deleted',
       (db) => db.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [GUARDIAN]),
       (db) => db.query(`update pilot.accounts set deleted_at = null where account_id = $1`, [GUARDIAN])],
+    // The account's home gym another, active one: the status read is the gym acted in, not the home gym.
     ['the gym suspended',
-      (db) => db.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG]),
-      (db) => db.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [ORG])],
+      async (db) => {
+        await db.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [GUARDIAN, OTHER_ORG]);
+        await db.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG]);
+      },
+      async (db) => {
+        await db.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [ORG]);
+        await db.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [GUARDIAN, ORG]);
+      }],
   ];
 
   test('each fact the list relies on, changed just before the threads are read: nothing returned (Codex P2 4691991266, Overwatch on #2179)', async () => {
