@@ -342,10 +342,9 @@ async function pump(): Promise<void> {
       response = null;
     }
     head.sends += 1;
-    // A dropped save's answer is never used (a sign-out, another account, while it was on its way).
-    if (seen !== generation) return;
     const accountGone = response !== null
       && (response.status === 401 || (await codeOf(response)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT');
+    // A dropped save's answer is never used (a sign-out, another account, while it was on its way).
     if (seen !== generation) return;
     if (accountGone) {
       dropAll();

@@ -47,6 +47,8 @@ function answer(status: number, body: unknown = {}): Response {
 
 /** Who the session route says is signed in; 'unreachable' throws; 'hang' never answers until released. */
 let sessionAccount: string | null | 'unreachable' | 'hang' = 'acct-a';
+/** Answers used one by one before sessionAccount, when set. */
+let sessionAnswers: Array<string | null> = [];
 let releaseSession: ((account: string | null) => void) | null = null;
 let sessionCalls = 0;
 
@@ -55,6 +57,10 @@ function mockSessionRoute() {
     const url = String(input);
     if (!url.endsWith('/api/pilot/auth/session')) throw new Error(`unexpected fetch ${url}`);
     sessionCalls += 1;
+    if (sessionAnswers.length > 0) {
+      const scripted = sessionAnswers.shift() as string | null;
+      return answer(200, scripted === null ? { authenticated: false } : { authenticated: true, account_id: scripted });
+    }
     if (sessionAccount === 'unreachable') throw new TypeError('Failed to fetch');
     const account = sessionAccount === 'hang'
       ? await new Promise<string | null>((resolve) => { releaseSession = resolve; })
@@ -90,6 +96,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   resetSaveQueueForTests();
   sessionAccount = 'acct-a';
+  sessionAnswers = [];
   releaseSession = null;
   sessionCalls = 0;
   mockSessionRoute();
@@ -408,12 +415,13 @@ describe('nothing survives a sign-out or an account change', () => {
     expect(next.contexts.map((context) => context.madeByAccountId)).toEqual(['acct-b']);
   });
 
-  test('a 401 drops everything', async () => {
+  test('a 401 drops everything: no refusal, no words', async () => {
     const kept = scriptedSave('Ada Reyes: here', ['throw', answer(401)]);
     await keepSave(kept.save);
     await settle();
     await jest.advanceTimersByTimeAsync(RESEND_MS);
-    expect(readSaveQueue().waiting).toEqual([]);
+    expect(kept.save.onRefused).not.toHaveBeenCalled();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
     await expectNothingSent(kept, 2);
   });
 
@@ -445,11 +453,21 @@ describe('nothing survives a sign-out or an account change', () => {
     const second = scriptedSave('Two', [answer(200)]);
     await keepSave(second.save);
     await settle();
-    sessionAccount = 'acct-b';
-    // The first save's resend is refused by its check; the second, which waited, is checked too and never sent.
+    // The first save's resend is checked and lands; by the time the second goes, someone else is signed in.
+    sessionAnswers = ['acct-a', 'acct-b'];
     await jest.advanceTimersByTimeAsync(RESEND_MS);
-    expect(first.save.send).toHaveBeenCalledTimes(1);
+    expect(first.save.onSaved).toHaveBeenCalledTimes(1);
     expect(second.save.send).not.toHaveBeenCalled();
+    expect(readSaveQueue().waiting).toEqual([]);
+  });
+
+  test('the page asking again after its role session is written, and finding nobody, drops everything', async () => {
+    const kept = await waitingSave('Ada Reyes: here');
+    sessionAccount = null;
+    createPersistentRoleSession('coach');
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0 });
+    await expectNothingSent(kept, 1);
   });
 
   test('a drop during the account check before a send: nothing is sent', async () => {
