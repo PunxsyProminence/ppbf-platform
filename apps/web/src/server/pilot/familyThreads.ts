@@ -30,15 +30,16 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { PoolClient } from 'pg';
+import type { QueryResultRow } from 'pg';
 
 import { assertActorCanAccessAthlete, athleteIdsForCoach, isOrganizationAdminRole, requireRole } from './access';
 import { getStaffAuthorName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
-import { guardianLinkEnded, guardianLinkedPredicateSql, isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianLinkEnded, guardianLinkedPredicateSql } from './guardianAccess';
 
 export const FAMILY_THREAD_POST_MAX_LENGTH = 2000;
 
@@ -116,33 +117,47 @@ function cleanText(raw: unknown): string {
   return text;
 }
 
-/** The database's guard refused the write by one of these names (a link or seat ended between our check and the write). */
+/** The database's guard refused the write by one of these names: a link or seat ended as it was made. */
 function refusedByGuard(error: unknown, constraints: string[]): boolean {
   const constraint = (error as { constraint?: unknown }).constraint;
   return typeof constraint === 'string' && constraints.includes(constraint);
 }
 
-async function insertPost(values: {
-  organizationId: string;
-  postId: string;
-  threadId: string;
-  athleteId: string;
-  accountId: string;
-  role: PilotRole;
-  text: string;
-}, client?: PoolClient): Promise<{ post_id: string; thread_id: string; created_at: string }> {
-  const text = `insert into pilot.family_thread_posts
-       (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
-     values ($1, $2::uuid, $3::uuid, $4, $5, $6, $7)
-     returning post_id::text as post_id, thread_id::text as thread_id,
-               to_char(created_at at time zone 'UTC', ${ISO_UTC}) as created_at`;
-  const params = [values.organizationId, values.postId, values.threadId, values.athleteId, values.accountId, values.role, values.text];
-  const row = client
-    ? (await client.query<{ post_id: string; thread_id: string; created_at: string }>(text, params)).rows[0]
-    : await queryOne<{ post_id: string; thread_id: string; created_at: string }>(text, params);
-  if (!row) throw new Error('Unable to record the message.');
-  return row;
+/**
+ * A guardian's write and the check that allows it, as ONE statement (Codex P2 on #2179, after
+ * the read in listOwnFamilyThreads). `sql` writes only from a row that holds the guardian link
+ * and the child's live record in the statement's own snapshot, and returns that child's date of
+ * birth from the same snapshot. The age is guardianAccess's one rule (guardianLinkEnded) on that
+ * date of birth; an adult child throws, and the transaction takes the write back. A link that
+ * ends, a child deleted or a date of birth corrected to an adult's is then either seen by the
+ * write or comes after it, never between a check and the write.
+ */
+async function writeWhileLinked<T extends QueryResultRow & { athlete_dob: string | null }>(
+  sql: string,
+  params: unknown[],
+  refusal: () => Error,
+): Promise<T> {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<T>(sql, params);
+    const row = rows[0];
+    // No row: not linked now, another gym, a deleted or unknown child, or not this guardian's thread.
+    if (!row || guardianLinkEnded(row.athlete_dob, new Date())) throw refusal();
+    return row;
+  });
 }
+
+type WrittenPost = { post_id: string; thread_id: string; created_at: string; athlete_dob: string | null };
+
+// The guardian's post, written only from the one row of `eligible`: $1 gym, $2 post id, $3 thread
+// id, $4 the guardian's account, $5 the text.
+const WRITE_POST_FROM_ELIGIBLE = `written as (
+       insert into pilot.family_thread_posts
+         (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+       select $1, $2::uuid, $3::uuid, e.athlete_id, $4, 'parent', $5 from eligible e
+       returning post_id::text as post_id, thread_id::text as thread_id,
+                 to_char(created_at at time zone 'UTC', ${ISO_UTC}) as created_at
+     )
+     select w.post_id, w.thread_id, w.created_at, e.athlete_dob from written w cross join eligible e`;
 
 /** A guardian opens a thread about a child linked to them on this request. */
 export async function startFamilyThread(input: {
@@ -152,12 +167,18 @@ export async function startFamilyThread(input: {
   text: unknown;
 }): Promise<{ thread_id: string; post_id: string; created_at: string }> {
   const text = cleanText(input.text);
-  if (!(await isGuardianLinkedToAthlete(input.organizationId, input.accountId, input.athleteId))) {
-    throw new ForbiddenError(NOT_LINKED);
-  }
   const id = randomUUID();
   try {
-    const row = await insertPost({ ...input, postId: id, threadId: id, role: 'parent', text });
+    const row = await writeWhileLinked<WrittenPost>(
+      `with eligible as (
+         select a.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as athlete_dob
+           from pilot.athletes a
+          where a.organization_id = $1 and a.athlete_id = $6 and a.deleted_at is null
+            and ${guardianLinkedPredicateSql('a.organization_id', 'a.athlete_id', '$4')}
+       ), ${WRITE_POST_FROM_ELIGIBLE}`,
+      [input.organizationId, id, id, input.accountId, text, input.athleteId],
+      () => new ForbiddenError(NOT_LINKED),
+    );
     return { thread_id: row.thread_id, post_id: row.post_id, created_at: row.created_at };
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_posts_guardian_of_child'])) throw new ForbiddenError(NOT_LINKED);
@@ -177,24 +198,20 @@ export async function writeAgainInFamilyThread(input: {
 }): Promise<{ thread_id: string; post_id: string; created_at: string }> {
   const text = cleanText(input.text);
   if (!UUID.test(input.threadId)) throw new NotFoundError(NOT_YOURS);
-  const opening = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.family_thread_posts
-      where organization_id = $1 and post_id = $2::uuid and thread_id = $2::uuid and author_account_id = $3`,
-    [input.organizationId, input.threadId, input.accountId],
-  );
-  if (!opening || !(await isGuardianLinkedToAthlete(input.organizationId, input.accountId, opening.athlete_id))) {
-    throw new NotFoundError(NOT_YOURS);
-  }
   try {
-    const row = await insertPost({
-      organizationId: input.organizationId,
-      postId: randomUUID(),
-      threadId: input.threadId,
-      athleteId: opening.athlete_id,
-      accountId: input.accountId,
-      role: 'parent',
-      text,
-    });
+    const row = await writeWhileLinked<WrittenPost>(
+      `with eligible as (
+         select o.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as athlete_dob
+           from pilot.family_thread_posts o
+           join pilot.athletes a
+             on a.organization_id = o.organization_id and a.athlete_id = o.athlete_id and a.deleted_at is null
+          where o.organization_id = $1 and o.post_id = $3::uuid and o.thread_id = $3::uuid
+            and o.author_account_id = $4
+            and ${guardianLinkedPredicateSql('o.organization_id', 'o.athlete_id', '$4')}
+       ), ${WRITE_POST_FROM_ELIGIBLE}`,
+      [input.organizationId, randomUUID(), input.threadId, input.accountId, text],
+      () => new NotFoundError(NOT_YOURS),
+    );
     return { thread_id: row.thread_id, post_id: row.post_id, created_at: row.created_at };
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_posts_guardian_of_child', 'pilot_family_thread_posts_own_thread'])) {
@@ -294,24 +311,28 @@ export async function recordFamilyThreadReadByGuardian(input: {
   postId: string;
 }): Promise<{ post_id: string }> {
   if (!UUID.test(input.postId)) throw new NotFoundError(NOT_YOURS);
-  const post = await queryOne<{ athlete_id: string }>(
-    `select p.athlete_id
-       from pilot.family_thread_posts p
-       join pilot.family_thread_posts o
-         on o.organization_id = p.organization_id and o.post_id = p.thread_id
-      where p.organization_id = $1 and p.post_id = $2::uuid
-        and p.author_role <> 'parent' and o.author_account_id = $3`,
-    [input.organizationId, input.postId, input.accountId],
-  );
-  if (!post || !(await isGuardianLinkedToAthlete(input.organizationId, input.accountId, post.athlete_id))) {
-    throw new NotFoundError(NOT_YOURS);
-  }
   try {
-    await query(
-      `insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
-       values ($1, $2::uuid, $3, 'parent')
-       on conflict (organization_id, post_id, reader_account_id) do nothing`,
+    // The read is recorded in the same statement that checks it (writeWhileLinked); a second look
+    // finds the row already there, and the first time stays.
+    await writeWhileLinked<{ athlete_dob: string | null }>(
+      `with eligible as (
+         select p.post_id, to_char(a.dob, 'YYYY-MM-DD') as athlete_dob
+           from pilot.family_thread_posts p
+           join pilot.family_thread_posts o
+             on o.organization_id = p.organization_id and o.post_id = p.thread_id
+           join pilot.athletes a
+             on a.organization_id = p.organization_id and a.athlete_id = p.athlete_id and a.deleted_at is null
+          where p.organization_id = $1 and p.post_id = $2::uuid
+            and p.author_role <> 'parent' and o.author_account_id = $3
+            and ${guardianLinkedPredicateSql('p.organization_id', 'p.athlete_id', '$3')}
+       ), recorded as (
+         insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+         select $1, e.post_id, $3, 'parent' from eligible e
+         on conflict (organization_id, post_id, reader_account_id) do nothing
+       )
+       select e.athlete_dob from eligible e`,
       [input.organizationId, input.postId, input.accountId],
+      () => new NotFoundError(NOT_YOURS),
     );
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_reads_guardian_of_child', 'pilot_family_thread_reads_guardian_own_thread'])) {
@@ -322,14 +343,25 @@ export async function recordFamilyThreadReadByGuardian(input: {
   return { post_id: input.postId };
 }
 
-/** The athlete gate, with a refusal turned into the staff side's one 404. */
-async function reachOrNotHere(staff: FamilyThreadStaff, athleteId: string): Promise<void> {
-  try {
-    await assertActorCanAccessAthlete({ ...staff, athleteId: null }, athleteId);
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Forbidden')) throw new NotFoundError(NOT_HERE);
-    throw error;
-  }
+/**
+ * A staff member's seat, as a predicate inside the statement that reads or writes (Overwatch on
+ * #2179: every check-then-write path checks in the write itself). It is what the session gate
+ * (auth.ts resolvePrincipal + requireRole) read before the route called the store: an active
+ * membership in this gym with this role, the account active and not deleted (accountDeletedSql,
+ * the session's own rule), and the gym active (a platform owner's session is not refused for the
+ * gym's status, as at the gate). The athlete half of the reach (a live athlete in this gym, the
+ * rule assertActorCanAccessAthlete applies to a coach or an admin) is the caller's join. The
+ * arguments are written in code, never input.
+ */
+function staffSeatSql(organizationColumn: string, accountParam: string, roleParam: string): string {
+  return `exists (select 1
+                    from pilot.organization_memberships sm
+                    join pilot.accounts sc
+                      on sc.account_id = sm.account_id and sc.active_flag and not ${accountDeletedSql('sc')}
+                    join pilot.organizations sy
+                      on sy.organization_id = sm.organization_id and (sy.status = 'active' or sc.is_platform_owner)
+                   where sm.organization_id = ${organizationColumn} and sm.account_id = ${accountParam}
+                     and sm.role = ${roleParam} and sm.active_flag)`;
 }
 
 // The opener's name for staff (Q4 A), as listRepliesForStaff finds it: their parent record linked to
@@ -351,7 +383,10 @@ const OPENER_NAME_SQL = `coalesce(
 /**
  * Every thread on one athlete, for the gym's staff: newest first, each with
  * the opener's name and every post oldest first. Gated here too, not only in
- * the route: a staff role, and an athlete this staff member reaches.
+ * the route: a staff role, and an athlete this staff member reaches (a refusal
+ * keeps the gate's error). The statement that returns the posts checks the
+ * athlete's live record and the staff seat again itself, so neither can end
+ * between the gate and the read (Overwatch on #2179).
  */
 export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athleteId: string): Promise<StaffThread[]> {
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
@@ -379,13 +414,16 @@ export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athlet
                      where r.organization_id = p.organization_id and r.post_id = p.post_id
                        and r.reader_account_id = $3) as seen
        from pilot.family_thread_posts o
+       join pilot.athletes a
+         on a.organization_id = o.organization_id and a.athlete_id = o.athlete_id and a.deleted_at is null
        join pilot.family_thread_posts p
          on p.organization_id = o.organization_id and p.thread_id = o.post_id
       where o.organization_id = $1
         and o.athlete_id = $2
         and o.post_id = o.thread_id
+        and ${staffSeatSql('o.organization_id', '$3', '$4')}
       order by o.created_at desc, o.post_id, p.created_at asc, p.post_id asc`,
-    [staff.organizationId, athleteId, staff.accountId],
+    [staff.organizationId, athleteId, staff.accountId, staff.role],
   );
 
   const staffNames = new Map<string, string>();
@@ -436,25 +474,39 @@ export async function replyInFamilyThread(
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
   const text = cleanText(input.text);
   if (!UUID.test(input.threadId)) throw new NotFoundError(NOT_HERE);
-  const opening = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.family_thread_posts
-      where organization_id = $1 and post_id = $2::uuid and thread_id = $2::uuid`,
-    [staff.organizationId, input.threadId],
-  );
-  if (!opening) throw new NotFoundError(NOT_HERE);
-  await reachOrNotHere(staff, opening.athlete_id);
 
   try {
     return await withTransaction(async (client) => {
-      const row = await insertPost({
-        organizationId: staff.organizationId,
-        postId: randomUUID(),
-        threadId: input.threadId,
-        athleteId: opening.athlete_id,
-        accountId: staff.accountId,
-        role: staff.role,
-        text,
-      }, client);
+      // ONE statement checks and writes (Overwatch on #2179): the thread in this gym, its athlete
+      // live, and this staff member's seat. The reply is written only from that row; the row comes
+      // back either way, so no thread is the one 404 and no seat is the seat's 403.
+      const { rows } = await client.query<{
+        athlete_id: string;
+        seated: boolean;
+        post_id: string | null;
+        thread_id: string | null;
+        created_at: string | null;
+      }>(
+        `with eligible as (
+           select o.athlete_id, ${staffSeatSql('o.organization_id', '$4', '$5')} as seated
+             from pilot.family_thread_posts o
+             join pilot.athletes a
+               on a.organization_id = o.organization_id and a.athlete_id = o.athlete_id and a.deleted_at is null
+            where o.organization_id = $1 and o.post_id = $3::uuid and o.thread_id = $3::uuid
+         ), written as (
+           insert into pilot.family_thread_posts
+             (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+           select $1, $2::uuid, $3::uuid, e.athlete_id, $4, $5, $6 from eligible e where e.seated
+           returning post_id::text as post_id, thread_id::text as thread_id,
+                     to_char(created_at at time zone 'UTC', ${ISO_UTC}) as created_at
+         )
+         select e.athlete_id, e.seated, w.post_id, w.thread_id, w.created_at
+           from eligible e left join written w on true`,
+        [staff.organizationId, randomUUID(), input.threadId, staff.accountId, staff.role, text],
+      );
+      const row = rows[0];
+      if (!row) throw new NotFoundError(NOT_HERE);
+      if (!row.seated || !row.post_id || !row.thread_id || !row.created_at) throw new ForbiddenError(NO_SEAT);
       // Who and when, never the words (the post holds them).
       await writePilotAuditEvent({
         event_type: 'create',
@@ -463,7 +515,7 @@ export async function replyInFamilyThread(
         organization_id: staff.organizationId,
         entity_type: 'family_thread_reply',
         entity_id: row.post_id,
-        details: { athlete_id: opening.athlete_id, thread_id: row.thread_id },
+        details: { athlete_id: row.athlete_id, thread_id: row.thread_id },
         shadow_mirror: false,
       }, client);
       return { thread_id: row.thread_id, post_id: row.post_id, created_at: row.created_at };
@@ -484,21 +536,27 @@ export async function replyInFamilyThread(
 export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, postId: string): Promise<{ post_id: string }> {
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
   if (!UUID.test(postId)) throw new NotFoundError(NOT_HERE);
-  const post = await queryOne<{ athlete_id: string }>(
-    `select athlete_id from pilot.family_thread_posts
-      where organization_id = $1 and post_id = $2::uuid and author_role = 'parent'`,
-    [staff.organizationId, postId],
-  );
-  if (!post) throw new NotFoundError(NOT_HERE);
-  await reachOrNotHere(staff, post.athlete_id);
 
   try {
-    await query(
-      `insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
-       values ($1, $2::uuid, $3, $4)
-       on conflict (organization_id, post_id, reader_account_id) do nothing`,
+    // ONE statement checks and records (Overwatch on #2179): a guardian's post in this gym, its
+    // athlete live, and this staff member's seat; a second look finds the row already there.
+    const row = await queryOne<{ seated: boolean }>(
+      `with eligible as (
+         select p.post_id, ${staffSeatSql('p.organization_id', '$3', '$4')} as seated
+           from pilot.family_thread_posts p
+           join pilot.athletes a
+             on a.organization_id = p.organization_id and a.athlete_id = p.athlete_id and a.deleted_at is null
+          where p.organization_id = $1 and p.post_id = $2::uuid and p.author_role = 'parent'
+       ), recorded as (
+         insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+         select $1, e.post_id, $3, $4 from eligible e where e.seated
+         on conflict (organization_id, post_id, reader_account_id) do nothing
+       )
+       select e.seated from eligible e`,
       [staff.organizationId, postId, staff.accountId, staff.role],
     );
+    if (!row) throw new NotFoundError(NOT_HERE);
+    if (!row.seated) throw new ForbiddenError(NO_SEAT);
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_reads_reader_of_this_gym'])) throw new ForbiddenError(NO_SEAT);
     // Not reached unless the lookup above is wrong, or the post went between it and this write.
@@ -515,7 +573,11 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
  * the count goes up for the child's coach and active covering coaches, and for
  * organization admins and admins across the gym, as the escalation route
  * scopes; other coaches can still read). Live athletes of this gym only;
- * athletes with none are left out.
+ * athletes with none are left out. The statement that counts checks the staff
+ * seat itself (staffSeatSql; Overwatch on #2179), so a seat that ends after the
+ * gate counts nothing. The coach's list of athletes is read first: it decides
+ * whom the count nudges (OW27-27), not who may read, since a coach reaches the
+ * whole gym (OD-2026-10-11-007, Q3 A on #2161).
  */
 export async function countUnseenFamilyThreadPostsForStaff(
   staff: FamilyThreadStaff,
@@ -531,11 +593,12 @@ export async function countUnseenFamilyThreadPostsForStaff(
       where p.organization_id = $1
         and p.author_role = 'parent'
         and ($3::text[] is null or p.athlete_id = any($3::text[]))
+        and ${staffSeatSql('p.organization_id', '$2', '$4')}
         and not exists (select 1 from pilot.family_thread_reads r
                          where r.organization_id = p.organization_id and r.post_id = p.post_id
                            and r.reader_account_id = $2)
       group by p.athlete_id
       order by p.athlete_id`,
-    [staff.organizationId, staff.accountId, scope],
+    [staff.organizationId, staff.accountId, scope, staff.role],
   );
 }
