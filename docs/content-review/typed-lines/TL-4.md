@@ -59,7 +59,7 @@ Source: the 13 typed steps of `wtp_456e418b1741b8` (Iso + Plyo 60-Minute Boxing 
 ### Step 7. Split Stance Pogo (`drl_a7f630616234a0`)
 
 - Typed line: "Split stance pogo: / - Stay in stance, small bounce"
-- Purpose: Open the movement and footwork block (8:00–18:00): carry the warm-up's springy ankles into a boxing stance. Target: Bounce small and quick off the ankles while staying in split stance, then reset stance.
+- Purpose: Open the movement and footwork block (8:00–18:00): carry the warm-up's springy ankles into the footwork block. Target: Bounce small and quick off the ankles while staying in split stance, then reset stance.
 - Setup: Each athlete in their own space with room to bounce, in split stance; no partner and no contact.
 - Execution: In split stance, small quick bounces off the balls of the feet, staying in stance throughout; then reset stance.
 - Good: Small, springy bounces, not heavy; the stance held throughout, then reset.
