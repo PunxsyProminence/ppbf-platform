@@ -36,10 +36,18 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 // Routes familyThreads.ts's, guardianAccess.ts's and achievements.ts's queries into whichever
 // embedded database the current test opened. Declared before the import so jest's hoisting sees it.
 let activeClient: Client | null = null;
+// Runs once, just before the next statement that reads the guardian's threads: the moment between
+// any earlier read and the one that returns the posts (Codex P2 and Overwatch on #2179).
+let beforeThreadsRead: ((client: Client) => Promise<unknown>) | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
+    if (beforeThreadsRead && text.includes('from pilot.family_thread_posts o')) {
+      const change = beforeThreadsRead;
+      beforeThreadsRead = null;
+      await change(activeClient);
+    }
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
@@ -443,6 +451,35 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       [ORG, `parent-${GUARDIAN}`, SIBLING],
     );
     await expect(threads.listOwnFamilyThreads(ORG, GUARDIAN)).resolves.toEqual([]);
+  });
+
+  test('a link that ends, a child deleted or a date of birth corrected to an adult just before the threads are read returns nothing (Codex P2)', async () => {
+    const client = await freshDatabase('ftg_race');
+    const opened = await start(GUARDIAN, CHILD);
+    await staffReply(client, opened.thread_id);
+    expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
+
+    const changes: Array<[string, (db: Client) => Promise<unknown>]> = [
+      ['the link removed', (db) => db.query(
+        `delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+        [ORG, `parent-${GUARDIAN}`, CHILD],
+      )],
+      ['the child deleted', (db) => db.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD],
+      )],
+      ['the date of birth corrected to an adult', (db) => db.query(
+        `update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB],
+      )],
+    ];
+    for (const [label, change] of changes) {
+      await client.query('begin');
+      beforeThreadsRead = change;
+      const list = await threads.listOwnFamilyThreads(ORG, GUARDIAN);
+      expect(beforeThreadsRead).toBeNull();
+      expect([label, list]).toEqual([label, []]);
+      await client.query('rollback');
+      expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
+    }
   });
 
   test('a message needs words, up to 2000 characters', async () => {
