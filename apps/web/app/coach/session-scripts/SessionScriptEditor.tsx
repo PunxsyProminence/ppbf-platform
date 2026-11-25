@@ -73,10 +73,12 @@ const REFUSALS_BY_STATUS: Readonly<Record<number, string>> = {
 };
 
 const REFUSALS: Readonly<Record<string, string>> = {
+  // Not "nothing of yours": the earlier save may be this coach's own try whose answer was lost
+  // (the plan page's retire words say the same; SP-2b reviewer G).
   SESSION_SCRIPT_CHANGED:
-    'This plan was saved after you opened it, on another screen or by another coach, so nothing of yours was saved and that save is as it was left. Open the plan again to see it, then make your changes.',
+    'This plan was saved after you opened it: on another screen, by another coach, or by an earlier try of yours whose answer was lost. This try was not saved, and that save is as it was left. Open the plan again to see it, then make any changes still needed.',
   SESSION_SCRIPT_SUPERSEDED:
-    'This plan has been replaced by a newer version, so nothing was saved. Reload the list and edit the current version.',
+    'This plan has been replaced by a newer version, which may hold an earlier try of yours whose answer was lost. This try was not saved. Reload the list and edit the current version.',
   SESSION_SCRIPT_NOT_FOUND: 'This plan could not be found, so nothing was saved.',
   SESSION_SCRIPT_BLOCK_MINUTES_INVALID:
     `Nothing was saved. Each block needs whole minutes from the start of the session, its end after its start and no later than minute ${LAST_MINUTE}.`,
@@ -176,7 +178,11 @@ export default function SessionScriptEditor({
   useEffect(() => {
     const key = wantFocus.current;
     wantFocus.current = null;
-    if (key) focusables.get(key)?.focus();
+    if (!key) return;
+    // A target that is not on screen, or is disabled while saving, falls back to the plan name,
+    // so focus never drops to the page (reviewers E and F).
+    const target = focusables.get(key);
+    (target && !(target as HTMLButtonElement).disabled ? target : focusables.get('name'))?.focus();
   });
 
   // Where the first block starts now, so a move or a remove at the top keeps it;
@@ -354,7 +360,7 @@ export default function SessionScriptEditor({
     >
       <label className="field">
         <span className="t-label">Plan name</span>
-        <input type="text" className="input" value={name} maxLength={200} readOnly={busy} onChange={(event) => { if (!inFlight.current) setName(event.target.value); }} />
+        <input ref={hold('name')} type="text" className="input" value={name} maxLength={200} readOnly={busy} onChange={(event) => { if (!inFlight.current) setName(event.target.value); }} />
       </label>
 
       <ol aria-label="Blocks to edit, in the order they run" className="flex flex-col gap-[var(--s3)]">

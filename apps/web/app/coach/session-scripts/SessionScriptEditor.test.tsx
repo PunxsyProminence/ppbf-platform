@@ -181,9 +181,10 @@ describe('the plan editor', () => {
   });
 
   it.each([
-    // True whoever saved it: the same coach on another screen as much as another coach (F-078).
-    ['SESSION_SCRIPT_CHANGED', /This plan was saved after you opened it, on another screen or by another coach, so nothing of yours was saved and that save is as it was left/],
-    ['SESSION_SCRIPT_SUPERSEDED', /replaced by a newer version, so nothing was saved/],
+    // True whoever saved it: the same coach on another screen, another coach (F-078), or this
+    // coach's own earlier try whose answer was lost (SP-2b reviewer G) -- never "nothing of yours".
+    ['SESSION_SCRIPT_CHANGED', /This plan was saved after you opened it: on another screen, by another coach, or by an earlier try of yours whose answer was lost\. This try was not saved/],
+    ['SESSION_SCRIPT_SUPERSEDED', /replaced by a newer version, which may hold an earlier try of yours whose answer was lost\. This try was not saved/],
     ['SESSION_SCRIPT_BLOCK_MINUTES_INVALID', /Nothing was saved\. Each block needs whole minutes.*no later than minute 1440/],
     ['A_CODE_ADDED_LATER', /The server refused, so nothing was saved/],
   ])('a refusal (%s) says nothing was saved and why, and the form stays as typed', async (code, sentence) => {
@@ -713,6 +714,17 @@ describe('adding, removing and moving blocks', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
       expect(screen.getByRole('button', { name: 'Add a drill from the library' })).toHaveFocus();
+    });
+
+    it('when its target is not on screen, on the plan name: the last block removed while the picker is open', async () => {
+      setupRouted();
+      fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+      await screen.findByRole('button', { name: 'Footwork ladder' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove, block 2' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+
+      expect(screen.getByLabelText('Plan name')).toHaveFocus();
     });
 
     it('after a drill is picked, in the new block\'s title; after the picker is closed, on Add a drill', async () => {
