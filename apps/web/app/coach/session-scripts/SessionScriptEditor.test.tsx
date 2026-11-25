@@ -13,7 +13,7 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-import SessionScriptEditor from './SessionScriptEditor';
+import SessionScriptEditor, { runOn } from './SessionScriptEditor';
 import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
@@ -61,7 +61,7 @@ function setup(
   const { unmount } = render(
     <SessionScriptEditor script={script} onSaved={onSaved} onCancel={onCancel} onBusyChange={onBusyChange} />,
   );
-  const sent = () => JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as Record<string, unknown>;
+  const sent = () => JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === 'PATCH')?.[1]?.body)) as Record<string, unknown>;
   return { fetchMock, onSaved, onCancel, onBusyChange, sent, unmount };
 }
 
@@ -279,5 +279,200 @@ describe('the plan editor', () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('runOn: the blocks from the change point on run on', () => {
+  const rows = [
+    { start: '0', end: '6' },
+    { start: '6', end: '11' },
+    { start: '11', end: '20' },
+  ];
+
+  it('each block from the change point keeps its length and starts where the one before ends', () => {
+    // The middle block was removed: the last one (9 minutes) now follows the first.
+    expect(runOn([rows[0], rows[2]], 1)).toEqual([
+      { start: '0', end: '6' },
+      { start: '6', end: '15' },
+    ]);
+  });
+
+  it('blocks before the change point keep their minutes, even when they leave gaps', () => {
+    expect(runOn([{ start: '3', end: '8' }, { start: '20', end: '25' }, { start: '25', end: '30' }], 2)).toEqual([
+      { start: '3', end: '8' },
+      { start: '20', end: '25' },
+      { start: '25', end: '30' },
+    ]);
+  });
+
+  it('a change at the top starts the first block at the given first start', () => {
+    expect(runOn([rows[1], rows[0]], 0, 0)).toEqual([
+      { start: '0', end: '5' },
+      { start: '5', end: '11' },
+    ]);
+  });
+
+  it('a block whose minutes cannot be read is left as typed, and the run goes on from its end if known', () => {
+    expect(runOn([rows[0], { start: 'x', end: '9' }, { start: '9', end: '12' }], 1)).toEqual([
+      { start: '0', end: '6' },
+      { start: 'x', end: '9' },
+      { start: '9', end: '12' },
+    ]);
+    expect(runOn([rows[0], { start: 'x', end: 'y' }, rows[2]], 1)[2]).toEqual(rows[2]);
+  });
+});
+
+describe('adding, removing and moving blocks', () => {
+  const drillList = () => answer(200, { ok: true, items: [{ drill_id: 'drl-1', name: 'Slip and counter' }, { drill_id: 'drl-2', name: 'Footwork ladder' }] });
+
+  function setupRouted(patch: Response = answer(200, { outcome: 'updated', script: SCRIPT })) {
+    const fetchMock = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'PATCH' ? patch : String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {}));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const onSaved = jest.fn();
+    render(<SessionScriptEditor script={SCRIPT} onSaved={onSaved} onCancel={jest.fn()} />);
+    const sent = () => JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === 'PATCH')?.[1]?.body)) as Record<string, unknown>;
+    return { fetchMock, onSaved, sent };
+  }
+
+  const addDrill = async (name: string) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+    fireEvent.click(await screen.findByRole('button', { name }));
+  };
+
+  it('a drill from the library is added last, marked New, 5 minutes from where the last block ends, and sent in add_blocks', async () => {
+    const { sent } = setupRouted();
+
+    await addDrill('Slip and counter');
+
+    expect(block(3).getByLabelText('Title')).toHaveValue('Slip and counter');
+    expect(block(3).getByLabelText('Starts at minute')).toHaveValue('11');
+    expect(block(3).getByLabelText('Ends at minute')).toHaveValue('16');
+    expect(block(3).getByText(/New, not saved yet/)).toBeInTheDocument();
+    await act(async () => save());
+
+    // Last, and not retitled: no order, no block_label, and nothing else is sent.
+    expect(sent()).toEqual({
+      script_id: 'scr-1',
+      expected_updated_at: READ_AT,
+      add_blocks: [{ ref: expect.any(String), kind: 'drill', drill_id: 'drl-1', start_offset_min: 11, end_offset_min: 16 }],
+    });
+  });
+
+  it('the picker searches the drill names', async () => {
+    setupRouted();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+    await screen.findByRole('button', { name: 'Footwork ladder' });
+
+    type(screen.getByLabelText('Search drills by name'), 'slip');
+
+    expect(screen.queryByRole('button', { name: 'Footwork ladder' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Slip and counter' })).toBeInTheDocument();
+  });
+
+  it('removing a block sends remove_block_ids, re-times the rest, and sends the edited block only', async () => {
+    const { sent } = setupRouted();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove block 1' }));
+
+    expect(block(1).getByLabelText('Title')).toHaveValue('Partner mirror');
+    expect(block(1).getByLabelText('Starts at minute')).toHaveValue('0');
+    expect(block(1).getByLabelText('Ends at minute')).toHaveValue('5');
+    await act(async () => save());
+
+    expect(sent()).toEqual({
+      script_id: 'scr-1',
+      expected_updated_at: READ_AT,
+      blocks: [{ block_id: 'blk-2', block_label: 'Partner mirror', start_offset_min: 0, end_offset_min: 5 }],
+      remove_block_ids: ['blk-1'],
+    });
+  });
+
+  it('moving a block down sends the running order and the re-timed minutes', async () => {
+    const { sent } = setupRouted();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move block 1 down' }));
+
+    expect(block(1).getByLabelText('Title')).toHaveValue('Partner mirror');
+    expect(block(2).getByLabelText('Starts at minute')).toHaveValue('5');
+    await act(async () => save());
+
+    expect(sent()).toEqual({
+      script_id: 'scr-1',
+      expected_updated_at: READ_AT,
+      blocks: [
+        { block_id: 'blk-2', block_label: 'Partner mirror', start_offset_min: 0, end_offset_min: 5 },
+        { block_id: 'blk-1', block_label: 'Jab Drill', start_offset_min: 5, end_offset_min: 11 },
+      ],
+      order: ['blk-2', 'blk-1'],
+    });
+  });
+
+  it('moving a block and moving it back sends no order and nothing else; the ends of the list cannot move off it', async () => {
+    const { sent } = setupRouted();
+
+    expect(screen.getByRole('button', { name: 'Move block 1 up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move block 2 down' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Move block 2 up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move block 2 up' }));
+    await act(async () => save());
+
+    expect(sent()).toEqual({ script_id: 'scr-1', expected_updated_at: READ_AT });
+  });
+
+  it('an added block moved above a kept one sends order naming its ref', async () => {
+    const { sent } = setupRouted();
+
+    await addDrill('Slip and counter');
+    fireEvent.click(screen.getByRole('button', { name: 'Move block 3 up' }));
+    await act(async () => save());
+
+    const body = sent() as { add_blocks: Array<{ ref: string }>; order: string[] };
+    expect(body.order).toEqual(['blk-1', body.add_blocks[0].ref, 'blk-2']);
+  });
+
+  it('a drill library that cannot be loaded is said in words, not shown as an empty list', async () => {
+    global.fetch = jest.fn(async () => answer(500, { error: 'boom' })) as unknown as typeof fetch;
+    render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+
+    expect(await screen.findByText(/could not be loaded, so no drills are shown/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Drills in the library' })).toBeNull();
+  });
+
+  it('says it is loading while the library is read', () => {
+    global.fetch = jest.fn(() => new Promise(() => {})) as unknown as typeof fetch;
+    render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+
+    expect(screen.getByText('Loading the drill library…')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['SESSION_SCRIPT_ORDER_INVALID', 422, /Nothing was saved\. The running order/],
+    ['SESSION_SCRIPT_BLOCK_REPEATED', 422, /Nothing was saved\. A block was named twice/],
+    ['SESSION_SCRIPT_BLOCK_REF_INVALID', 422, /Nothing was saved\. A block you added was not accepted/],
+    ['SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT', 422, /Nothing was saved\. A block you changed or removed is not in this plan/],
+    ['SESSION_SCRIPT_DRILL_NOT_FOUND', 422, /Nothing was saved\. A drill you added is not one of this gym's drills/],
+    ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409, /Nothing was saved\. A drill you added was replaced or withdrawn.*open the drill library again/],
+  ])('%s is put in plain words and nothing is saved', async (code, status, sentence) => {
+    const { onSaved } = setupRouted(answer(status, { error: code }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove block 2' }));
+    await act(async () => save());
+
+    expect(screen.getByRole('alert')).toHaveTextContent(sentence);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('hands up why a new version was made', async () => {
+    const { onSaved } = setupRouted(answer(200, { outcome: 'new_version', because: 'removal', script: SCRIPT }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove block 2' }));
+    await act(async () => save());
+
+    expect(onSaved).toHaveBeenCalledWith('new_version', SCRIPT, 'removal');
   });
 });

@@ -21,7 +21,7 @@ import {
   renderingOriginWords,
 } from '@/src/lib/sessionScriptWords';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
-import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
+import SessionScriptEditor, { type SessionScriptEditBecause, type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import type {
@@ -363,7 +363,7 @@ function CoachSessionScripts() {
     })();
   }, [openScript]);
 
-  const planSaved = useCallback((outcome: SessionScriptEditOutcome | null, saved: ScriptDetail | null) => {
+  const planSaved = useCallback((outcome: SessionScriptEditOutcome | null, saved: ScriptDetail | null, because?: SessionScriptEditBecause) => {
     setEditing(false);
     if (outcome === null || saved === null) {
       // Saved, but what was saved did not arrive. The plan on screen is the one
@@ -383,8 +383,11 @@ function CoachSessionScripts() {
     }
     setEditNotice(
       outcome === 'new_version'
-        ? `This plan has been delivered before, so your changes were saved as version ${saved.version}. `
-          + 'The sessions already delivered keep the version they ran.'
+        ? because === 'removal'
+          ? `Because a block was removed, your changes were saved as version ${saved.version}. `
+            + 'The earlier version is kept as it was.'
+          : `This plan has been delivered before, so your changes were saved as version ${saved.version}. `
+            + 'The sessions already delivered keep the version they ran.'
         : 'Saved.',
     );
     void load();
