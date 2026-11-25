@@ -1608,3 +1608,17 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_0d9e16c1dd948e,drl_2840b7b848ba9a,1,Pain in the hip or knee (more than a stretch): ease off and tell the coach.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_029b7b612201fc,drl_035fbd809c8e13,1,Pain behind the knee or in the lower back (more than a stretch): ease off and tell the coach.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_e6342b8693b4c7,drl_478db0c9f74694,1,The close runs long or drifts: end it on the coach's closing line.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5bd67a734a67c9,drl_00fb56aab4ee4a,1,"An athlete's wraps, headgear or gloves are not ready when the drill rounds start: they get ready before joining.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_5042af36e49e0e,drl_005bea3042938a,1,An athlete stops working or drifts: they choose a new task from the list.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ba3518d5e6160e,drl_7654a30ec2e74c,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_7484644055a5a3,drl_7654a30ec2e74c,2,Stop the round when contact rises above the level the coach set for this drill.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_79e78cd97746c9,drl_7654a30ec2e74c,3,Stop the pair when an athlete does not follow the coach's command immediately.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_2d1ad2dd1f4612,drl_7654a30ec2e74c,4,"Stop the round when the key habit is gone (punching and staying in front instead of punch, move, reset) and a correction between rounds does not bring it back.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f73990b2c2045d,drl_c846f6c648b34e,1,Observation turns into passive standing around: the coach gives the athlete one specific thing to watch.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_285138796a9618,drl_83eee740e9f95d,1,"Service turns into punishment or horseplay: stop and restate its purpose, culture building.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_75bca36f5f529f,drl_1d5d3c1176e56f,1,Breathing feels forced or uncomfortable: return to normal breathing (the sheet: no forced breathing).,drill_specific,safety
+{{PPBF_ORG_ID}},stp_8703ddf2597da3,drl_f2ac7bda9131cb,1,"Slips lose precision (head drops, stance breaks): stop and reset before the next cue.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e23d267be760aa,drl_d3ca8b49ec5e5e,1,Balance or stance breaks when moving: slow to the tempo where it holds.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_caa9f14713ea99,drl_a5d2a79b8224ab,1,Speed creeps above half or breathing is held: stop and reset to 50% speed and steady breathing.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b20dc5e6c3c960,drl_8b5cad86b115a9,1,"Movement quality drops (plank sags, wall sit slips): stop the station and rest (the sheet: quality movement only).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fd499543b5e886,drl_5093325d1b6985,1,The circle drifts or runs past its 5 minutes: close it on the line.,drill_specific,intent_drift

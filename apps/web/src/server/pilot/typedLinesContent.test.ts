@@ -5,6 +5,7 @@ import path from 'node:path';
 import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
 import { readCsv } from './contentImport/csv';
 import { MINT } from './contentImport/ids';
+import { VOCABULARIES } from './contentImport/vocabularies';
 import { normalizeName } from './contentImport/warnings';
 
 // Lane W4-8 (OD-2026-11-19-030, OW26-05 "B: Turn typed lines into library drills"; OD-2026-11-20-001 OW27-09,
@@ -26,6 +27,8 @@ const CUES = 'drill-library/seed_drill_cues.csv';
 const ITEMS = 'workout-templates/seed_workout_template_items.csv';
 const CLASS = 'AI DRAFT - lane W4-8';
 const MARKER = /^AI draft, lane W4-8, \d{4}-\d{2}-\d{2} \(OD-2026-11-19-030; OD-2026-11-20-001 OW27-09; OD-2026-11-15-011\)$/;
+/** Least to most contact (contentImport/vocabularies.ts). */
+const CONTACT: readonly string[] = VOCABULARIES.contact_level.values;
 const LABELLED = [
   'category', 'contact_level', 'cues', 'difficulty', 'discipline', 'equipment_needed', 'execution', 'name', 'purpose',
   'scale_levels', 'standard_setup', 'stop_rules', 'target_behavior', 'what_good_looks_like',
@@ -46,6 +49,8 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_ed57bea28de0f7: '5c1fda8d7e279462011757fdb575f8ed2b837d6e6544cc45ad5e6e51f20f0bdb', // Weeks 5-8 (TL-1b)
   wtp_d861f584584788: '0db4dd011480e5ccfd5f3fc5df45984ebb9f25803a3e26c91e55fa94bb79f2b2', // Weeks 9-12 (TL-1b)
   wtp_900c0a3fd4422a: '76781c9612b5ad2c1e003308dafa24cf78438f64140c99b5ffaa2180ff21f03e', // Scripted 60-Minute Class (TL-2; at d9514532)
+  wtp_1ad3c846b03ecc: '8bfaffbfcb34d4f272ca36e03e104c4cd51954e5e1b65be5f83638c29105298d', // Friday Sparring Coach Sheet (TL-3a; at 6037ca94)
+  wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 6037ca94)
 };
 
 /** The lane-linked steps that carry their own block time as their duration (#2177); a step PR adds its templates here. */
@@ -181,7 +186,13 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
         else expect({ step, drill: item.drill_id }).toEqual({ step, drill: drill.drill_id });
         expect({ step, contact: item.contact_level || 'none' }).toEqual({ step, contact: drill.contact_level });
       }
-      for (const level of scales.get(drill.drill_id) ?? []) expect(level.contact_level).toBe(drill.contact_level);
+      // No scale level runs above the drill's own contact (a step's limit, GO condition 5); level B, the drill as
+      // designed, runs at it. An easier level may sit lower (the open sparring drill's level A is controlled sparring).
+      for (const level of scales.get(drill.drill_id) ?? []) {
+        expect({ drill: drill.drill_id, level: level.scale_level, above: CONTACT.indexOf(level.contact_level) > CONTACT.indexOf(drill.contact_level) })
+          .toEqual({ drill: drill.drill_id, level: level.scale_level, above: false });
+        if (level.scale_level === 'B') expect({ drill: drill.drill_id, b: level.contact_level }).toEqual({ drill: drill.drill_id, b: drill.contact_level });
+      }
     }
   });
 
