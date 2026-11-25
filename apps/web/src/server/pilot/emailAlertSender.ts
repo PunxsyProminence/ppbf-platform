@@ -2,23 +2,37 @@
  * THE EMAIL ALERT SENDER (lane W4-1, EM-3b; plan on #2159, sections 4 and 5).
  *
  * OD-2026-11-19-019: an opt-in email that says only "open the app". It runs on
- * the server's worker tick (instrumentation.ts), every 30 seconds by default.
- * Each tick:
+ * the server's worker tick (instrumentation.ts), every 30 seconds by default,
+ * on every replica. Each tick:
  *   1. sweeps each event source past its checkpoint, with a 10-minute overlap
  *      so a row that commits late is not missed (plan 5.1), and queues one
  *      send per person who can read the event, has switched on (EM-1) and
  *      whose gym has the event ticked (EM-5). Nobody else gets a row. A
- *      source's first sweep only sets its checkpoint: no history is sent;
+ *      source's first sweep only sets its checkpoint, so nothing from more
+ *      than ten minutes before it is ever sent (the next sweep reads the
+ *      overlap);
  *   2. puts back sends whose lease ran out (a server stopped mid-send);
- *   3. claims due sends (FOR UPDATE SKIP LOCKED, under a lease, so two
- *      replicas never send the same one), re-checks the person and sends.
+ *   3. claims due sends one at a time (FOR UPDATE SKIP LOCKED, under a
+ *      lease, so two replicas never claim the same one), re-checks the person
+ *      and sends only while the claim's lease has four of its five minutes
+ *      left; the Graph call is cut off at 30 seconds. A send cut off after Graph
+ *      took it can still go twice (the send log migration lists when). One
+ *      row's failure is logged and the tick goes on. It stops claiming after
+ *      20 seconds, so the video sweep after it waits at most that long plus one
+ *      send.
  *
  * RE-CHECKED BEFORE EVERY SEND (plan 5.2). The switch is on, under the row's
- * user type; sign-in is on (account active and not deleted, membership of
- * that gym active, gym active: resolvePrincipal's checks); the person's role
- * in that gym and age still give that user type (an unknown date of birth is
- * a minor, OD-2026-10-04-010); the gym still has the event ticked; there is an
- * address. Any no: the row is skipped with its reason and nothing is sent.
+ * user type. Sign-in to this gym is on, as resolvePrincipal (auth.ts) would
+ * find it: this is the account's own gym (every sign-in mints its session
+ * there), the account is active and not deleted, its membership here is active,
+ * the gym is active, a PIN account holds only roles PIN may sign in as
+ * (pinLoginPermitted, both roles), and the membership's role fits the home
+ * role's sign-in (sessionCredentialFits). The person's role in that gym and
+ * age still give that user type (an unknown date of birth is a minor,
+ * OD-2026-10-04-010), and any account linked to an athlete record under 18 or
+ * deleted gets nothing, whatever its role. The gym still has the event
+ * ticked; there is an address. Any no: the row is skipped with its reason and
+ * nothing is sent.
  *
  * WHAT IS SENT (plan 5.3). Subject "<gym short name>: open the app", body
  * "open the app": no link, no word about the event. From the sign-in sender
@@ -34,8 +48,10 @@
 
 import { isEmailAlertEventFor, type EmailAlertUserType } from '@/src/shared/emailAlerts';
 
+import { sessionCredentialFits } from './auth';
 import type { PilotRole } from './contracts';
-import { query, queryOne } from './db';
+import { pinLoginPermitted } from './credentialPolicy';
+import { isLoopbackPostgresConnectionString, query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { isGymEmailAlertEventTicked } from './emailAlertGymEvents';
 import { emailAlertUserTypeFor } from './emailAlertSwitches';
@@ -46,7 +62,14 @@ import { getOrganizationProfile, OrganizationProfileUnavailableError } from './o
 
 export const EMAIL_ALERT_MAX_TRIES = 5;
 export const EMAIL_ALERT_RETRY_WAIT_MINUTES = [1, 5, 15, 60] as const;
-const LEASE_SECONDS = 120;
+const LEASE_SECONDS = 300;
+// A send starts only with this much lease left: the token, then the Graph call
+// (cut off at MAIL_TIMEOUT_SECONDS), finish well before another replica could
+// take the row back.
+const LEASE_LEFT_TO_SEND_SECONDS = 240;
+const MAIL_TIMEOUT_SECONDS = 30;
+// The sweep stops claiming after this, so the video sweep after it is not held up.
+const SEND_BUDGET_MS = 20_000;
 const SWEEP_OVERLAP_MS = 10 * 60 * 1000;
 const SENDS_PER_TICK = 20;
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -60,7 +83,12 @@ export interface EmailAlertCandidate {
   readonly eventId: string;
 }
 
-/** An event table the sweep reads (EM-4a and EM-4b add them). */
+/**
+ * An event table the sweep reads (EM-4a and EM-4b add them). The overlap holds
+ * only if a source's times come from the database clock in the inserting
+ * transaction (a column default of now() does) and that transaction commits
+ * within ten minutes.
+ */
 export interface EmailAlertSource {
   /** Its checkpoint key; the sends it queues carry the candidates' own kinds. */
   readonly checkpointKey: string;
@@ -82,7 +110,7 @@ export function emailAlertSenderDependencies(): EmailAlertSenderDependencies {
     sendMail: (message) =>
       sendPlainTextMail(message, { sender: SENDER, saveToSentItems: false }, {
         getAccessToken: graphTokenProvider(),
-        fetchImpl: fetch,
+        fetchImpl: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(MAIL_TIMEOUT_SECONDS * 1000) }),
       }),
     gymName: gymShortName,
     now: () => new Date(),
@@ -224,6 +252,11 @@ async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision>
   const person = await queryOne<{
     active_flag: boolean;
     account_deleted: boolean;
+    home_organization_id: string;
+    home_role: string;
+    auth_provider: string;
+    is_platform_owner: boolean;
+    holds_board_seat: boolean;
     login_email: string | null;
     athlete_id: string | null;
     member_role: string | null;
@@ -233,7 +266,12 @@ async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision>
     switch_user_type: string | null;
     confirmed_address: string | null;
   }>(
-    `select a.active_flag, ${accountDeletedSql('a')} as account_deleted, a.login_email, a.athlete_id,
+    `select a.active_flag, ${accountDeletedSql('a')} as account_deleted,
+            a.organization_id as home_organization_id, a.role as home_role, a.auth_provider,
+            a.is_platform_owner,
+            exists (select 1 from pilot.board_seats bs
+                     where bs.organization_id = $1 and bs.account_id = a.account_id) as holds_board_seat,
+            a.login_email, a.athlete_id,
             om.role as member_role, om.active_flag as member_active, o.status as gym_status,
             s.switched_on, s.user_type as switch_user_type, s.confirmed_address
        from pilot.accounts a
@@ -244,16 +282,21 @@ async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision>
     [row.organization_id, row.account_id],
   );
   if (!person?.switched_on) return { send: false, reason: 'switched_off' };
-  if (!person.active_flag || person.account_deleted || !person.member_active || person.gym_status !== 'active') {
-    return { send: false, reason: 'sign_in_off' };
-  }
-  const userType = await emailAlertUserTypeFor({
+  if (!signInIsOn(row, person)) return { send: false, reason: 'sign_in_off' };
+  const subject = {
     organizationId: row.organization_id,
     accountId: row.account_id,
     role: person.member_role as PilotRole,
     athleteId: person.athlete_id,
-  }, now);
+  };
+  const userType = await emailAlertUserTypeFor(subject, now);
   if (userType !== row.user_type || person.switch_user_type !== row.user_type) {
+    return { send: false, reason: 'not_offered' };
+  }
+  // An account linked to an athlete record is that athlete's, whatever role
+  // it now holds: under 18, unknown or deleted, it gets nothing.
+  if (person.athlete_id && userType !== 'adult_athlete'
+    && (await emailAlertUserTypeFor({ ...subject, role: 'athlete' }, now)) !== 'adult_athlete') {
     return { send: false, reason: 'not_offered' };
   }
   if (!(await isGymEmailAlertEventTicked(row.organization_id, userType, row.event_kind))) {
@@ -263,7 +306,32 @@ async function recheck(row: ClaimedEmailAlertSend, now: Date): Promise<Decision>
   return to ? { send: true, to } : { send: false, reason: 'no_address' };
 }
 
-type Outcome = 'sent' | 'skipped' | 'retried' | 'failed';
+/** Sign-in to this gym is on, as resolvePrincipal (auth.ts) would find it. */
+function signInIsOn(
+  row: ClaimedEmailAlertSend,
+  person: {
+    active_flag: boolean; account_deleted: boolean; home_organization_id: string; home_role: string;
+    auth_provider: string; is_platform_owner: boolean; holds_board_seat: boolean;
+    member_role: string | null; member_active: boolean | null; gym_status: string | null;
+  },
+): boolean {
+  if (person.home_organization_id !== row.organization_id) return false;
+  if (!person.active_flag || person.account_deleted || !person.member_active || !person.member_role) return false;
+  if (person.gym_status !== 'active') return false;
+  const sessionRole = person.member_role as PilotRole;
+  const homeRole = person.home_role as PilotRole;
+  const pinContext = {
+    databaseIsLoopback: isLoopbackPostgresConnectionString(process.env.AZURE_POSTGRES_CONNECTION_STRING),
+    holdsBoardSeat: person.holds_board_seat,
+  };
+  if (person.auth_provider === 'ppbf_local'
+    && (!pinLoginPermitted({ role: sessionRole }, pinContext) || !pinLoginPermitted({ role: homeRole }, pinContext))) {
+    return false;
+  }
+  return sessionCredentialFits({ homeRole, sessionRole, isPlatformOwner: person.is_platform_owner });
+}
+
+type Outcome = 'sent' | 'skipped' | 'retried' | 'failed' | 'lost';
 
 /** Re-checks and sends one claimed row, then records the outcome under its lease. */
 export async function deliverEmailAlertSend(
@@ -272,10 +340,19 @@ export async function deliverEmailAlertSend(
 ): Promise<Outcome> {
   const decision = await recheck(row, dependencies.now());
   if (!decision.send) {
-    await finish(row, `status = 'skipped', skip_reason = $3, finished_at = clock_timestamp()`, [decision.reason]);
-    return 'skipped';
+    const written = await finish(row, `status = 'skipped', skip_reason = $3, finished_at = clock_timestamp()`, [decision.reason]);
+    return written ? 'skipped' : 'lost';
   }
   const name = (await dependencies.gymName(row.organization_id)).trim();
+  // Send only while this claim's lease has time to spare: a lease that ran out
+  // may already be another replica's, and that one would send too.
+  const live = await queryOne<{ live: boolean }>(
+    `select true as live from pilot.email_alert_sends
+      where send_id = $1 and lease_token = $2 and status = 'sending'
+        and lease_expires_at > clock_timestamp() + make_interval(secs => $3)`,
+    [row.send_id, row.lease_token, LEASE_LEFT_TO_SEND_SECONDS],
+  );
+  if (!live) return 'lost';
   try {
     await dependencies.sendMail({
       to: decision.to,
@@ -289,28 +366,30 @@ export async function deliverEmailAlertSend(
     const final = (status !== undefined && status >= 400 && status < 500 && status !== 429)
       || mailError?.reason === 'RECIPIENT_MALFORMED' || mailError?.reason === 'MESSAGE_EMPTY';
     if (final || row.tries >= EMAIL_ALERT_MAX_TRIES) {
-      await finish(row, `status = 'failed', finished_at = clock_timestamp(),
-                         last_status_code = $3, last_error_code = $4`, [status ?? null, code]);
-      return 'failed';
+      const written = await finish(row, `status = 'failed', finished_at = clock_timestamp(),
+                                         last_status_code = $3, last_error_code = $4`, [status ?? null, code]);
+      return written ? 'failed' : 'lost';
     }
-    await finish(row, `status = 'queued',
-                       next_try_at = clock_timestamp() + make_interval(mins => $5),
-                       last_status_code = $3, last_error_code = $4`,
+    const written = await finish(row, `status = 'queued',
+                                       next_try_at = clock_timestamp() + make_interval(mins => $5),
+                                       last_status_code = $3, last_error_code = $4`,
     [status ?? null, code, EMAIL_ALERT_RETRY_WAIT_MINUTES[row.tries - 1]]);
-    return 'retried';
+    return written ? 'retried' : 'lost';
   }
-  await finish(row, `status = 'sent', finished_at = clock_timestamp(), last_status_code = null, last_error_code = null`, []);
-  return 'sent';
+  const written = await finish(row, `status = 'sent', finished_at = clock_timestamp(), last_status_code = null, last_error_code = null`, []);
+  return written ? 'sent' : 'lost';
 }
 
-/** Writes an outcome only while this claim still holds the row's lease. */
-async function finish(row: ClaimedEmailAlertSend, set: string, values: unknown[]): Promise<void> {
-  await query(
+/** Writes an outcome only while this claim still holds the row's lease; says whether it did. */
+async function finish(row: ClaimedEmailAlertSend, set: string, values: unknown[]): Promise<boolean> {
+  const written = await query<{ send_id: string }>(
     `update pilot.email_alert_sends
         set ${set}, lease_token = null, lease_expires_at = null
-      where send_id = $1 and lease_token = $2 and status = 'sending'`,
+      where send_id = $1 and lease_token = $2 and status = 'sending'
+      returning send_id`,
     [row.send_id, row.lease_token, ...values],
   );
+  return written.length === 1;
 }
 
 export interface EmailAlertSweepResult {
@@ -320,6 +399,8 @@ export interface EmailAlertSweepResult {
   skipped: number;
   retried: number;
   failed: number;
+  /** Claims whose lease ran short or was taken back: nothing sent, or nothing recorded. */
+  lost: number;
 }
 
 /** One tick of the sender. A failing source is logged and the rest still run. */
@@ -327,7 +408,7 @@ export async function runEmailAlertSweep(
   dependencies: EmailAlertSenderDependencies = emailAlertSenderDependencies(),
   sources: readonly EmailAlertSource[] = EMAIL_ALERT_SOURCES,
 ): Promise<EmailAlertSweepResult> {
-  const result: EmailAlertSweepResult = { queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0 };
+  const result: EmailAlertSweepResult = { queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0 };
   for (const source of sources) {
     try {
       result.queued += await sweepEmailAlertSource(source);
@@ -339,8 +420,17 @@ export async function runEmailAlertSweep(
     }
   }
   result.recovered = await recoverExpiredEmailAlertLeases();
-  for (const row of await claimDueEmailAlertSends(SENDS_PER_TICK)) {
-    result[await deliverEmailAlertSend(row, dependencies)] += 1;
+  // One claim at a time, so each lease starts when its send does.
+  const stopClaimingAt = Date.now() + SEND_BUDGET_MS;
+  for (let count = 0; count < SENDS_PER_TICK && Date.now() < stopClaimingAt; count += 1) {
+    const [row] = await claimDueEmailAlertSends(1);
+    if (!row) break;
+    try {
+      result[await deliverEmailAlertSend(row, dependencies)] += 1;
+    } catch (error) {
+      // The row stays claimed until its lease runs out, then is put back.
+      console.error('Email alert send failed', { errorClass: error instanceof Error ? error.name : typeof error });
+    }
   }
   return result;
 }

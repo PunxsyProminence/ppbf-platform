@@ -36,6 +36,9 @@ jest.mock('./db', () => ({
   withTransaction: jest.fn(async () => {
     throw new Error('test bug: the sender opens no transaction');
   }),
+  // The embedded server is on loopback, but production's is not; the PIN rule
+  // is tested as production applies it.
+  isLoopbackPostgresConnectionString: () => false,
 }));
 
 import {
@@ -306,23 +309,27 @@ describe('email alert sender', () => {
     }
   });
 
-  test('a due send goes once, to the sign-in address, saying only "open the app"; the log keeps no address', async () => {
+  test('a due send goes once, to the sign-in address, saying only "open the app"; the row holds no address', async () => {
     const client = await freshDatabase('emailsender_send');
     activeClient = client;
     try {
       await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
       const { sent, dependencies } = recorder();
       expect(await runEmailAlertSweep(dependencies, [])).toEqual({
-        queued: 0, recovered: 0, sent: 1, skipped: 0, retried: 0, failed: 0,
+        queued: 0, recovered: 0, sent: 1, skipped: 0, retried: 0, failed: 0, lost: 0,
       });
       expect(sent).toEqual([{ to: COACH_ADDRESS, subject: 'GYM: open the app', body: 'open the app' }]);
       expect(await runEmailAlertSweep(dependencies, [])).toEqual({
-        queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0,
+        queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0,
       });
       expect(sent).toHaveLength(1);
       const rows = await sendRows(client);
       expect(rows).toMatchObject([{ status: 'sent', tries: 1, finished: true, last_error_code: null }]);
+      // Here the account id is not an address, so the recipient's address must
+      // appear nowhere in the row (an account id that is an address is EM-3a's
+      // stated case).
       const everything = await client.query('select * from pilot.email_alert_sends');
+      expect(JSON.stringify(everything.rows)).not.toContain(COACH_ADDRESS);
       expect(JSON.stringify(everything.rows)).not.toContain('@');
     } finally {
       await client.end();
@@ -348,9 +355,39 @@ describe('email alert sender', () => {
     ['an account marked deleted', 'sign_in_off', 'coach', `update pilot.accounts set deleted_at = now() where account_id = '${COACH_ID}'`],
     ['a membership switched off', 'sign_in_off', 'coach', `update pilot.organization_memberships set active_flag = false where account_id = '${COACH_ID}'`],
     ['a gym suspended', 'sign_in_off', 'coach', `update pilot.organizations set status = 'suspended' where organization_id = '${ORG_ID}'`],
+    [
+      'an account moved to another gym (its old membership left on)',
+      'sign_in_off',
+      'coach',
+      `insert into pilot.organizations (organization_id, organization_name, status) values ('org-emailsender-new', 'org-emailsender-new', 'active');
+       update pilot.accounts set organization_id = 'org-emailsender-new' where account_id = '${COACH_ID}'`,
+    ],
+    ['a coach account on a PIN', 'sign_in_off', 'coach', `update pilot.accounts set auth_provider = 'ppbf_local' where account_id = '${COACH_ID}'`],
+    [
+      'a membership raised past what the home sign-in proves',
+      'sign_in_off',
+      'coach',
+      `update pilot.organization_memberships set role = 'organization_admin' where account_id = '${COACH_ID}'`,
+    ],
+    [
+      'a coach account linked to an athlete record under 18',
+      'not_offered',
+      'coach',
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+                                   emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ('${ORG_ID}', 'ath-emailsender-minor', 'Email Minor', '2012-06-01', '100', 'active', 'contact', true,
+               '${COACH_ID}', now(), now());
+       update pilot.accounts set athlete_id = 'ath-emailsender-minor' where account_id = '${COACH_ID}'`,
+    ],
     ['a coach made a volunteer in this gym', 'not_offered', 'coach', `update pilot.organization_memberships set role = 'volunteer' where account_id = '${COACH_ID}'`],
     ['the gym unticked the event', 'gym_unticked', 'coach', `insert into pilot.organization_email_alert_events (organization_id, user_type, event_kind, ticked) values ('${ORG_ID}', 'staff', 'safety_escalation', false)`],
     ['no sign-in address', 'no_address', 'coach', `update pilot.accounts set login_email = null where account_id = '${COACH_ID}'`],
+    [
+      'a switch saved since under another user type',
+      'not_offered',
+      'coach',
+      `update pilot.email_alert_switches set user_type = 'parent' where account_id = '${COACH_ID}'`,
+    ],
     ['an athlete whose date of birth now says under 18', 'not_offered', 'adult', `update pilot.athletes set dob = '2012-06-01' where athlete_id = '${ADULT_ATHLETE}'`],
     ['an athlete record deleted', 'not_offered', 'adult', `update pilot.athletes set deleted_at = now() where athlete_id = '${ADULT_ATHLETE}'`],
   ])('%s: nothing is sent and the send is skipped as %s', async (_label, reason, who, change) => {
@@ -444,6 +481,46 @@ describe('email alert sender', () => {
     }
   });
 
+  test('a send is not claimed before its next try is due', async () => {
+    const client = await freshDatabase('emailsender_not_due');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp() + interval '1 minute'`);
+      expect(await claimDueEmailAlertSends(10)).toEqual([]);
+      await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp()`);
+      expect(await claimDueEmailAlertSends(10)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a claim passes over a send another replica holds, without waiting for it', async () => {
+    const client = await freshDatabase('emailsender_skip_locked');
+    activeClient = client;
+    const other = new Client({ connectionString: connectionStringFor('emailsender_skip_locked') });
+    await other.connect();
+    try {
+      await enqueueEmailAlertSends([
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(PARENT_ID, 'parent', 'family_note', EVENT_2),
+      ]);
+      // The other replica is part-way through claiming the coach's send.
+      await other.query('begin');
+      await other.query(`select 1 from pilot.email_alert_sends where account_id = $1 for update`, [COACH_ID]);
+      const claimed = await Promise.race([
+        claimDueEmailAlertSends(10),
+        new Promise<'waited'>((resolve) => { setTimeout(() => resolve('waited'), 5_000); }),
+      ]);
+      expect(claimed).not.toBe('waited');
+      expect((claimed as Array<{ account_id: string }>).map((row) => row.account_id)).toEqual([PARENT_ID]);
+      await other.query('rollback');
+    } finally {
+      await other.end();
+      await client.end();
+    }
+  });
+
   test('two claims at once, on separate connections, never take the same send', async () => {
     const client = await freshDatabase('emailsender_claim');
     activeClient = client;
@@ -465,7 +542,7 @@ describe('email alert sender', () => {
     }
   });
 
-  test('an outcome is written only while the claim still holds the lease', async () => {
+  test('a claim that lost its lease sends nothing and writes nothing', async () => {
     const client = await freshDatabase('emailsender_lease_guard');
     activeClient = client;
     try {
@@ -474,9 +551,78 @@ describe('email alert sender', () => {
       // Another replica recovered the lease and claimed the row again.
       await client.query('update pilot.email_alert_sends set lease_token = gen_random_uuid()');
       const { sent, dependencies } = recorder();
-      expect(await deliverEmailAlertSend(claimed, dependencies)).toBe('sent');
-      expect(sent).toHaveLength(1);
+      expect(await deliverEmailAlertSend(claimed, dependencies)).toBe('lost');
+      expect(sent).toEqual([]);
       expect(await sendRows(client)).toMatchObject([{ status: 'sending', finished: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an outcome is not recorded if the lease was taken back during the send', async () => {
+    const client = await freshDatabase('emailsender_lease_mid');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const [claimed] = await claimDueEmailAlertSends(1);
+      const { dependencies } = recorder();
+      const slow = {
+        ...dependencies,
+        sendMail: async (message: OutboundMessage) => {
+          await dependencies.sendMail(message);
+          await client.query('update pilot.email_alert_sends set lease_token = gen_random_uuid()');
+        },
+      };
+      expect(await deliverEmailAlertSend(claimed, slow)).toBe('lost');
+      expect(await sendRows(client)).toMatchObject([{ status: 'sending', finished: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a claim with too little lease left sends nothing', async () => {
+    const client = await freshDatabase('emailsender_lease_short');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const [claimed] = await claimDueEmailAlertSends(1);
+      // Four minutes of the five are needed: the token, then a Graph call cut off at 30 seconds.
+      await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() + interval '3 minutes'`);
+      const { sent, dependencies } = recorder();
+      expect(await deliverEmailAlertSend(claimed, dependencies)).toBe('lost');
+      expect(sent).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('one send that fails is logged and the tick sends the next', async () => {
+    const client = await freshDatabase('emailsender_row_error');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(PARENT_ID, 'parent', 'family_note', EVENT_2),
+      ]);
+      const { sent, dependencies } = recorder();
+      let calls = 0;
+      const flaky = {
+        ...dependencies,
+        gymName: async () => {
+          calls += 1;
+          if (calls === 1) throw new Error('profile read failed');
+          return 'GYM';
+        },
+      };
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        expect((await runEmailAlertSweep(flaky, [])).sent).toBe(1);
+        expect(errors).toHaveBeenCalledWith('Email alert send failed', { errorClass: 'Error' });
+      } finally {
+        errors.mockRestore();
+      }
+      expect(sent).toHaveLength(1);
+      expect((await sendRows(client)).map((row) => row.status).sort()).toEqual(['sending', 'sent']);
     } finally {
       await client.end();
     }
