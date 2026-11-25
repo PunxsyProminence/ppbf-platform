@@ -66,7 +66,9 @@ export const SWEEP_INDEXES = [
 // Asserts each index by what it IS, not only by name: on its own table,
 // valid (a CONCURRENTLY build that failed would leave an invalid index of
 // this name; this file never builds that way, but the check should not trust
-// the name), a plain b-tree (not partial, not unique), and keyed on exactly
+// the name), a plain b-tree (not partial, not unique, not an exclusion
+// constraint's index, which would refuse two rows with the same time), and
+// keyed on exactly
 // (created_at): one column in all (indnatts, so no INCLUDE column and no
 // second key), and that column is created_at. An expression key has attnum 0,
 // so it drops out of the column join below and the names do not match. The key columns are read back by name, in index order,
@@ -93,6 +95,7 @@ const READINESS_QUERY = `
         -- "if not exists"; it is not the index this migration promises.
         and i.indpred is null
         and not i.indisunique
+        and not i.indisexclusion
         and i.indnatts = 1
         and c.relam = (select oid from pg_am where amname = 'btree')
         and (

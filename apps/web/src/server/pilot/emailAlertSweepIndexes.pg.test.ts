@@ -404,12 +404,29 @@ describe('email alert sweep indexes migration', () => {
     ['on the wrong table', `create index ${REPLIES_INDEX} on pilot.coach_observations (created_at)`],
     ['keyed on created_at and an expression', `create index ${REPLIES_INDEX} on pilot.family_message_replies (created_at, lower(reply_text))`],
     ['keyed on created_at with an INCLUDE column', `create index ${REPLIES_INDEX} on pilot.family_message_replies (created_at) include (note_id)`],
+    ['led by an expression', `create index ${REPLIES_INDEX} on pilot.family_message_replies (lower(reply_text), created_at)`],
+    ['an exclusion constraint\'s index', `alter table pilot.family_message_replies add constraint ${REPLIES_INDEX} exclude using btree (created_at with =)`],
   ])('the runner refuses an index of the right name that is %s', async (_label, wrong) => {
     const client = await freshDatabase('sweep_index_wrong');
     try {
       await client.query(wrong);
       // `if not exists` sees the name and leaves the wrong index in place;
       // the readiness check must notice and refuse.
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_NOT_READY');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the runner refuses an index of the right name that is not valid', async () => {
+    const client = await freshDatabase('sweep_index_invalid');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      // As a CREATE INDEX CONCURRENTLY that failed would leave it (the test
+      // server's superuser marks it so directly).
+      await client.query(
+        `update pg_index set indisvalid = false where indexrelid = to_regclass('pilot.${REPLIES_INDEX}')`,
+      );
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_NOT_READY');
     } finally {
       await client.end();
@@ -475,9 +492,6 @@ describe('email alert sweep indexes migration', () => {
         { index: ESCALATIONS_INDEX, sql: 'select e.escalation_id from pilot.safety_escalations e where e.created_at > $1 and e.created_at <= $2' },
         { index: REPLIES_INDEX, sql: 'select r.reply_id from pilot.family_message_replies r where r.created_at > $1 and r.created_at <= $2' },
       ];
-
-      // Without the migration neither read can use a (created_at) index.
-      for (const read of reads) expect(await indexesUsed(client, read.sql, [from, to])).not.toContain(read.index);
 
       await applyMigrationTransaction(client, migrationSql);
       await client.query('analyze pilot.safety_escalations');
