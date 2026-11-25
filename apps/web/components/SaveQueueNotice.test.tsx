@@ -5,7 +5,7 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS, notSentWords } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, keepSave, prepareSaveQueue, resetSaveQueueForTests, type KeptSave } from '@/src/lib/saveQueue';
 
@@ -47,9 +47,11 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test('shows nothing when no save is waiting or failed', () => {
+test('shows no words when no save is waiting or failed; the status region is there, empty, so the first line is announced', () => {
   const { container } = render(<SaveQueueNotice />);
-  expect(container).toBeEmptyDOMElement();
+  expect(container).toHaveTextContent(/^$/);
+  expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 test('a waiting save is named in a status line; a refused one in an alert with the reason, cleared by OK', async () => {
@@ -69,11 +71,14 @@ test('a waiting save is named in a status line; a refused one in an alert with t
   await act(async () => {
     await jest.advanceTimersByTimeAsync(RESEND_MS);
   });
-  expect(screen.queryByRole('status')).toBeNull();
+  expect(screen.getByRole('status')).toBeEmptyDOMElement();
   const failed = screen.getByRole('alert');
   expect(failed).toHaveTextContent(FAILED_WORDS);
   expect(failed).toHaveTextContent('Staff note on Ben Ortiz: This athlete is not marked present in this session.');
 
+  // Floor sizes on any surface, not only inside a kiosk surface (design-system README, rule 5).
+  expect(screen.getByRole('button', { name: 'OK' }).className).toEqual(expect.stringContaining('min-h-[var(--tap)]'));
+  expect(screen.getByRole('button', { name: 'OK' }).className).toEqual(expect.stringContaining('text-[length:var(--t-md)]'));
   fireEvent.click(screen.getByRole('button', { name: 'OK' }));
   expect(screen.queryByRole('alert')).toBeNull();
 });
@@ -90,6 +95,22 @@ test('signing out takes every word of the last person\'s saves off the screen at
   act(() => {
     clearRoleSession();
   });
-  expect(container).toBeEmptyDOMElement();
-  expect(container).not.toHaveTextContent('Ada Reyes');
+  expect(container).toHaveTextContent(/^$/);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('after saves were dropped unsent, the person who made them is told how many, with no names', async () => {
+  render(<SaveQueueNotice />);
+  await act(async () => {
+    await keepSave(save('Ada Reyes: here', ['throw']));
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    clearRoleSession();
+    prepareSaveQueue();
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  const line = screen.getByRole('alert');
+  expect(line).toHaveTextContent(notSentWords(1));
+  expect(line).not.toHaveTextContent('Ada Reyes');
 });

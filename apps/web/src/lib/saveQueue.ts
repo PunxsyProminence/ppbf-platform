@@ -18,20 +18,26 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  *
  * TIED TO THE ACCOUNT THAT MADE IT. A save is kept only once this page knows who is signed in
  * (POST /api/pilot/auth/session); before that it is not kept, and the screen says what it says
- * today. Everything kept is dropped, unsent and unshown, the moment that account is gone or
- * another is signed in: the role session is cleared (every sign-out in the page does that), a
- * sign-out or sign-in on this device in another tab (the gym tablet's boundary mark), a 401, the
- * server saying the save was made by another account, or a check before a resend that answers
- * with another account or nobody. The words a waiting or failed save shows go with it, so the next
- * person sees nothing of the last person's saves.
+ * today. The account is asked again before every send, except a first send made at once with an
+ * account confirmed since the role session last changed. Everything kept, waiting or failed, is
+ * dropped the moment that account is gone or another is signed in: the role session is cleared
+ * (every sign-out in the page does that), a sign-out or sign-in mark on this device newer than what
+ * this page holds (the gym tablet's boundary mark, from this tab or another), a 401, the server
+ * saying the save was made by another account, or a check before a send that answers with another
+ * account or nobody. The words a waiting or failed save showed go with it: the next person sees
+ * nothing of the last person's saves. Only the person whose saves were dropped, once the page has
+ * confirmed it is still them signed in, is told how many were not sent, with no names
+ * (AGENT_KERNEL floor: an unknown value never looks complete).
  *
  * RESENT every 15 seconds and when the browser says it is online again (the tablet sign-out's
  * pattern, TabletIdleSignOut.tsx), until the server says yes, refuses it, or it is dropped. A
  * refusal of a RESEND is checked with the server before any failed words, when the screen can
- * check: a save that went through must never read as failed (Overwatch condition 2 on #2158).
+ * check; when it cannot, the screen is told the outcome is not known: a save that went through
+ * must never read as failed (Overwatch condition 2 on #2158). A screen callback that throws never
+ * stops the queue.
  *
- * Known limit, accepted by App Overwatch (#2165): order holds within one page. A coach using two
- * devices on one live run can have a late save from one undo a newer change made on the other.
+ * Known limit: order holds within one page, not across two devices of the same coach. App
+ * Overwatch accepted it for run actions (#2165, comment 7151658028); here taps are asked there.
  */
 
 export const RESEND_MS = 15_000;
@@ -39,13 +45,21 @@ export const RESEND_MS = 15_000;
 const MS_SINCE_MADE_MAX = 24 * 60 * 60 * 1000;
 /** A save that waited this long behind others has its account checked before its first send. */
 const WAITED_MS = 1_000;
-/** The server's own refusals: it answered and wrote nothing. Everything else proves nothing. */
-const REFUSAL_STATUSES = new Set([400, 403, 404, 409, 422]);
+/** A send or an account check with no answer by then counts as unknown, so the queue moves on. */
+export const ANSWER_WAIT_MS = 30_000;
 
 export type SaveAnswer = 'saved' | 'refused' | 'unknown';
 
 export interface SendContext {
-  /** The account that made this save: sent as made_by_account_id where the route takes it. */
+  /**
+   * One random id for this save, the same on every send of it: the request key a route takes
+   * (request_key), so the server writes the save once however often it is sent.
+   */
+  requestKey: string;
+  /**
+   * The account that made this save. Sent as made_by_account_id in the JSON body where the route
+   * takes it, never in a URL or a header: an account id can be an email address.
+   */
   madeByAccountId: string;
   /** Whole milliseconds since the save was made, for tapped_ms_ago. */
   msSinceMade: number;
@@ -58,13 +72,20 @@ export interface KeptSave {
   label: string;
   /** Sends the save once. Every call sends the same save: the same request key or target state. */
   send: (context: SendContext) => Promise<Response>;
-  /** What an answer proves. Default: 2xx saved; 400, 403, 404, 409, 422 refused; anything else unknown. */
+  /**
+   * What an answer proves. Default: 2xx saved; 408 and 429 unknown; any other 4xx refused (the
+   * server answered and wrote nothing); anything else unknown. A throw counts as unknown.
+   */
   answerOf?: (response: Response) => SaveAnswer | Promise<SaveAnswer>;
   /** After a refusal of a resend: did an earlier send land after all? true, false, or null (could not tell). */
   checkLanded?: () => Promise<boolean | null>;
   /** The save went through: the server's answer, or null when the check found it had landed. */
   onSaved?: (response: Response | null) => void;
-  /** Refused and not landed (false) or not known (null). Returns the failed words, or nothing for none. */
+  /**
+   * Refused. `landed` is false when the first send was refused or the check found nothing, and null
+   * when a resend was refused and it is not known whether an earlier send landed. Returns the
+   * failed words, or nothing for none.
+   */
   onRefused?: (response: Response, landed: false | null) => string | void;
 }
 
@@ -77,22 +98,36 @@ export interface SaveQueueState {
   /** Labels of the saves still waiting, oldest first. */
   waiting: readonly string[];
   failed: readonly FailedSave[];
+  /** How many waiting saves were dropped unsent; shown only to the account that made them. */
+  notSent: number;
 }
 
 interface Entry {
   save: KeptSave;
+  requestKey: string;
   accountId: string;
   madeAtPerf: number;
   madeAtWall: number;
   sends: number;
 }
 
-const EMPTY: SaveQueueState = { waiting: [], failed: [] };
+const EMPTY: SaveQueueState = { waiting: [], failed: [], notSent: 0 };
 
 let entries: Entry[] = [];
 let failed: FailedSave[] = [];
+/** The account this page last confirmed, since the role session last changed; null when not known. */
 let accountId: string | null = null;
+/** The account whose saves and words this page holds; nothing is shown unless it is confirmed now. */
+let heldAccount: string | null = null;
+/**
+ * Whether this page holds anything for an account (since its first confirmation after the last
+ * drop), and the device's sign-out / sign-in mark as it read then. Any other mark seen later means a
+ * sign-out or sign-in on this device since: compared by value, so no clock decides it.
+ */
+let holding = false;
+let markAtHold: number | null = null;
 let learning: Promise<string | null> | null = null;
+let notSent: { count: number; accountId: string } | null = null;
 let generation = 0;
 let busy = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -101,10 +136,24 @@ let snapshot: SaveQueueState = EMPTY;
 const listeners = new Set<() => void>();
 
 function notify(): void {
-  snapshot = entries.length === 0 && failed.length === 0
+  // Shown only while the account that holds them is the one confirmed signed in now: between a
+  // change of role session and the next confirmation, nothing of anyone's saves is on screen.
+  const confirmed = accountId !== null && accountId === heldAccount;
+  const dropped = notSent && accountId !== null && notSent.accountId === accountId ? notSent.count : 0;
+  snapshot = (!confirmed || (entries.length === 0 && failed.length === 0)) && dropped === 0
     ? EMPTY
-    : { waiting: entries.map((entry) => entry.save.label), failed: [...failed] };
-  for (const listener of listeners) listener();
+    : {
+      waiting: confirmed ? entries.map((entry) => entry.save.label) : [],
+      failed: confirmed ? [...failed] : [],
+      notSent: dropped,
+    };
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch {
+      // A listener's own failure never stops the queue.
+    }
+  }
 }
 
 function clearTimer(): void {
@@ -120,25 +169,38 @@ function later(): void {
   }, RESEND_MS);
 }
 
-/** Everything kept, waiting or failed, goes: the account it was tied to is gone. */
+/** Everything kept, waiting or failed, goes: the account it was tied to is gone or has changed. */
 function dropAll(): void {
+  if (entries.length > 0) notSent = { count: entries.length, accountId: entries[0].accountId };
   generation += 1;
   entries = [];
   failed = [];
   accountId = null;
+  heldAccount = null;
+  holding = false;
+  markAtHold = null;
   learning = null;
   clearTimer();
   notify();
 }
 
+/** A promise, or a timeout's rejection after ANSWER_WAIT_MS: no request may hold the queue forever. */
+function withinWait<T>(promise: Promise<T>): Promise<T> {
+  let wait: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    wait = setTimeout(() => reject(new Error('no answer')), ANSWER_WAIT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(wait));
+}
+
 /** Who is signed in now: an account id, null for nobody, or 'unreachable'. */
 async function signedInAccount(): Promise<string | null | 'unreachable'> {
   try {
-    const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
+    const response = await withinWait(fetch(`${apiBase()}/api/pilot/auth/session`, {
       method: 'POST',
       credentials: 'include',
       cache: 'no-store',
-    });
+    }));
     if (!response.ok) return 'unreachable';
     const body = (await response.json().catch(() => null)) as { authenticated?: unknown; account_id?: unknown } | null;
     if (body?.authenticated === false) return null;
@@ -148,34 +210,61 @@ async function signedInAccount(): Promise<string | null | 'unreachable'> {
   }
 }
 
+/** A sign-out or sign-in mark on this device written since this page began to hold (any tab). */
+function boundaryNewer(): boolean {
+  return holding && readGymTabletSignedOutAt() !== markAtHold;
+}
+
+/** The account signed in now. Saves and words held for another account go first. */
+function confirmAccount(answer: string): void {
+  if (heldAccount !== null && heldAccount !== answer) dropAll();
+  accountId = answer;
+  heldAccount = answer;
+  if (!holding) {
+    holding = true;
+    markAtHold = readGymTabletSignedOutAt();
+  }
+  if (notSent && notSent.accountId !== answer) notSent = null;
+  notify();
+}
+
 function learnAccount(): Promise<string | null> {
+  if (boundaryNewer()) dropAll();
   if (accountId) return Promise.resolve(accountId);
   if (!learning) {
     const seen = generation;
     learning = signedInAccount().then((answer) => {
+      if (seen !== generation) return null;
       learning = null;
-      if (seen !== generation || answer === null || answer === 'unreachable') return null;
-      accountId = answer;
+      if (answer === null) {
+        dropAll();
+        return null;
+      }
+      if (answer === 'unreachable') return null;
+      confirmAccount(answer);
       return answer;
     });
   }
   return learning;
 }
 
-/** A sign-out or sign-in on this device after a kept save was made (another tab, or this one). */
-function boundaryAfterOldest(): boolean {
-  const mark = readGymTabletSignedOutAt();
-  return mark !== null && entries.some((entry) => mark >= entry.madeAtWall);
-}
-
 function install(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   subscribeRoleSession(() => {
-    if (!getRoleSessionSnapshot()) dropAll();
+    if (!getRoleSessionSnapshot()) {
+      dropAll();
+      return;
+    }
+    // A role session written again (a page load re-reads it) may be someone else's after a sign-in
+    // that never passed through "nobody": nothing is shown or sent until the account is asked again.
+    accountId = null;
+    learning = null;
+    notify();
+    void learnAccount();
   });
   window.addEventListener('storage', () => {
-    if (boundaryAfterOldest()) dropAll();
+    if (boundaryNewer()) dropAll();
   });
   window.addEventListener('online', () => {
     clearTimer();
@@ -183,7 +272,7 @@ function install(): void {
   });
 }
 
-/** Called by a screen that keeps saves, when it opens: learns who is signed in, once. */
+/** Called by a screen that keeps saves, when it opens: learns who is signed in. */
 export function prepareSaveQueue(): void {
   install();
   void learnAccount();
@@ -203,7 +292,17 @@ async function codeOf(response: Response): Promise<unknown> {
 
 function defaultAnswer(response: Response): SaveAnswer {
   if (response.ok) return 'saved';
-  return REFUSAL_STATUSES.has(response.status) ? 'refused' : 'unknown';
+  if (response.status === 408 || response.status === 429) return 'unknown';
+  return response.status >= 400 && response.status < 500 ? 'refused' : 'unknown';
+}
+
+/** A screen's callback, never allowed to stop the queue: a throw gives the fallback. */
+async function safely<T>(callback: () => T | Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await callback();
+  } catch {
+    return fallback;
+  }
 }
 
 async function pump(): Promise<void> {
@@ -214,11 +313,11 @@ async function pump(): Promise<void> {
   const seen = generation;
   let next = false;
   try {
-    if (boundaryAfterOldest()) {
+    if (boundaryNewer()) {
       dropAll();
       return;
     }
-    if (head.sends > 0 || performance.now() - head.madeAtPerf > WAITED_MS) {
+    if (head.sends > 0 || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
       const now = await signedInAccount();
       if (seen !== generation) return;
       if (now === 'unreachable') {
@@ -229,53 +328,81 @@ async function pump(): Promise<void> {
         dropAll();
         return;
       }
+      confirmAccount(now);
     }
     let response: Response | null = null;
     try {
-      response = await head.save.send({ madeByAccountId: head.accountId, msSinceMade: msSinceMade(head), first: head.sends === 0 });
+      response = await withinWait(head.save.send({
+        requestKey: head.requestKey,
+        madeByAccountId: head.accountId,
+        msSinceMade: msSinceMade(head),
+        first: head.sends === 0,
+      }));
     } catch {
       response = null;
     }
     head.sends += 1;
-    // Read the answer, then ask once whether the queue was dropped while it was on its way (a
-    // sign-out, another account): a dropped save's answer is never used.
+    // A dropped save's answer is never used (a sign-out, another account, while it was on its way).
+    if (seen !== generation) return;
     const accountGone = response !== null
       && (response.status === 401 || (await codeOf(response)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT');
-    const answer = response === null || accountGone ? 'unknown' : await (head.save.answerOf ?? defaultAnswer)(response);
     if (seen !== generation) return;
     if (accountGone) {
       dropAll();
       return;
     }
-    if (response === null) {
-      later();
-      return;
-    }
-    if (answer === 'unknown') {
+    const answered = response;
+    const answer: SaveAnswer = answered === null
+      ? 'unknown'
+      : await safely(() => (head.save.answerOf ?? defaultAnswer)(answered), 'unknown' as SaveAnswer);
+    if (seen !== generation) return;
+    if (answered === null || answer === 'unknown') {
       later();
       return;
     }
     if (answer === 'saved') {
       entries.shift();
-      head.save.onSaved?.(response);
+      notify();
+      await safely(() => head.save.onSaved?.(answered), undefined);
     } else {
       // A refused RESEND may be refusing a save an earlier send already made (a finish, a removal).
-      const landed = head.sends > 1 && head.save.checkLanded ? await head.save.checkLanded() : false;
+      // Without a check, whether it landed is not known.
+      const landed: boolean | null = head.sends === 1
+        ? false
+        : head.save.checkLanded ? await safely(() => head.save.checkLanded!(), null) : null;
       if (seen !== generation) return;
       entries.shift();
       if (landed === true) {
-        head.save.onSaved?.(null);
+        notify();
+        await safely(() => head.save.onSaved?.(null), undefined);
       } else {
-        const words = head.save.onRefused?.(response, landed);
+        const words = await safely(() => head.save.onRefused?.(answered, landed), undefined);
+        if (seen !== generation) return;
         if (typeof words === 'string' && words !== '') failed.push({ label: head.save.label, words });
+        notify();
       }
     }
-    notify();
     next = true;
   } finally {
     busy = false;
-    if (next && entries.length > 0) void pump();
+    // Never left without a way forward: the next save now, or a resend in 15 seconds. A save handed
+    // over while this one was on its way, or kept after a drop, is sent at once.
+    if (entries.length > 0 && timer === undefined) {
+      if (next || seen !== generation) void pump();
+      else later();
+    }
   }
+}
+
+/** A random request key, or null where the browser cannot make one (then the save is not kept). */
+function newRequestKey(): string | null {
+  const cryptoApi = typeof globalThis.crypto === 'undefined' ? undefined : globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return null;
 }
 
 /**
@@ -287,10 +414,11 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   install();
   const madeAtPerf = performance.now();
   const madeAtWall = Date.now();
-  const seen = generation;
+  const requestKey = newRequestKey();
+  if (!requestKey) return 'not_kept';
   const account = await learnAccount();
-  if (!account || seen !== generation) return 'not_kept';
-  entries.push({ save, accountId: account, madeAtPerf, madeAtWall, sends: 0 });
+  if (!account || account !== accountId) return 'not_kept';
+  entries.push({ save, requestKey, accountId: account, madeAtPerf, madeAtWall, sends: 0 });
   notify();
   // While a save waits for its resend, a new one waits behind it: the queue tries again on its
   // 15 seconds or when the browser says it is online, not on every new tap.
@@ -298,10 +426,11 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   return 'kept';
 }
 
-/** Clears the failed words once the person has read them. */
+/** Clears the failed words and the not-sent count once the person has read them. */
 export function dismissFailedSaves(): void {
-  if (failed.length === 0) return;
+  if (failed.length === 0 && notSent === null) return;
   failed = [];
+  notSent = null;
   notify();
 }
 
@@ -323,6 +452,8 @@ export function emptySaveQueueState(): SaveQueueState {
 /** Tests only: a fresh page. */
 export function resetSaveQueueForTests(): void {
   dropAll();
+  notSent = null;
   busy = false;
   listeners.clear();
+  notify();
 }
