@@ -63,7 +63,7 @@ import {
 } from './announcements';
 import { listAthleteCoachMessages } from './athleteCoachMessages';
 import type { PilotRole } from './contracts';
-import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
+import { enqueueEmailAlertSends, sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
 import {
   coachMessageSource,
   EMAIL_ALERT_EVENT_SOURCES,
@@ -79,7 +79,7 @@ import {
 import { emailAlertSenderDependencies, runEmailAlertSweep, type EmailAlertSenderDependencies } from './emailAlertSender';
 import { listEscalations } from './escalationLadder';
 import { listRepliesForStaff } from './familyMessageReplies';
-import type { OutboundMessage } from './graphMailer';
+import { MailSendError, type OutboundMessage } from './graphMailer';
 import { PILOT_SESSION_COOKIE } from './env';
 import { hashToken } from './security';
 import { GET as parentMessagesGET } from '@/app/api/pilot/parent/messages/route';
@@ -1309,6 +1309,101 @@ describe('email alert staff event sources', () => {
       [live],
     );
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 1 });
+    expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
+  });
+
+  test('a restore offers a notice again only where no try can have reached the person: a first-try refusal yes, a try Graph may have taken no', async () => {
+    const client = await freshDatabase('emailevents_notice_restore_certainty');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent', 'acct-ev-coach-own']);
+    // The parent's first try is a 503 (Graph may have taken the mail); the
+    // coach's is a 403, a final refusal.
+    const refusals = new Map<string, MailSendError>([
+      ['acct-ev-parent@example.com', new MailSendError('GRAPH_SEND_FAILED', 503, 'ServiceUnavailable')],
+      ['acct-ev-coach-own@example.com', new MailSendError('GRAPH_SEND_FAILED', 403, 'ErrorAccessDenied')],
+    ]);
+    const calls: string[] = [];
+    const dependencies: EmailAlertSenderDependencies = {
+      ...emailAlertSenderDependencies(),
+      prepareSend: async () => async (message) => {
+        calls.push(message.to);
+        const refusal = refusals.get(message.to);
+        if (refusal) throw refusal;
+      },
+      gymName: async () => 'GYM',
+    };
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 2, sent: 0, retried: 1, failed: 1 });
+    // Retired; the parent's retry comes due and is skipped as not_offered.
+    await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: false, onlyAuthorAccountId: null });
+    await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp() where account_id = 'acct-ev-parent'`);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 1 });
+
+    // Restored, with Graph now taking both: the coach, refused at once, is
+    // offered again and sent; the parent, whose try Graph may have taken, is
+    // not. Then nothing more.
+    refusals.clear();
+    await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: true, onlyAuthorAccountId: null });
+    await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 1 });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(calls.sort()).toEqual(['acct-ev-coach-own@example.com', 'acct-ev-coach-own@example.com', 'acct-ev-parent@example.com']);
+    const { rows } = await client.query(
+      `select account_id, status, skip_reason, tries, last_status_code from pilot.email_alert_sends order by account_id`,
+    );
+    expect(rows).toEqual([
+      // The coach's two tries in all; the parent's 503 is kept as the record of its try.
+      { account_id: 'acct-ev-coach-own', status: 'sent', skip_reason: null, tries: 2, last_status_code: null },
+      { account_id: 'acct-ev-parent', status: 'skipped', skip_reason: 'not_offered', tries: 2, last_status_code: 503 },
+    ]);
+  });
+
+  test('a candidate named twice queues once and fails nothing; a retire between the source read and the queueing offers nothing again', async () => {
+    const client = await freshDatabase('emailevents_notice_reoffer_edges');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent']);
+    const twice = (candidate: EmailAlertCandidate) => [candidate, candidate];
+    const familyNoteKey: EmailAlertCandidate = {
+      organizationId: ORG, accountId: 'acct-ev-parent', userType: 'parent', eventKind: 'family_note', eventId: randomUUID(),
+    };
+    expect(await enqueueEmailAlertSends(twice(familyNoteKey))).toBe(1);
+    expect(await enqueueEmailAlertSends(twice(familyNoteKey))).toBe(0);
+    // That note exists nowhere; its row goes, so the sweeps below send only the notice.
+    await client.query(`delete from pilot.email_alert_sends where event_kind = 'family_note'`);
+
+    // The parent switched off when the send came up: skipped, before Graph.
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    const toParent: EmailAlertCandidate = {
+      organizationId: ORG, accountId: 'acct-ev-parent', userType: 'parent', eventKind: 'gym_notice', eventId: live,
+    };
+    expect(await enqueueEmailAlertSends([toParent])).toBe(1);
+    const parentSwitch = (on: boolean) => client.query(
+      `update pilot.email_alert_switches set switched_on = $1, switched_on_at = now() where account_id = 'acct-ev-parent'`,
+      [on],
+    );
+    await parentSwitch(false);
+    const { sent, dependencies } = recorder();
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 0, skipped: 1 });
+    await parentSwitch(true);
+    const parentRow = async () => (await client.query(
+      `select status, skip_reason from pilot.email_alert_sends where account_id = 'acct-ev-parent'`,
+    )).rows;
+
+    // A retire that lands after the source read the notice as live and before
+    // the queueing: the notice is not live, so nothing is offered again.
+    await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: false, onlyAuthorAccountId: null });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await enqueueEmailAlertSends([toParent])).toBe(0);
+    expect(await parentRow()).toEqual([{ status: 'skipped', skip_reason: 'switched_off' }]);
+
+    // Restored: offered again once, even when the candidate is named twice.
+    await setAnnouncementActive({ organizationId: ORG, announcementId: live, active: true, onlyAuthorAccountId: null });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await enqueueEmailAlertSends(twice(toParent))).toBe(1);
+    expect(await enqueueEmailAlertSends(twice(toParent))).toBe(0);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 1 });
     expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
   });
 
