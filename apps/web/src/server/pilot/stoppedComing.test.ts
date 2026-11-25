@@ -125,7 +125,7 @@ test('a roster with no active athlete answers an empty list without reading mark
   expect(mockQuery).not.toHaveBeenCalled();
 });
 
-test('the open-gym read: this gym, these athletes, standing marks, untied runs, up to today, in gym time', async () => {
+test('the marks read: this gym, these athletes, standing marks the register does not hold, up to today, in gym time', async () => {
   mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
   await listStoppedComing(coach, TODAY);
 
@@ -135,7 +135,9 @@ test('the open-gym read: this gym, these athletes, standing marks, untied runs, 
   expect(sql).toContain('where m.organization_id = $1');
   expect(sql).toContain('and m.athlete_id = any($2::text[])');
   expect(sql).toContain('and m.removed_at is null');
-  expect(sql).toContain('and r.class_id is null');
+  expect(sql).toContain('left join pilot.scheduler_classes c on c.organization_id = m.organization_id and c.class_id = m.register_class_id');
+  // Overwatch on #2172 (A): untied, or the register write did not happen, or that class is cancelled.
+  expect(sql).toContain("and (r.class_id is null or m.register_written_at is null or c.status = 'cancelled')");
   expect(sql).toContain('and (m.marked_at at time zone $4)::date <= $3::date');
   // One day per athlete leaves the read: no run, mark or marker.
   expect(sql).toMatch(/^ ?select m\.athlete_id, max\(\(m\.marked_at at time zone \$4\)::date\)::text as last_day from/);

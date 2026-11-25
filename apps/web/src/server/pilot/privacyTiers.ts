@@ -579,7 +579,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '(sessionRunClass.ts), which the register\'s existing readers see as one; this list, its run '
       + 'and who else was in it stay staff only. One page-only exception (Jason OW27-32 A, '
       + 'OD-2026-11-21-006): the stopped-coming list (stoppedComing.ts, lane W4-6) counts the day of a '
-      + 'standing mark on an untied run as coming, for coach and organization admin with a staff '
+      + 'standing mark the register does not hold (an untied run, a skipped register write, or a cancelled '
+      + 'class) as coming, for coach and organization admin with a staff '
       + 'membership here; it returns that day per athlete, never the run, the mark or who else was in it, '
       + 'and no attendance figure reads it.',
   },

@@ -185,14 +185,23 @@ async function classWithMark(gym: Gym, classId: string, day: string, athleteId: 
   );
 }
 
-/** A "here" mark at `time` gym time (18:00 unless given) on `day`; taken back if `removed`. */
-async function hereMark(gym: Gym, runId: string, athleteId: string, day: string, { removed = false, time = '18:00' } = {}) {
+/**
+ * A "here" mark at `time` gym time (18:00 unless given) on `day`; taken back if `removed`.
+ * `wroteRegister` names the class whose register mark the tap created (the pointer
+ * sessionRunClass.ts sets); left out, the tap wrote none (open gym, or a skipped write).
+ */
+async function hereMark(
+  gym: Gym, runId: string, athleteId: string, day: string,
+  { removed = false, time = '18:00', wroteRegister = null as string | null } = {},
+) {
   await client.query(
     `insert into pilot.session_run_athletes
-       (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role, marked_at, removed_at, removed_by_account_id)
+       (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role, marked_at, removed_at, removed_by_account_id,
+        register_class_id, register_written_at)
      values ($1, $2, $3, $4, 'coach', ($5 || ' ' || $7)::timestamp at time zone 'America/New_York',
-             case when $6 then now() end, case when $6 then $4 end)`,
-    [gym.organizationId, runId, athleteId, gym.coach.accountId, day, removed, time],
+             case when $6 then now() end, case when $6 then $4 end,
+             $8::text, case when $8::text is not null then now() end)`,
+    [gym.organizationId, runId, athleteId, gym.coach.accountId, day, removed, time, wroteRegister],
   );
 }
 
@@ -295,13 +304,20 @@ describe('listStoppedComing on a real database', () => {
     await addAthlete(gym, 'gus', 'Gus Pine'); // 13 days: not listed
     await registerDay(gym, 'gus', daysAgo(13), 'present');
 
-    await addAthlete(gym, 'hal', 'Hal Moss'); // a tied run's mark 2 days ago, the register says absent: listed, 20
+    await addAthlete(gym, 'hal', 'Hal Moss'); // a tied tap 2 days ago wrote the register, later set to absent: listed, 20
     await registerDay(gym, 'hal', daysAgo(20), 'present');
     await classWithMark(gym, 'class-hal', daysAgo(2), 'hal', 'absent');
 
     await addAthlete(gym, 'ivy', 'Ivy Rowe'); // an open-gym mark 4 days ago, taken back: listed, 30
     await registerDay(gym, 'ivy', daysAgo(30), 'present');
 
+    // Overwatch on #2172 (A): a tap the register does not hold counts as coming.
+    await addAthlete(gym, 'ora', 'Ora Lund'); // tied tap 2 days ago wrote the register; the class was then cancelled: not listed
+    await registerDay(gym, 'ora', daysAgo(20), 'present');
+    await addAthlete(gym, 'pip', 'Pip Shaw'); // tied tap 2 days ago after the class was cancelled (write skipped): not listed
+    await registerDay(gym, 'pip', daysAgo(20), 'present');
+    await addAthlete(gym, 'quin', 'Quin Bell'); // tied tap 2 days ago, write skipped (cover moved): not listed
+    await registerDay(gym, 'quin', daysAgo(20), 'present');
     await addAthlete(gym, 'jo', 'Jo Vance'); // open gym only, 16 days ago: came before, listed, 16
     await addAthlete(gym, 'max', 'Max Dunn'); // open gym at 23:30 gym time 14 days ago (04:30 UTC the next day): listed, 14
     await addAthlete(gym, 'nia', 'Nia Ford'); // register 20 days ago; a mark dated tomorrow does not count: listed, 20
@@ -320,7 +336,20 @@ describe('listStoppedComing on a real database', () => {
     await client.query('update pilot.session_script_runs set class_id = $1 where organization_id = $2 and run_id = $3', [
       'class-hal', gym.organizationId, tied,
     ]);
-    await hereMark(gym, tied, 'hal', daysAgo(2));
+    await hereMark(gym, tied, 'hal', daysAgo(2), { wroteRegister: 'class-hal' });
+    await hereMark(gym, tied, 'quin', daysAgo(2));
+
+    // A second tied session, on a class the office then cancels.
+    await classWithMark(gym, 'class-cx', daysAgo(2), 'ora', 'present');
+    const tied2 = (await startSessionScriptRun(gym.organizationId, gym.admin.accountId, {})).run_id;
+    await client.query('update pilot.session_script_runs set class_id = $1 where organization_id = $2 and run_id = $3', [
+      'class-cx', gym.organizationId, tied2,
+    ]);
+    await hereMark(gym, tied2, 'ora', daysAgo(2), { wroteRegister: 'class-cx' });
+    await client.query(`update pilot.scheduler_classes set status = 'cancelled' where organization_id = $1 and class_id = 'class-cx'`, [
+      gym.organizationId,
+    ]);
+    await hereMark(gym, tied2, 'pip', daysAgo(2));
 
     // The other gym: the same athlete id came yesterday, by register and by open gym. Not ours.
     await addAthlete(other, 'ada', 'Ada Elsewhere');
