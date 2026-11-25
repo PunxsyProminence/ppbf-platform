@@ -7,7 +7,7 @@ import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -285,6 +285,16 @@ export default function SessionRunPresence({
   // What each kept tap asked, in the order tapped: added once its save is kept, gone with that save's
   // own answer (a later tap of the same athlete wins), and all cleared once nothing kept waits (a
   // sign-out drop tells this list nothing otherwise).
+  // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
+
   const [askedTaps, setAskedTaps] = useState<readonly AskedTap[]>([]);
   // Kept taps' refusals, one per athlete and named, as they can come back long after the tap and
   // several at once when the connection returns: each stays until that athlete's next tap is saved or
@@ -293,28 +303,41 @@ export default function SessionRunPresence({
   // Refused new notes' words, by athlete, out of sight until that athlete's notes are opened.
   const [noteWords, setNoteWords] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
   const noteRefusals = useRef(0);
-  // They name athletes: a sign-out takes them off the screen at once (a shared floor tablet).
-  useEffect(
-    () =>
-      subscribeRoleSession(() => {
-        if (!getRoleSessionSnapshot()) {
-          setKeptRefusals(NO_REFUSALS);
-          setNoteWords(NO_REFUSALS);
-        }
-      }),
-    [],
-  );
+  // They name athletes and hold one person's note text: a sign-out, or any drop of the queue (another
+  // account, a 401), takes them off the screen at once (a shared floor tablet).
+  useEffect(() => {
+    const forgetAll = () => {
+      setKeptRefusals(NO_REFUSALS);
+      setNoteWords(NO_REFUSALS);
+    };
+    let seen = saveQueueGeneration();
+    const stopQueue = subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      forgetAll();
+    });
+    const stopRole = subscribeRoleSession(() => {
+      if (!getRoleSessionSnapshot()) forgetAll();
+    });
+    return () => {
+      stopQueue();
+      stopRole();
+    };
+  }, []);
   // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
   // words kept for the box.
-  const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string) => {
+  const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string): boolean => {
+    // This list gone too: the panel says it in the page's list instead.
+    if (!onPage.current) return false;
     noteRefusals.current += 1;
     const key = `note ${athlete.athlete_id} ${noteRefusals.current}`;
     setKeptRefusals((current) => new Map(current).set(key, `${athlete.full_name}: ${words}`));
-    if (!noteText) return;
+    if (!noteText) return true;
     setNoteWords((current) => {
       const earlier = current.get(athlete.athlete_id);
       return new Map(current).set(athlete.athlete_id, earlier ? `${earlier}\n\n${noteText}` : noteText);
     });
+    return true;
   }, []);
   const wordsReturned = useCallback((athleteId: string) => {
     setNoteWords((current) => {
@@ -341,16 +364,6 @@ export default function SessionRunPresence({
       }),
     [],
   );
-  // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
-  // its words to the page's list.
-  const onPage = useRef(true);
-  useEffect(() => {
-    onPage.current = true;
-    return () => {
-      onPage.current = false;
-    };
-  }, []);
-
   // Who is marked here, for a kept tap's landed check: null when it cannot be read.
   const readPresent = useCallback(
     async (signal: AbortSignal): Promise<Set<string> | null> => {

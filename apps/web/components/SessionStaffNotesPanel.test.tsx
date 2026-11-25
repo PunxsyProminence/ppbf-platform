@@ -555,7 +555,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     }) as unknown as typeof fetch;
   }
 
-  async function openKept(props: { kept?: boolean; finishWaiting?: boolean; onKeptRefused?: (words: string, noteText: string) => void } = {}) {
+  async function openKept(props: { kept?: boolean; finishWaiting?: boolean; onKeptRefused?: (words: string, noteText: string) => boolean } = {}) {
     prepareSaveQueue();
     let view: ReturnType<typeof render> | undefined;
     await act(async () => {
@@ -758,6 +758,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     let returned: string | undefined;
     const onKeptRefused = jest.fn((_words: string, noteText: string) => {
       returned = noteText;
+      return true;
     });
     serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
     const view = await openKept({ onKeptRefused });
@@ -801,6 +802,17 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(screen.queryByText(/^That athlete is not marked here/)).toBeNull();
   });
 
+  test('an open panel says its own refusal: it hands nothing to the list', async () => {
+    jest.useFakeTimers();
+    const onKeptRefused = jest.fn(() => true);
+    serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
+    await openKept({ onKeptRefused });
+    await addNote('Wrist taped.');
+    await wait(RESEND_MS);
+    expect(onKeptRefused).not.toHaveBeenCalled();
+    expect(screen.getByText('NOT SAVED')).toBeTruthy();
+  });
+
   test('handed-back words go after what is already in the box, never over it', async () => {
     jest.useFakeTimers();
     serveKept({ notes: () => [], write: () => answer({ ok: true, note_id: 'note-9' }) });
@@ -817,7 +829,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
             athleteId="ath-1"
             buttonLabel="Staff notes on Ada Reyes"
             keptOnThisPage
-            onKeptRefused={jest.fn()}
+            onKeptRefused={jest.fn(() => true)}
             returnedWords="Wrist taped."
             onWordsReturned={jest.fn()}
           />
@@ -834,7 +846,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
 
   test('a refusal while a kept finish waits goes to the page\'s list even with a live list to hand to, since the finish takes that list away', async () => {
     jest.useFakeTimers();
-    const onKeptRefused = jest.fn();
+    const onKeptRefused = jest.fn(() => true);
     serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
     await openKept({ onKeptRefused, finishWaiting: true });
     await addNote('Wrist taped.');
@@ -860,7 +872,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
 
   test('a not-known note with the panel closed is handed to the live list as not known, never as not saved', async () => {
     jest.useFakeTimers();
-    const onKeptRefused = jest.fn();
+    const onKeptRefused = jest.fn(() => true);
     let reads = 0;
     serveKept({
       notes: () => {

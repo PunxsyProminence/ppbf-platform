@@ -672,6 +672,14 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   return 'kept';
 }
 
+/**
+ * Changes at every drop (a sign-out, another account, a 401, nobody signed in). A screen that holds
+ * words of a kept save for the person who made it (a refused note's text) forgets them then.
+ */
+export function saveQueueGeneration(): number {
+  return generation;
+}
+
 /** Clears the failed words and the not-sent count once the person has read them. */
 export function dismissFailedSaves(): void {
   if (failed.length === 0 && notSent.length === 0) return;

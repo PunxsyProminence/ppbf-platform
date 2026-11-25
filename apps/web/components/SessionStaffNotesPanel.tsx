@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 
 // Staff notes on one athlete's session (OD-2026-10-06-025 ruling 4): the
 // athlete's own note stays theirs, and a coach or organization admin adds a
@@ -87,7 +87,7 @@ export default function SessionStaffNotesPanel(
      * The live floor: a kept note refused while this panel is closed is handed to the list that mounts
      * it, which names the athlete and keeps the words through a remount of this row.
      */
-    onKeptRefused?: (words: string, noteText: string) => void;
+    onKeptRefused?: (words: string, noteText: string) => boolean;
     /** Refused notes' words the list kept while this panel was closed: they go back into the box when it opens. */
     returnedWords?: string;
     onWordsReturned?: () => void;
@@ -121,6 +121,19 @@ export default function SessionStaffNotesPanel(
       }),
     [],
   );
+  // On the live floor the box can hold a refused note's words, one person's: any drop of the queue (a
+  // sign-out, another account, a 401) clears it and its refusal, so the next person never writes them
+  // as their own.
+  useEffect(() => {
+    if (!keptOnThisPage) return undefined;
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      setDraft('');
+      setRefusal(null);
+    });
+  }, [keptOnThisPage]);
   // While this panel is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
   const onPage = useRef(true);
@@ -276,13 +289,13 @@ export default function SessionStaffNotesPanel(
           // The panel closed: handed to the list, which names the athlete (never the note's words, which
           // stay out of sight on the floor) and keeps a refused note's words for the box until the
           // notes are opened, even if this row is filtered away and back.
-          if (onPage.current && !isFinishWaiting?.() && !isOpen.current && onKeptRefused) {
-            onKeptRefused(
-              landed === null
-                ? 'whether a new note was saved is not known. Check the notes before writing it again.'
-                : `a new note was not saved: ${reason} Its words are back in the box when this athlete's notes are next opened.`,
-              landed === null ? '' : what.text.trim(),
-            );
+          // Also when this row has gone (filtered away) while the list is still there: the list says it.
+          if ((!onPage.current || !isOpen.current) && !isFinishWaiting?.() && onKeptRefused?.(
+            landed === null
+              ? 'whether a new note was saved is not known. Check the notes before writing it again.'
+              : `a new note was not saved: ${reason} Its words are back in the box when this athlete's notes are next opened.`,
+            landed === null ? '' : what.text.trim(),
+          )) {
             return undefined;
           }
           if (landed === false) setDraft((current) => (current === '' ? what.text : current));
