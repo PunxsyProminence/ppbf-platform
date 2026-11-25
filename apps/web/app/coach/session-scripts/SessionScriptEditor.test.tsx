@@ -367,6 +367,26 @@ describe('adding, removing and moving blocks', () => {
     });
   });
 
+  // Codex on #2203: a drill name over 200 UTF-16 units, or one that would be cut through an emoji, is
+  // shown as the server stores it and sent as block_label, so saving cannot change or corrupt it.
+  it('a long drill name is shown and sent as it will be stored: cut at 200, never through an emoji', async () => {
+    const long = `${'D'.repeat(199)}\u{1F94A}${'x'.repeat(60)}`;
+    const fetchMock = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'PATCH'
+        ? answer(200, { outcome: 'updated', script: SCRIPT })
+        : String(url).includes('/api/pilot/drill-library') ? answer(200, { drills: [{ drill_id: 'drl-9', name: long }] }) : answer(404, {}));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+    fireEvent.click(await screen.findByRole('button', { name: long }));
+    expect(block(3).getByLabelText('Title')).toHaveValue('D'.repeat(199));
+    await act(async () => save());
+
+    const body = JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === 'PATCH')?.[1]?.body)) as { add_blocks: Record<string, unknown>[] };
+    expect(body.add_blocks[0]).toMatchObject({ kind: 'drill', drill_id: 'drl-9', block_label: 'D'.repeat(199) });
+  });
+
   it('the picker searches the drill names', async () => {
     setupRouted();
     fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));

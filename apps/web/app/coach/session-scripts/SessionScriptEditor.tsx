@@ -98,6 +98,16 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'Nothing was saved. A drill you added was replaced or withdrawn after the list was read. Remove that block, open the drill library again and choose from the new list.',
 };
 
+/**
+ * A title as the server will store it: trimmed and at most 200 UTF-16 units (cleanText counts
+ * .length), never ending in half a surrogate pair. A block added here starts with this title, so the
+ * title the coach sees is the title stored (Codex on #2203; reviewers F and G).
+ */
+export function storedTitle(text: string): string {
+  const cut = text.trim().slice(0, 200);
+  return (/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut).trimEnd();
+}
+
 function wholeMinutes(text: string): number | null {
   return /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
 }
@@ -220,7 +230,8 @@ export default function SessionScriptEditor({
       ...blocks,
       {
         block_id: ref,
-        label: drill.name,
+        // The name as the server would store it; when that is not the name itself, block_label is sent.
+        label: storedTitle(drill.name),
         start: start === null ? '' : String(start),
         end: start === null ? '' : String(start + NEW_BLOCK_MINUTES),
         added: { drill_id: drill.drill_id, drill_name: drill.name },
