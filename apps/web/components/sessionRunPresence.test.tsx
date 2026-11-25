@@ -1297,12 +1297,15 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
       clearRoleSession();
     });
     expect(screen.queryByText('Ada Reyes is Present on the class register.')).toBeNull();
-    // Gone, not only hidden while nobody is confirmed: the same coach signing in again does not bring it back.
+    // Gone, not only hidden while nobody is confirmed: the same coach signing in again, and the page
+    // confirming them (back on the tab, with no tap, which would clear the note itself), does not
+    // bring it back.
     await act(async () => {
       createPersistentRoleSession('coach');
+      window.dispatchEvent(new Event('focus'));
       await jest.advanceTimersByTimeAsync(0);
     });
-    await tapKept('Mark here Ben Ortiz');
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
     expect(screen.queryByText('Ada Reyes is Present on the class register.')).toBeNull();
   });
 
