@@ -626,7 +626,12 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
             from pilot.accounts) as accounts,
          (select json_agg(json_build_array(account_id, organization_id, role, active_flag) order by account_id, organization_id)
             from pilot.organization_memberships) as memberships,
-         (select json_agg(json_build_array(organization_id, status) order by organization_id) from pilot.organizations) as gyms`,
+         (select json_agg(json_build_array(organization_id, status) order by organization_id) from pilot.organizations) as gyms,
+         (select json_agg(json_build_array(organization_id, parent_id, account_id) order by organization_id, parent_id)
+            from pilot.parents) as parents,
+         (select json_agg(json_build_array(organization_id, post_id, thread_id, athlete_id, author_account_id, author_role)
+                          order by organization_id, post_id)
+            from pilot.family_thread_posts) as posts`,
     )).rows[0];
     const asSetUp = await fixture();
 
@@ -656,7 +661,10 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
         }
       }
     }
-    // Positive control, guards still off: with every fact as it was, each of the three writes goes through.
+    // Positive control, guards back on: with every fact as it was, the store and the PM-1a guards
+    // let each of the three writes through.
+    await client.query(`alter table pilot.family_thread_posts enable trigger trg_family_thread_posts_guard;
+      alter table pilot.family_thread_reads enable trigger trg_family_thread_reads_guard`);
     for (const [, write] of writes) await write();
     expect(await kept()).toBe(before + 3);
   });
