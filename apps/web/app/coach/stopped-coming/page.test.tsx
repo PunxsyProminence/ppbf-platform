@@ -45,9 +45,10 @@ const LIST = {
   gap_days: 14,
   is_default: true,
   today: '2026-11-25',
+  // Longest gone first, and NOT in name order, so a page that re-sorted by name would show it.
   athletes: [
-    { athlete_id: 'ath-2', full_name: 'Jordan P.', last_came_day: '2026-10-26', days_since_came: 30 },
-    { athlete_id: 'ath-1', full_name: 'Rosa D.', last_came_day: '2026-11-11', days_since_came: 14 },
+    { athlete_id: 'ath-2', full_name: 'Rosa D.', last_came_day: '2026-10-26', days_since_came: 30 },
+    { athlete_id: 'ath-1', full_name: 'Jordan P.', last_came_day: '2026-11-11', days_since_came: 14 },
   ],
 };
 
@@ -86,7 +87,7 @@ test('reads the stopped-coming route with the session cookie, and is titled for 
 test('rows come in the server\'s order, with the last day they came and the days since', async () => {
   await renderPage(mockFetch({}));
   const rows = screen.getAllByRole('listitem');
-  expect(rows.map((row) => within(row).getByText(/\./).textContent)).toEqual(['Jordan P.', 'Rosa D.']);
+  expect(rows.map((row) => within(row).getByText(/\./).textContent)).toEqual(['Rosa D.', 'Jordan P.']);
   expect(within(rows[0]).getByText(formatCalendarDay('2026-10-26'))).toBeTruthy();
   expect(within(rows[0]).getByText('30')).toBeTruthy();
   expect(within(rows[1]).getByText(formatCalendarDay('2026-11-11'))).toBeTruthy();
