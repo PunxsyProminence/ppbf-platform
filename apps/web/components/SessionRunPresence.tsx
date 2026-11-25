@@ -155,7 +155,8 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     kept: `The class register was changed after your tap, so ${name}'s mark there was left as it is.`,
     unchanged: 'Only the mark here was taken back; the class register was not changed.',
     // A tap sent late, after the register was changed (OD-2026-10-21-004 ruling 1: the later change wins).
-    register_newer: `${name} is marked here, but the class register was changed after your tap, so it stays ${STAYS[register.status ?? ''] ?? 'as it is'} there. Change it on the register if ${name} is here.`,
+    // Said as what happened when the tap landed: the register may be changed again since (round 12, A).
+    register_newer: `${name} was marked here, but the class register had been changed after your tap, so it kept ${STAYS[register.status ?? ''] ?? 'its mark'} there. Change it on the register if ${name} is here.`,
   };
   return `${words[register.effect] ?? ''}${holdWords}`.trim();
 }
@@ -169,9 +170,13 @@ function refusalText(code: unknown): string {
 
 const NO_REFUSALS: ReadonlyMap<string, string> = new Map();
 
-/** The key of an athlete's register_newer line in the list's alert, beside their refusal (keyed by id). */
+/** The key of an athlete's register line in the list's alert, beside their refusal (keyed by id). */
 function registerAlertKey(athleteId: string): string {
   return `register ${athleteId}`;
+}
+/** The key of an athlete's Training Hold line from a kept tap, in the same alert. */
+function holdAlertKey(athleteId: string): string {
+  return `hold ${athleteId}`;
 }
 
 /** One kept here tap not yet answered: whom it marks, and how. */
@@ -206,7 +211,8 @@ export default function SessionRunPresence({
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   // What the last tap did to the class register (a tied session), or a hold on the athlete.
-  const [note, setNote] = useState<{ athleteId: string; text: string } | null>(null);
+  // kept: from a kept tap, so shown only while this page's account is confirmed (a shared tablet).
+  const [note, setNote] = useState<{ athleteId: string; text: string; kept?: boolean } | null>(null);
   const latestRead = useRef(0);
   const headingId = useId();
   // The tied class's register, read beside the run's own marks; untied, nothing is read.
@@ -321,11 +327,15 @@ export default function SessionRunPresence({
       seen = saveQueueGeneration();
       setKeptRefusals(NO_REFUSALS);
       setNoteWords(NO_REFUSALS);
+      // The row's note holds the last tap's answer (a name, the register, a hold): it goes too.
+      setNote(null);
     });
   }, []);
   // While the page checks again who is signed in (a sign-in elsewhere writes no device mark), they are
   // only counted, and no words go back into a box: the person at the screen may be the next one.
   const accountConfirmed = useSyncExternalStore(subscribeSaveQueue, saveQueueAccountConfirmed, () => false);
+  // A kept tap's note is one person's answer: hidden while the page checks who is signed in.
+  const shownNote = note && (!note.kept || accountConfirmed) ? note : null;
   // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
   // words kept for the box.
   const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string): boolean => {
@@ -352,10 +362,10 @@ export default function SessionRunPresence({
   // An athlete's saved tap takes away their kept refusal and their register line (registerAlertKey below).
   const forgetRefusal = useCallback((athleteId: string) => {
     setKeptRefusals((current) => {
-      if (!current.has(athleteId) && !current.has(registerAlertKey(athleteId))) return current;
+      const keys = [athleteId, registerAlertKey(athleteId), holdAlertKey(athleteId)];
+      if (!keys.some((key) => current.has(key))) return current;
       const next = new Map(current);
-      next.delete(athleteId);
-      next.delete(registerAlertKey(athleteId));
+      for (const key of keys) next.delete(key);
       return next;
     });
   }, []);
@@ -409,12 +419,15 @@ export default function SessionRunPresence({
       return {
         // No name: the line can outlive this list on a shared floor screen. The row names the athlete.
         label,
-        send: ({ signal, msSinceMade }) =>
+        // With this page's id: the run's own no-shows tap from this page came before it in tap order
+        // (the queue's order), so the register lets it win over that tap's untouched Absent; one from
+        // the coach's other tab or device does not (condition 1; round 12, reviewer A).
+        send: ({ signal, msSinceMade, pageId }) =>
           fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade }),
+            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade, page_id: pageId }),
             signal,
           }),
         // A yes is a yes, whatever its body (as today); the route's own refusals are a no; anything else proves nothing.
@@ -430,30 +443,55 @@ export default function SessionRunPresence({
           const now = await readPresent(signal);
           return now === null ? null : now.has(athlete.athlete_id) === present;
         },
-        onSaved: (response) => {
+        onSaved: async (response) => {
           release();
           // Refused as no longer live, yet the check found the mark: the session has still ended.
           if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
-          if (!onPage.current) return;
-          // The mark at once (no flicker back while the answer is read), then what it did to the register.
-          showMark();
-          forgetRefusal(athlete.athlete_id);
-          void (async () => {
-            const answer = response
-              ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null)
-              : null;
-            const hold = holdAnswer(answer?.hold_warning);
-            // The register kept what was set there after the tap: kept taps land in a burst when the
-            // connection returns, and the row's one note would be overwritten by the next, so this goes
-            // in the list's named alert, until OK, this athlete's next saved tap, or a drop (R11-S1).
-            if (answer?.register?.effect === 'register_newer') {
-              const words = registerNote(athlete.full_name, answer.register, null);
-              setKeptRefusals((current) => new Map(current).set(registerAlertKey(athlete.athlete_id), words));
-              setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, undefined, hold) });
-              return;
-            }
-            setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, hold) });
-          })();
+          // The mark at once (no flicker back while the answer is read).
+          if (onPage.current) {
+            showMark();
+            forgetRefusal(athlete.athlete_id);
+          }
+          const seen = saveQueueGeneration();
+          const answer = response
+            ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null)
+            : null;
+          // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
+          if (saveQueueGeneration() !== seen) return undefined;
+          const hold = holdAnswer(answer?.hold_warning);
+          const newer = answer?.register?.effect === 'register_newer';
+          // On a tied session a mark here that came back with no register answer (its answer was lost
+          // and a resend changed nothing, or the check found it): what the register holds is not known.
+          const registerUnknown = present && tied && !answer?.register;
+          // This list gone, or going with a kept finish: what the coach must still check goes to the
+          // page's list, unnamed, under "Saved, with something to check" (round 12, A and B).
+          if (!onPage.current || isFinishWaiting?.()) {
+            const checks = [
+              newer ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
+              registerUnknown ? 'whether the class register has the athlete Present is not known; check the class register' : '',
+              hold === 'held' ? 'the athlete has an active Training Hold; the mark was NOT blocked' : '',
+              hold === 'unknown' ? 'whether the athlete is on a Training Hold could not be read' : '',
+            ].filter((words) => words !== '');
+            return checks.length > 0 ? `saved, but ${checks.join('. And ')}.` : undefined;
+          }
+          // What the coach must still check stays named in the list's alert, one line each, so a burst of
+          // landing taps never overwrites it (R11-S1; round 12, A and B): until OK, this athlete's next
+          // saved tap, or a drop. The row's note says only what the tap did to the register.
+          const name = athlete.full_name;
+          const registerWords = newer
+            ? registerNote(name, answer?.register, null)
+            : registerUnknown ? `${name} was marked here. Whether the class register has ${name} Present is not known: check the class register.` : '';
+          const holdWords = registerNote(name, undefined, hold);
+          if (registerWords || holdWords) {
+            setKeptRefusals((current) => {
+              const next = new Map(current);
+              if (registerWords) next.set(registerAlertKey(athlete.athlete_id), registerWords);
+              if (holdWords) next.set(holdAlertKey(athlete.athlete_id), holdWords);
+              return next;
+            });
+          }
+          setNote({ athleteId: athlete.athlete_id, text: registerWords ? '' : registerNote(name, answer?.register, null), kept: true });
+          return undefined;
         },
         // Refused: said in this list, where the coach tapped.
         onRefused: (_response, landed) => {
@@ -474,7 +512,7 @@ export default function SessionRunPresence({
         },
       };
     },
-    [forgetRefusal, isFinishWaiting, onRunNotLive, readPresent, readRegister, runId],
+    [forgetRefusal, isFinishWaiting, onRunNotLive, readPresent, readRegister, runId, tied],
   );
 
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
@@ -678,7 +716,7 @@ export default function SessionRunPresence({
 
           {message ? <p role="alert" className={ALERT}>{message}</p> : null}
           {/* Read out here; shown under the athlete's own row, where the coach just tapped. */}
-          <p role="status" className="sr-only">{note?.text ?? ''}</p>
+          <p role="status" className="sr-only">{shownNote?.text ?? ''}</p>
 
           {reading.gym.length === 0 ? (
             <p className="t-body mt-[var(--s3)]">There are no athletes in this gym to mark.</p>
@@ -744,8 +782,8 @@ export default function SessionRunPresence({
                             {`Present on the class register${registerSource ? `, via ${registerSource}` : ''}. Not marked here yet.`}
                           </p>
                         ) : null}
-                        {note && note.athleteId === athlete.athlete_id && note.text ? (
-                          <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
+                        {shownNote && shownNote.athleteId === athlete.athlete_id && shownNote.text ? (
+                          <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{shownNote.text}</p>
                         ) : null}
                         {/* The server's mark, as today: a note is taken only for an athlete marked here. */}
                         {reading.present.has(athlete.athlete_id) ? (

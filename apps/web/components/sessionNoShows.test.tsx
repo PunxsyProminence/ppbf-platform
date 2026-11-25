@@ -197,7 +197,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     const bodies = patches().map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toHaveLength(2);
     // The names and class shown at the tap, and one key: the server marks only those, once.
-    expect(bodies[0]).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'], class_id: 'class-youth', request_key: expect.any(String) });
+    expect(bodies[0]).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'], class_id: 'class-youth', request_key: expect.any(String), page_id: expect.any(String) });
     expect(bodies[1]).toEqual(bodies[0]);
     expect(String(bodies[0].request_key).length).toBeGreaterThan(0);
     // The answer the server replays is the first send's: it says how many that send marked.

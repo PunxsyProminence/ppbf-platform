@@ -326,3 +326,36 @@ describe('POST tapped_ms_ago', () => {
     expect(mockSet).not.toHaveBeenCalled();
   });
 });
+
+// W4 item 7, #2182 round 12: the page a kept tap was made on, so the register lets it win over that
+// page's own no-shows Absent and nothing else's (schedulerDb.ts writeSessionRegisterPresent).
+describe('POST page_id', () => {
+  it('hands the module the page id; without it, or with null, none, exactly as before', async () => {
+    await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 1_000, page_id: 'page-1' });
+    await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 1_000 });
+    await post({ athlete_id: 'ath-1', present: true, page_id: null });
+    expect(mockSet.mock.calls[0][0]).toEqual(expect.objectContaining({ pageId: 'page-1' }));
+    expect(mockSet.mock.calls[1][0]).not.toHaveProperty('pageId');
+    expect(mockSet.mock.calls[2][0]).not.toHaveProperty('pageId');
+  });
+
+  it('takes a page id of 200 characters, and a surrogate pair', async () => {
+    expect((await post({ athlete_id: 'ath-1', present: true, page_id: 'p'.repeat(200) })).status).toBe(200);
+    expect((await post({ athlete_id: 'ath-1', present: true, page_id: `p-${String.fromCharCode(0xd83e, 0xdd4a)}` })).status).toBe(200);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '  '],
+    ['too long', 'p'.repeat(201)],
+    ['a number', 7],
+    ['with a NUL', `p${String.fromCharCode(0)}1`],
+    ['with a lone high surrogate', `p${String.fromCharCode(0xd800)}`],
+    ['with a lone low surrogate', `p${String.fromCharCode(0xdc00)}`],
+  ])('refuses a page_id that is %s, and marks nothing', async (_label, value) => {
+    const response = await post({ athlete_id: 'ath-1', present: true, page_id: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'page_id' });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+});

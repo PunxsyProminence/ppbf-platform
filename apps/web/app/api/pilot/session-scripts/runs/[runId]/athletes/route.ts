@@ -59,6 +59,10 @@ function badRequest(code: string) {
 
 // A day at most: the page drops what it keeps at sign-out, and the role cache lasts 8 hours.
 const TAPPED_MS_AGO_MAX = 24 * 60 * 60 * 1000;
+// A kept tap's page id (W4 item 7, #2182 round 12): text of 1 to 200 characters, no NUL and no unpaired
+// surrogate, as the no-shows tap's ids (runs/[runId]/route.ts).
+const PAGE_ID_MAX = 200;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
@@ -94,7 +98,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return badRequest('INVALID_BODY');
     }
     const record = body as Record<string, unknown>;
-    const extras = Object.keys(record).filter((key) => !['athlete_id', 'present', 'tapped_ms_ago'].includes(key));
+    const extras = Object.keys(record).filter((key) => !['athlete_id', 'present', 'tapped_ms_ago', 'page_id'].includes(key));
     if (extras.length > 0) {
       return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
     }
@@ -113,6 +117,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     ) {
       return badRequest('tapped_ms_ago');
     }
+    // The page the tap was kept on: the register lets it win over that page's own no-shows Absent.
+    const pageId = record.page_id ?? undefined;
+    if (
+      pageId !== undefined
+      && (typeof pageId !== 'string' || pageId.trim() === '' || pageId.length > PAGE_ID_MAX || pageId.includes(NUL) || LONE_SURROGATE.test(pageId))
+    ) {
+      return badRequest('page_id');
+    }
 
     const { outcome, register } = await setRunAthletePresent({
       actor: {
@@ -126,6 +138,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       present: record.present,
       // The server's clock less the page's count since the tap; no clock on the tablet is read.
       ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
+      ...(pageId === undefined ? {} : { pageId }),
     });
     const holdWarning = register?.effect === 'created' || register?.effect === 'flipped'
       ? await readStaffHoldWarning(principal.role, principal.organizationId, athleteId)

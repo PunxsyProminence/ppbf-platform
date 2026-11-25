@@ -798,8 +798,8 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Each tap is recorded on the run with the names it sent, each once and sorted, and whom it marked.
     const names = [gym.ada, gym.ben, gym.cy, 'athlete-dee', 'athlete-eve', 'athlete-unknown'];
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [gym.ben, 'athlete-eve'], marked_at: expect.any(String) },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [], marked_at: expect.any(String) },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [gym.ben, 'athlete-eve'], marked_at: expect.any(String), page_id: null },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [], marked_at: expect.any(String), page_id: null },
     ]);
   });
 
@@ -1058,8 +1058,8 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId, naming([gym.ben], 'key-lost'))))
       .toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked_athlete_ids: [gym.ben], marked_at: expect.any(String) },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked_athlete_ids: [], marked_at: expect.any(String) },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked_athlete_ids: [gym.ben], marked_at: expect.any(String), page_id: null },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked_athlete_ids: [], marked_at: expect.any(String), page_id: null },
     ]);
   });
 
@@ -1099,7 +1099,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     const { run_id: runId } = await start(gym, gym.coach);
     await startedAnHourAgo(gym, runId);
     const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada, gym.ben, gym.cy], 'key-own')))
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ada, gym.ben, gym.cy], 'key-own'), pageId: 'page-1' }))
       .toEqual({ marked: [gym.ada, gym.ben, gym.cy] });
     // The tap records when it wrote the marks, exactly as written.
     const [tapRecord] = await noShowTaps(gym, runId);
@@ -1110,8 +1110,9 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(stamps[0].same).toBe(true);
     await letTheClockMove();
 
-    // Ben's here tap reads as made a minute ago, before the no-shows tap landed: it still flips him.
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minutesAgo(1) }))
+    // Ben's here tap, kept on the same page, reads as made a minute ago, before the no-shows tap
+    // landed: on one page it came after the no-shows tap, so it still flips him.
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'flipped', previous_status: 'absent' } });
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'present' });
 
@@ -1120,7 +1121,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       `update pilot.scheduler_attendance set note = 'rang home', updated_at = now() where organization_id = $1 and athlete_id = $2`,
       [gym.organizationId, gym.ada],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minutesAgo(1) }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent' });
 
@@ -1129,22 +1130,42 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       `update pilot.scheduler_attendance set status = 'excused' where organization_id = $1 and athlete_id = $2`,
       [gym.organizationId, gym.cy],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.cy, present: true, tappedAt: minutesAgo(1) }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.cy, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'excused' } });
+  });
+
+  // #2182 round 12, reviewer A: each tab keeps its own queue, so tap order holds only on one page. A
+  // here tap from the coach's other tab or device, made before the no-shows tap's Absent, loses to it
+  // (condition 1), as does one sent with no page id.
+  test('a here tap from another page, or with no page id, made before the run\'s own no-shows Absent, does not flip it', async () => {
+    const gym = await newGym('other-page-no-shows');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await startedAnHourAgo(gym, runId);
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ada, gym.ben], 'key-page'), pageId: 'page-1' }))
+      .toEqual({ marked: [gym.ada, gym.ben] });
+    const [tapRecord] = await noShowTaps(gym, runId);
+    expect(tapRecord).toMatchObject({ page_id: 'page-1' });
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minuteAgo, pageId: 'page-2' }))
+      .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minuteAgo }))
+      .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+    expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent' });
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent' });
   });
 
   test('another run\'s no-shows Absent is not this run\'s: a here tap made before a change to it does not flip it', async () => {
     const gym = await newGym('other-run-no-shows');
     const first = await start(gym, gym.coach);
     await startedAnHourAgo(gym, first.run_id);
-    expect(await markSessionNoShowsAbsent(gym.coach, first.run_id, naming([gym.ben], 'key-first'))).toEqual({ marked: [gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, first.run_id, { ...naming([gym.ben], 'key-first'), pageId: 'page-1' })).toEqual({ marked: [gym.ben] });
     await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, first.run_id, { runState: 'completed' });
     await letTheClockMove();
     const second = await start(gym, gym.coach);
     await startedAnHourAgo(gym, second.run_id);
     // A tap on the second run made before the first run's Absent was written.
     expect(await setRunAthletePresent({
-      actor: gym.coach, runId: second.run_id, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60 * 60_000 + 1000).toISOString(),
+      actor: gym.coach, runId: second.run_id, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60 * 60_000 + 1000).toISOString(), pageId: 'page-1',
     })).toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
   });
 
@@ -1152,7 +1173,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     const gym = await newGym('not-the-taps');
     const { run_id: runId } = await start(gym, gym.coach);
     await startedAnHourAgo(gym, runId);
-    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-ben'))).toEqual({ marked: [gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ben], 'key-ben'), pageId: 'page-1' })).toEqual({ marked: [gym.ben] });
     const [tapRecord] = await noShowTaps(gym, runId);
     // An Absent for Ada written elsewhere, by chance stamped at the tap's very moment.
     await client.query(
@@ -1161,7 +1182,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
        values ($1, 'att-ada', $2, $3, 'absent', 'admin_override', 'organization_admin', $4, '', $5::timestamptz, $5::timestamptz)`,
       [gym.organizationId, gym.klass, gym.ada, gym.admin.accountId, tapRecord.marked_at],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString(), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
 
     // Round 14, reviewer A: Ben's Absent on another class, by chance at the tap's moment, is not the
@@ -1174,7 +1195,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       [gym.organizationId, gym.ben, gym.admin.accountId, tapRecord.marked_at],
     );
     await setSessionRunClass(gym.coach, runId, 'class-two');
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString(), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
     expect(await register(gym, gym.ben, 'class-two')).toMatchObject({ status: 'absent' });
   });

@@ -85,6 +85,8 @@ export async function setRunAthletePresent(input: {
   athleteId: string;
   present: boolean;
   tappedAt?: string;
+  /** The page a kept tap was made on (W4 item 7): see writeSessionRegisterPresent's pageId. */
+  pageId?: string;
 }): Promise<{ outcome: RunAthleteOutcome; register?: RegisterResult }> {
   const { actor, runId, athleteId } = input;
   // One refusal for "not staff here", "another gym's athlete", "a deleted
@@ -207,7 +209,7 @@ export async function setRunAthletePresent(input: {
     // register). A standing mark asked again writes nothing, so a later register change wins.
     const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
     if (outcome === 'marked' && owned.class_id) {
-      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined) };
+      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined, input.pageId) };
     }
     if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
       return {

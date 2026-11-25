@@ -87,6 +87,12 @@ export interface SendContext {
   madeByAccountId: string;
   /** Whole milliseconds since the save was made, for tapped_ms_ago. */
   msSinceMade: number;
+  /**
+   * One random id for this page (this tab's load), the same for every save it keeps, for page_id. In
+   * memory only. The server can then tell two saves of one page, which this queue sends in the order
+   * they were made, from saves of the coach's other tab or device (#2182 round 12, reviewer A).
+   */
+  pageId: string;
   /** True for the first send, false for a resend. */
   first: boolean;
 }
@@ -106,8 +112,12 @@ export interface KeptSave {
    * tell). The signal is aborted when the queue stops waiting for it (pass it to fetch).
    */
   checkLanded?: (signal: AbortSignal) => Promise<boolean | null>;
-  /** The save went through: the server's answer, or null when the check found it had landed. */
-  onSaved?: (response: Response | null) => void;
+  /**
+   * The save went through: the server's answer, or null when the check found it had landed. May
+   * return words for the page's list, when the screen that made the save has gone or is going and
+   * the coach still has something to check; they are listed as saved, never as not saved.
+   */
+  onSaved?: (response: Response | null) => string | void | Promise<string | void>;
   /**
    * Refused. `landed` is false when the first send was refused or the check found nothing, and null
    * when a resend was refused and it is not known whether an earlier send landed. Returns the
@@ -121,6 +131,8 @@ export interface FailedSave {
   words: string;
   /** false when a resend was refused and whether an earlier send landed is not known (condition 2). */
   known: boolean;
+  /** true: the save went through, and these words say what the coach should still check (onSaved). */
+  saved?: boolean;
 }
 
 export interface SaveQueueState {
@@ -570,6 +582,7 @@ async function pump(): Promise<void> {
           requestKey: head.requestKey,
           madeByAccountId: head.accountId,
           msSinceMade: msSinceMade(head),
+          pageId: pageId(),
           first: head.sends === 0,
         });
         const gone = answered.status === 401 || (await codeOf(answered)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT';
@@ -597,7 +610,12 @@ async function pump(): Promise<void> {
     if (answer === 'saved') {
       entries.shift();
       notify();
-      await safely(() => head.save.onSaved?.(answered), undefined);
+      const words = await safely(() => head.save.onSaved?.(answered), undefined);
+      if (seen !== generation) return;
+      if (typeof words === 'string' && words !== '') {
+        failed.push({ label: head.save.label, words, known: true, saved: true });
+        notify();
+      }
     } else {
       // A refused RESEND may be refusing a save an earlier send already made (a finish, a removal).
       // Without a check, whether it landed is not known.
@@ -608,7 +626,12 @@ async function pump(): Promise<void> {
       entries.shift();
       if (landed === true) {
         notify();
-        await safely(() => head.save.onSaved?.(null), undefined);
+        const words = await safely(() => head.save.onSaved?.(null), undefined);
+        if (seen !== generation) return;
+        if (typeof words === 'string' && words !== '') {
+          failed.push({ label: head.save.label, words, known: true, saved: true });
+          notify();
+        }
       } else {
         const words = await safely(() => head.save.onRefused?.(answered, landed), undefined);
         if (seen !== generation) return;
@@ -626,6 +649,13 @@ async function pump(): Promise<void> {
       else later();
     }
   }
+}
+
+let thisPage: string | null = null;
+/** This page's id, made once with the first send (a save is kept only where a key can be made). */
+function pageId(): string {
+  thisPage ??= newRequestKey() ?? 'page';
+  return thisPage;
 }
 
 /** A random request key, or null where the browser cannot make one (then the save is not kept). */

@@ -431,9 +431,9 @@ describe('tie_class and mark_no_shows', () => {
     mockNoShows.mockResolvedValue({ marked: ['ath-2'] });
     const response = await patch({ action: 'mark_no_shows', athlete_ids: ['ath-2', 'ath-3'], class_id: 'class-1', request_key: 'key-1' });
     await expect(response.json()).resolves.toEqual({ marked: ['ath-2'] });
-    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2', 'ath-3'], classId: 'class-1', requestKey: 'key-1' });
+    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2', 'ath-3'], classId: 'class-1', requestKey: 'key-1', pageId: null });
     await patch({ action: 'mark_no_shows', athlete_ids: ['ath-2'], class_id: 'class-1' });
-    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2'], classId: 'class-1', requestKey: null });
+    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-2'], classId: 'class-1', requestKey: null, pageId: null });
   });
 
   // OVERWATCH 7160191377: a tap names its athletes; the server never works the set out itself.
@@ -466,6 +466,23 @@ describe('tie_class and mark_no_shows', () => {
     expect(mockNoShows).not.toHaveBeenCalled();
   });
 
+  it('passes the page a kept tap was made on, or null without one', async () => {
+    mockNoShows.mockResolvedValue({ marked: [] });
+    await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], class_id: 'class-1', request_key: 'key-1', page_id: 'page-1' });
+    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-1'], classId: 'class-1', requestKey: 'key-1', pageId: 'page-1' });
+    await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], class_id: 'class-1' });
+    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-1'], classId: 'class-1', requestKey: null, pageId: null });
+  });
+
+  it.each([[''], [7], [null], ['p'.repeat(201)], [`p${String.fromCharCode(0)}`], [`p${String.fromCharCode(0xdc00)}`]])(
+    'refuses a page_id of %j before touching the module',
+    async (pageId) => {
+      const response = await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], class_id: 'class-1', page_id: pageId });
+      expect(response.status).toBe(400);
+      expect(mockNoShows).not.toHaveBeenCalled();
+    },
+  );
+
   it('takes a surrogate pair, which jsonb can store', async () => {
     mockNoShows.mockResolvedValue({ marked: [] });
     const pair = String.fromCharCode(0xd83e, 0xdd4a);
@@ -476,7 +493,7 @@ describe('tie_class and mark_no_shows', () => {
     mockNoShows.mockResolvedValue({ marked: [] });
     const names = Array.from({ length: 500 }, (_, i) => `ath-${i}`.padEnd(200, 'x'));
     expect((await patch({ action: 'mark_no_shows', athlete_ids: names, class_id: 'c'.repeat(200), request_key: 'k'.repeat(200) })).status).toBe(200);
-    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: names, classId: 'c'.repeat(200), requestKey: 'k'.repeat(200) });
+    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID, { athleteIds: names, classId: 'c'.repeat(200), requestKey: 'k'.repeat(200), pageId: null });
   });
 
   it('answers a class refusal with its status, code and plain message', async () => {

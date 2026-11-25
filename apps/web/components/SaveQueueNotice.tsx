@@ -34,6 +34,9 @@ export const WAITING_WORDS = 'Not saved yet. This page keeps sending these while
 export const WAITING_COST = 'Closing this page, or signing out, loses them.';
 export const FAILED_WORDS = 'Not saved:';
 export const UNKNOWN_WORDS = 'Not known whether these were saved. Check before doing them again:';
+// Saves that went through after the screen that made them had gone, with something still to check
+// (onSaved's words): never under "Not saved".
+export const SAVED_CHECK_WORDS = 'Saved, with something to check:';
 // The count holds saves still waiting and every failed one, those whose outcome is not known too: it
 // never says "Not saved" (condition 2).
 export function checkingWords(count: number): string {
@@ -50,8 +53,9 @@ export function notSentWords(count: number): string {
 export default function SaveQueueNotice() {
   const state = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
   const failedLine = state.failed.length > 0 || state.notSent > 0;
-  const refused = state.failed.filter((item) => item.known);
-  const unknown = state.failed.filter((item) => !item.known);
+  const refused = state.failed.filter((item) => item.known && !item.saved);
+  const unknown = state.failed.filter((item) => !item.known && !item.saved);
+  const savedToCheck = state.failed.filter((item) => item.saved);
   const statusLine = state.waiting.length > 0 || state.checking > 0;
   return (
     <div className={statusLine || failedLine ? 'mt-[var(--s3)] grid gap-[var(--s2)]' : undefined}>
@@ -89,6 +93,18 @@ export default function SaveQueueNotice() {
               <p>{UNKNOWN_WORDS}</p>
               <ul className="mt-[var(--s1)] list-disc pl-[var(--s4)]">
                 {unknown.map((item, index) => (
+                  <li key={`${index}-${item.label}`}>
+                    {item.label}: {item.words}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {savedToCheck.length > 0 ? (
+            <>
+              <p>{SAVED_CHECK_WORDS}</p>
+              <ul className="mt-[var(--s1)] list-disc pl-[var(--s4)]">
+                {savedToCheck.map((item, index) => (
                   <li key={`${index}-${item.label}`}>
                     {item.label}: {item.words}
                   </li>

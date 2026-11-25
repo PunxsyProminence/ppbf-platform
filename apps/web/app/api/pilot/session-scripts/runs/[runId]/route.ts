@@ -169,7 +169,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       case 'mark_no_shows': {
-        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'class_id', 'request_key'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'class_id', 'request_key', 'page_id'].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
@@ -186,10 +186,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (record.request_key !== undefined && !isIdText(record.request_key)) {
           return badRequest(`request_key:expected text of 1 to ${TEXT_MAX} characters`);
         }
+        // The page a kept tap was made on (#2182 round 12): recorded with the tap.
+        if (record.page_id !== undefined && !isIdText(record.page_id)) {
+          return badRequest(`page_id:expected text of 1 to ${TEXT_MAX} characters`);
+        }
         const result = await markSessionNoShowsAbsent(
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
-          { athleteIds, classId: record.class_id, requestKey: record.request_key ?? null },
+          { athleteIds, classId: record.class_id, requestKey: record.request_key ?? null, pageId: record.page_id ?? null },
         );
         return NextResponse.json(result);
       }
