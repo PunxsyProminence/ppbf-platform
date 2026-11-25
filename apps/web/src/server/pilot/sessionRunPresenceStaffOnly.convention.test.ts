@@ -70,7 +70,9 @@ const SESSION_NOTE_READERS = [
 
 // The stopped-coming list (lane W4-6, SC-1; Jason OW27-32 A, "Yes, on this page only"): an
 // open-gym "here" mark counts as coming on that page, so stoppedComing.ts reads the last standing
-// mark day per athlete on untied runs, and its one route is the only caller of listStoppedComing.
+// mark day per athlete that the register does not hold (untied runs, taps that created no register
+// mark, cancelled classes; App Overwatch on #2172), and its one route is the only caller of
+// listStoppedComing.
 // Approved for exactly these two files, the route pinned below to coach, organization_admin and
 // admin (Overwatch, W4-6 GO on #2163, condition 1). Nothing else from the table leaves the module.
 const STOPPED_COMING_READERS = [
@@ -110,7 +112,7 @@ const DEFINING_MODULES = [
 // the runs it closed; no athlete, name, mark or note leaves it, so the TV read
 // that triggers it (gymTvs.ts) gets nothing from either table.
 // stoppedComing.ts (lane W4-6, SC-1) reads one day per athlete from
-// session_run_athletes: the last standing mark on an untied run. It returns no
+// session_run_athletes: the last standing mark the register does not hold. It returns no
 // run, mark or marker; see STOPPED_COMING_READERS.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
@@ -179,7 +181,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   });
 
   // The exemption for stoppedComing.ts (TABLE_FILES above) is for one read only: the gym-local day
-  // of each athlete's last standing mark on an untied run, inside lastOpenGymDays. Pinned, as the
+  // of each athlete's last standing mark the register does not hold, inside lastOpenGymDays. Pinned, as the
   // idle sweep's exemption is below, because a new read added to that file would otherwise pass the
   // file-level list unnoticed: the staff notes table is never named, the presence table only in that
   // one FROM, the module's one value export is listStoppedComing, and it refuses a caller with no
