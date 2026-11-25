@@ -349,10 +349,12 @@ export interface SessionScriptBlockAdd {
 }
 
 export interface EditedSessionScript {
-  /** 'new_version' when the script had a run, or the edit removed a block something names: script_id is then the NEW row's. */
+  /** 'new_version' when the script had a run, or the edit removed a block: script_id is then the NEW row's. */
   outcome: 'unchanged' | 'updated' | 'new_version';
   script_id: string;
   version: number;
+  /** With 'new_version', why: the plan had been run, or (no run) the edit removed a block -- so a screen says which (reviewer B on #2191). */
+  because?: 'run' | 'removal';
 }
 
 function refuse(code: string): never {
@@ -480,49 +482,39 @@ interface DrillForBlock {
 }
 
 /**
- * The drills new blocks link, read FOR SHARE, so a drill revised mid-edit is seen as replaced or
- * waits for this edit (drillLibraryEdit.ts locks it FOR UPDATE before drill_contact_below_steps).
- * Only a current drill of this gym: active and not superseded, the browse list's rule.
+ * Every drill the edit touches, share-locked in ONE statement in drill_id order before the plan is
+ * locked, as content import locks the drills it names (one statement, drill_id order) before plans:
+ * the drills new blocks link, and the drills the plan's stored blocks link -- a new version copies
+ * those, and each copy's foreign key check locks its drill, which under the plan's lock would wait on
+ * an import holding it while the import waits for the plan. Two statements would each be in order
+ * but not their union, and could still deadlock (reviewer A on #2191, rounds 2 and 4). A drill revised
+ * mid-edit is seen as replaced, or waits for this edit (drillLibraryEdit.ts locks it FOR UPDATE before
+ * drill_contact_below_steps). A new block links only a current drill of this gym: active and not
+ * superseded, the browse list's rule. Not locked: the read of which drills the stored blocks link.
  */
-async function drillsForNewBlocks(
+async function lockDrills(
   client: PoolClient,
   organizationId: string,
-  drillIds: readonly string[],
+  scriptId: string,
+  newDrillIds: readonly string[],
 ): Promise<Map<string, DrillForBlock>> {
-  if (drillIds.length === 0) return new Map();
   const found = await client.query<DrillForBlock & { current: boolean }>(
     `select drill_id, name, contact_level, (active and superseded_at is null) as current
        from pilot.drill_library
-      where organization_id = $1 and drill_id = any($2::text[])
+      where organization_id = $1
+        and (drill_id = any($2::text[])
+             or drill_id in (select drill_id from pilot.session_script_blocks where organization_id = $1 and script_id = $3))
       order by drill_id
         for share`,
-    [organizationId, [...new Set(drillIds)]],
+    [organizationId, [...new Set(newDrillIds)], scriptId],
   );
   const byId = new Map(found.rows.map((row) => [row.drill_id, row]));
-  for (const drillId of drillIds) {
+  for (const drillId of newDrillIds) {
     const drill = byId.get(drillId);
     if (!drill) refuse('SESSION_SCRIPT_DRILL_NOT_FOUND');
     if (!drill.current) throw new SessionScriptAuthoringError('SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
   }
   return byId;
-}
-
-/**
- * Share-locks the drill rows the plan's stored blocks link, before the plan is locked. A new
- * version copies those blocks, and each copy's foreign key check takes a lock on its drill; taken
- * under the plan's lock, that waits on a content import holding the drill, while the import waits
- * for the plan -- a deadlock (reviewer A on #2191, reproduced on main). Content import locks drills
- * before plans; so does this. Not locked: the read of which drills those are.
- */
-async function lockLinkedDrills(client: PoolClient, organizationId: string, scriptId: string): Promise<void> {
-  await client.query(
-    `select 1 from pilot.drill_library
-      where organization_id = $1
-        and drill_id in (select drill_id from pilot.session_script_blocks where organization_id = $1 and script_id = $2)
-      order by drill_id
-        for share`,
-    [organizationId, scriptId],
-  );
 }
 
 /** A block as the edit leaves it: a stored one (block_id set) or a new one (block_id null). */
@@ -564,8 +556,7 @@ export async function editSessionScript(
   return withTransaction(async (client) => {
     // The drills first, then the plan: content import locks drill rows before plan rows, so taking
     // them the other way round here could deadlock against it.
-    const drills = await drillsForNewBlocks(client, params.organizationId, adds.map((add) => add.drill_id));
-    await lockLinkedDrills(client, params.organizationId, params.scriptId);
+    const drills = await lockDrills(client, params.organizationId, params.scriptId, adds.map((add) => add.drill_id));
     const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -758,7 +749,7 @@ export async function editSessionScript(
       // The new version keeps the backbone labels of the one it replaces (lineage-wide stage links stay as they are).
       await carryLabelsToNewVersion(client, params.organizationId, 'session-scripts', script.lineage_id, script.version, version);
       rerendered = await rerenderFromBlocks(client, params.organizationId, newScriptId, name, blocks);
-      result = { outcome: 'new_version', script_id: newScriptId, version };
+      result = { outcome: 'new_version', script_id: newScriptId, version, because: hasRun ? 'run' : 'removal' };
     }
 
     await writePilotAuditEvent(
