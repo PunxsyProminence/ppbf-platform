@@ -167,4 +167,8 @@ test('while the page checks again who is signed in, only a count shows, with no 
   expect(container).not.toHaveTextContent('Ada Reyes');
   expect(container).not.toHaveTextContent('Ben Ortiz');
   expect(screen.queryByRole('alert')).toBeNull();
+  // The count may hold a save whose outcome is not known: never said as not saved (condition 2).
+  expect(container).not.toHaveTextContent('Not saved');
+  expect(checkingWords(1)).toBe('1 save on this page shows again once the page has checked who is signed in.');
+  expect(checkingWords(2)).toBe('2 saves on this page show again once the page has checked who is signed in.');
 });

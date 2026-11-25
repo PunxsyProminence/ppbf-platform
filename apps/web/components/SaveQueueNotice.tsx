@@ -34,10 +34,12 @@ export const WAITING_WORDS = 'Not saved yet. This page keeps sending these while
 export const WAITING_COST = 'Closing this page, or signing out, loses them.';
 export const FAILED_WORDS = 'Not saved:';
 export const UNKNOWN_WORDS = 'Not known whether these were saved. Check before doing them again:';
+// The count holds saves still waiting and every failed one, those whose outcome is not known too: it
+// never says "Not saved" (condition 2).
 export function checkingWords(count: number): string {
   return count === 1
-    ? 'Not saved: 1 save on this page. It shows again once the page has checked who is signed in.'
-    : `Not saved: ${count} saves on this page. They show again once the page has checked who is signed in.`;
+    ? '1 save on this page shows again once the page has checked who is signed in.'
+    : `${count} saves on this page show again once the page has checked who is signed in.`;
 }
 export function notSentWords(count: number): string {
   return count === 1
