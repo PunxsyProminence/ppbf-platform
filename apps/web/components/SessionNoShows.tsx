@@ -80,7 +80,7 @@ export default function SessionNoShows({
   // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Marking the no-shows
   // again marks nobody new (OQ-1's repeat proofs). A refused RESEND is checked against the count the
   // server holds before any failed words (Overwatch condition 2).
-  const keptNoShows = useCallback((): KeptSave => {
+  const keptNoShows = useCallback((resolved: { done: boolean }): KeptSave => {
     let refusal: { error?: string; message?: string } = {};
     let sends = 0;
     const label = 'Mark the no-shows Absent';
@@ -110,6 +110,7 @@ export default function SessionNoShows({
         return now.runId === runId && now.view?.class_id === classId && now.view.no_shows === 0;
       },
       onSaved: (response) => {
+        resolved.done = true;
         setWaiting(false);
         void (async () => {
           if (!response) {
@@ -124,6 +125,7 @@ export default function SessionNoShows({
       },
       // Refused: said here, where the coach tapped.
       onRefused: (_response, landed) => {
+        resolved.done = true;
         setWaiting(false);
         if (refusal.error && RUN_GONE.has(refusal.error)) {
           onRunNotLive();
@@ -144,10 +146,13 @@ export default function SessionNoShows({
     setBusy(true);
     setMessage('');
     try {
-      // Waiting from the moment it is handed over (it can land before keepSave returns).
-      setWaiting(true);
-      if ((await keepSave(keptNoShows())) === 'kept') return;
-      setWaiting(false);
+      // Waiting once kept (the account check settles first, under this tap's busy lock), unless it
+      // was answered already.
+      const resolved = { done: false };
+      if ((await keepSave(keptNoShows(resolved))) === 'kept') {
+        if (!resolved.done) setWaiting(true);
+        return;
+      }
       // Not kept (the page does not know who is signed in): sent once, as before.
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
         method: 'PATCH',
@@ -178,7 +183,10 @@ export default function SessionNoShows({
 
   return (
     <div className="space-y-[var(--s2)]">
-      <p role="status" className="t-body text-[color:var(--brass-300)]">{result}</p>
+      {/* A kept tap not yet saved says so on the same status line, mounted always. */}
+      <p role="status" className="t-body text-[color:var(--brass-300)]">
+        {waiting ? 'Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.' : result}
+      </p>
       {read.state === 'failed' && (
         <p className="t-body">
           Could not check the class register for no-shows.{' '}
@@ -196,9 +204,6 @@ export default function SessionNoShows({
             {busy ? 'Marking…' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
           </button>
         </div>
-      )}
-      {waiting && (
-        <p role="status" className="t-body">Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.</p>
       )}
       {message && <p role="alert" className="t-body font-semibold">{message}</p>}
     </div>

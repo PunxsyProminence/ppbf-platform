@@ -116,6 +116,8 @@ export interface KeptSave {
 export interface FailedSave {
   label: string;
   words: string;
+  /** false when a resend was refused and whether an earlier send landed is not known (condition 2). */
+  known: boolean;
 }
 
 export interface SaveQueueState {
@@ -596,7 +598,7 @@ async function pump(): Promise<void> {
       } else {
         const words = await safely(() => head.save.onRefused?.(answered, landed), undefined);
         if (seen !== generation) return;
-        if (typeof words === 'string' && words !== '') failed.push({ label: head.save.label, words });
+        if (typeof words === 'string' && words !== '') failed.push({ label: head.save.label, words, known: landed === false });
         notify();
       }
     }

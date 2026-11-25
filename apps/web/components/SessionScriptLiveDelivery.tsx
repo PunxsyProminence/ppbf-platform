@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
@@ -16,7 +16,6 @@ import SessionRunPresence from '@/components/SessionRunPresence';
 import SessionRunClass, { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import {
-  emptySaveQueueState,
   keepSave,
   prepareSaveQueue,
   readSaveQueue,
@@ -176,6 +175,8 @@ function queueIdle(): boolean {
 }
 
 type PendingRun = Partial<Pick<LiveSessionScriptRun, 'is_paused' | 'show_on_wall' | 'current_block_id'>>;
+/** One kept run action not yet answered: what it asks, and whether it ends the session. */
+type AskedRun = { save: object; asked: PendingRun; finish: boolean };
 
 /** The part of the run a run action asks for, or null (a finish). */
 function askedByRunAction(body: Record<string, unknown>): PendingRun | null {
@@ -367,14 +368,12 @@ export default function SessionScriptLiveDelivery({
   const blocks: Block[] = detail?.blocks ?? [];
   const currentIndex = blocks.findIndex((block) => block.block_id === run.current_block_id);
   const currentBlock = currentIndex >= 0 ? blocks[currentIndex] : null;
-  // Run actions kept and not yet saved (W4 item 7): what they ask for, so the next tap works from
-  // what the coach asked, not from the run as last read. What is shown as the run stays the server's.
-  const [pendingRun, setPendingRun] = useState<PendingRun>({});
-  // What was asked shows only while the page holds a kept save: before the queue takes a tap, and
-  // on today's path (not kept), the console shows the server's run as before.
-  const savesState = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
-  const nothingWaiting = savesState.waiting.length === 0 && savesState.checking === 0;
-  const asked = nothingWaiting ? run : { ...run, ...pendingRun };
+  // Run actions kept and not yet saved (W4 item 7): what each asks, in the order tapped, so the next
+  // tap works from what the coach asked, not from the run as last read. Each entry is added once its
+  // save is kept and goes with that save's answer, never another's; a later one wins. What is shown
+  // as the run stays the server's.
+  const [askedRuns, setAskedRuns] = useState<readonly AskedRun[]>([]);
+  const asked = askedRuns.reduce<LiveSessionScriptRun>((all, entry) => ({ ...all, ...entry.asked }), run);
   const askedIndex = blocks.findIndex((block) => block.block_id === asked.current_block_id);
   const previousBlock = askedIndex > 0 ? blocks[askedIndex - 1] : null;
   const nextBlock = askedIndex >= 0 && askedIndex < blocks.length - 1 ? blocks[askedIndex + 1] : null;
@@ -421,10 +420,9 @@ export default function SessionScriptLiveDelivery({
   const [actionError, setActionError] = useState('');
   // Set when this console hands the page a settled run; a finish once kept locks the run actions.
   const settledHere = useRef(false);
-  const [finishKept, setFinishKept] = useState(false);
   // No run action while one is in hand, or once a finish is kept: it cannot be taken back, and an
   // action queued behind it would only be refused once the session has ended.
-  const finishWaiting = finishKept && !nothingWaiting;
+  const finishKept = askedRuns.some((entry) => entry.finish);
   const controlsLocked = actionBusy !== null || finishKept;
   // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
   // the badge, the block and the switch's state as saved are the server's.
@@ -499,7 +497,9 @@ export default function SessionScriptLiveDelivery({
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState('');
   // Kept logs not yet saved: said in the log panel too, where the coach tapped (W4 item 7).
-  const [logsWaiting, setLogsWaiting] = useState(0);
+  // One entry per kept log, keyed by its pair's request key: the same pair tapped twice is one log.
+  const [logsWaiting, setLogsWaiting] = useState<readonly { save: object; key: unknown }[]>([]);
+  const logsWaitingCount = new Set(logsWaiting.map((entry) => entry.key)).size;
   const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
   // The same list for a kept log's landed check, which runs after later renders.
   const loggedRef = useRef(loggedInterventions);
@@ -507,14 +507,15 @@ export default function SessionScriptLiveDelivery({
     loggedRef.current = loggedInterventions;
   }, [loggedInterventions]);
   // A drop (a sign-out, another account, a 401) tells this screen nothing: once nothing kept is
-  // waiting on the page, nothing is asked, no finish waits and no log waits here either.
+  // waiting on the page, nothing is asked, no finish waits and no log waits here either. (Each is
+  // added only once its save is kept, so the queue's own notices while it takes a save clear nothing
+  // of it.)
   useEffect(
     () =>
       subscribeSaveQueue(() => {
         if (!queueIdle()) return;
-        setPendingRun({});
-        setFinishKept(false);
-        setLogsWaiting(0);
+        setAskedRuns([]);
+        setLogsWaiting([]);
       }),
     [],
   );
@@ -572,15 +573,14 @@ export default function SessionScriptLiveDelivery({
       before: { execution_id: string; created_at: string }[] | null,
       pairKey: string | null,
       forgetPairKey: () => void,
+      resolved: { done: boolean },
     ): KeptSave => {
       let refusal: { error?: string; code?: string } = {};
       let landedItem: { execution_id: string; created_at: string } | null = null;
       const label = `Intervention log: ${protocolTitle}`;
-      let settledOnce = false;
       const settleOnce = () => {
-        if (settledOnce) return;
-        settledOnce = true;
-        setLogsWaiting((count) => Math.max(0, count - 1));
+        resolved.done = true;
+        setLogsWaiting((entries) => entries.filter((entry) => entry.save !== resolved));
       };
       const showLogged = (item: { execution_id: string; created_at: string }) => {
         forgetPairKey();
@@ -686,19 +686,19 @@ export default function SessionScriptLiveDelivery({
       // through, instead of "Try again". The server writes it once however often it is sent (F-135),
       // and only for the account that made it (made_by_account_id, OQ-1). The choice is cleared once
       // kept; a second tap of the same pair while it is unsaved carries the same key.
-      const queueWasIdle = queueIdle();
-      setLogsWaiting((count) => (queueWasIdle ? 0 : count) + 1);
+      const resolved = { done: false };
       const kept = await keepSave(
         // Forgets the pair's key only while it is still this tap's: never a newer tap's key.
         keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, before, requestKey, () => {
           if (keys.get(pair) === requestKey) keys.delete(pair);
-        }),
+        }, resolved),
       );
       if (kept === 'kept') {
+        // Said once kept (the account check settles first), unless it was answered already.
+        if (!resolved.done) setLogsWaiting((entries) => [...entries, { save: resolved, key: requestKey ?? resolved }]);
         setLogProtocolId('');
         return;
       }
-      setLogsWaiting((count) => Math.max(0, count - 1));
       try {
         const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
           method: 'POST',
@@ -851,23 +851,16 @@ export default function SessionScriptLiveDelivery({
   // state, so a resend changes nothing more (OQ-1's repeat proofs; Overwatch condition 3). A refused
   // RESEND is checked against what the server holds before any failed words (condition 2).
   const keptRunAction = useCallback(
-    (body: Record<string, unknown>): KeptSave => {
+    (body: Record<string, unknown>, resolved: { done: boolean }): KeptSave => {
       const blocks = detail?.blocks ?? [];
       let refusal: { error?: string } = {};
       let settledByCheck: SettledRunSummary | null = null;
       let liveByCheck: LiveSessionScriptRun | null = null;
       const label = runActionLabel(body, blocks);
-      // The asked state this save holds, cleared once it is saved or refused (if nothing newer replaced it).
-      const askedHere = askedByRunAction(body);
+      // What this save asked goes with its own answer, saved or refused.
       const releaseAsked = () => {
-        if (!askedHere) return;
-        setPendingRun((current) => {
-          const next = { ...current };
-          for (const [key, value] of Object.entries(askedHere) as [keyof PendingRun, unknown][]) {
-            if (next[key] === value) delete next[key];
-          }
-          return next;
-        });
+        resolved.done = true;
+        setAskedRuns((entries) => entries.filter((entry) => entry.save !== resolved));
       };
       return {
         label,
@@ -924,7 +917,6 @@ export default function SessionScriptLiveDelivery({
         // Refused: said on the console, where the coach tapped (not in the page's waiting list).
         onRefused: (response, landed) => {
           releaseAsked();
-          if (body.action === 'finish') setFinishKept(false);
           if (settledHere.current) return undefined;
           if (refusal.error === 'SESSION_RUN_NOT_LIVE' || refusal.error === 'SESSION_RUN_NOT_FOUND') {
             void resyncAfterNotLive();
@@ -953,22 +945,16 @@ export default function SessionScriptLiveDelivery({
       try {
         // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in):
         // sent once, and a lost answer read back, as before.
-        // What it asks is what the next tap works from, from the moment it is handed over (a save
-        // can land before keepSave returns); taken back if it is not kept.
-        const askedHere = askedByRunAction(body);
-        const queueWasIdle = queueIdle();
-        if (askedHere) setPendingRun((current) => ({ ...(queueWasIdle ? {} : current), ...askedHere }));
-        else if (queueWasIdle) setPendingRun({});
-        setFinishKept((current) => body.action === 'finish' || (!queueWasIdle && current));
-        if ((await keepSave(keptRunAction(body))) === 'kept') return;
-        if (askedHere) {
-          setPendingRun((current) => {
-            const next = { ...current };
-            for (const key of Object.keys(askedHere) as (keyof PendingRun)[]) delete next[key];
-            return next;
-          });
+        // What it asks is what the next tap works from once it is kept (the account check settles
+        // first, under this tap's busy lock), unless it was answered already.
+        const resolved = { done: false };
+        if ((await keepSave(keptRunAction(body, resolved))) === 'kept') {
+          const askedHere = askedByRunAction(body);
+          if (!resolved.done && (askedHere || body.action === 'finish')) {
+            setAskedRuns((entries) => [...entries, { save: resolved, asked: askedHere ?? {}, finish: body.action === 'finish' }]);
+          }
+          return;
         }
-        if (body.action === 'finish') setFinishKept(false);
         let response: Response;
         try {
           response = await fetch(
@@ -1122,6 +1108,7 @@ export default function SessionScriptLiveDelivery({
           type="button"
           onClick={() => void mutateRun({ action: asked.is_paused ? 'resume' : 'pause' }, 'pause-resume')}
           disabled={controlsLocked}
+          aria-describedby={asked.is_paused !== run.is_paused ? askedLineId : undefined}
           className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {asked.is_paused ? 'Resume session' : 'Pause session'}
@@ -1132,6 +1119,7 @@ export default function SessionScriptLiveDelivery({
           type="button"
           onClick={() => previousBlock && void mutateRun({ action: 'advance', to_block_id: previousBlock.block_id }, 'advance')}
           disabled={controlsLocked || !previousBlock}
+          aria-describedby={asked.current_block_id !== run.current_block_id ? askedLineId : undefined}
           className="btn btn--ghost px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Previous block
@@ -1140,6 +1128,7 @@ export default function SessionScriptLiveDelivery({
           type="button"
           onClick={() => nextBlock && void mutateRun({ action: 'advance', to_block_id: nextBlock.block_id }, 'advance')}
           disabled={controlsLocked || !nextBlock}
+          aria-describedby={asked.current_block_id !== run.current_block_id ? askedLineId : undefined}
           className="btn btn--ghost px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Next block
@@ -1148,11 +1137,16 @@ export default function SessionScriptLiveDelivery({
         )}
       </div>
 
-      {askedNotSaved.length > 0 && (
-        <p id={askedLineId} role="status" className="t-body mt-[var(--s2)] text-[length:var(--t-md)]">
-          Not saved yet: {askedNotSaved.join('; ')}. The buttons follow what you asked; the session shown is what the server holds.
-        </p>
-      )}
+      {/* Mounted always, so a screen reader announces the line when it fills. */}
+      <p
+        id={askedLineId}
+        role="status"
+        className={askedNotSaved.length > 0 ? 't-body mt-[var(--s2)] text-[length:var(--t-md)]' : 'sr-only'}
+      >
+        {askedNotSaved.length > 0
+          ? `Not saved yet: ${askedNotSaved.join('; ')}. The buttons follow what you asked; the session shown is what the server last showed.`
+          : ''}
+      </p>
 
       {/* The coach's "Allow on a TV" switch (Overwatch's 6a ruling; Q2 = A). Off by default on
           every run: a private lesson stays off the gym wall unless the coach allows it. The button
@@ -1425,11 +1419,11 @@ export default function SessionScriptLiveDelivery({
                 {logError}
               </p>
             )}
-            {logsWaiting > 0 && !nothingWaiting && (
-              <p role="status" className="t-body text-[length:var(--t-md)]">
-                {logsWaiting === 1 ? 'One intervention is' : `${logsWaiting} interventions are`} not saved yet. This page keeps sending {logsWaiting === 1 ? 'it' : 'them'} while it stays open.
-              </p>
-            )}
+            <p role="status" className={logsWaitingCount > 0 ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
+              {logsWaitingCount === 0
+                ? ''
+                : `${logsWaitingCount === 1 ? 'One intervention is' : `${logsWaitingCount} interventions are`} not saved yet. This page keeps sending ${logsWaitingCount === 1 ? 'it' : 'them'} while it stays open.`}
+            </p>
 
             {loggedInterventions.length > 0 && (
               <ul className="space-y-[var(--s2)]">
@@ -1554,11 +1548,9 @@ export default function SessionScriptLiveDelivery({
             {settleFieldError && (
               <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{settleFieldError}</p>
             )}
-            {finishWaiting && (
-              <p role="status" className="t-body text-[length:var(--t-md)]">
-                Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.
-              </p>
-            )}
+            <p role="status" className={finishKept ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
+              {finishKept ? 'Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.' : ''}
+            </p>
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button
                 type="button"

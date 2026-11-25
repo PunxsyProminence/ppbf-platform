@@ -7,7 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery';
-import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { UNKNOWN_OUTCOME } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
@@ -1881,10 +1881,12 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   const signedIn = () => jsonResponse({ authenticated: true, account_id: 'acct-a' });
 
   beforeEach(() => {
-    resetSaveQueueForTests();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // Signed in first, then the queue reset: the sign-in makes the queue ask again who is signed in,
+    // through the last test's fetch, and that ask must not outlive the reset.
     createPersistentRoleSession('coach');
+    resetSaveQueueForTests();
   });
 
   afterEach(() => {
@@ -1954,9 +1956,11 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     await tap('Pause session');
     expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
     expect(screen.queryByText('PAUSED')).not.toBeInTheDocument();
-    // The controls are free again, and the next tap works from what was asked: Resume.
+    // The controls are free again, and the next tap works from what was asked: Resume, described by
+    // the line that says the pause is not saved yet.
     expect(screen.getByRole('button', { name: 'Next block' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
+    const line = screen.getByText(/^Not saved yet: Pause session\./);
+    expect(screen.getByRole('button', { name: 'Resume session' })).toHaveAttribute('aria-describedby', line.id);
 
     await wait(RESEND_MS);
     expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }, { action: 'pause' }]);
@@ -2150,6 +2154,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
       await tap('Log intervention');
     }
+    // One log will be written, so one is said to wait.
+    expect(screen.getByText('One intervention is not saved yet. This page keeps sending it while it stays open.')).toBeInTheDocument();
     await wait(RESEND_MS);
     const keys = new Set(logPostCalls(fetchMock).map((body) => body.request_key));
     // Both saves were sent (the first, resent, then the second), under one key.
@@ -2384,7 +2390,9 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     });
     await wait(RESEND_MS);
     expect(patchCalls(fetchMock)).toHaveLength(2);
-    expect(within(screen.getByRole('alert')).getByText(FAILED_WORDS)).toBeInTheDocument();
+    // Not known, so never under "Not saved:" (condition 2).
+    expect(within(screen.getByRole('alert')).getByText(UNKNOWN_WORDS)).toBeInTheDocument();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
     expect(screen.getByText(`Pause session: ${UNKNOWN_OUTCOME}`)).toBeInTheDocument();
   });
 
@@ -2478,7 +2486,101 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     await openLog();
     await logPair();
     await wait(RESEND_MS);
-    expect(screen.getByRole('alert').textContent).toContain(`Intervention log: Round-3 endurance block: ${UNKNOWN_OUTCOME}`);
+    expect(screen.getByRole('alert').textContent).toContain('Intervention log: Round-3 endurance block: the server refused it when it was sent again and could not be checked');
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+  });
+  // The page opened before it could confirm who is signed in: the account check answers after the tap,
+  // when the test says so.
+  function lateSession() {
+    const asked: Array<() => void> = [];
+    return {
+      session: () => new Promise<Response>((resolve) => {
+        asked.push(() => resolve(signedIn()));
+      }),
+      answer: async () => {
+        expect(asked.length).toBeGreaterThan(0);
+        await act(async () => {
+          for (const answerNow of asked.splice(0)) answerNow();
+          await jest.advanceTimersByTimeAsync(0);
+        });
+      },
+    };
+  }
+
+  it('a tap made before the page has confirmed who is signed in still shows what it asked once kept', async () => {
+    jest.useFakeTimers();
+    const check = lateSession();
+    await renderKept(liveRun(), { session: check.session, patch: lost });
+    await tap('Pause session');
+    await check.answer();
+    expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
+    expect(screen.getByText(/^Not saved yet: Pause session\./)).toBeInTheDocument();
+  });
+
+  it('a finish made before the page has confirmed who is signed in still locks the controls once kept', async () => {
+    jest.useFakeTimers();
+    const check = lateSession();
+    await renderKept(liveRun(), { session: check.session, patch: lost });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await check.answer();
+    expect(within(waitingLine() as HTMLElement).getByText('Record as completed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Record as abandoned' })).toBeDisabled();
+    expect(screen.getByText('Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.')).toBeInTheDocument();
+  });
+
+  it('what each save asked goes with its own answer: pause, resume, pause, and the last pause still waits after the first two land', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    await renderKept(liveRun(), {
+      patch: (body) => {
+        sends += 1;
+        if (sends === 1) return lost();
+        // The last pause is held back.
+        if (sends === 4) return new Promise<Response>(() => {});
+        return jsonResponse({ run: liveRun(body.action === 'pause' ? { is_paused: true, paused_at: 'x' } : {}) });
+      },
+    });
+    await tap('Pause session');
+    await tap('Resume session');
+    await tap('Pause session');
+    await wait(RESEND_MS);
+    expect(sends).toBe(4);
+    // The server holds the resume; the pause after it is asked and not saved.
+    expect(screen.getByText('RUNNING')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
+    expect(screen.getByText(/^Not saved yet: Pause session\./)).toBeInTheDocument();
+  });
+
+  it('a log refused as another\'s key forgets only its own key: a newer tap\'s key stays the pair\'s while that tap waits', async () => {
+    jest.useFakeTimers();
+    const answers: Array<(response: Response) => void> = [];
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => new Promise<Response>((resolve) => {
+        answers.push(resolve);
+      }),
+    });
+    const reused = () => jsonResponse({ error: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED', code: 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED' }, false, 409);
+    const answer = async (index: number, response: Response) => {
+      await act(async () => {
+        answers[index](response);
+        await jest.advanceTimersByTimeAsync(0);
+      });
+    };
+    await openLog();
+    await logPair(); // A: first key, sent
+    await logPair(); // B: the same pair while A waits, so the same key, behind A
+    await answer(0, reused()); // A refused: its key is forgotten; B is sent
+    await logPair(); // C: a new key, behind B
+    await answer(1, reused()); // B refused: its key is no longer the pair's, so C's stays
+    await logPair(); // D: the same pair while C waits, so C's key
+    await answer(2, jsonResponse({ item: { execution_id: 'exec-3', created_at: '2026-08-17T00:00:00.000Z' } }));
+    const keys = logPostCalls(fetchMock).map((body) => body.request_key);
+    expect(keys).toHaveLength(4);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(keys[3]).toBe(keys[2]);
   });
 });
