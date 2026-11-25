@@ -13,9 +13,10 @@ import { ConflictError } from './errors';
  * THE "REACHED OUT" MARK on the stopped-coming page (lane W4-6, SC-3a-2; table
  * pilot.athlete_reached_out_marks, whose migration header quotes the rulings).
  * This module holds the table's SQL, the newer-or-stale rule and the marker's
- * name lookup. Who may call it, for which athlete (one on the list now), and
- * that athlete's last day they came are stoppedComing.ts's (Overwatch on #2163,
- * answer A). Writes run on the caller's transaction client.
+ * name lookup. Who may call it, for which athlete (for a mark, one on the
+ * list now), and that athlete's last day they came are stoppedComing.ts's
+ * (Overwatch on #2163, answer A). Writes run on the caller's transaction
+ * client.
  *
  * NEWER, NOT STALE (plan section 4): a mark counts only while its gym-local day
  * is after the athlete's last day they came (Overwatch on #2176 for a stale one).
@@ -23,8 +24,8 @@ import { ConflictError } from './errors';
  * WHAT LEAVES: the marker's staff name at this gym (getStaffDisplayName, the
  * gated lookup every staff name uses) and the mark's gym-local day; a write
  * answers one outcome word. Never an account id. When the marker cannot be
- * named (a deleted account, one no longer a member here, no name on record),
- * by_name is null, never a stand-in such as "Your coach": an unknown value is
+ * named (a deleted account, one neither a member nor based here, no name on
+ * record), by_name is null, never a stand-in such as "Your coach": an unknown value is
  * not shown as a name (AGENT_KERNEL, the floor: "an unknown value never looks
  * complete"), as painReportAlert.ts names a pain report's reviewer.
  */

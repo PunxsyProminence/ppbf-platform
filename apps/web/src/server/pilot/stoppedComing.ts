@@ -53,8 +53,8 @@
  * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
  * the same list. A mark is for a live athlete of this gym (404) who is on the
  * list now, by its own rules (409; the day rule read on the write's
- * transaction); membership and athlete are checked again under lock in the
- * write, as sessionRunAthletes.ts does.
+ * transaction); the staff membership and the live athlete are checked again
+ * under lock in the write, as sessionRunAthletes.ts does.
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
  * route as readers of the staff-only presence record (Overwatch, W4-6 GO,
  * condition 1).
