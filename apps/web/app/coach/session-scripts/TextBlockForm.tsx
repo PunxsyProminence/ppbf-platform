@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { blockKindWord } from '@/components/blockKindIcons';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
+import { INVISIBLE_FORMAT } from '@/src/server/pilot/feedbackSafetyScan';
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 
 // Writing a text block (SP-2b): kind, title, what to say and contact level, for
@@ -56,8 +57,8 @@ export default function TextBlockForm({
     const found = [
       kind === '' ? 'Choose the kind of block.' : '',
       title.trim() === '' ? 'The block needs a title.' : '',
-      // A plain trim: words the eye cannot see are the server's to refuse (cleanAdd), and it is the gate.
-      kind !== '' && !MAY_HOLD_NO_TEXT.includes(kind) && text.trim() === ''
+      // Words the eye cannot see are no words, read with the server's own class (cleanAdd; reviewers F and G).
+      kind !== '' && !MAY_HOLD_NO_TEXT.includes(kind) && text.replace(INVISIBLE_FORMAT, '').trim() === ''
         ? 'Write what to say in this block. Only Arrival, Transition and Close blocks can be left without words.'
         : '',
       text.length > MAX_TEXT_LENGTH ? `What to say can be ${MAX_TEXT_LENGTH} characters at most.` : '',
@@ -77,7 +78,7 @@ export default function TextBlockForm({
     >
       <label className="field">
         <span className="t-label">Kind of block</span>
-        <select ref={first} className={`select ${field}`} value={kind} aria-required="true" onChange={(event) => setKind(event.target.value)}>
+        <select ref={first} className={`select ${field}`} value={kind} aria-required="true" onChange={(event) => { setKind(event.target.value); setProblems([]); }}>
           <option value="">Choose the kind of block</option>
           {KINDS.map((value) => <option key={value} value={value}>{blockKindWord(value) ?? value}</option>)}
         </select>
@@ -89,17 +90,17 @@ export default function TextBlockForm({
           className={`input ${field}`}
           value={title}
           maxLength={200}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => { setTitle(event.target.value); setProblems([]); }}
           onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add(); } }}
         />
       </label>
       <label className="field">
         <span className="t-label">What to say</span>
-        <textarea className={`textarea ${field}`} rows={4} maxLength={MAX_TEXT_LENGTH} value={text} onChange={(event) => setText(event.target.value)} />
+        <textarea className={`textarea ${field}`} rows={4} maxLength={MAX_TEXT_LENGTH} value={text} onChange={(event) => { setText(event.target.value); setProblems([]); }} />
       </label>
       <label className="field">
         <span className="t-label">Contact level</span>
-        <select className={`select ${field}`} value={contact} aria-required="true" onChange={(event) => setContact(event.target.value)}>
+        <select className={`select ${field}`} value={contact} aria-required="true" onChange={(event) => { setContact(event.target.value); setProblems([]); }}>
           <option value="">Choose the contact level</option>
           {CONTACT_LADDER.map((value) => <option key={value} value={value}>{humanizeContactLevel(value)}</option>)}
         </select>

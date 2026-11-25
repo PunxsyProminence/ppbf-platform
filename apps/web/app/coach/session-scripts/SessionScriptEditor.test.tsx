@@ -533,7 +533,7 @@ describe('adding, removing and moving blocks', () => {
     ['SESSION_SCRIPT_BLOCK_NOT_IN_SCRIPT', 422, /Nothing was saved\. A block you changed or removed is not in this plan/],
     ['SESSION_SCRIPT_DRILL_NOT_FOUND', 422, /Nothing was saved\. A drill you added is not one of this gym's drills/],
     // True for an added drill and for a copied block whose drill was withdrawn (SP-2b).
-    ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409, /Nothing was saved\. A drill you added, or the drill of a block you copied, has been replaced or withdrawn\. Remove that block, then choose again from the drill library or from the plans\./],
+    ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409, /Nothing was saved\. A drill you added, or the drill of a block you copied, has been replaced or withdrawn\. Remove that block, then choose a drill from the drill library, which lists only current drills\./],
   ])('%s is put in plain words and nothing is saved', async (code, status, sentence) => {
     const { onSaved } = setupRouted(answer(status, { error: code }));
 
@@ -759,7 +759,11 @@ describe('writing a text block and copying a block (SP-2b)', () => {
       script: {
         script_id: 'scr-9',
         name: 'Saturday seniors',
-        blocks: [{ block_id: 'blk-90', block_label: 'Body shots', block_kind: 'drill_round', contact_level: 'controlled_sparring' }],
+        blocks: [
+          { block_id: 'blk-90', block_label: 'Body shots', block_kind: 'drill_round', contact_level: 'controlled_sparring' },
+          { block_id: 'blk-92', block_label: `  ${'L'.repeat(250)}`, block_kind: 'reflection', contact_level: 'none' },
+          { block_id: 'blk-93', block_label: '   ', block_kind: 'transition', contact_level: 'none' },
+        ],
       },
     },
   };
@@ -853,7 +857,7 @@ describe('writing a text block and copying a block (SP-2b)', () => {
 
     write({ kind: 'transition', title: 'Water', contact: 'none' });
     expect(block(3).getByText('New, not saved yet: Transition block you wrote (No contact)')).toBeInTheDocument();
-    expect(block(3).getByText('What to say: no words')).toBeInTheDocument();
+    expect(block(3).getByText('What to say: Not written yet')).toBeInTheDocument();
     await act(async () => save());
 
     expect((sent() as { add_blocks: unknown[] }).add_blocks).toEqual([{
@@ -872,12 +876,53 @@ describe('writing a text block and copying a block (SP-2b)', () => {
     expect(block(3).getByLabelText('Title')).toHaveFocus();
     await act(async () => save());
 
-    // Not retitled: no block_label, so the server carries the source's title.
+    // The title shown is the title sent, so a later rename of the source cannot replace it (reviewer G).
     expect(sent()).toEqual({
       script_id: 'scr-1',
       expected_updated_at: READ_AT,
-      add_blocks: [{ ref: expect.any(String), kind: 'copy', block_id: 'blk-90', start_offset_min: 11, end_offset_min: 16 }],
+      add_blocks: [{ ref: expect.any(String), kind: 'copy', block_id: 'blk-90', block_label: 'Body shots', start_offset_min: 11, end_offset_min: 16 }],
     });
+  });
+
+  // Reviewer G: the title sent is the title the coach saw -- the source's as read, trimmed and cut to the
+  // server's 200; a source with no title must be titled before Save.
+  it('a copy sends the title shown: a long one cut to 200, and one with no title must be titled first', async () => {
+    const { sent, patched } = setupAll();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy a block from a plan' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Saturday seniors' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^L{250} \(Reflection/ }));
+    expect(block(3).getByLabelText('Title')).toHaveValue('L'.repeat(200));
+    await copy('Saturday seniors', 'No title (Transition, No contact)');
+    expect(block(4).getByText('New, not saved yet: copy of a block with no title from Saturday seniors (Transition, No contact)')).toBeInTheDocument();
+    expect(block(4).getByLabelText('Title')).toHaveValue('');
+
+    await act(async () => save());
+    expect(screen.getByRole('alert')).toHaveTextContent('Block 4 needs a title.');
+    expect(patched()).toBe(false);
+
+    type(block(4).getByLabelText('Title'), 'Water');
+    await act(async () => save());
+    expect((sent() as { add_blocks: { block_label: string }[] }).add_blocks.map((added) => added.block_label)).toEqual(['L'.repeat(200), 'Water']);
+  });
+
+  it('words the eye cannot see show as not written, as the server stores them', () => {
+    setupAll();
+
+    write({ kind: 'transition', title: 'Water', words: '\u2800\uFE0F', contact: 'none' });
+
+    expect(block(3).getByText('What to say: Not written yet')).toBeInTheDocument();
+  });
+
+  it('the "add or close the text block" message goes when the form is closed', async () => {
+    setupAll();
+    fireEvent.click(screen.getByRole('button', { name: 'Write a text block' }));
+
+    await act(async () => save());
+    expect(screen.getByRole('alert')).toHaveTextContent('Add the text block you are writing, or close its form, before you save.');
+    fireEvent.click(textForm().getByRole('button', { name: 'Close without adding' }));
+
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('a retitled copy sends its block_label', async () => {
@@ -899,7 +944,7 @@ describe('writing a text block and copying a block (SP-2b)', () => {
     await act(async () => save());
 
     expect((sent() as { add_blocks: unknown[] }).add_blocks).toEqual([
-      { ref: expect.any(String), kind: 'copy', block_id: 'blk-1', start_offset_min: 11, end_offset_min: 16 },
+      { ref: expect.any(String), kind: 'copy', block_id: 'blk-1', block_label: 'Jab Drill', start_offset_min: 11, end_offset_min: 16 },
     ]);
   });
 
@@ -963,9 +1008,9 @@ describe('writing a text block and copying a block (SP-2b)', () => {
 
   it.each([
     ['SESSION_SCRIPT_BLOCK_KIND_INVALID', 422, /^Nothing was saved\. A text block you wrote has a kind of block that was not accepted\. Remove it and write it again\.$/],
-    ['SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422, /^Nothing was saved\. A block you wrote or copied does not have a contact level from the contact ladder\. Remove that block and write it as a text block, choosing its contact level from the list\.$/],
+    ['SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422, /^Nothing was saved\. A block you wrote or copied does not have a contact level from the contact ladder\. Remove that block, then write a text block and choose its contact level, or add a drill from the library\.$/],
     ['SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422, /^Nothing was saved\. The words of a text block you wrote were not accepted: every kind but Arrival, Transition and Close needs words, and they can be 1000 characters at most\. Remove it and write it again\.$/],
-    ['SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND', 422, /^Nothing was saved\. A block you copied is not in this gym's plans any more\. Remove that block and copy one from the plans again\.$/],
+    ['SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND', 422, /^Nothing was saved\. A block you copied could not be found in this gym's plans\. Remove that block and copy one from the plans again\.$/],
     ['SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL', 422, /^Nothing was saved\. A block you copied runs at more contact than its drill now allows: the gym has lowered that drill's contact level\. Remove that block, or add the drill from the library, which carries its new level\.$/],
     ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409, /^Nothing was saved\. A drill you added, or the drill of a block you copied, has been replaced or withdrawn\./],
   ])('%s is put in plain words, nothing is saved, and the new block stays as it was', async (code, status, sentence) => {

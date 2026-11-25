@@ -9,7 +9,7 @@
 // The picker's use inside the editor is in SessionScriptEditor.test.tsx.
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import CopyBlockPicker from './CopyBlockPicker';
 
@@ -102,6 +102,68 @@ describe('the copy picker', () => {
 
     expect(await screen.findByRole('button', { name: 'Saturday seniors' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  // Reviewers F and G: the guards against a stale or failed list, each pinned.
+  it('a late answer for a plan the coach has left is not shown as the blocks of the plan now open', async () => {
+    let answerTuesday: ((value: Response) => void) | null = null;
+    routed((() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        return calls === 1 ? (new Promise<Response>((resolve) => { answerTuesday = resolve; }) as unknown as Response) : reply(true, SENIORS);
+      };
+    })());
+    setup();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tuesday juniors (this plan)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the list of plans' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Saturday seniors' }));
+    expect(await screen.findByRole('button', { name: /^Body shots/ })).toBeInTheDocument();
+    await act(async () => {
+      answerTuesday?.(reply(true, { script: { script_id: 'scr-1', name: 'Tuesday juniors', blocks: [{ block_id: 'blk-1', block_label: 'Jab Drill', block_kind: 'drill_round', contact_level: 'none' }] } }));
+    });
+
+    expect(screen.getByText('Blocks of Saturday seniors')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Jab Drill/ })).toBeNull();
+  });
+
+  it('opening another plan says it is loading, never the blocks of the plan opened before', async () => {
+    routed((() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        return calls === 1 ? reply(true, SENIORS) : (new Promise<Response>(() => undefined) as unknown as Response);
+      };
+    })());
+    setup();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saturday seniors' }));
+    await screen.findByRole('button', { name: /^Body shots/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the list of plans' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tuesday juniors (this plan)' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading the blocks of Tuesday juniors…');
+    expect(screen.queryByRole('button', { name: /^Body shots/ })).toBeNull();
+  });
+
+  it('a refused read is a failure even when its body carries a list', async () => {
+    routed(undefined, () => reply(false, PLANS));
+    setup();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded, so no plans are shown');
+    expect(screen.queryByRole('button', { name: 'Saturday seniors' })).toBeNull();
+  });
+
+  it('Try again on the list keeps keyboard focus in the picker', async () => {
+    const fetchMock = jest.fn().mockResolvedValueOnce(reply(false, {})).mockResolvedValueOnce(reply(true, PLANS));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    setup();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(screen.getByRole('button', { name: 'Close without copying' })).toHaveFocus();
+    await screen.findByRole('button', { name: 'Saturday seniors' });
   });
 
   it('a plan whose blocks cannot be read says so, with Try again', async () => {

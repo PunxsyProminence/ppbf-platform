@@ -77,6 +77,33 @@ describe('the text block form', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('a title of spaces is no title, and words the eye cannot see are no words (reviewers F and G)', () => {
+    const { onAdd } = setup();
+
+    type('Kind of block', 'instruction');
+    type('Title', '   ');
+    type('What to say', '\u2800\uFE0F \u200B');
+    type('Contact level', 'none');
+    addBlock();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('The block needs a title.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Write what to say in this block.');
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('a problem stops being shown once the coach changes the form (reviewer F)', () => {
+    setup();
+
+    type('Kind of block', 'instruction');
+    type('Title', 'Guard talk');
+    type('What to say', 'Hands up.');
+    addBlock();
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose the contact level.');
+
+    type('Contact level', 'light_technical');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('is not added without a contact level, and says why', () => {
     const { onAdd } = setup();
 

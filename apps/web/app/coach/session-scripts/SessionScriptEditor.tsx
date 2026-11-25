@@ -8,7 +8,8 @@ import TextBlockForm, { type WrittenBlock } from './TextBlockForm';
 
 import { blockKindWord } from '@/components/blockKindIcons';
 import { apiBase } from '@/lib/apiBase';
-import { humanizeContactLevel } from '@/src/lib/drillPresentation';
+import { humanizeContactLevel, NOT_WRITTEN_YET } from '@/src/lib/drillPresentation';
+import { INVISIBLE_FORMAT } from '@/src/server/pilot/feedbackSafetyScan';
 import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
 // Changing a plan: its name, each block's title and minutes (lane L1), and
@@ -103,18 +104,19 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'Nothing was saved. A block you changed or removed is not in this plan any more. Open the plan again to see it as it is now.',
   SESSION_SCRIPT_DRILL_NOT_FOUND:
     'Nothing was saved. A drill you added is not one of this gym\'s drills. Remove that block and choose a drill from the library.',
-  // Also a copied block whose drill has no current version (sessionScriptAuthoring.ts copyHeads, lockDrills).
+  // Also a copied block whose drill has no current version (sessionScriptAuthoring.ts copyHeads, lockDrills):
+  // copying it again fails the same way, so the advice is the library, which lists only current drills.
   SESSION_SCRIPT_DRILL_NOT_CURRENT:
-    'Nothing was saved. A drill you added, or the drill of a block you copied, has been replaced or withdrawn. Remove that block, then choose again from the drill library or from the plans.',
+    'Nothing was saved. A drill you added, or the drill of a block you copied, has been replaced or withdrawn. Remove that block, then choose a drill from the drill library, which lists only current drills.',
   SESSION_SCRIPT_BLOCK_KIND_INVALID:
     'Nothing was saved. A text block you wrote has a kind of block that was not accepted. Remove it and write it again.',
   // A text block's level, or a copied block's own (its source holds a level not on the ladder).
   SESSION_SCRIPT_BLOCK_CONTACT_INVALID:
-    'Nothing was saved. A block you wrote or copied does not have a contact level from the contact ladder. Remove that block and write it as a text block, choosing its contact level from the list.',
+    'Nothing was saved. A block you wrote or copied does not have a contact level from the contact ladder. Remove that block, then write a text block and choose its contact level, or add a drill from the library.',
   SESSION_SCRIPT_BLOCK_TEXT_INVALID:
     'Nothing was saved. The words of a text block you wrote were not accepted: every kind but Arrival, Transition and Close needs words, and they can be 1000 characters at most. Remove it and write it again.',
   SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND:
-    'Nothing was saved. A block you copied is not in this gym\'s plans any more. Remove that block and copy one from the plans again.',
+    'Nothing was saved. A block you copied could not be found in this gym\'s plans. Remove that block and copy one from the plans again.',
   SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL:
     'Nothing was saved. A block you copied runs at more contact than its drill now allows: the gym has lowered that drill\'s contact level. Remove that block, or add the drill from the library, which carries its new level.',
 };
@@ -126,8 +128,15 @@ function newWords(added: NonNullable<BlockDraft['added']>): string {
   const contact = humanizeContactLevel(added.contact_level);
   return added.kind === 'text'
     ? `${kind} block you wrote (${contact})`
-    : `copy of ${added.block_label} from ${added.plan_name} (${kind}, ${contact})`;
+    : `copy of ${added.block_label || 'a block with no title'} from ${added.plan_name} (${kind}, ${contact})`;
 }
+
+/** A text block's words as the editor shows them: words the eye cannot see are no words (as the server reads them). */
+function writtenWords(text: string): string {
+  return text.replace(INVISIBLE_FORMAT, '').trim() === '' ? NOT_WRITTEN_YET : text.trim();
+}
+
+const TEXT_FORM_OPEN = 'Add the text block you are writing, or close its form, before you save.';
 
 function wholeMinutes(text: string): number | null {
   return /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
@@ -262,10 +271,19 @@ export default function SessionScriptEditor({
     setPanel(null);
   };
   const addDrill = (drill: PickableDrill) => add(drill.name, { kind: 'drill', drill_id: drill.drill_id, drill_name: drill.name });
-  const addText = ({ block_label, ...written }: WrittenBlock) => add(block_label, { kind: 'text', ...written });
-  const addCopy = (copied: CopiedBlock) => add(copied.block_label, { kind: 'copy', ...copied });
+  const addText = ({ block_label, ...written }: WrittenBlock) => {
+    setError((shown) => (shown === TEXT_FORM_OPEN ? '' : shown));
+    add(block_label, { kind: 'text', ...written });
+  };
+  // The title the coach sees is the title sent (reviewer G): the source's as it was read, trimmed and
+  // cut to the server's 200, so a later rename of the source cannot change it at save.
+  const addCopy = (copied: CopiedBlock) => {
+    const title = copied.block_label.trim().slice(0, 200);
+    add(title, { kind: 'copy', ...copied, block_label: title });
+  };
 
   const closePanel = () => {
+    setError((shown) => (shown === TEXT_FORM_OPEN ? '' : shown));
     wantFocus.current = panel;
     setPanel(null);
   };
@@ -276,7 +294,7 @@ export default function SessionScriptEditor({
 
     // Said here, by block, before anything is sent; the server checks the same things.
     if (panel === 'text') {
-      setError('Add the text block you are writing, or close its form, before you save.');
+      setError(TEXT_FORM_OPEN);
       return;
     }
     const nameChanged = name !== script.name;
@@ -326,9 +344,8 @@ export default function SessionScriptEditor({
         const { block_kind, text, contact_level } = added;
         additions.push({ ref: block.block_id, kind: 'text', block_kind, block_label: block.label, text, contact_level, ...place });
       } else if (added?.kind === 'copy') {
-        // As with a drill: the source's title stands unless the coach retitled it.
-        const retitled = block.label !== added.block_label ? { block_label: block.label } : {};
-        additions.push({ ref: block.block_id, kind: 'copy', block_id: added.block_id, ...retitled, ...place });
+        // Always the title shown, so the source's title at save time cannot replace it (reviewer G).
+        additions.push({ ref: block.block_id, kind: 'copy', block_id: added.block_id, block_label: block.label, ...place });
       } else {
         edits.push({ block_id: block.block_id, block_label: block.label, start_offset_min: start, end_offset_min: end });
       }
@@ -424,7 +441,7 @@ export default function SessionScriptEditor({
                 </p>
               )}
               {block.added?.kind === 'text' && (
-                <p className="w-full whitespace-pre-wrap text-[length:var(--t-md)]">What to say: {block.added.text.trim() || 'no words'}</p>
+                <p className="w-full whitespace-pre-wrap text-[length:var(--t-md)]">What to say: {writtenWords(block.added.text)}</p>
               )}
               <label className="field min-w-[14rem] flex-1">
                 <span className="t-label">Title</span>
