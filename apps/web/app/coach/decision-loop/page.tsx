@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import FamilyThreadsForStaff, { FamilyThreadsUnread } from '@/components/FamilyThreadsForStaff';
 import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
 import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
@@ -1329,6 +1330,18 @@ export default function DecisionLoopReviewPage() {
             {rosterState === 'loaded' && athletes.length === 0 && (
               <p className="t-body mt-[var(--s3)]">No athletes on your roster.</p>
             )}
+            {/* Guardian messages this staff member has not seen (W4 item 4): a tap chooses the
+                athlete and, once their records are read, scrolls to the family section. */}
+            {rosterState === 'loaded' && (
+              <FamilyThreadsUnread
+                athletes={athletes}
+                refreshKey={athleteId}
+                onChoose={(chosen) => {
+                  scrollToFamilyRef.current = true;
+                  selectAthlete(chosen);
+                }}
+              />
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine
@@ -1737,6 +1750,7 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
+                <FamilyThreadsForStaff key={`family-threads-${athleteId}`} athleteId={athleteId} />
                 <FamilyGoalsForStaff key={athleteId} athleteId={athleteId} />
               </section>
 

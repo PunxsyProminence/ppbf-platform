@@ -172,6 +172,10 @@ function installFetch(overrides: Record<string, unknown> = {}) {
     if (key.includes('/api/pilot/coach/athlete-messages')) {
       return jsonResponse({ ok: true, items: [] });
     }
+    // Messages a guardian started to the coach, and the unread line (W4 item 4); none here.
+    if (key.includes('/api/pilot/coach/family-threads')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     throw new Error(`Unexpected fetch: ${key}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -721,6 +725,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
           ],
         });
       }
+      // Messages a guardian started to the coach, and the unread line under the picker (W4 item 4).
+      if (key.includes('/api/pilot/coach/family-threads')) return jsonResponse({ ok: true, items: [] });
       if (key.includes('athleteId=ath-b')) {
         if (options.readB) return options.readB();
         if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });

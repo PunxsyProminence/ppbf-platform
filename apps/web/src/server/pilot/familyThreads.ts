@@ -32,7 +32,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
-import { assertActorCanAccessAthlete, requireRole } from './access';
+import { assertActorCanAccessAthlete, athleteIdsForCoach, isOrganizationAdminRole, requireRole } from './access';
 import { getStaffAuthorName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
@@ -490,4 +490,34 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
     throw error;
   }
   return { post_id: postId };
+}
+
+/**
+ * How many guardian posts this staff member has not seen, per athlete (Q4.5 A:
+ * the count goes up for the child's coach and active covering coaches, and for
+ * organization admins and admins across the gym, as the escalation route
+ * scopes; other coaches can still read). Live athletes of this gym only;
+ * athletes with none are left out.
+ */
+export async function countUnseenFamilyThreadPostsForStaff(
+  staff: FamilyThreadStaff,
+): Promise<Array<{ athlete_id: string; unseen: number }>> {
+  requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
+  const scope = isOrganizationAdminRole(staff.role) ? null : await athleteIdsForCoach(staff.organizationId, staff.accountId);
+  if (scope && scope.length === 0) return [];
+  return query<{ athlete_id: string; unseen: number }>(
+    `select p.athlete_id, count(*)::int as unseen
+       from pilot.family_thread_posts p
+       join pilot.athletes a
+         on a.organization_id = p.organization_id and a.athlete_id = p.athlete_id and a.deleted_at is null
+      where p.organization_id = $1
+        and p.author_role = 'parent'
+        and ($3::text[] is null or p.athlete_id = any($3::text[]))
+        and not exists (select 1 from pilot.family_thread_reads r
+                         where r.organization_id = p.organization_id and r.post_id = p.post_id
+                           and r.reader_account_id = $2)
+      group by p.athlete_id
+      order by p.athlete_id`,
+    [staff.organizationId, staff.accountId, scope],
+  );
 }
