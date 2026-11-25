@@ -53,7 +53,7 @@ jest.mock('./db', () => ({
 }));
 
 import { assertActorCanAccessAthlete, athleteIdsForCoach, requireRole } from './access';
-import { ANNOUNCEMENT_PLACEMENTS, listLiveAnnouncements, mayReadLivePlacement } from './announcements';
+import { ANNOUNCEMENT_PLACEMENTS, listLiveAnnouncements, mayReadLivePlacement, type AnnouncementPlacement } from './announcements';
 import { listAthleteCoachMessages } from './athleteCoachMessages';
 import type { PilotRole } from './contracts';
 import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
@@ -63,6 +63,8 @@ import {
   EMAIL_ALERT_READ_RULE_KINDS,
   emailAlertEventStillReadable,
   gymNoticeSource,
+  NOTICE_PLACEMENTS_EMAILED,
+  NOTICE_READER_ROLES,
   parentReplySource,
   safetyEscalationSource,
 } from './emailAlertEvents';
@@ -909,6 +911,19 @@ describe('email alert staff event sources', () => {
     } finally {
       errors.mockRestore();
     }
+  });
+
+  test('every placement a notice is emailed for is one the role may read on its page (mayReadLivePlacement)', () => {
+    for (const role of NOTICE_READER_ROLES) {
+      const userType = emailAlertCandidateUserType(role);
+      expect(userType).not.toBeNull();
+      for (const placement of NOTICE_PLACEMENTS_EMAILED[userType!]) {
+        expect({ role, placement, mayRead: mayReadLivePlacement(role as PilotRole, placement as AnnouncementPlacement) })
+          .toEqual({ role, placement, mayRead: true });
+      }
+    }
+    // And the sign-in page's notices email nobody (Overwatch on #2159, comment 7160013584).
+    expect(Object.values(NOTICE_PLACEMENTS_EMAILED).flat()).not.toContain('gym_notices');
   });
 
   test('the sender reads these sources and this read check unless told otherwise', () => {

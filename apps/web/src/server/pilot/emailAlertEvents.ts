@@ -49,8 +49,6 @@
 import type { EmailAlertUserType } from '@/src/shared/emailAlerts';
 import { emailAlertCandidateUserType } from '@/src/shared/emailAlerts';
 
-import { mayReadLivePlacement, type AnnouncementPlacement } from './announcements';
-import type { PilotRole } from './contracts';
 import type { ClaimedEmailAlertSend, EmailAlertCandidate, EmailAlertSource } from './emailAlertQueue';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
@@ -198,9 +196,9 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * type their role gives. That is the placements below for their user type
  * (Overwatch's answer on #2159, comment 7160013584: a parent's or adult
  * athlete's own board, or everywhere; a sign-in-page notice, gym_notices,
- * emails nobody), and only where their role may read it
- * (mayReadLivePlacement, announcements.ts, the page's own rule). A notice
- * retired, or ended, by the send is not sent. Its time is on the database
+ * emails nobody). Every placement there is one the role may read
+ * (mayReadLivePlacement, announcements.ts, the page's own rule); a test holds
+ * the table to that rule. A notice retired, or ended, by the send is not sent. Its time is on the database
  * clock, as the sweep's overlap needs:
  * created_at, or a start time still to come when it was posted (by then the
  * row has committed); a start time already past counts as the posting. So a
@@ -208,11 +206,12 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * restored within the sweep's ten-minute overlap, and never if it is restored
  * later; a notice already sent is not sent again when restored.
  */
-const NOTICE_READER_ROLES = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
+/** The roles a notice can be emailed to; a test holds NOTICE_PLACEMENTS_EMAILED to mayReadLivePlacement for each. */
+export const NOTICE_READER_ROLES: readonly string[] = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
 // The boards each user type sees once signed in (ParentHub.tsx reads
 // parent_hub, AthleteWorkspace.tsx athlete_workspace, each with everywhere;
 // staff see every board but the sign-in page's).
-const NOTICE_PLACEMENTS_EMAILED: Readonly<Record<EmailAlertUserType, readonly string[]>> = {
+export const NOTICE_PLACEMENTS_EMAILED: Readonly<Record<EmailAlertUserType, readonly string[]>> = {
   staff: ['coach_workspace', 'athlete_workspace', 'parent_hub', 'everywhere'],
   parent: ['parent_hub', 'everywhere'],
   adult_athlete: ['athlete_workspace', 'everywhere'],
@@ -224,10 +223,7 @@ const NOTICE_LIVE_NOW = `n.kind = 'notice' and n.active
 function readsNotice(role: string, placement: string, userType?: string): EmailAlertUserType | null {
   const type = emailAlertCandidateUserType(role);
   if (!type || (userType !== undefined && type !== userType)) return null;
-  if (!NOTICE_PLACEMENTS_EMAILED[type].includes(placement)) return null;
-  // The membership filter admits only roles the shared list names, and the
-  // placement comes from the table's own CHECK.
-  return mayReadLivePlacement(role as PilotRole, placement as AnnouncementPlacement) ? type : null;
+  return NOTICE_PLACEMENTS_EMAILED[type].includes(placement) ? type : null;
 }
 
 const GYM_NOTICE: AlertEvent = {
