@@ -23,11 +23,8 @@ export const dynamic = 'force-dynamic';
  * one). Athletes, parents, the board, volunteers, staff and the platform owner
  * are refused before anything is read or written. The organization comes from
  * the session; query fields are refused. The PUT takes exactly its two fields
- * (no note can ride along: who and when only), for a live athlete of this gym
- * (404 otherwise); a mark (not a take-back) only for one on the list now, by
- * the list's own rules (409 otherwise, nothing written). The module decides
- * stale and replaced, and audits each write. No account id leaves either
- * handler.
+ * (no note: who and when only); the module answers 404 for an athlete not live
+ * here and 409 for a mark on one not on the list now. No account id leaves.
  *
  * It reads the staff-only session presence record for here marks the register
  * does not hold (open gym, a tap that created no register mark, a cancelled

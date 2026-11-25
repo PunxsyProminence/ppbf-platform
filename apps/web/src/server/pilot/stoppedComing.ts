@@ -42,12 +42,9 @@
  * "OD-2026-09-28-008 and CT-13 stand"). The answer's words are "came", not
  * "present" or "attendance", for the same reason.
  *
- * THE "REACHED OUT" MARK (SC-3a-2; OW27-33 B, Overwatch W4-6 Q4 A), the one
- * write here: setStoppedComingReachedOut, through reachedOutMarks.ts. It is
- * here so the presence record keeps exactly two readers (Overwatch on #2163,
- * answer A); the athlete's last day they came is read from both sources on the
- * write's transaction. A mark shows, and can be taken back, only while newer
- * than that day; a stale one is replaced by a new mark.
+ * THE "REACHED OUT" MARK (SC-3a-2) is the one write here, through
+ * reachedOutMarks.ts, so the presence record keeps two readers (Overwatch on
+ * #2163, answer A); the last day they came is read on the write's transaction.
  *
  * WHO MAY READ AND MARK: a coach or the gym admin with an ACTIVE staff
  * membership in this gym (staffNoteRoleInOrganization, the rule a session mark
@@ -63,8 +60,8 @@
  * condition 1).
  *
  * What leaves this module: athlete id, name, the last day they came, the days
- * since, and the reached-out mark as who (display name) and the gym day, or
- * null; a mark write answers one outcome word. No date of birth, membership,
+ * since, and the reached-out mark as who (staff name, or null) and the gym day,
+ * or null; a mark write answers one outcome word. No date of birth, membership,
  * here mark, run, count or account id. Membership records stay admin-only
  * (programMemberships.ts): the one membership read returns ids to leave off,
  * and no status, program or date leaves it.
@@ -235,12 +232,8 @@ const NOT_STAFF_TO_MARK = 'Forbidden: only a coach or the gym admin of this gym 
 const NOT_LISTED = 'This athlete is not on the stopped-coming list now. Reload the page.';
 
 /**
- * Marks that the actor reached out to one athlete (`reachedOut` true), or
- * takes the mark back (false). The athlete must be a live athlete of this gym
- * (404), and a mark is only for one on the list now, by the list's own rules
- * (not left, an active membership where any is recorded, came at least once,
- * gone the gym's number of days; 409 otherwise, nothing written): a mark the
- * page would never show is not written. A take-back needs no list check.
+ * Marks that the actor reached out to one live athlete of this gym (404), only one on the list now
+ * by the list's own rules (409, nothing written), or takes the mark back (no list check).
  * `today` is the gym-local day (gymDayIso), passed in so tests are fixed.
  */
 export async function setStoppedComingReachedOut(

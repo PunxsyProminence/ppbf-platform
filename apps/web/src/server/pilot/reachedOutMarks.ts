@@ -10,21 +10,15 @@ import { query } from './db';
 import { ConflictError } from './errors';
 
 /**
- * THE "REACHED OUT" MARK on the who-has-stopped-coming page (lane W4-6,
- * SC-3a-2; table pilot.athlete_reached_out_marks, SC-3a-1). OW27-33 B: the
- * page lists people "plus mark 'reached out'". Overwatch W4-6 Q4 A: "who and
- * when only, no free text, one current mark per athlete; taking it back keeps
- * the row and is audited". This module holds the table's SQL, the newer-or-
- * stale rule and the marker's name lookup. Who may call it, for which athlete
- * (one on the list now), and that athlete's last day they came are
- * stoppedComing.ts's (Overwatch on #2163, answer A). Writes run on the
- * caller's transaction client.
+ * THE "REACHED OUT" MARK on the stopped-coming page (lane W4-6, SC-3a-2; table
+ * pilot.athlete_reached_out_marks, whose migration header quotes the rulings).
+ * This module holds the table's SQL, the newer-or-stale rule and the marker's
+ * name lookup. Who may call it, for which athlete (one on the list now), and
+ * that athlete's last day they came are stoppedComing.ts's (Overwatch on #2163,
+ * answer A). Writes run on the caller's transaction client.
  *
- * NEWER, NOT STALE (plan section 4). A mark counts only while its gym-local
- * day is after the athlete's last day they came; one on or before it was for
- * an earlier absence: stale, not shown, not taken back, and replaced by a new
- * mark in the same transaction (Overwatch on #2176: cleared_kind 'replaced',
- * ended by the marking coach). An athlete who never came has no stale mark.
+ * NEWER, NOT STALE (plan section 4): a mark counts only while its gym-local day
+ * is after the athlete's last day they came (Overwatch on #2176 for a stale one).
  *
  * WHAT LEAVES: the marker's staff name at this gym (getStaffDisplayName, the
  * gated lookup every staff name uses) and the mark's gym-local day; a write
@@ -33,10 +27,6 @@ import { ConflictError } from './errors';
  * by_name is null, never a stand-in such as "Your coach": an unknown value is
  * not shown as a name (AGENT_KERNEL, the floor: "an unknown value never looks
  * complete"), as painReportAlert.ts names a pain report's reviewer.
- *
- * Audited on entity 'athlete_reached_out_mark' in the same transaction,
- * shadow_mirror false, as rest marks are: 'create' for a mark, 'update' with
- * action 'clear' and its cleared_kind for an end.
  */
 
 export interface ReachedOut {
@@ -56,11 +46,7 @@ function isNewer(onDay: string, lastCameDay: string | null): boolean {
   return lastCameDay === null || onDay > lastCameDay;
 }
 
-/**
- * The current mark of each athlete named, as the page shows it, for those
- * whose mark is newer than their last day they came. Keyed by athlete id; an
- * athlete with no current mark, or only a stale one, has no entry.
- */
+/** Each named athlete's current mark as the page shows it, by athlete id; none when absent or stale. */
 export async function readCurrentReachedOut(
   organizationId: string,
   lastCameDays: ReadonlyMap<string, string | null>,
@@ -148,17 +134,11 @@ async function insertMark(w: Writer): Promise<boolean> {
 }
 
 /**
- * Marks that the actor reached out (`reachedOut` true) or takes the mark back
- * (false), on the caller's transaction. `role` (the actor's staff role here)
- * and `lastCameDay` are read by the caller inside that transaction.
- *   mark:      a newer current mark stands ('already_marked', no write); a
- *              stale one is ended as 'replaced' and the new mark inserted
- *              ('marked'); none: insert ('marked'), or 'already_marked' when
- *              another coach's mark got there first (the index).
- *   take back: only a newer current mark is ended, as 'taken_back'; a stale
- *              mark or none is 'not_marked', no write.
- * The current mark is locked first, so a second coach at once waits and reads
- * the first's result.
+ * Marks (`reachedOut` true) or takes back (false) on the caller's transaction, `role` and
+ * `lastCameDay` read there. A newer current mark stands; a stale one is ended as 'replaced' and
+ * the new mark inserted; only a newer one is taken back. Each write is audited ('create', or
+ * 'update' with action 'clear' and cleared_kind), shadow_mirror false, as rest marks are. The mark
+ * row is locked first, so a second coach at once waits and reads the first's result.
  */
 export async function setReachedOutMark(client: PoolClient, input: {
   actor: ActorIdentity;
