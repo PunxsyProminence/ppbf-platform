@@ -154,48 +154,103 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     createPersistentRoleSession('coach');
   });
   afterEach(() => {
-    resetSaveQueueForTests();
+    act(() => {
+      resetSaveQueueForTests();
+    });
     jest.useRealTimers();
   });
 
-  test('an untie whose send is lost is kept and resent with its signal; a refused resend the server shows as landed reads as done', async () => {
-    jest.useFakeTimers();
-    let sends = 0;
-    let tiedNow: string | null = 'class-youth';
+  // The server: the coach's live run (by id) and its class, and the PATCH answers in turn.
+  function serveTie(liveRunId: string, patches: Array<'throw' | Response>, tiedTo: () => string | null) {
     fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
+      const url = String(input);
+      if (url.endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
       if (init?.method === 'PATCH') {
-        sends += 1;
-        if (sends === 1) {
-          // The first send reached the server and untied it, but its answer was lost.
-          tiedNow = null;
-          throw new TypeError('Failed to fetch');
-        }
-        return json({ error: 'SESSION_RUN_CLASS_NOT_TIED', message: 'Not tied.' }, 409);
+        const next = patches.shift() ?? 'throw';
+        if (next === 'throw') throw new TypeError('Failed to fetch');
+        return next;
       }
-      return json({ run: {}, class: tiedNow ? { ...YOUTH, status: 'open', no_shows: 0 } : null });
+      if (url.includes('classes=today')) return json({ classes: [YOUTH] });
+      const tied = tiedTo();
+      return json({ run: { run_id: liveRunId }, class: tied ? { ...YOUTH, status: 'open', no_shows: 0 } : null });
     });
+  }
+
+  async function tieToYouth() {
     prepareSaveQueue();
     const onClassChange = jest.fn();
     await act(async () => {
-      render(<SessionRunClass runId="run-1" classId="class-youth" onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
+      render(<SessionRunClass runId="run-1" classId={null} onClassChange={onClassChange} onRunNotLive={jest.fn()} />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tie to a class...' }));
+    await act(async () => {
       await jest.advanceTimersByTimeAsync(0);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Untie from the class' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Tie to this class' }));
       await jest.advanceTimersByTimeAsync(0);
     });
+    return onClassChange;
+  }
+
+  test('a tie whose answer is lost is kept, named with its class while it waits, and resent with its signal; a refused resend the server shows as landed reads as done', async () => {
+    jest.useFakeTimers();
+    let tied: string | null = null;
+    // The first send reached the server and tied it; its answer was lost.
+    const firstSend = () => {
+      tied = 'class-youth';
+      return 'throw' as const;
+    };
+    const patches: Array<'throw' | Response> = [];
+    serveTie('run-1', patches, () => tied);
+    fetchSpy.mockImplementationOnce(fetchSpy.getMockImplementation() as never);
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    let sends = 0;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) {
+          firstSend();
+          throw new TypeError('Failed to fetch');
+        }
+        return json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409);
+      }
+      return base(input, init);
+    });
+    const onClassChange = await tieToYouth();
+    expect(screen.getByRole('status').textContent).toBe('Tie the session to Youth boxing: not saved yet. This page keeps sending it while it stays open.');
     expect(onClassChange).not.toHaveBeenCalled();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    const patches = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
-    expect(patches).toHaveLength(2);
-    for (const [, init] of patches) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
-    // Condition 2: the refusal of the resend is checked (with the queue's signal), and the untie had landed.
+    const patchesSent = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+    expect(patchesSent).toHaveLength(2);
+    for (const [, init] of patchesSent) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
     const checks = fetchSpy.mock.calls.filter(([input, init]) => String(input).endsWith('/api/pilot/session-scripts/runs') && (init as RequestInit | undefined)?.signal);
     expect(checks.length).toBeGreaterThan(0);
-    expect(onClassChange).toHaveBeenCalledWith(null);
-    expect(screen.getByRole('status').textContent).toContain('No class now (open gym).');
+    expect(onClassChange).toHaveBeenCalledWith('class-youth');
+    expect(screen.getByRole('status').textContent).toContain('Tied to Youth boxing.');
+  });
+
+  test('a refused resend when the coach\'s live run is another run is not read as landed: its words are said here', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    serveTie('run-2', [], () => 'class-youth');
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409);
+      }
+      return base(input, init);
+    });
+    const onClassChange = await tieToYouth();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(onClassChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toBe('That class cannot be tied now.');
   });
 });

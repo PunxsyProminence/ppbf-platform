@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { keepSave, type KeptSave } from '@/src/lib/saveQueue';
 import type { ClassChoice } from '@/src/shared/sessionClassChoice';
-import SessionClassPicker, { classTimes } from './SessionClassPicker';
+import SessionClassPicker, { classTimes, type ClassChoiceInfo } from './SessionClassPicker';
 
 // The class a live session is running, on the live screen (D4, OD-2026-10-21-002): tied, its
 // "here" taps also go on that class's register; untied (open gym), they do not
@@ -22,6 +22,26 @@ export interface RunClassView {
 }
 
 type Copied = { athlete_id: string; effect: string; previous_status?: string };
+
+/**
+ * Words for a kept save whose resend was refused and could not be checked (W4 item 7): whether it
+ * was saved is not known, so it is not called failed. Said where the coach tapped.
+ */
+export function unknownOutcomeWords(label: string): string {
+  return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
+}
+
+/**
+ * The coach's live run and its class, as GET /api/pilot/session-scripts/runs answers them. A kept
+ * save's landed check reads it: the answer is about the coach's live run, so it counts for this run
+ * only when the run id matches.
+ */
+export async function fetchLiveRunClass(signal?: AbortSignal): Promise<{ runId: string | null; view: RunClassView | null }> {
+  const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { credentials: 'include', signal });
+  if (!response.ok) throw new Error('run');
+  const payload = (await response.json()) as { run?: { run_id?: string } | null; class?: RunClassView };
+  return { runId: payload.run?.run_id ?? null, view: payload.class ?? null };
+}
 
 /** The live run's class as GET /api/pilot/session-scripts/runs answers it, or null. */
 export async function fetchRunClass(signal?: AbortSignal): Promise<RunClassView | null> {
@@ -71,7 +91,17 @@ export default function SessionRunClass({
   const [choice, setChoice] = useState<ClassChoice>(undefined);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const onPick = useCallback((next: ClassChoice) => setChoice(next), []);
+  // The picker's classes, so a kept tie can name its class while it waits.
+  const pickedClasses = useRef<ClassChoiceInfo['classes']>([]);
+  const onPick = useCallback((next: ClassChoice, info?: ClassChoiceInfo) => {
+    setChoice(next);
+    if (info) pickedClasses.current = info.classes;
+  }, []);
+  // The run this line is for now: a kept tie that lands after the console moved to another run says nothing.
+  const currentRun = useRef(runId);
+  useEffect(() => {
+    currentRun.current = runId;
+  }, [runId]);
 
   // The class's name and times, read when the session is (or becomes) tied.
   useEffect(() => {
@@ -105,8 +135,11 @@ export default function SessionRunClass({
   // against the class the server holds before any failed words (Overwatch condition 2).
   function keptTie(next: string | null): KeptSave {
     let refusal: { error?: string; message?: string } = {};
+    const title = next ? pickedClasses.current.find((item) => item.class_id === next)?.title : undefined;
+    const label = next ? `Tie the session to ${title ?? 'a class'}` : 'Untie the session from its class';
+    const forThisRun = () => currentRun.current === runId;
     return {
-      label: next ? 'Tie the session to a class' : 'Untie the session from its class',
+      label,
       send: ({ signal }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
@@ -120,12 +153,14 @@ export default function SessionRunClass({
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
+      // Landed only if the coach's live run is this run, and its class is the one asked for.
       checkLanded: async (signal) => {
-        const now = await fetchRunClass(signal).then((view) => ({ view }), () => null);
+        const now = await fetchLiveRunClass(signal).catch(() => null);
         if (now === null) return null;
-        return (now.view?.class_id ?? null) === next;
+        return now.runId === runId && (now.view?.class_id ?? null) === next;
       },
       onSaved: (response) => {
+        if (!forThisRun()) return;
         void (async () => {
           const payload = response
             ? ((await response.json().catch(() => ({}))) as { class_id?: string | null; copied?: Copied[]; released?: string[] })
@@ -133,13 +168,15 @@ export default function SessionRunClass({
           await showTied(payload);
         })();
       },
+      // Refused: said on this line, where the coach tapped.
       onRefused: (_response, landed) => {
+        if (!forThisRun()) return undefined;
         if (refusal.error && RUN_GONE.has(refusal.error)) {
           onRunNotLive();
           return undefined;
         }
-        if (landed === null) return 'It is not known whether the class was changed. Reload the page before trying again.';
-        return refusal.message ?? 'The class could not be changed.';
+        setMessage(landed === null ? unknownOutcomeWords(label) : refusal.message ?? 'The class could not be changed.');
+        return undefined;
       },
     };
   }
@@ -149,8 +186,10 @@ export default function SessionRunClass({
     setBusy(true);
     setMessage('');
     try {
-      if ((await keepSave(keptTie(next))) === 'kept') {
+      const kept = keptTie(next);
+      if ((await keepSave(kept)) === 'kept') {
         setChoosing(false);
+        setMessage(`${kept.label}: not saved yet. This page keeps sending it while it stays open.`);
         return;
       }
       // Not kept (the page does not know who is signed in): sent once, as before.

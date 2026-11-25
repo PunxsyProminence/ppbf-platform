@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import { keepSave, type KeptSave } from '@/src/lib/saveQueue';
-import { type RunClassView, fetchRunClass } from './SessionRunClass';
+import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { type RunClassView, fetchLiveRunClass, fetchRunClass, unknownOutcomeWords } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
 // it (Rec.)"): one tap marks Absent everyone signed up for the class who has no mark. Never
@@ -48,57 +48,75 @@ export default function SessionNoShows({
     };
   }, [runId, classId, presentCount, attempt]);
 
+  // done: how many this tap marked; null when the server shows it landed without saying how many.
   const showMarked = useCallback((done: number | null) => {
     setResult(done === null
-      ? 'The server shows the no-shows were marked Absent on the class register.'
+      ? 'The class register now shows no no-shows.'
       : done === 0
         ? 'Nobody needed marking: everyone signed up already has a mark.'
         : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
     setAttempt((count) => count + 1);
   }, []);
+  // A kept tap not yet saved: the button waits too, so the same tap is not kept twice. A sign-out
+  // drops it without a word here, so with nothing waiting on the page, nothing waits here either.
+  const [waiting, setWaiting] = useState(false);
+  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
+  const waitingShown = waiting && (saves.waiting.length > 0 || saves.checking > 0);
 
   // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Marking the no-shows
   // again marks nobody new (OQ-1's repeat proofs). A refused RESEND is checked against the count the
   // server holds before any failed words (Overwatch condition 2).
   const keptNoShows = useCallback((): KeptSave => {
     let refusal: { error?: string; message?: string } = {};
+    let sends = 0;
+    const label = 'Mark the no-shows Absent';
     return {
-      label: 'Mark the no-shows Absent',
-      send: ({ signal }) =>
+      label,
+      send: ({ signal }) => {
+        sends += 1;
+        return (
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_no_shows' }),
           signal,
-        }),
+        })
+        );
+      },
       answerOf: async (response) => {
         if (response.ok) return 'saved';
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
+      // Landed only if the coach's live run is this run and its class shows no no-shows left.
       checkLanded: async (signal) => {
-        const now = await fetchRunClass(signal).then((view) => ({ view }), () => null);
+        const now = await fetchLiveRunClass(signal).catch(() => null);
         if (now === null) return null;
-        return now.view?.class_id === classId && now.view.no_shows === 0;
+        return now.runId === runId && now.view?.class_id === classId && now.view.no_shows === 0;
       },
       onSaved: (response) => {
+        setWaiting(false);
         void (async () => {
           if (!response) {
             showMarked(null);
             return;
           }
           const payload = (await response.json().catch(() => ({}))) as { marked?: string[] };
-          showMarked(payload.marked?.length ?? 0);
+          const done = payload.marked?.length ?? 0;
+          // A resend answers with nobody marked when an earlier send already marked them.
+          showMarked(done === 0 && sends > 1 ? null : done);
         })();
       },
+      // Refused: said here, where the coach tapped.
       onRefused: (_response, landed) => {
+        setWaiting(false);
         if (refusal.error && RUN_GONE.has(refusal.error)) {
           onRunNotLive();
           return undefined;
         }
-        if (landed === null) return 'It is not known whether anyone was marked Absent. Check the class register.';
-        return refusal.message ?? 'Nobody was marked Absent.';
+        setMessage(landed === null ? unknownOutcomeWords(label) : refusal.message ?? 'Nobody was marked Absent.');
+        return undefined;
       },
     };
   }, [classId, onRunNotLive, runId, showMarked]);
@@ -109,7 +127,10 @@ export default function SessionNoShows({
     setBusy(true);
     setMessage('');
     try {
+      // Waiting from the moment it is handed over (it can land before keepSave returns).
+      setWaiting(true);
       if ((await keepSave(keptNoShows())) === 'kept') return;
+      setWaiting(false);
       // Not kept (the page does not know who is signed in): sent once, as before.
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
         method: 'PATCH',
@@ -154,10 +175,13 @@ export default function SessionNoShows({
           <p className="t-body">
             {view.no_shows} signed up for {view.title} {view.no_shows === 1 ? 'has' : 'have'} no mark on its register or in any session today.
           </p>
-          <button type="button" onClick={() => void markNoShows()} disabled={busy} className="btn btn--ghost disabled:opacity-60">
+          <button type="button" onClick={() => void markNoShows()} disabled={busy || waitingShown} className="btn btn--ghost disabled:opacity-60">
             {busy ? 'Marking…' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
           </button>
         </div>
+      )}
+      {waitingShown && (
+        <p role="status" className="t-body">Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.</p>
       )}
       {message && <p role="alert" className="t-body font-semibold">{message}</p>}
     </div>

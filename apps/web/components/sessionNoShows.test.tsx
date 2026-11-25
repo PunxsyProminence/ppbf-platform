@@ -113,34 +113,77 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     createPersistentRoleSession('coach');
   });
   afterEach(() => {
-    resetSaveQueueForTests();
+    act(() => {
+      resetSaveQueueForTests();
+    });
     jest.useRealTimers();
   });
 
-  test('a no-shows tap whose send is lost is kept and resent with its signal, and says how many were marked once it lands', async () => {
-    jest.useFakeTimers();
+  function serveKept(patch: (send: number) => 'throw' | Response, noShowsAfter: (sends: number) => number, liveRunId = 'run-1') {
     let sends = 0;
     fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/api/pilot/auth/session')) return json({ authenticated: true, account_id: 'acct-a' });
       if (init?.method === 'PATCH') {
         sends += 1;
-        if (sends === 1) throw new TypeError('Failed to fetch');
-        return json({ marked: ['a', 'b'] });
+        const next = patch(sends);
+        if (next === 'throw') throw new TypeError('Failed to fetch');
+        return next;
       }
-      return json({ run: {}, class: tiedClass(sends > 1 ? 0 : 2) });
+      return json({ run: { run_id: liveRunId }, class: tiedClass(noShowsAfter(sends)) });
     });
+  }
+
+  async function tapMark(onRunNotLive = jest.fn()) {
     prepareSaveQueue();
-    await show();
+    await show({ onRunNotLive });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Mark all 2 Absent' }));
       await jest.advanceTimersByTimeAsync(0);
     });
+    return onRunNotLive;
+  }
+
+  test('a no-shows tap whose send is lost is kept: the button waits and says so; it is resent with its signal and says how many were marked', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ marked: ['a', 'b'] })), (sends) => (sends > 1 ? 0 : 2));
+    await tapMark();
     expect(patches()).toHaveLength(1);
+    expect(screen.getByText('Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Mark all 2 Absent' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(patches()).toHaveLength(2);
     for (const [, init] of patches()) expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
     expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
+  });
+
+  test('a resend answered with nobody marked (an earlier send marked them) does not say nobody needed marking', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ marked: [] })), (sends) => (sends > 0 ? 0 : 2));
+    await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.queryByText(/Nobody needed marking/)).toBeNull();
+    expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
+  });
+
+  test('a refused resend the server shows as landed (this run, no no-shows left) reads as done (condition 2)', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2));
+    await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
+  });
+
+  test('a tap refused because the session is no longer live hands that to the console, as today', async () => {
+    jest.useFakeTimers();
+    serveKept(() => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409), () => 2);
+    const onRunNotLive = await tapMark();
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
   });
 });

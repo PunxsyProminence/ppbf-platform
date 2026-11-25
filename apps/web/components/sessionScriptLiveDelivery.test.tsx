@@ -6,8 +6,8 @@ import type { ReactElement } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-import SessionScriptLiveDelivery from './SessionScriptLiveDelivery';
-import { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
+import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery';
+import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
@@ -1887,92 +1887,146 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   });
 
   afterEach(() => {
-    resetSaveQueueForTests();
+    act(() => {
+      resetSaveQueueForTests();
+    });
   });
+
+  // The console with the page's notice beside it, as /coach/class mounts them.
+  async function renderKept(run: LiveSessionScriptRun, handlers: Handlers, callbacks: { onSettled?: jest.Mock; onRunGone?: jest.Mock } = {}) {
+    const fetchMock = mockFetch({ session: signedIn, ...handlers });
+    const onSettled = callbacks.onSettled ?? jest.fn();
+    const onRunGone = callbacks.onRunGone ?? jest.fn();
+    await act(async () => {
+      render(
+        <>
+          <SessionScriptLiveDelivery initialRun={run} onSettled={onSettled} onRunGone={onRunGone} />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    return { fetchMock, onSettled, onRunGone };
+  }
 
   function waitingLine(): HTMLElement | null {
     return (screen.queryByText(WAITING_WORDS)?.closest('[role="status"]') as HTMLElement | null | undefined) ?? null;
   }
 
-  function patchSignals(fetchMock: jest.Mock): unknown[] {
+  function signalsTo(fetchMock: jest.Mock, test: (url: string, init?: RequestInit) => boolean): unknown[] {
     return fetchMock.mock.calls
-      .filter((call) => String(call[0]).endsWith('/api/pilot/session-scripts/runs/ssrun_1'))
+      .filter((call) => test(String(call[0]), call[1] as RequestInit | undefined))
       .map((call) => (call[1] as RequestInit).signal);
   }
+
+  const isRunPatch = (url: string) => url.endsWith('/api/pilot/session-scripts/runs/ssrun_1');
+
+  async function tap(name: string, role: 'button' | 'switch' = 'button') {
+    await act(async () => {
+      fireEvent.click(screen.getByRole(role, { name }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  async function wait(ms: number) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  it('the console asks who is signed in when it opens', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {});
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/api/pilot/auth/session'))).toBe(true);
+  });
 
   it('a pause whose send is lost is kept, named while it waits, resent with the queue\'s signal, and lands once', async () => {
     jest.useFakeTimers();
     let sends = 0;
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
+    const { fetchMock } = await renderKept(liveRun(), {
       patch: () => {
         sends += 1;
         if (sends === 1) throw new TypeError('Failed to fetch');
         return jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) });
       },
     });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
+    await tap('Pause session');
     expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
     expect(screen.queryByText('PAUSED')).not.toBeInTheDocument();
+    // The controls are free again, and the next tap works from what was asked: Resume.
+    expect(screen.getByRole('button', { name: 'Next block' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
 
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS);
-    });
+    await wait(RESEND_MS);
     expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }, { action: 'pause' }]);
-    for (const signal of patchSignals(fetchMock)) expect(signal).toBeInstanceOf(AbortSignal);
+    for (const signal of signalsTo(fetchMock, isRunPatch)) expect(signal).toBeInstanceOf(AbortSignal);
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
     expect(waitingLine()).toBeNull();
+  });
+
+  it('a correction while a save waits works from what was asked: Allow on a TV on, then off', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {
+      patch: () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    await tap('Allow on a TV', 'switch');
+    await tap('Allow on a TV', 'switch');
+    expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: true }]);
+    expect(within(waitingLine() as HTMLElement).getByText('Allow on a TV: on')).toBeInTheDocument();
+    expect(within(waitingLine() as HTMLElement).getByText('Allow on a TV: off')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Allow on a TV' })).toHaveAttribute('aria-checked', 'false');
   });
 
   it('a yes that does not carry the run proves nothing: the pause stays kept and is sent again', async () => {
     jest.useFakeTimers();
     let sends = 0;
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
+    const { fetchMock } = await renderKept(liveRun(), {
       patch: () => {
         sends += 1;
         return sends === 1 ? jsonResponse({}) : jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) });
       },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
+    await tap('Pause session');
     expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS);
-    });
+    await wait(RESEND_MS);
     expect(patchCalls(fetchMock)).toHaveLength(2);
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
   });
 
-  it('a refused first send is not resent: the failed line names it with the refusal\'s words', async () => {
+  it('a 429 is "not now", not "no": the pause is kept and sent again', async () => {
     jest.useFakeTimers();
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
+    let sends = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      patch: () => {
+        sends += 1;
+        return sends === 1 ? jsonResponse({ error: 'RATE_LIMITED' }, false, 429) : jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) });
+      },
+    });
+    await tap('Pause session');
+    expect(screen.queryByRole('alert')).toBeNull();
+    await wait(RESEND_MS);
+    expect(patchCalls(fetchMock)).toHaveLength(2);
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
+  });
+
+  it('a refused first send is not resent, and its words are on the console, not in the page\'s list', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {
       patch: () => jsonResponse({ error: 'SESSION_SCRIPT_RUN_BLOCK_NOT_IN_SCRIPT' }, false, 422),
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Next block' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
-    const failed = screen.getByText(FAILED_WORDS).closest('[role="alert"]') as HTMLElement;
-    expect(failed).toHaveTextContent(/Move to /);
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS * 3);
-    });
+    await tap('Next block');
+    expect(screen.getByRole('alert').textContent).not.toBe('');
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    await wait(RESEND_MS * 3);
     expect(patchCalls(fetchMock)).toHaveLength(1);
   });
 
   it('a refused RESEND that the server shows had landed reads as saved, never as failed (condition 2)', async () => {
     jest.useFakeTimers();
     let sends = 0;
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
+    const { fetchMock } = await renderKept(liveRun(), {
       patch: () => {
         sends += 1;
         if (sends === 1) throw new TypeError('Failed to fetch');
@@ -1980,26 +2034,69 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       },
       runsGet: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS);
-    });
-    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    await tap('Pause session');
+    await wait(RESEND_MS);
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
-    // The landed check read the live run with the queue's signal.
-    const runReads = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/pilot/session-scripts/runs'));
-    expect(runReads.length).toBeGreaterThan(0);
-    for (const call of runReads.slice(0, 1)) expect((call[1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    const reads = signalsTo(fetchMock, (url) => url.endsWith('/api/pilot/session-scripts/runs'));
+    expect(reads.length).toBeGreaterThan(0);
+    for (const signal of reads) expect(signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('the intervention log is kept with the queue\'s request key and the account that made it, resent with the same key, and logged once', async () => {
+  it('a refused RESEND the server could not be checked for says the outcome is not known, on the console', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    await renderKept(liveRun(), {
+      patch: () => {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409);
+      },
+      runsGet: () => jsonResponse({}, false, 500),
+    });
+    await tap('Pause session');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain('Pause session: the server refused it when it was sent again and could not be checked');
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+  });
+
+  it('a run action refused because the session is no longer live reads the server again, as today', async () => {
+    jest.useFakeTimers();
+    const { onRunGone } = await renderKept(liveRun(), {
+      patch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409),
+      runsGet: () => jsonResponse({ run: null }),
+    });
+    await tap('Pause session');
+    await wait(0);
+    expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+  });
+
+  it('a kept finish locks the controls while it waits, says so, and hands the page the settled run once it lands', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    const { fetchMock, onSettled, onRunGone } = await renderKept(liveRun(), {
+      patch: (body) => {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ run: { ...liveRun(), run_state: body.run_state, ended_at: 'x' } });
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    expect(screen.getByText('Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record as completed' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
+    await wait(RESEND_MS);
+    expect(patchCalls(fetchMock).filter((body) => body.action === 'finish')).toHaveLength(2);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ run_state: 'completed' }));
+    expect(onRunGone).not.toHaveBeenCalled();
+  });
+
+  it('the intervention log is kept with its pair key and the account that made it, named without the athlete, resent with the same key, and logged once', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
+    const { fetchMock } = await renderKept(liveRun(), {
       logPost: () => {
         posts += 1;
         if (posts === 1) throw new TypeError('Failed to fetch');
@@ -2007,21 +2104,17 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(0);
-    });
+    await wait(0);
     fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
     fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
-      await jest.advanceTimersByTimeAsync(0);
-    });
-    expect(within(waitingLine() as HTMLElement).getByText(/Intervention: Round-3 endurance block/)).toBeInTheDocument();
-    // Cleared once kept: a second tap is a new choice, not the same log twice.
+    await tap('Log intervention');
+    const line = waitingLine() as HTMLElement;
+    expect(within(line).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(line).not.toHaveTextContent('Jordan');
+    expect(screen.getByText('One intervention is not saved yet. This page keeps sending it while it stays open.')).toBeInTheDocument();
+    // Cleared once kept: a second tap is a new choice.
     expect((screen.getByLabelText('Protocol') as HTMLSelectElement).value).toBe('');
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS);
-    });
+    await wait(RESEND_MS);
     const posted = logPostCalls(fetchMock);
     expect(posted).toHaveLength(2);
     expect(posted[0]).toEqual({
@@ -2032,34 +2125,88 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       made_by_account_id: 'acct-a',
     });
     expect(posted[1]).toEqual(posted[0]);
-    const signals = fetchMock.mock.calls
-      .filter((call) => String(call[0]).includes('/api/pilot/coach/intervention-executions') && (call[1] as RequestInit).method === 'POST')
-      .map((call) => (call[1] as RequestInit).signal);
-    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+    const posts2 = signalsTo(fetchMock, (url, init) => url.includes('/api/pilot/coach/intervention-executions') && init?.method === 'POST');
+    for (const signal of posts2) expect(signal).toBeInstanceOf(AbortSignal);
     expect(screen.getByText('logged')).toBeInTheDocument();
     expect(waitingLine()).toBeNull();
   });
 
-  it('signing out drops a kept run action: its words leave the console, and it is never resent', async () => {
+  it('the same pair logged twice while the first waits carries the same key: one log, never two (F-135)', async () => {
     jest.useFakeTimers();
-    const { fetchMock } = await renderLive(liveRun(), {
-      session: signedIn,
-      patch: () => {
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
         throw new TypeError('Failed to fetch');
       },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
-      await jest.advanceTimersByTimeAsync(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+    for (let round = 0; round < 2; round += 1) {
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+      await tap('Log intervention');
+    }
+    await wait(RESEND_MS);
+    const keys = new Set(logPostCalls(fetchMock).map((body) => body.request_key));
+    expect(logPostCalls(fetchMock).length).toBeGreaterThan(1);
+    expect(keys.size).toBe(1);
+  });
+
+  it('a refused log RESEND that the ledger shows had landed reads as logged (condition 2), read with the queue\'s signal', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        // The before read finds nothing; the landed check finds this tap's log.
+        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-9', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1' }] });
+      },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await tap('Log intervention');
+    await wait(RESEND_MS);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('logged')).toBeInTheDocument();
+    const ledgerReads = signalsTo(fetchMock, (url, init) => url.includes('/api/pilot/coach/intervention-executions') && init?.method !== 'POST');
+    expect(ledgerReads[ledgerReads.length - 1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('signing out drops a kept run action and a kept log: their words leave the page, and neither is resent', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {
+      patch: () => {
+        throw new TypeError('Failed to fetch');
+      },
+      logPost: () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    await tap('Pause session');
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await tap('Log intervention');
     expect(waitingLine()).not.toBeNull();
     await act(async () => {
       clearRoleSession();
     });
     expect(screen.queryByText(WAITING_WORDS)).toBeNull();
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(RESEND_MS * 4);
-    });
+    expect(screen.queryByText('Intervention log: Round-3 endurance block')).toBeNull();
+    expect(screen.queryByText(/not saved yet/)).toBeNull();
+    // With nothing waiting, the next tap works from the run as the server holds it again.
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeInTheDocument();
+    await wait(RESEND_MS * 4);
     expect(patchCalls(fetchMock)).toHaveLength(1);
+    // The log waited behind the pause (one save at a time) and was dropped unsent.
+    expect(logPostCalls(fetchMock)).toHaveLength(0);
   });
 });

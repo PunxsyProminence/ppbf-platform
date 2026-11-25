@@ -235,9 +235,11 @@ test('a live session on arrival: the console and Gym TVs, no Start, and nothing 
   expect(screen.getByLabelText('Gym TVs (marker)')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
   expect(posts).toEqual([]);
-  // The one POST the console makes on load is the SHADOW queue's count (CoachLiveTiles), a read.
+  // The POSTs the page makes on load are reads: the SHADOW queue's count (CoachLiveTiles), and the
+  // kept-save queue's account check (W4 item 7; the session route takes only POST).
   const otherPosts = fetchMock.mock.calls.filter(([url, init]) => (init as RequestInit | undefined)?.method === 'POST'
-    && String(url) !== '/api/pilot/shadow/review-projection');
+    && String(url) !== '/api/pilot/shadow/review-projection'
+    && !String(url).endsWith('/api/pilot/auth/session'));
   expect(otherPosts).toEqual([]);
 });
 
