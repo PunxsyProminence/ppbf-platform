@@ -431,6 +431,22 @@ describe('the queue never stops while saves wait', () => {
     expect(readSaveQueue().waiting).toEqual([]);
   });
 
+  test('the wait for an earlier request is not stretched when the device clock is set back', async () => {
+    const older: KeptSave = { label: 'Ada Reyes: here', send: jest.fn(() => new Promise<Response>(() => {})), onSaved: jest.fn() };
+    await keepSave(older);
+    await settle();
+    clearRoleSession();
+    createPersistentRoleSession('coach');
+    prepareSaveQueue();
+    await settle();
+    jest.setSystemTime(Date.now() - 60 * 60 * 1000);
+    const newer = scriptedSave('Ada Reyes: not here', [answer(200)]);
+    await keepSave(newer.save);
+    await settle();
+    await jest.advanceTimersByTimeAsync(ANSWER_WAIT_MS);
+    expect(newer.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
   test('a send that throws at once counts as unknown and is resent, leaving no stray timer', async () => {
     let calls = 0;
     const save: KeptSave = {

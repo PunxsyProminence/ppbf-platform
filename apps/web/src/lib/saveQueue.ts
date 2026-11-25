@@ -274,7 +274,8 @@ function dropAll(): void {
  * confirmed again, its next send waits for it first (until its give-up), so order holds for that coach.
  */
 async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>, owner?: string): Promise<T> {
-  const startedAt = Date.now();
+  // Measured on performance.now(), which a device clock set back cannot stretch.
+  const startedAt = performance.now();
   const controller = new AbortController();
   // Through a promise, so a start that throws at once is a rejection here, not a stray timer.
   const run = Promise.resolve().then(() => start(controller.signal));
@@ -291,7 +292,7 @@ async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>, owner?:
   try {
     const first = await Promise.race([settled, givenUp, dropped]);
     if (first === 'dropped') {
-      if (owner !== undefined) leftRunningFor(owner, settled, controller, ANSWER_WAIT_MS - (Date.now() - startedAt));
+      if (owner !== undefined) leftRunningFor(owner, settled, controller, ANSWER_WAIT_MS - (performance.now() - startedAt));
       throw new Error('dropped');
     }
     if (first === 'given up') {
