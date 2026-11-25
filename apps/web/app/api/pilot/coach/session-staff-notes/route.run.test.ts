@@ -149,7 +149,7 @@ describe('a note resent from the open page', () => {
 
   it('hands the request key down as sent, and says when the note was one the key had already added', async () => {
     mockCreateRun.mockResolvedValue({ note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f', replayed: true });
-    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY });
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY, made_by_account_id: 'acct-coach' });
 
     expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.', requestKey: KEY });
     expect(response.status).toBe(200);
@@ -163,7 +163,7 @@ describe('a note resent from the open page', () => {
     ['a NUL', `key${String.fromCharCode(0)}`],
     ['a number', 42],
   ])('refuses a request key that is %s, and adds nothing', async (_label, requestKey) => {
-    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: requestKey });
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: requestKey, made_by_account_id: 'acct-coach' });
 
     expect(response.status).toBe(400);
     expect(mockCreateRun).not.toHaveBeenCalled();
@@ -172,13 +172,13 @@ describe('a note resent from the open page', () => {
 
   it('keeps a 200-character key as sent, untrimmed', async () => {
     const key = ` ${'k'.repeat(198)} `;
-    await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: key });
+    await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: key, made_by_account_id: 'acct-coach' });
     expect(mockCreateRun).toHaveBeenCalledWith(expect.objectContaining({ requestKey: key }));
   });
 
   it('passes the module\'s "key already used for another note" refusal through as 409', async () => {
     mockCreateRun.mockRejectedValue(new ConflictError('This request was already used to add a different note.', 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED'));
-    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY });
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY, made_by_account_id: 'acct-coach' });
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ code: 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED' });
   });
@@ -224,5 +224,17 @@ describe('a note resent from the open page', () => {
     const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', made_by_account_id: madeBy });
     expect(response.status).toBe(400);
     expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['without made_by_account_id', {}],
+    ['with made_by_account_id: null', { made_by_account_id: null }],
+  ])('refuses a keyed add %s with 400, and writes nothing (Overwatch on #2165)', async (_label, extra) => {
+    for (const subject of [{ run_id: 'ssrun_1' }, { session_id: 'sess-1' }]) {
+      const response = await post({ ...subject, athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY, ...extra });
+      expect(response.status).toBe(400);
+    }
+    expect(mockCreateRun).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 });

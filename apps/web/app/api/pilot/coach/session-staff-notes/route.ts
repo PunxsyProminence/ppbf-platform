@@ -33,7 +33,9 @@ export const dynamic = 'force-dynamic';
  *                                            athlete must be marked present in that run
  *          optional on either POST: request_key (one tap, one note: a resend of the key returns
  *          the note it added, replayed: true) and made_by_account_id (a kept save is refused
- *          when another account is signed in now). W4 item 7, the offline save queue.
+ *          when another account is signed in now). A request that sends request_key must also
+ *          send made_by_account_id, or it is refused and nothing is written (Overwatch on #2165:
+ *          a kept note is "tied to the account that made it", OW27-34). W4 item 7.
  *   PATCH  { note_id, note }                 changes the text of one of the caller's OWN notes
  *   DELETE ?note_id=                         removes one of the caller's OWN notes
  *
@@ -159,6 +161,9 @@ export async function POST(request: NextRequest) {
     const subject = subjectFrom(body.session_id, body.run_id);
     const athleteId = textFrom(body.athlete_id, 'athlete_id');
     const requestKey = readRequestKey(body.request_key);
+    if (requestKey !== null && (body.made_by_account_id === undefined || body.made_by_account_id === null)) {
+      throw new ValidationError('A request_key is sent only with made_by_account_id, the account that made the note');
+    }
     const row = 'runId' in subject
       ? await createRunStaffNote({ actor: actorOf(principal), runId: subject.runId, athleteId, note: body.note as string, requestKey })
       : await createSessionStaffNote({ actor: actorOf(principal), sessionId: subject.sessionId, athleteId, note: body.note as string, requestKey });
