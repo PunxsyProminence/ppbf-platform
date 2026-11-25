@@ -2,7 +2,7 @@
 
 Rulings: OD-2026-11-19-030 (OW26-05, Jason: "B: Turn typed lines into library drills"); OD-2026-11-20-001 OW27-09 (Q8.1: "B: A new drill for every line"); Q8.2 (Overwatch on #2050: a heading is a typed line); OD-2026-11-15-011 (AI drafts load once the lane's two adversarial reviewers pass this sheet; fixes by new drill version only). Plan and GO: #2162 (W4_SIZING.md section 8 is the plan of record).
 
-Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0f7` (Weeks 5–8) and `wtp_d861f584584788` (Weeks 9–12), DOC-151 as committed, with those templates' own coach notes ("Coaching cue: Posture before speed. Coaching standard: Guard returns after every punch. Rule: Technique breakdown = reset.") and the manual's own round format (`drl_d822a0557f8882`). Every line is quoted word for word in its drill's `source_ref`. Audience: stages Y1 (ages 5-8) and Y2 (ages 8-12), the templates' stage keys.
+Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0f7` (Weeks 5–8) and `wtp_d861f584584788` (Weeks 9–12), DOC-151 as committed, with those templates' own coach notes ("Coaching cue: Posture before speed. Coaching standard: Guard returns after every punch. Rule: Technique breakdown = reset.") and the manual's Weeks 9-12 round format (`drl_d822a0557f8882`). Every line is quoted word for word in its drill's `source_ref`. Audience: the templates' stage keys Y1 and Y2, ages 5-8 and 8-12 in the pathway catalog (`seed_pathway_stages.csv`).
 
 ## What this PR loads, and what it does not
 
@@ -11,14 +11,14 @@ Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0
 - Each drill: scale levels A, B (starting point), C (`scaffold_needs_coach_review`), each with its constraint; at least one own stop rule (`drill_specific`); a cue on every boxing drill (OD-2026-10-06-026 ruling 2). Contact `none` on every drill and level, as every step. `requires_coach_authorization` false. Blank: what bad looks like, common errors, corrections, transfer, exit condition, correction path.
 - Cues: "Posture before speed." and "Guard returns after every punch." are the manuals' own coach notes, word for word; three are lifted from the line (the character focuses), two are reworded from it (the breathing count, the life-skill talk). No cue is drafted without a source passage. Conditioning drills need no cue; all but one carry one.
 - No name is equal to, inside, or contains an existing drill's name (the import's near-duplicate rule, checked by script and by `typedLinesContent.test.ts`).
-- Default field bases (every drill, unless its section lists another): name: the typed line's own words, shortened; discipline: boxing work in a technical or character block (the library holds only boxing and conditioning); category: the step's block; target_behavior: AI draft from the typed line and its template (block, block time, intent, coach notes); purpose: AI draft from the typed line and its template (block, block time, intent, coach notes); standard_setup: AI draft; contact none, as the step's own contact level; execution: AI draft from the typed line and its template; adds coaching detail the line does not give (listed on the review sheet); what_good_looks_like: AI draft from the typed line and the manual's coach notes; contact_level: the step's own contact level (none); equipment_needed: the typed line's own words, or none; difficulty: the template's difficulty (beginner); scale_levels: AI draft: A simpler, B the typed line as written (starting point), C harder, same lesson; stop_rules: the manual's rule 'Technique breakdown = reset.' (template coach notes), applied to this drill; cues: AI draft, no source passage.
+- Default field bases (every drill, unless its section lists another): name: the typed line's own words, shortened; discipline: boxing work in a technical or character block (the library holds only boxing and conditioning); category: the step's block; target_behavior: AI draft from the typed line and its template (block, block time, intent, coach notes); purpose: AI draft from the typed line and its template (block, block time, intent, coach notes); standard_setup: AI draft; contact none, as the step's own contact level; execution: AI draft from the typed line and its template; adds coaching detail the line does not give (shown in full on the review sheet); what_good_looks_like: AI draft from the typed line and the manual's coach notes; contact_level: the step's own contact level (none); equipment_needed: the typed line's own words, or none; difficulty: the template's difficulty (beginner); scale_levels: AI draft: A simpler, B the typed line as written (starting point), C harder, same lesson; stop_rules: the manual's rule 'Technique breakdown = reset.' (template coach notes), applied to this drill; cues: the manual's coach notes or the typed line, as each drill's section says.
 
 ## Flags for the reviewers and for a coach edit
 
-- Drill 12 (Fourth-Round Simulation): the line does not say what the fourth round holds. The execution takes the manual's own round format (`drl_d822a0557f8882`, "Round 4, when used, is defense discipline"). The template places the step in the 35-50 min conditioning block, after the 4 x 30 s bursts.
+- Drill 12 (Fourth-Round Simulation): the line does not say what the fourth round holds. The execution takes the manual's Weeks 9-12 round format (`drl_d822a0557f8882`, "Round 4, when used, is defense discipline"). The template places the step in the 35-50 min conditioning block, after the 4 x 30 s bursts.
 - Drill 5 (Applied Round 3): the Weeks 1-4 technical block teaches no defensive move (its drills are the stance line, jab, 1-2 and pivot), so the drill has the coach name the defence the trigger asks for.
 - Drill 14: "5×30 sec bursts" names no punch; punch bursts are INFERRED from the Weeks 1-4 and 5-8 lines of the same manual, and the basis says so.
-- Shadow work: the typed lines name no target and every step is contact none. The rounds drills follow the manual's own round format ("Athlete works each round in shadow"); the burst drills' "in shadow" is this lane's reading.
+- Shadow work: the typed lines name no target and every step is contact none. The rounds drills follow the manual's Weeks 9-12 round format ("Athlete works each round in shadow"); the burst drills' "in shadow" is this lane's reading.
 - Drill 6, level A ("in for 3, out for 4") is an AI-drafted count for younger athletes (Y1 is ages 5-8).
 - Drills 8 and 11 sit beside the existing "Punch Burst" (`drl_85a93f6757497a`): the names differ under the import's near-duplicate rule, and OW27-09 B asks for a new drill for every line, so none is linked to the existing one.
 
@@ -68,35 +68,35 @@ Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0
 ### 3. Applied Round 1: Technical Scoring Only (`drl_2bd1d0742ece8d`)
 
 - Purpose: Start the applied rounds (20-35 min) by putting the session's technique into a round, judged on form, not speed or volume. Target: Work a round in which only clean technique counts.
-- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's own round format. The coach stands where every stance and guard can be seen.
+- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's Weeks 9-12 round format. The coach stands where every stance and guard can be seen.
 - Execution: Athletes work the round with the session's technical material. The coach scores technique only: stance, punch shape, and the guard returning after every punch. Speed, power and volume do not score. The movement exit and the defensive trigger come in rounds 2 and 3.
 - Good: Stance holds, punches keep their shape and the guard returns after every punch, for the whole round.
 - Scale: A: Fewer, slower actions, each called by the coach. [Coach-called actions.] | B (start): The round as written: technical scoring only. | C: Athletes choose their own actions from the session's material, still scored on technique only. [Self-chosen actions.]
 - Stop: Technique breaks down (stance lost, guard not returning): stop and reset before going on (Technique breakdown = reset). (technique_degradation)
 - Cue: "Guard returns after every punch."
-- Bases: category: the step's block (applied rounds), technique-only; standard_setup: the same manual's own round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow', 'guard back after every punch'; 'Round 4, when used, is defense discipline'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
+- Bases: category: the step's block (applied rounds), technique-only; standard_setup: the same manual's Weeks 9-12 round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
 
 ### 4. Applied Round 2: Add a Movement Exit (`drl_8c42877a38946f`)
 
 - Purpose: Second applied round: add a movement exit to round 1's technique-only work. Target: Finish each action by moving out of range, keeping round 1's technique.
-- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's own round format. The coach stands where every athlete's feet can be seen.
+- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's Weeks 9-12 round format. The coach stands where every athlete's feet can be seen.
 - Execution: As round 1, and after each action the athlete moves out of range with a step or a pivot, finishing in stance with the guard up, before the next action. Technique still decides the score.
 - Good: An exit after every action, in stance, guard up, feet not crossing.
 - Scale: A: Exit with one step back after each action. [One exit direction.] | B (start): Round 2 as written: technique plus a movement exit. | C: Exit in the direction the coach calls: back, left or right. [Called direction.]
 - Stop: Feet cross or balance is lost on the exit: stop and reset the stance before the next action (Technique breakdown = reset). (technique_degradation)
 - Cue: "Guard returns after every punch."
-- Bases: category: footwork: the exit the line adds; standard_setup: the same manual's own round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow', 'guard back after every punch'; 'Round 4, when used, is defense discipline'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
+- Bases: category: footwork: the exit the line adds; standard_setup: the same manual's Weeks 9-12 round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
 
 ### 5. Applied Round 3: Add a Defensive Trigger (`drl_5927f2f35347c2`)
 
 - Purpose: Third applied round: add a defensive trigger to the technique and movement exit of rounds 1 and 2. Target: React to the coach's trigger with a defensive move, then go back to clean technique.
-- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's own round format. The coach stands where every athlete can see the trigger.
+- Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow work, as in the manual's Weeks 9-12 round format. The coach stands where every athlete can see the trigger.
 - Execution: As round 2, and when the coach gives the trigger, the athlete makes the defensive move the coach names, resets in stance and carries on. Nothing is thrown at the athlete.
 - Good: The defensive move comes straight after the trigger, and the athlete is back in stance, guard up, before the next action.
 - Scale: A: Slow triggers, only between actions. [Slow, predictable triggers.] | B (start): Round 3 as written. | C: Triggers at unpredictable moments, including in the middle of a combination. [Unpredictable triggers.]
 - Stop: The defensive move or the reset breaks down: stop and reset before going on (Technique breakdown = reset). (technique_degradation)
 - Cue: "Guard returns after every punch."
-- Bases: category: defense: the trigger the line adds; standard_setup: the same manual's own round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow', 'guard back after every punch'; 'Round 4, when used, is defense discipline'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
+- Bases: category: defense: the trigger the line adds; standard_setup: the same manual's Weeks 9-12 round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
 
 ### 6. Breathing Reset: 4-Second Inhale, 6-Second Exhale (`drl_0967cc300cfc5e`)
 
@@ -157,7 +157,7 @@ Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0
 
 - Purpose: Weeks 5-8 conditioning block (35-50 min): four 30-second punch bursts. Target: Fast punches in 30-second bursts, the guard returning every time.
 - Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow punches that reach no one. The coach keeps time where every guard can be seen.
-- Execution: Four bursts of 30 seconds of fast punches in shadow, with the recovery between bursts the coach sets. In Weeks 7-8 a fourth round is added (the next step).
+- Execution: Four bursts of 30 seconds of fast punches in shadow, with the recovery between bursts the coach sets. In Weeks 7-8 a fourth simulated round is added (the next step).
 - Good: Punches stay sharp to the end of each burst; the guard back after every punch; the stance held.
 - Scale: A: Four bursts at a steady pace, not fast. [Steady pace.] | B (start): 4 x 30 s fast punch bursts. | C: The same bursts with coach-called combinations. [Called combinations.]
 - Stop: Technique breaks down (the guard stays out, the stance is lost): stop the burst and reset (Technique breakdown = reset). (technique_degradation)
@@ -166,14 +166,14 @@ Source: the typed lines of `wtp_43c793b8f90e77` (Weeks 1–4), `wtp_ed57bea28de0
 
 ### 12. Fourth-Round Simulation (Weeks 7-8) (`drl_1508f028c4ce4e`)
 
-- Purpose: In Weeks 7-8, add a fourth simulated round, as the manual's own round format allows. Target: Hold technique through a fourth round, added in Weeks 7-8.
+- Purpose: In Weeks 7-8, add a fourth simulated round, following the manual's Weeks 9-12 round format. Target: Hold technique through a fourth round, added in Weeks 7-8.
 - Setup: Each athlete in their own space, in stance, with no partner and no contact. Shadow punches that reach no one. The coach keeps time where every guard can be seen.
-- Execution: In Weeks 7 and 8 only, the coach adds a fourth simulated round in the 35-50 min block, worked in shadow, technique held to the end. In the manual's own round format a fourth round is defense discipline. Not run in Weeks 5 and 6.
+- Execution: In Weeks 7 and 8 only, the coach adds a fourth simulated round in the 35-50 min block, worked in shadow, technique held to the end. In the manual's Weeks 9-12 round format a fourth round is defense discipline. Not run in Weeks 5 and 6.
 - Good: The fourth round looks like the first: the stance held, the guard back after every punch.
 - Scale: A: The fourth round at a steady pace. [Steady pace.] | B (start): A fourth simulated round as written, in Weeks 7-8. | C: The fourth round with the defensive moves the coach calls. [Called defense.]
 - Stop: Technique breaks down in the fourth round: stop and reset (Technique breakdown = reset). (technique_degradation)
 - Cue: "Guard returns after every punch."
-- Bases: discipline: conditioning-block work is filed under conditioning in the library (as Punch Burst); purpose: the same manual's own round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow', 'guard back after every punch'; 'Round 4, when used, is defense discipline'; execution: the same manual's own round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Athlete works each round in shadow', 'guard back after every punch'; 'Round 4, when used, is defense discipline'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
+- Bases: discipline: conditioning-block work is filed under conditioning in the library (as Punch Burst); purpose: the same manual's Weeks 9-12 round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Round 4, when used, is defense discipline'; 'Athlete works each round in shadow'; execution: the same manual's Weeks 9-12 round format, drl_d822a0557f8882 (3-5 round structured simulation format): 'Round 4, when used, is defense discipline'; 'Athlete works each round in shadow'; cues: the manual's coaching standard 'Guard returns after every punch.' (template coach notes), word for word
 
 ### 13. Character Focus: Composure and Accountability (`drl_4cc1133e4158e8`)
 
