@@ -184,6 +184,10 @@ type RunExecution = {
   /** The key that started the record's lineage: a kept log's landed check matches by it. */
   request_key?: string | null;
 };
+/** A ledger that names no request keys (a server older than this page): which log is this tap's cannot be told by key. */
+function namesNoKeys(items: readonly RunExecution[]): boolean {
+  return items.length > 0 && items.every((item) => item.request_key === undefined);
+}
 /** One kept run action not yet answered: what it asks, and whether it ends the session. */
 type AskedRun = { save: object; asked: PendingRun; finish: boolean };
 
@@ -672,7 +676,7 @@ export default function SessionScriptLiveDelivery({
           const last = sent;
           if (last === null) return null;
           const after = await readRunExecutions(athleteId, protocolId, signal);
-          if (after === null) return null;
+          if (after === null || namesNoKeys(after)) return null;
           // Another account's uncorrected log under a shared pair key (first sent on today's path) is
           // not this one.
           landedItem = after.find((item) => item.request_key === last.key
@@ -729,15 +733,7 @@ export default function SessionScriptLiveDelivery({
       ]);
       setLogProtocolId('');
     };
-    // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
-    // log of the same pair in this run (from before a reload, say) must not read as this one.
-    // A failed read never stops the log, and a slow one holds it back three seconds at most.
     try {
-      const before = await readRunExecutions(
-        logAthleteId,
-        logProtocolId,
-        typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
-      );
       // Kept on the open page (W4 item 7, OQ-3): resent with the pair's request key until it goes
       // through, instead of "Try again". The server writes it once however often it is sent (F-135),
       // and only for the account that made it (made_by_account_id, OQ-1). The choice is cleared once
@@ -755,6 +751,14 @@ export default function SessionScriptLiveDelivery({
         setLogProtocolId('');
         return;
       }
+      // Today's way. The "before" picture, so a lost answer can be checked against it afterwards: an
+      // earlier log of the same pair in this run (from before a reload, say) must not read as this
+      // one. A failed read never stops the log, and a slow one holds it back three seconds at most.
+      const before = await readRunExecutions(
+        logAthleteId,
+        logProtocolId,
+        typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
+      );
       try {
         const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
           method: 'POST',
@@ -793,7 +797,10 @@ export default function SessionScriptLiveDelivery({
         return;
       }
       const known = new Set([...(before ?? []), ...loggedInterventions].map((item) => item.execution_id));
-      const fresh = after.filter((item) => !known.has(item.execution_id));
+      // A tap that sent a key is matched by it (OVERWATCH 7158257725): another tab's tap of the pair is
+      // never taken for this one. Without a key, or from a server that names none, any new log, as before.
+      const byKey = requestKey !== null && requestKey !== undefined && !namesNoKeys(after);
+      const fresh = after.filter((item) => !known.has(item.execution_id) && (!byKey || item.request_key === requestKey));
       if (fresh.length === 0) {
         setLogError(LOG_NOT_SAVED);
         return;
