@@ -32,7 +32,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { QueryResultRow } from 'pg';
 
-import { assertActorCanAccessAthlete, athleteIdsForCoach, isOrganizationAdminRole, requireRole } from './access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from './access';
 import { getStaffAuthorName } from './achievements';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
@@ -611,16 +611,27 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
  * scopes; other coaches can still read). Live athletes of this gym only;
  * athletes with none are left out. The statement that counts checks the staff
  * seat itself (staffSeatSql; Overwatch on #2179), so a seat that ends after the
- * gate counts nothing. The coach's list of athletes is read first: it decides
- * whom the count nudges (OW27-27), not who may read, since a coach reaches the
- * whole gym (OD-2026-10-11-007, Q3 A on #2161).
+ * gate counts nothing. Whom the count nudges (OW27-27; not who may read, since a
+ * coach reaches the whole gym, OD-2026-10-11-007, Q3 A on #2161) is decided in
+ * the same statement too (COACH_NUDGE_SQL), so a child moved to another coach or
+ * a cover that ends just before the count is seen by it (reviewer A on PM-2).
  */
+/**
+ * The coach's own athletes for the count: the child's coach, or an active covering coach. The same
+ * rule as access.athleteIdsForCoach (every coach-facing aggregate's scope), written as a predicate so
+ * it is read in the counting statement itself; familyThreadsStaff.pg.test.ts pins the two to the
+ * same athletes. `a` is the live athlete row, $2 the staff member's account.
+ */
+const COACH_NUDGE_SQL = `(a.coach_id = $2
+            or exists (select 1 from pilot.coach_coverage cc
+                        where cc.organization_id = a.organization_id and cc.athlete_id = a.athlete_id
+                          and cc.covering_coach_id = $2
+                          and cc.starts_at <= now() and cc.expires_at > now()))`;
+
 export async function countUnseenFamilyThreadPostsForStaff(
   staff: FamilyThreadStaff,
 ): Promise<Array<{ athlete_id: string; unseen: number }>> {
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
-  const scope = isOrganizationAdminRole(staff.role) ? null : await athleteIdsForCoach(staff.organizationId, staff.accountId);
-  if (scope && scope.length === 0) return [];
   return query<{ athlete_id: string; unseen: number }>(
     `select p.athlete_id, count(*)::int as unseen
        from pilot.family_thread_posts p
@@ -628,13 +639,13 @@ export async function countUnseenFamilyThreadPostsForStaff(
          on a.organization_id = p.organization_id and a.athlete_id = p.athlete_id and a.deleted_at is null
       where p.organization_id = $1
         and p.author_role = 'parent'
-        and ($3::text[] is null or p.athlete_id = any($3::text[]))
+        and ($3::boolean or ${COACH_NUDGE_SQL})
         and ${staffSeatSql('p.organization_id', '$2', '$4')}
         and not exists (select 1 from pilot.family_thread_reads r
                          where r.organization_id = p.organization_id and r.post_id = p.post_id
                            and r.reader_account_id = $2)
       group by p.athlete_id
       order by p.athlete_id`,
-    [staff.organizationId, staff.accountId, scope, staff.role],
+    [staff.organizationId, staff.accountId, isOrganizationAdminRole(staff.role), staff.role],
   );
 }

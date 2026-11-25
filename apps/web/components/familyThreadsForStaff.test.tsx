@@ -6,6 +6,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import { useLayoutEffect } from 'react';
 
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+
 import FamilyThreadsForStaff, { FamilyThreadsUnread, type StaffThreadView } from './FamilyThreadsForStaff';
 
 // The staff panel for messages a guardian started (W4 item 4, PM-2). Who may read, answer and
@@ -67,6 +69,11 @@ describe('FamilyThreadsForStaff', () => {
       expect.stringMatching(/^First Guardian.*Thank you!$/),
     ]);
     expect(within(posts[2]).queryByText('New')).toBeNull();
+    // The time in gym time, not the stored instant (Q4.4 A).
+    const gymTime = formatGymDateTimeShort(THREAD.posts[0].created_at);
+    expect(gymTime).toBeTruthy();
+    expect(posts[0]).toHaveTextContent(`First Guardian · ${gymTime}`);
+    expect(posts[0].textContent).not.toContain(THREAD.posts[0].created_at);
     expect(screen.getByLabelText('Reply to First Guardian')).toBeInTheDocument();
     expect(screen.getByText(/The gym's staff can read them; of the family, only the guardian\s+who wrote one sees it/)).toBeInTheDocument();
   });
@@ -139,6 +146,68 @@ describe('FamilyThreadsForStaff', () => {
     await waitFor(() => expect(screen.queryByText(/2000 characters/)).toBeNull());
     expect(screen.getByText('Your reply was not sent; it is still in the box.')).toBeInTheDocument();
     expect(screen.queryByText(/internal detail/)).toBeNull();
+  });
+
+  test('while a reply is sent, only its thread is held: its button is disabled and says so, its box is read-only, a second tap sends nothing', async () => {
+    const second: StaffThreadView = {
+      ...THREAD, thread_id: 't2', guardian_name: 'Second Guardian',
+      posts: [{ post_id: 'q1', from: 'guardian', staff_name: null, text: 'Can she move up a class?', created_at: '2026-11-25T06:00:00.000Z', new_to_me: false }],
+    };
+    let release: (response: Response) => void = () => {};
+    const fetchMock = install(
+      () => jsonResponse({ ok: true, items: [THREAD, second] }),
+      () => new Promise<Response>((resolve) => { release = resolve; }),
+    );
+    render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    const box = await screen.findByLabelText('Reply to First Guardian');
+    fireEvent.change(box, { target: { value: 'See you then.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send reply to First Guardian' }));
+    });
+
+    const held = screen.getByRole('button', { name: 'Sending reply to First Guardian' });
+    expect(held).toBeDisabled();
+    expect(held).toHaveTextContent('Sending…');
+    expect(box).toHaveAttribute('readonly');
+    fireEvent.click(held);
+    expect(bodies(fetchMock, '/api/pilot/coach/family-threads')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Send reply to Second Guardian' })).toBeEnabled();
+    expect(screen.getByLabelText('Reply to Second Guardian')).not.toHaveAttribute('readonly');
+
+    await act(async () => release(jsonResponse({ ok: true }, true, 201)));
+    expect(await screen.findByRole('button', { name: 'Send reply to First Guardian' })).toBeEnabled();
+  });
+
+  test('a reply that fails after the coach has moved to another athlete is told on the athlete now on screen', async () => {
+    let release: (response: Response) => void = () => {};
+    const fetchMock = jest.fn((url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (key.endsWith('/api/pilot/coach/family-threads') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      if (key.includes('athlete_id=ath-1')) return Promise.resolve(jsonResponse({ ok: true, items: [THREAD] }));
+      if (key.includes('athlete_id=ath-2')) return Promise.resolve(jsonResponse({ ok: true, items: [] }));
+      throw new Error(`Unexpected fetch: ${key}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { rerender } = render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    fireEvent.change(await screen.findByLabelText('Reply to First Guardian'), { target: { value: 'See you then.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send reply to First Guardian' }));
+    });
+
+    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
+    await act(async () => release(jsonResponse({ error: 'down' }, false, 500)));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your reply to First Guardian, for the athlete you were on before, was not sent. Go back to them; it is still in its box.',
+    );
+
+    // Back on that athlete, the words are in the box and the failure is under its thread.
+    rerender(<FamilyThreadsForStaff athleteId="ath-1" />);
+    expect(await screen.findByLabelText('Reply to First Guardian')).toHaveValue('See you then.');
+    expect(screen.getByText('Your reply was not sent; it is still in the box.')).toBeInTheDocument();
+    expect(screen.queryByText(/for the athlete you were on before/)).toBeNull();
   });
 
   test("after a switch, the last child's messages are not shown while the next child's are read; an unsent reply is kept", async () => {
@@ -344,6 +413,16 @@ describe('FamilyThreadsUnread', () => {
     expect(screen.queryByText(/4 new/)).toBeNull();
     expect(screen.queryByText(/Athlete Three/)).toBeNull();
     expect(screen.getByRole('group', { name: 'New messages from families' })).toBeInTheDocument();
+  });
+
+  test('until the first answer it says it is checking, never "nothing new"', async () => {
+    let release: (response: Response) => void = () => {};
+    installUnread(() => new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response);
+    render(<FamilyThreadsUnread athletes={ROSTER} refreshKey="" onChoose={jest.fn()} />);
+    expect(screen.getByText('Checking for new messages from families…')).toBeInTheDocument();
+    await act(async () => release(jsonResponse({ ok: true, items: [{ athlete_id: 'ath-1', unseen: 1 }] })));
+    expect(await screen.findByRole('button', { name: 'Athlete One (1 new)' })).toBeInTheDocument();
+    expect(screen.queryByText('Checking for new messages from families…')).toBeNull();
   });
 
   test('nothing new shows nothing; a failed read says so and reads again on request', async () => {

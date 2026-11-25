@@ -215,9 +215,13 @@ test('under the Athlete picker, an athlete with unseen family messages is named;
     render(<DecisionLoopReviewPage />);
     const picker = await rosterLoaded();
     const section = picker.closest('section') as HTMLElement;
+    const addressBefore = window.location.href;
     fireEvent.click(await within(section).findByRole('button', { name: 'Second Athlete (2 new)' }));
     await waitFor(() => expect(athletePicker().value).toBe('ath-2'));
     await waitFor(() => expect(scrolled.map((element) => element.id)).toContain(POST_TO_FAMILY_SECTION));
+    // The page's own selection, never the address: no athlete id in it (Q4.4 A).
+    expect(window.location.href).toBe(addressBefore);
+    expect(window.location.href).not.toContain('ath-2');
   } finally {
     Element.prototype.scrollIntoView = original;
   }
