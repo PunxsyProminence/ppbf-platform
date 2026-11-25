@@ -19,8 +19,8 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 //
 // Two writes, both on tables owned by
 // infra/azure/pilot_slice_postgres_session_scripts_migration.sql. Nothing here
-// issues DDL. The one row ever deleted is a block an edit removes from a plan
-// nobody has run and nothing else names (editSessionScript).
+// issues DDL, and nothing here deletes a row: an edit that removes a block is
+// written as a new version (Overwatch Q2 = A on #2191).
 //
 //   createSessionScriptFromTemplate  a workout template's steps, in the
 //     template's order, become timed blocks: minutes from the start, running
@@ -542,28 +542,21 @@ async function drillsForNewBlocks(
 }
 
 /**
- * Whether a research claim, a behaviour window, or a behaviour report or intervention naming
- * `block:<id>` (behaviourObservations.ts) names one of these blocks. Such a block is never deleted
- * (Overwatch Q3 = A on #2189); the edit is a new version. A run's cursor names only its own run's
- * plan, which is a new version anyway. Not locked: a window or report written after this read
- * is not seen (neither table locks the block it names).
+ * Share-locks the drill rows the plan's stored blocks link, before the plan is locked. A new
+ * version copies those blocks, and each copy's foreign key check takes a lock on its drill; taken
+ * under the plan's lock, that waits on a content import holding the drill, while the import waits
+ * for the plan -- a deadlock (reviewer A on #2191, reproduced on main). Content import locks drills
+ * before plans; so does this. Not locked: the read of which drills those are.
  */
-async function blocksNamedElsewhere(client: PoolClient, organizationId: string, blockIds: readonly string[]): Promise<boolean> {
-  if (blockIds.length === 0) return false;
-  const keys = blockIds.map((id) => `block:${id}`);
-  const named = await client.query(
-    `select 1 from pilot.transfer_claims where organization_id = $1 and block_id = any($2::text[])
-     union all
-     select 1 from pilot.behaviour_observations_windows
-      where organization_id = $1 and context_kind = 'block' and context_id = any($2::text[])
-     union all
-     select 1 from pilot.behaviour_observations where organization_id = $1 and task_context_key = any($3::text[])
-     union all
-     select 1 from pilot.intervention_executions where organization_id = $1 and trained_task_context_key = any($3::text[])
-     limit 1`,
-    [organizationId, [...blockIds], keys],
+async function lockLinkedDrills(client: PoolClient, organizationId: string, scriptId: string): Promise<void> {
+  await client.query(
+    `select 1 from pilot.drill_library
+      where organization_id = $1
+        and drill_id in (select drill_id from pilot.session_script_blocks where organization_id = $1 and script_id = $2)
+      order by drill_id
+        for share`,
+    [organizationId, scriptId],
   );
-  return (named.rowCount ?? 0) > 0;
 }
 
 /**
@@ -620,8 +613,8 @@ type PlannedBlock = Omit<SessionScriptBlockRow, 'organization_id' | 'script_id' 
  * blocks change, the contact label is raised, never lowered (contactStructureAfter). A plan may
  * be left with no blocks. Coach renderings made from the blocks are re-rendered; the rest stay.
  *
- * A plan with a run, or whose edit removes a block something else names (blocksNamedElsewhere),
- * gets a new version. Otherwise in place, the running order renumbered 1..n when blocks change.
+ * A plan with a run, or an edit that removes a block, gets a new version: no block row is ever
+ * deleted (Overwatch Q2 = A on #2191). Otherwise in place, renumbered 1..n when blocks change.
  */
 export async function editSessionScript(
   params: Actor & {
@@ -644,11 +637,13 @@ export async function editSessionScript(
   return withTransaction(async (client) => {
     // The drills first, then the plan: content import locks drill rows before plan rows, so taking
     // them the other way round here could deadlock against it. A copy's drill (its current version)
-    // is locked too: its insert's foreign key check would otherwise wait on it under the plan's lock.
+    // is locked too, and so are the drills the plan's stored blocks link (lockLinkedDrills): each
+    // insert's foreign key check would otherwise wait on its drill under the plan's lock.
     const sources = await copySources(client, params.organizationId, adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])));
     const drills = await drillsForNewBlocks(client, params.organizationId, adds.flatMap((add) => (add.kind === 'drill' ? [add.drill_id] : [])));
     const copiedDrills = [...sources.values()].flatMap((block) => (block.drill_id === null ? [] : [block.drill_id]));
     const copyDrills = await currentDrillsForCopies(client, params.organizationId, copiedDrills);
+    await lockLinkedDrills(client, params.organizationId, params.scriptId);
     const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -752,8 +747,7 @@ export async function editSessionScript(
       [params.organizationId, params.scriptId],
     );
     const hasRun = (run.rowCount ?? 0) > 0;
-    const removedNamed = await blocksNamedElsewhere(client, params.organizationId, remove);
-    const newVersion = hasRun || removedNamed;
+    const newVersion = hasRun || remove.length > 0;
 
     const insertNew = (scriptId: string, block: PlannedBlock) =>
       client.query(
@@ -780,11 +774,6 @@ export async function editSessionScript(
         [params.organizationId, script.script_id, name, totalMinutes, contact],
       );
       if (structural) {
-        await client.query(
-          `delete from pilot.session_script_blocks
-            where organization_id = $1 and script_id = $2 and block_id = any($3::text[])`,
-          [params.organizationId, script.script_id, [...remove]],
-        );
         // pilot_ssb_order_uq is checked row by row and is not deferrable: every kept block is first
         // lifted clear of 1..n, so no block is moved onto a place another still holds.
         const lift = stored.rows.reduce((most, block) => Math.max(most, block.block_order), blocks.length);
@@ -888,7 +877,7 @@ export async function editSessionScript(
           ...(sources.size > 0 && { copied_from: adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])) }),
           blocks_removed: remove.length,
           order_changed: orderChanged,
-          ...(removedNamed && !hasRun && { new_version_because: 'a removed block is named elsewhere' }),
+          ...(!hasRun && remove.length > 0 && { new_version_because: 'a block was removed' }),
           renderings_rerendered: rerendered,
         },
       },

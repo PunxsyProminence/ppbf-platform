@@ -192,9 +192,10 @@ export async function POST(request: NextRequest) {
 //     { kind: 'text', block_kind, block_label, text, contact_level }],
 //   remove_block_ids?: [block_id], order?: [block_id or ref, in running order] }.
 // A script that has been delivered is not changed: the edit becomes its next
-// version, and `outcome` says which happened; so does an edit that removes a
-// block something else names (sessionScriptAuthoring.ts editSessionScript). expected_updated_at is the
-// script's updated_at as the editor read it, and is required: a script another
+// version, and `outcome` says which happened; so does any edit that removes a
+// block, since no block row is ever deleted (Overwatch Q2 = A on #2191).
+// expected_updated_at is the script's updated_at as the editor read it, and is
+// required: a script another
 // coach has saved since is refused (409 SESSION_SCRIPT_CHANGED) rather than
 // overwritten.
 // With `retired: true | false` instead of name and blocks it retires the
