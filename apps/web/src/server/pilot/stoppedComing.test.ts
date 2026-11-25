@@ -11,7 +11,7 @@ import { readStoppedComingPolicy } from './stoppedComingPolicy';
  * stoppedComing.pg.test.ts. These pin, with the reads mocked: the staff
  * membership refusal (403, never an empty list), who is listed (OW27-31 A,
  * OW27-32 A; Overwatch W4-6 Q2 A and Q3 A), the boundary, the order, and the
- * open-gym read's own SQL.
+ * marks read's own SQL (here marks the register does not hold).
  */
 
 jest.mock('./db', () => ({ query: jest.fn() }));
