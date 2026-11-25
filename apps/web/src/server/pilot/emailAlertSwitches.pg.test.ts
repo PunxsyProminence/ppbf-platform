@@ -635,9 +635,14 @@ describe('emailAlertSwitches.ts on a real database', () => {
   // Codex on #2169: the login or the membership changed by the office while
   // the save waits on the account row; every such writer locks the account first.
   test.each([
+    // The login alone, its membership left on, so the account's own flag is what refuses.
     ['the login switched off', [
       'update pilot.accounts set active_flag = false where account_id = $1',
-      'update pilot.organization_memberships set active_flag = false where account_id = $1',
+      'update pilot.accounts set updated_at = now() where account_id = $1',
+    ]],
+    ['the login deleted', [
+      'update pilot.accounts set deleted_at = now() where account_id = $1',
+      'update pilot.accounts set updated_at = now() where account_id = $1',
     ]],
     ['the membership switched off', [
       'update pilot.accounts set updated_at = now() where account_id = $1',
