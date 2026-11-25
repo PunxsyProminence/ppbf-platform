@@ -47,12 +47,16 @@ jest.mock('./db', () => ({
 }));
 
 import { assertActorCanAccessAthlete, athleteIdsForCoach, requireRole } from './access';
+import { ANNOUNCEMENT_PLACEMENTS, listLiveAnnouncements, mayReadLivePlacement } from './announcements';
+import { listAthleteCoachMessages } from './athleteCoachMessages';
 import type { PilotRole } from './contracts';
 import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
 import {
+  coachMessageSource,
   EMAIL_ALERT_EVENT_SOURCES,
   EMAIL_ALERT_READ_RULE_KINDS,
   emailAlertEventStillReadable,
+  gymNoticeSource,
   parentReplySource,
   safetyEscalationSource,
 } from './emailAlertEvents';
@@ -60,7 +64,7 @@ import { emailAlertSenderDependencies, runEmailAlertSweep, type EmailAlertSender
 import { listEscalations } from './escalationLadder';
 import { listRepliesForStaff } from './familyMessageReplies';
 import type { OutboundMessage } from './graphMailer';
-import { EMAIL_ALERT_EVENTS } from '@/src/shared/emailAlerts';
+import { EMAIL_ALERT_EVENTS, emailAlertCandidateUserType } from '@/src/shared/emailAlerts';
 
 jest.setTimeout(180_000);
 
@@ -93,11 +97,14 @@ const PEOPLE: Array<[string, string, string, boolean, string?]> = [
   ['acct-ev-volunteer', ORG, 'volunteer', true],
   ['acct-ev-staff', ORG, 'staff', true],
   ['acct-ev-parent', ORG, 'parent', true],
-  ['acct-ev-athlete', ORG, 'athlete', true],
+  ['acct-ev-athlete', ORG, 'athlete', true], // linked to ATH_A
+  ['acct-ev-athlete-off', ORG, 'athlete', false], // linked to ATH_C, membership off
+  ['acct-ev-athlete-gone', ORG, 'athlete', true], // linked to the deleted ATH_GONE
   ['acct-ev-home-admin', ORG, 'coach', true, 'admin'], // an admin account, a coach here, coaching no one
   ['acct-ev-home-coach', ORG, 'volunteer', true, 'coach'],
   ['acct-ev-other-admin', OTHER_ORG, 'admin', true],
   ['acct-ev-other-coach', OTHER_ORG, 'coach', true], // coach of record of ATH_OTHER
+  ['acct-ev-other-athlete', OTHER_ORG, 'athlete', true], // linked to the other gym's ATH_OTHER
 ];
 
 const ATH_A = 'ath-ev-a';
@@ -109,6 +116,14 @@ const ATH_C = 'ath-ev-c'; // coach-own's second athlete
 // the other gym's live athlete has the id of this gym's deleted one, and the
 // other gym also has a live ATH_B, coached on record by this gym's coach-none.
 const ATH_OTHER = ATH_GONE;
+
+// Athlete accounts and the record each is linked to, in its own gym.
+const ATHLETE_LINKS: ReadonlyArray<[string, string]> = [
+  ['acct-ev-athlete', ATH_A],
+  ['acct-ev-athlete-off', ATH_C],
+  ['acct-ev-athlete-gone', ATH_GONE],
+  ['acct-ev-other-athlete', ATH_OTHER],
+];
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -184,6 +199,9 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, athleteId, coachId, deleted],
     );
   }
+  for (const [accountId, athleteId] of ATHLETE_LINKS) {
+    await client.query('update pilot.accounts set athlete_id = $2 where account_id = $1', [accountId, athleteId]);
+  }
   // gym, athlete, covering coach, started this long ago, ends in this long
   const coverage: Array<[string, string, string, string, string]> = [
     [ORG, ATH_B, 'acct-ev-coach-cover', '1 hour', '1 hour'],
@@ -244,6 +262,46 @@ async function reply(client: Client, org: string, noteId: string, athleteId: str
   return replyId;
 }
 
+async function notice(
+  client: Client,
+  org: string,
+  values: {
+    placement?: string; kind?: string; active?: boolean; minutesAgo?: number;
+    startsInMinutes?: number | null; endsInMinutes?: number | null;
+  } = {},
+): Promise<string> {
+  const id = randomUUID();
+  await client.query(
+    `insert into pilot.announcements
+       (organization_id, announcement_id, message, author_name, author_role, placement, kind, active,
+        starts_at, ends_at, created_at)
+     values ($1, $2::uuid, 'Notice', 'Office', 'organization_admin', $3, $4, $5,
+             case when $6::int is null then null else now() + make_interval(mins => $6::int) end,
+             case when $7::int is null then null else now() + make_interval(mins => $7::int) end,
+             now() - make_interval(mins => $8))`,
+    [org, id, values.placement ?? 'gym_notices', values.kind ?? 'notice', values.active ?? true,
+      values.startsInMinutes ?? null, values.endsInMinutes ?? null, values.minutesAgo ?? 5],
+  );
+  return id;
+}
+
+async function athleteMessage(
+  client: Client,
+  org: string,
+  athleteId: string,
+  values: { authorRole?: string | null; noteType?: string; minutesAgo?: number } = {},
+): Promise<string> {
+  const noteId = randomUUID();
+  await client.query(
+    `insert into pilot.coach_observations
+       (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text, created_at)
+     values ($1, $2::uuid, $3, $4, $5, $6, 'Good work today.', now() - make_interval(mins => $7))`,
+    [org, noteId, athleteId, org === ORG ? 'acct-ev-coach-own' : 'acct-ev-other-coach',
+      values.authorRole === undefined ? 'coach' : values.authorRole, values.noteType ?? 'athlete_message', values.minutesAgo ?? 5],
+  );
+  return noteId;
+}
+
 // A row "made after the first tick" is dated a minute back, still inside the
 // sweep's 10-minute overlap. The sweep reads the database clock to the
 // millisecond, so a row from that same millisecond waits for the next tick
@@ -261,10 +319,16 @@ async function lastHour(client: Client): Promise<{ from: Date; to: Date }> {
 /** "gym|account" -> the event ids. */
 type Reach = Map<string, string[]>;
 
-function reachOf(candidates: readonly EmailAlertCandidate[], eventKind: string): Reach {
+/** The user type each person's role gives (the shared list), as the sender re-checks it. */
+function userTypeOf(accountId: string): string | null {
+  const person = PEOPLE.find(([id]) => id === accountId);
+  return person ? emailAlertCandidateUserType(person[2]) : null;
+}
+
+function reachOf(candidates: readonly EmailAlertCandidate[], eventKind: string, userType: (accountId: string) => string | null = () => 'staff'): Reach {
   const reach: Reach = new Map();
   for (const c of candidates) {
-    expect(c.userType).toBe('staff');
+    expect({ account: c.accountId, userType: c.userType }).toEqual({ account: c.accountId, userType: userType(c.accountId) });
     expect(c.eventKind).toBe(eventKind);
     const key = `${c.organizationId}|${c.accountId}`;
     reach.set(key, [...(reach.get(key) ?? []), c.eventId].sort());
@@ -321,16 +385,60 @@ async function repliesPageReach(athleteIds: readonly string[], inWindow: Readonl
  * The send-time check (emailAlertEventStillReadable) agrees with the page for
  * every person and every event in the window: yes exactly where the page shows it.
  */
-async function expectStillReadableAsPage(page: Reach, events: ReadonlySet<string>, eventKind: string) {
+async function expectStillReadableAsPage(
+  page: Reach,
+  events: ReadonlySet<string>,
+  eventKind: string,
+  userType: (accountId: string) => string | null = () => 'staff',
+) {
   for (const [accountId, org] of PEOPLE) {
     const shown = page.get(`${org}|${accountId}`) ?? [];
     for (const eventId of events) {
       const reads = await emailAlertEventStillReadable({
-        organization_id: org, account_id: accountId, user_type: 'staff', event_kind: eventKind, event_id: eventId,
+        organization_id: org, account_id: accountId, user_type: (userType(accountId) ?? 'staff') as 'staff',
+        event_kind: eventKind, event_id: eventId,
       });
       expect({ accountId, eventId, reads }).toEqual({ accountId, eventId, reads: shown.includes(eventId) });
     }
   }
+}
+
+/**
+ * What each signed-in person's notice boards show (announcements/get/route.ts):
+ * the live notices of every placement their role may read, for every role that
+ * has an email user type, in the window.
+ */
+async function noticesPageReach(inWindow: ReadonlySet<string>): Promise<Reach> {
+  const reach: Reach = new Map();
+  for (const [accountId, org, role, on] of PEOPLE) {
+    if (!on || !emailAlertCandidateUserType(role)) continue;
+    const ids = new Set<string>();
+    for (const placement of ANNOUNCEMENT_PLACEMENTS) {
+      if (!mayReadLivePlacement(role as PilotRole, placement)) continue;
+      for (const row of await listLiveAnnouncements(org, { placement, kind: 'notice', limit: 25 })) {
+        if (inWindow.has(row.announcement_id)) ids.add(row.announcement_id);
+      }
+    }
+    if (ids.size) reach.set(`${org}|${accountId}`, [...ids].sort());
+  }
+  return reach;
+}
+
+/** What GET /api/pilot/athlete/coach-messages gives each signed-in athlete, in the window. */
+async function coachMessagesPageReach(inWindow: ReadonlySet<string>): Promise<Reach> {
+  const reach: Reach = new Map();
+  for (const [accountId, org, role, on] of PEOPLE) {
+    const link = ATHLETE_LINKS.find(([id]) => id === accountId);
+    if (!on || role !== 'athlete' || !link) continue;
+    try {
+      await assertActorCanAccessAthlete({ ...signedIn(accountId, org, role), athleteId: link[1] }, link[1]);
+    } catch {
+      continue;
+    }
+    const ids = (await listAthleteCoachMessages(org, link[1])).map((row) => row.note_id).filter((id) => inWindow.has(id));
+    if (ids.length) reach.set(`${org}|${accountId}`, ids.sort());
+  }
+  return reach;
 }
 
 function sorted(reach: Reach): Array<[string, string[]]> {
@@ -350,19 +458,28 @@ function recorder(): { sent: OutboundMessage[]; dependencies: EmailAlertSenderDe
   return { sent, dependencies };
 }
 
-/** A sign-in address (account id + @example.com) and the staff switch on, for each. */
+/**
+ * A sign-in address (account id + @example.com) and the switch on under the
+ * user type each role gives; an adult athlete's confirmed address is
+ * <account id>.confirmed@example.com.
+ */
 async function switchOn(client: Client, accountIds: readonly string[]) {
   await client.query(
     `update pilot.accounts set login_email = account_id || '@example.com' where account_id = any($1)`,
     [accountIds],
   );
-  await client.query(
-    `insert into pilot.email_alert_switches
-       (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at)
-     select organization_id, account_id, 'staff', true, now(), null
-       from pilot.organization_memberships where account_id = any($1)`,
-    [accountIds],
-  );
+  for (const accountId of accountIds) {
+    const userType = userTypeOf(accountId);
+    await client.query(
+      `insert into pilot.email_alert_switches
+         (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at, confirmed_address, confirmed_at)
+       select organization_id, account_id, $2, true, now(), null,
+              case when $2 = 'adult_athlete' then account_id || '.confirmed@example.com' end,
+              case when $2 = 'adult_athlete' then now() end
+         from pilot.organization_memberships where account_id = $1`,
+      [accountId, userType],
+    );
+  }
 }
 
 beforeAll(async () => {
@@ -526,7 +643,10 @@ describe('email alert staff event sources', () => {
     // The first tick only sets each source's checkpoint.
     expect((await runEmailAlertSweep(dependencies)).queued).toBe(0);
     expect((await client.query('select event_kind from pilot.email_alert_checkpoints order by 1')).rows)
-      .toEqual([{ event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' }]);
+      .toEqual([
+        { event_kind: 'coach_message' }, { event_kind: 'gym_notice' },
+        { event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' },
+      ]);
 
     await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
     await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: JUST_NOW });
@@ -612,6 +732,112 @@ describe('email alert staff event sources', () => {
     expect(await emailAlertEventStillReadable({ ...adminReads, user_type: 'parent', event_kind: 'safety_escalation' })).toBe(false);
   });
 
+  test('gym_notice names, once it is live, exactly the people whose boards show it, each under the user type their role gives', async () => {
+    const client = await freshDatabase('emailevents_notices');
+    activeClient = client;
+
+    const wall = await notice(client, ORG, { placement: 'gym_notices' });
+    const parentsOnly = await notice(client, ORG, { placement: 'parent_hub' });
+    const athletesOnly = await notice(client, ORG, { placement: 'athlete_workspace' });
+    const coachesOnly = await notice(client, ORG, { placement: 'coach_workspace' });
+    const everywhere = await notice(client, ORG, { placement: 'everywhere' });
+    const motivation = await notice(client, ORG, { kind: 'motivation' });
+    const retired = await notice(client, ORG, { active: false });
+    // Posted two hours ago for a start five minutes ago: it counts from its start.
+    const startedLately = await notice(client, ORG, { minutesAgo: 120, startsInMinutes: -5 });
+    const notYetLive = await notice(client, ORG, { startsInMinutes: 60 });
+    const ended = await notice(client, ORG, { endsInMinutes: -1 });
+    const old = await notice(client, ORG, { minutesAgo: 120 });
+    const otherGym = await notice(client, OTHER_ORG, { placement: 'everywhere' });
+
+    const { from, to } = await lastHour(client);
+    const source = reachOf(await gymNoticeSource.candidates(from, to), 'gym_notice', userTypeOf);
+    const inWindow = new Set([
+      wall, parentsOnly, athletesOnly, coachesOnly, everywhere, motivation, retired, startedLately, notYetLive, ended, otherGym,
+    ]);
+    const page = await noticesPageReach(inWindow);
+
+    expect(sorted(source)).toEqual(sorted(page));
+
+    const forStaff = [wall, parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately].sort();
+    const forParents = [wall, parentsOnly, everywhere, startedLately].sort();
+    const forAthletes = [wall, athletesOnly, everywhere, startedLately].sort();
+    expect(sorted(source)).toEqual(sorted(new Map([
+      ...['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover', 'acct-ev-coach-expired',
+        'acct-ev-coach-future', 'acct-ev-coach-none', 'acct-ev-home-admin'].map((id) => [`${ORG}|${id}`, forStaff] as [string, string[]]),
+      [`${ORG}|acct-ev-parent`, forParents],
+      // The sender then sends only to an athlete 18 or over (acct-ev-athlete-gone's record is deleted).
+      [`${ORG}|acct-ev-athlete`, forAthletes],
+      [`${ORG}|acct-ev-athlete-gone`, forAthletes],
+      [`${OTHER_ORG}|acct-ev-other-admin`, [otherGym]],
+      [`${OTHER_ORG}|acct-ev-other-coach`, [otherGym]],
+      [`${OTHER_ORG}|acct-ev-other-athlete`, [otherGym]],
+    ])));
+    expect([...source.values()].flat()).not.toContain(old);
+    await expectStillReadableAsPage(page, inWindow, 'gym_notice', userTypeOf);
+  });
+
+  test('coach_message names only the athlete account linked to the record, for messages from staff', async () => {
+    const client = await freshDatabase('emailevents_coach_messages');
+    activeClient = client;
+
+    const toA = await athleteMessage(client, ORG, ATH_A);
+    const toAFromAdmin = await athleteMessage(client, ORG, ATH_A, { authorRole: 'organization_admin' });
+    const toAFromParent = await athleteMessage(client, ORG, ATH_A, { authorRole: 'parent' });
+    const toAUnknownAuthor = await athleteMessage(client, ORG, ATH_A, { authorRole: null });
+    const familyNoteOnA = await athleteMessage(client, ORG, ATH_A, { noteType: 'parent_message' });
+    const toC = await athleteMessage(client, ORG, ATH_C); // its account's membership is off
+    const toGone = await athleteMessage(client, ORG, ATH_GONE); // a deleted record
+    const toB = await athleteMessage(client, ORG, ATH_B); // no account linked
+    const old = await athleteMessage(client, ORG, ATH_A, { minutesAgo: 120 });
+    const otherGym = await athleteMessage(client, OTHER_ORG, ATH_OTHER);
+
+    const { from, to } = await lastHour(client);
+    const source = reachOf(await coachMessageSource.candidates(from, to), 'coach_message', () => 'adult_athlete');
+    const inWindow = new Set([toA, toAFromAdmin, toAFromParent, toAUnknownAuthor, familyNoteOnA, toC, toGone, toB, otherGym]);
+    const page = await coachMessagesPageReach(inWindow);
+
+    expect(sorted(source)).toEqual(sorted(page));
+    expect(sorted(source)).toEqual(sorted(new Map([
+      [`${ORG}|acct-ev-athlete`, [toA, toAFromAdmin].sort()],
+      [`${OTHER_ORG}|acct-ev-other-athlete`, [otherGym]],
+    ])));
+    expect([...source.values()].flat()).not.toContain(old);
+    await expectStillReadableAsPage(page, inWindow, 'coach_message', () => 'adult_athlete');
+  });
+
+  test('a retired notice is not sent; a live one and a coach message reach a parent, a coach and an adult athlete', async () => {
+    const client = await freshDatabase('emailevents_notice_tick');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent', 'acct-ev-coach-own', 'acct-ev-athlete']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    const toBeRetired = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    const message = await athleteMessage(client, ORG, ATH_A, { minutesAgo: JUST_NOW });
+    for (const source of [gymNoticeSource, coachMessageSource]) await sweepEmailAlertSource(source);
+    expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(7);
+
+    await client.query('update pilot.announcements set active = false where announcement_id = $1', [toBeRetired]);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 4, skipped: 3 });
+    const { rows } = await client.query(
+      `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_kind, event_id`,
+    );
+    const label = new Map([[live, 'live'], [toBeRetired, 'retired'], [message, 'message']]);
+    expect(rows.map((row) => `${row.account_id} ${label.get(row.event_id)} ${row.status === 'sent' ? 'sent' : row.skip_reason}`).sort())
+      .toEqual([
+        'acct-ev-athlete live sent', 'acct-ev-athlete message sent', 'acct-ev-athlete retired not_offered',
+        'acct-ev-coach-own live sent', 'acct-ev-coach-own retired not_offered',
+        'acct-ev-parent live sent', 'acct-ev-parent retired not_offered',
+      ]);
+    // The adult athlete at the confirmed address; staff and parents at their sign-in address.
+    expect(sent.map((m) => m.to).sort()).toEqual([
+      'acct-ev-athlete.confirmed@example.com', 'acct-ev-athlete.confirmed@example.com',
+      'acct-ev-coach-own@example.com', 'acct-ev-parent@example.com',
+    ]);
+  });
+
   test('a source that fails is logged by class, and the next source still queues and sends', async () => {
     const client = await freshDatabase('emailevents_failing');
     activeClient = client;
@@ -640,10 +866,11 @@ describe('email alert staff event sources', () => {
     expect(emailAlertSenderDependencies().stillReads).toBe(emailAlertEventStillReadable);
   });
 
-  test('each source is a staff event on the shared list, read in a fixed order, with a send-time read rule', () => {
-    expect(EMAIL_ALERT_EVENT_SOURCES).toEqual([safetyEscalationSource, parentReplySource]);
+  test('each source is an event on the shared list, read in a fixed order, with a send-time read rule', () => {
+    expect(EMAIL_ALERT_EVENT_SOURCES).toEqual([safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource]);
+    const listed = Object.values(EMAIL_ALERT_EVENTS).flat() as string[];
     for (const source of EMAIL_ALERT_EVENT_SOURCES) {
-      expect(EMAIL_ALERT_EVENTS.staff as readonly string[]).toContain(source.checkpointKey);
+      expect(listed).toContain(source.checkpointKey);
     }
     // A source the sweep reads but the send-time check does not know would be
     // skipped on every send.
