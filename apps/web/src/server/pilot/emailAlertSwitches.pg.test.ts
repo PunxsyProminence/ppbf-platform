@@ -227,7 +227,7 @@ async function switchRows(client: Client) {
 async function auditRows(client: Client) {
   const { rows } = await client.query(
     `select event_type, actor_account_id, actor_role, organization_id, entity_id, details
-       from pilot.audit_events where entity_type = 'email_alert_switch' order by created_at, audit_id`,
+       from pilot.audit_events where entity_type = 'email_alert_switch' order by audit_id`,
   );
   return rows;
 }
