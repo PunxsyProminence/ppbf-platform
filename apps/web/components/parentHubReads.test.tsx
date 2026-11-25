@@ -267,6 +267,38 @@ describe('parent-facing copy folded into FC-05', () => {
   });
 });
 
+/* W4 item 4 (OW27-24 A, Q4.1 A): the Messages tab carries Write to the coach, about the child the
+   hub's picker has chosen, and its help list says a guardian can write first. */
+describe('Write to the coach on the Messages tab (W4 item 4)', () => {
+  test("the box is about the picker's child, and what is sent names that child", async () => {
+    const fetchMock = installFetch();
+    await renderHub();
+    await openTab('Messages');
+    expect(screen.getByRole('heading', { name: 'Write to the coach' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Your message about First Child')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    fireEvent.change(screen.getByLabelText('Your message about Second Child'), { target: { value: 'Is practice on Saturday?' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+    });
+    const sent = fetchMock.mock.calls
+      .filter((call) => String(call[0]).endsWith('/api/pilot/parent/family-threads') && (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => JSON.parse(String((call[1] as RequestInit).body)));
+    expect(sent).toEqual([{ athlete_id: 'ath_2', text: 'Is practice on Saturday?' }]);
+  });
+
+  test('the help list says a guardian can write to the coach first', async () => {
+    installFetch();
+    await renderHub();
+    await openTab('Messages');
+    fireEvent.click(screen.getByText('HELP: Messages from the coaches'));
+    expect(screen.getByText('Write to the coach about your child, and read the reply under it')).toBeInTheDocument();
+  });
+});
+
 /* #1542, FC-08: a message is "New" until this guardian has opened it, read
    back from their own opens; the summary tile counts the new ones. */
 describe('New until this guardian opens it (FC-08)', () => {

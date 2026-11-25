@@ -47,13 +47,13 @@ function bodies(fetchMock: jest.Mock, path: string): Array<Record<string, unknow
 }
 
 // The hub's use: the hook once, the count beside the panel.
-function Hub({ activeChildId }: Readonly<{ activeChildId: string | null }>) {
+function Hub({ activeChildId, onTab = true }: Readonly<{ activeChildId: string | null; onTab?: boolean }>) {
   const threads = useParentFamilyThreads();
   const counts = threads.unseenByChild;
   return (
     <>
       <p data-testid="unseen">{counts ? [...counts].map(([id, n]) => `${id}:${n}`).join(' ') || 'none' : 'unavailable'}</p>
-      <ParentFamilyThreads threads={threads} childNames={NAMES} activeChildId={activeChildId} />
+      {onTab ? <ParentFamilyThreads threads={threads} childNames={NAMES} activeChildId={activeChildId} /> : null}
     </>
   );
 }
@@ -125,7 +125,7 @@ test('writes again under a message they started; a refusal keeps the words and s
     fireEvent.click(send);
   });
   expect(bodies(fetchMock, '/api/pilot/parent/family-threads')).toEqual([{ thread_id: 't1', text: 'Thank you!' }]);
-  expect(await screen.findByText('Not sent; your words are still in the box. Not found: that message is not on your page.')).toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Not sent; your words are still in the box. Not found: that message is not on your page.');
   expect(box).toHaveValue('Thank you!');
 
   status = 500;
@@ -138,7 +138,8 @@ test('writes again under a message they started; a refusal keeps the words and s
 
 test('a failed read says so, never "none", and the count is unavailable; checking again reads again', async () => {
   let fail = true;
-  const fetchMock = install(() => (fail ? jsonResponse({ error: 'down' }, false, 500) : jsonResponse({ ok: true, items: [] })));
+  // A refusal that still carries a list is a failed read all the same.
+  const fetchMock = install(() => (fail ? jsonResponse({ ok: false, items: [] }, false, 500) : jsonResponse({ ok: true, items: [] })));
   render(<Hub activeChildId="ath_1" />);
 
   expect(await screen.findByRole('alert')).toHaveTextContent('This is not a statement that you have written none.');
@@ -150,6 +151,68 @@ test('a failed read says so, never "none", and the count is unavailable; checkin
   expect(await screen.findByText('You have not written to the coach yet.')).toBeInTheDocument();
   expect(screen.getByTestId('unseen')).toHaveTextContent('none');
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+test('a re-read that fails after a send says so over the last list; it never claims none was written', async () => {
+  let reads = 0;
+  install(() => {
+    reads += 1;
+    return reads === 1 ? jsonResponse({ ok: true, items: [] }) : jsonResponse({ error: 'down' }, false, 500);
+  });
+  render(<Hub activeChildId="ath_1" />);
+  fireEvent.change(await screen.findByLabelText('Your message about First Child'), { target: { value: 'Hello' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+  });
+  await waitFor(() => expect(reads).toBe(2));
+  expect(await screen.findByText(/could not be read again\. What shows below is from the last read\./)).toBeInTheDocument();
+  expect(screen.queryByText('You have not written to the coach yet.')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Check for your messages again' })).toBeInTheDocument();
+});
+
+test('words written about one child stay with that child: after the picker changes they are not sent about the other', async () => {
+  const fetchMock = install(() => jsonResponse({ ok: true, items: [] }));
+  const { rerender } = render(<Hub activeChildId="ath_1" />);
+  fireEvent.change(await screen.findByLabelText('Your message about First Child'), { target: { value: 'About the first child' } });
+
+  rerender(<Hub activeChildId="ath_2" />);
+  const second = screen.getByLabelText('Your message about Second Child');
+  expect(second).toHaveValue('');
+  fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+  expect(bodies(fetchMock, '/api/pilot/parent/family-threads')).toEqual([]);
+
+  rerender(<Hub activeChildId="ath_1" />);
+  expect(screen.getByLabelText('Your message about First Child')).toHaveValue('About the first child');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+  });
+  expect(bodies(fetchMock, '/api/pilot/parent/family-threads')).toEqual([{ athlete_id: 'ath_1', text: 'About the first child' }]);
+});
+
+test('words typed while a message is being sent are kept', async () => {
+  let release: () => void = () => {};
+  install(
+    () => jsonResponse({ ok: true, items: [] }),
+    () => new Promise<Response>((resolve) => { release = () => resolve(jsonResponse({ ok: true }, true, 201)); }),
+  );
+  render(<Hub activeChildId="ath_1" />);
+  const box = await screen.findByLabelText('Your message about First Child');
+  fireEvent.change(box, { target: { value: 'First message' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+  fireEvent.change(box, { target: { value: 'A second, different message' } });
+  await act(async () => release());
+  expect(box).toHaveValue('A second, different message');
+});
+
+test('leaving the tab and coming back keeps unsent words', async () => {
+  install(() => jsonResponse({ ok: true, items: [THREAD] }));
+  const { rerender } = render(<Hub activeChildId="ath_1" />);
+  fireEvent.change(await screen.findByLabelText('Your message about First Child'), { target: { value: 'Half written' } });
+  fireEvent.change(screen.getByLabelText(/Write again about Second Child/), { target: { value: 'Also half written' } });
+  rerender(<Hub activeChildId="ath_1" onTab={false} />);
+  rerender(<Hub activeChildId="ath_1" />);
+  expect(screen.getByLabelText('Your message about First Child')).toHaveValue('Half written');
+  expect(screen.getByLabelText(/Write again about Second Child/)).toHaveValue('Also half written');
 });
 
 describe("seeing the gym's reply (half on screen, FC-05 Q-1 A)", () => {
@@ -200,6 +263,20 @@ describe("seeing the gym's reply (half on screen, FC-05 Q-1 A)", () => {
     expect(bodies(fetchMock, '/api/pilot/parent/family-thread-reads')).toEqual([{ post_id: 'p2' }]);
     await waitFor(() => expect(screen.getByTestId('unseen')).toHaveTextContent('none'));
     expect(within(screen.getByText('Yes, see you Saturday.').closest('li') as HTMLElement).getByText('New')).toBeInTheDocument();
+  });
+
+  test('a reply recorded as seen is not sent again when the tab is left and opened again', async () => {
+    const fetchMock = install(() => jsonResponse({ ok: true, items: [THREAD] }));
+    const { rerender } = render(<Hub activeChildId="ath_1" />);
+    await waitFor(() => expect(watched()).toEqual(['p2']));
+    await act(async () => show('p2', 0.9));
+    await waitFor(() => expect(screen.getByTestId('unseen')).toHaveTextContent('none'));
+
+    rerender(<Hub activeChildId="ath_1" onTab={false} />);
+    rerender(<Hub activeChildId="ath_1" />);
+    await screen.findByText('Yes, see you Saturday.');
+    expect(watched()).toEqual([]);
+    expect(bodies(fetchMock, '/api/pilot/parent/family-thread-reads')).toEqual([{ post_id: 'p2' }]);
   });
 
   test('a failed write is not sent again at once; the count stays; the next read watches it again', async () => {
