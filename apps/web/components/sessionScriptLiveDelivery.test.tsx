@@ -10,7 +10,7 @@ import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { RESEND_MS, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
@@ -2240,7 +2240,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.getAllByText('logged')).toHaveLength(1);
   });
 
-  it('once this console has settled the run, a kept save refused as no longer live says nothing: the page\'s words stand', async () => {
+  it('once this console has settled the run, a kept save refused as no longer live leaves the page\'s words, and the page\'s list names it as not saved', async () => {
     jest.useFakeTimers();
     let settled = false;
     let finishes = 0;
@@ -2268,6 +2268,10 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     await wait(0);
     expect(onSettled).toHaveBeenCalledTimes(1);
     expect(onRunGone).not.toHaveBeenCalled();
+    // Round 13, reviewer A: a tap kept behind a finish is never lost without a word.
+    expect(readSaveQueue().failed).toEqual([
+      { label: 'Mark the no-shows Absent', words: 'Nobody was marked Absent: the session had already ended when it reached the server.', known: true },
+    ]);
   });
 
   it('a refused log RESEND that the ledger shows had landed reads as logged (condition 2), read with the queue\'s signal', async () => {
