@@ -78,7 +78,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 
 - Typed line: "fresh technical check"
 - Purpose: The owner's check at the end of the warm-up, before the SIT main set (D-PK73-3): the fresh baseline for whether the conditioning affects position, perception, action, defense, exit or reset. Target: Show the selected boxing skill while fresh, scored so the same check can be repeated after the conditioning.
-- Setup: A timer, a bag and a notebook; a partner with mitts optional, video optional; no contact.
+- Setup: A timer, a bag and a notebook; a partner and mitts optional; video optional; no contact.
 - Execution: At the end of the warm-up, before the main set, the athlete performs the technical skill the coach has selected, fresh; the coach notes how it looks so the same check can be repeated straight after the main set.
 - Good: A clear note of the skill done fresh: position, perception, action, defense, exit and reset as the coach sees them.
 - Scale: A: A few reps of the one selected skill, the coach noting. [A few reps.] | B (start): The fresh technical check as written. | C: As written, and the athlete notes their own check beside the coach's. [Athlete notes too.]
@@ -91,7 +91,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 
 - Typed line: "same technical check; first-failure log; regression note"
 - Purpose: The owner's check straight after the SIT main set, before the cool-down (D-PK73-3): does the skill hold under fatigue, and what broke first. Target: Repeat the same technical check straight after the conditioning, log the first failure and note the regression.
-- Setup: The same timer, bag and notebook as the fresh check; a partner with mitts optional, video optional; no contact.
+- Setup: The same timer, bag and notebook as the fresh check; a partner and mitts optional; video optional; no contact.
 - Execution: Straight after the main set, repeat the same technical check; log the first failure (which part broke first: position, perception, action, defense, exit or reset) and write a regression note for the next session. Record the conditioning exposure and rest actually used.
 - Good: The check is still trainable and measurable after the conditioning, and the first failure and the regression note are written down.
 - Scale: A: The coach logs the first failure; the athlete only performs. [Coach-logged.] | B (start): Same technical check, first-failure log and regression note, as written. | C: As written, and the athlete names their own first failure before the coach's note. [Athlete names it.]
@@ -133,7 +133,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 - Setup: A bike or curved treadmill for the first option; floor space in stance for the shadow option; no partner and no contact.
 - Execution: Non-strength days only. Either 8 × 20 s hard / 10 s easy on a bike or curved treadmill, or 4 × 30 s maximal shadow with 30 s rest.
 - Good: Every effort hard and high quality; the shadow option stays in form at maximal speed; recovery is used, not skipped.
-- Scale: A: Fewer efforts of either option (the coach cuts the count), each still hard. [Fewer efforts.] | B (start): Either option as written. | C: Both options in one finisher: the bike or treadmill set, then the shadow set, inside the 8 minutes. [Both options.]
+- Scale: A: Fewer efforts of either option (the coach cuts the count), each still hard. [Fewer efforts.] | B (start): Either option as written. | C: Both options in one finisher, the bike or treadmill set then the shadow set; the coach trims either set to fit the 8 minutes. [Both options.]
 - Stop: Stop the finisher when the efforts stop being high quality (shadow form breaks, or the hard intervals turn into paced ones); do not add more. (fatigue)
 - Cue: none (conditioning)
 - Equipment: bike or curved treadmill (first option only)

@@ -1729,7 +1729,7 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_b2ee94fe586045,drl_6529e148d4b491,C,false,"As written, the coach counting each round's KPI and telling the athlete the count in the rest.",KPI counted.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_25077fc1b8bc9b,drl_02c1253c606e21,A,false,"Fewer efforts of either option (the coach cuts the count), each still hard.",Fewer efforts.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2c4ef713fbb1d5,drl_02c1253c606e21,B,true,Either option as written.,,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_471f836cbb74dc,drl_02c1253c606e21,C,false,"Both options in one finisher: the bike or treadmill set, then the shadow set, inside the 8 minutes.",Both options.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_471f836cbb74dc,drl_02c1253c606e21,C,false,"Both options in one finisher, the bike or treadmill set then the shadow set; the coach trims either set to fit the 8 minutes.",Both options.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_a2e518921ae281,drl_a5f52ff0aa9d2e,A,false,"Easy movement, the breathing and the log; a shorter stretch set.",Shorter stretch.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_495a8f4a5cd1d4,drl_a5f52ff0aa9d2e,B,true,The cool-down as written.,,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_781188775d020e,drl_a5f52ff0aa9d2e,C,false,"As written, the athlete writing their own log line before the coach reads it.",Athlete-logged.,none,,scaffold_needs_coach_review
