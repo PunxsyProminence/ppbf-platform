@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { keepSave, type KeptSave } from '@/src/lib/saveQueue';
 import type { ClassChoice } from '@/src/shared/sessionClassChoice';
 import SessionClassPicker, { classTimes } from './SessionClassPicker';
 
@@ -23,8 +24,8 @@ export interface RunClassView {
 type Copied = { athlete_id: string; effect: string; previous_status?: string };
 
 /** The live run's class as GET /api/pilot/session-scripts/runs answers it, or null. */
-export async function fetchRunClass(): Promise<RunClassView | null> {
-  const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { credentials: 'include' });
+export async function fetchRunClass(signal?: AbortSignal): Promise<RunClassView | null> {
+  const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { credentials: 'include', signal });
   if (!response.ok) throw new Error('run');
   return ((await response.json()) as { class?: RunClassView }).class ?? null;
 }
@@ -85,11 +86,74 @@ export default function SessionRunClass({
     };
   }, [classId]);
 
+  // What a tie (or untie) the server took did, in words.
+  async function showTied(payload: { class_id?: string | null; copied?: Copied[]; released?: string[] }) {
+    setChoosing(false);
+    onClassChange(payload.class_id ?? null);
+    if (payload.class_id) {
+      const tied = await fetchRunClass().catch(() => null);
+      setView(tied);
+      setMessage(tieSummary(tied?.title ?? 'the class', payload.copied ?? []));
+    } else {
+      const kept = payload.released?.length ?? 0;
+      setMessage(`No class now (open gym).${kept ? ` The ${plural(kept, 'mark', 'marks')} this session put on the class register ${kept === 1 ? 'stays' : 'stay'}.` : ''}`);
+    }
+  }
+
+  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). It sets the session's
+  // class, so a resend changes nothing more (OQ-1's repeat proofs). A refused RESEND is checked
+  // against the class the server holds before any failed words (Overwatch condition 2).
+  function keptTie(next: string | null): KeptSave {
+    let refusal: { error?: string; message?: string } = {};
+    return {
+      label: next ? 'Tie the session to a class' : 'Untie the session from its class',
+      send: ({ signal }) =>
+        fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'tie_class', class_id: next }),
+          signal,
+        }),
+      answerOf: async (response) => {
+        if (response.ok) return 'saved';
+        refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
+        return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
+      },
+      checkLanded: async (signal) => {
+        const now = await fetchRunClass(signal).then((view) => ({ view }), () => null);
+        if (now === null) return null;
+        return (now.view?.class_id ?? null) === next;
+      },
+      onSaved: (response) => {
+        void (async () => {
+          const payload = response
+            ? ((await response.json().catch(() => ({}))) as { class_id?: string | null; copied?: Copied[]; released?: string[] })
+            : { class_id: next };
+          await showTied(payload);
+        })();
+      },
+      onRefused: (_response, landed) => {
+        if (refusal.error && RUN_GONE.has(refusal.error)) {
+          onRunNotLive();
+          return undefined;
+        }
+        if (landed === null) return 'It is not known whether the class was changed. Reload the page before trying again.';
+        return refusal.message ?? 'The class could not be changed.';
+      },
+    };
+  }
+
   async function tie(next: string | null) {
     if (busy) return;
     setBusy(true);
     setMessage('');
     try {
+      if ((await keepSave(keptTie(next))) === 'kept') {
+        setChoosing(false);
+        return;
+      }
+      // Not kept (the page does not know who is signed in): sent once, as before.
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -111,16 +175,7 @@ export default function SessionRunClass({
         setMessage(payload.message ?? 'The class could not be changed. Try again.');
         return;
       }
-      setChoosing(false);
-      onClassChange(payload.class_id ?? null);
-      if (payload.class_id) {
-        const tied = await fetchRunClass().catch(() => null);
-        setView(tied);
-        setMessage(tieSummary(tied?.title ?? 'the class', payload.copied ?? []));
-      } else {
-        const kept = payload.released?.length ?? 0;
-        setMessage(`No class now (open gym).${kept ? ` The ${plural(kept, 'mark', 'marks')} this session put on the class register ${kept === 1 ? 'stays' : 'stay'}.` : ''}`);
-      }
+      await showTied(payload);
     } catch {
       setMessage('Network error -- the class was not changed.');
     } finally {

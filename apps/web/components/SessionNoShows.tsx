@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { keepSave, type KeptSave } from '@/src/lib/saveQueue';
 import { type RunClassView, fetchRunClass } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
@@ -47,12 +48,69 @@ export default function SessionNoShows({
     };
   }, [runId, classId, presentCount, attempt]);
 
+  const showMarked = useCallback((done: number | null) => {
+    setResult(done === null
+      ? 'The server shows the no-shows were marked Absent on the class register.'
+      : done === 0
+        ? 'Nobody needed marking: everyone signed up already has a mark.'
+        : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
+    setAttempt((count) => count + 1);
+  }, []);
+
+  // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). Marking the no-shows
+  // again marks nobody new (OQ-1's repeat proofs). A refused RESEND is checked against the count the
+  // server holds before any failed words (Overwatch condition 2).
+  const keptNoShows = useCallback((): KeptSave => {
+    let refusal: { error?: string; message?: string } = {};
+    return {
+      label: 'Mark the no-shows Absent',
+      send: ({ signal }) =>
+        fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_no_shows' }),
+          signal,
+        }),
+      answerOf: async (response) => {
+        if (response.ok) return 'saved';
+        refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
+        return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
+      },
+      checkLanded: async (signal) => {
+        const now = await fetchRunClass(signal).then((view) => ({ view }), () => null);
+        if (now === null) return null;
+        return now.view?.class_id === classId && now.view.no_shows === 0;
+      },
+      onSaved: (response) => {
+        void (async () => {
+          if (!response) {
+            showMarked(null);
+            return;
+          }
+          const payload = (await response.json().catch(() => ({}))) as { marked?: string[] };
+          showMarked(payload.marked?.length ?? 0);
+        })();
+      },
+      onRefused: (_response, landed) => {
+        if (refusal.error && RUN_GONE.has(refusal.error)) {
+          onRunNotLive();
+          return undefined;
+        }
+        if (landed === null) return 'It is not known whether anyone was marked Absent. Check the class register.';
+        return refusal.message ?? 'Nobody was marked Absent.';
+      },
+    };
+  }, [classId, onRunNotLive, runId, showMarked]);
+
   const markNoShows = useCallback(async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setMessage('');
     try {
+      if ((await keepSave(keptNoShows())) === 'kept') return;
+      // Not kept (the page does not know who is signed in): sent once, as before.
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -68,18 +126,14 @@ export default function SessionNoShows({
         setMessage(payload.message ?? 'Nobody was marked Absent. Try again.');
         return;
       }
-      const done = payload.marked?.length ?? 0;
-      setResult(done === 0
-        ? 'Nobody needed marking: everyone signed up already has a mark.'
-        : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
-      setAttempt((count) => count + 1);
+      showMarked(payload.marked?.length ?? 0);
     } catch {
       setMessage('Network error -- it is not known whether anyone was marked Absent. Check the class register.');
     } finally {
       inFlight.current = false;
       setBusy(false);
     }
-  }, [onRunNotLive, runId]);
+  }, [keptNoShows, onRunNotLive, runId, showMarked]);
 
   // Only this class's count: never one read before a retie.
   const view = read.state === 'loaded' && read.view?.class_id === classId ? read.view : null;

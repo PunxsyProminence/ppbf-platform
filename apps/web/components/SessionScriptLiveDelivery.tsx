@@ -15,6 +15,8 @@ import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import SessionRunClass from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
+import SaveQueueNotice from '@/components/SaveQueueNotice';
+import { keepSave, prepareSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 import type { GymTvListItem } from '@/src/server/pilot/gymTvs';
@@ -158,6 +160,29 @@ function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun
       return live.show_on_wall ? 'the session is allowed on a TV' : 'the session is not allowed on a TV';
     default:
       return null;
+  }
+}
+
+/**
+ * What the waiting and failed lines call a run action (W4 item 7, OQ-3): the control's own words.
+ * Words PROPOSED (UI not tied down, OD-2026-10-02-004).
+ */
+export function runActionLabel(body: Record<string, unknown>, blocks: readonly Block[]): string {
+  switch (body.action) {
+    case 'pause':
+      return 'Pause session';
+    case 'resume':
+      return 'Resume session';
+    case 'advance': {
+      const label = blocks.find((item) => item.block_id === body.to_block_id)?.block_label;
+      return label ? `Move to ${label}` : 'Move to the block you picked';
+    }
+    case 'show_on_wall':
+      return body.show ? 'Allow on a TV: on' : 'Allow on a TV: off';
+    case 'finish':
+      return body.run_state === 'abandoned' ? 'Record as abandoned' : 'Record as completed';
+    default:
+      return 'Session change';
   }
 }
 
@@ -355,6 +380,10 @@ export default function SessionScriptLiveDelivery({
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  // The page keeps its live-floor saves (W4 item 7): it learns who is signed in when it opens.
+  useEffect(() => {
+    prepareSaveQueue();
+  }, []);
 
   // ---- Log an intervention against THIS run --------------------------
   // The picklists a coach needs to log one: the roster they coach, and the
@@ -399,6 +428,11 @@ export default function SessionScriptLiveDelivery({
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState('');
   const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
+  // The same list for a kept log's landed check, which runs after later renders.
+  const loggedRef = useRef(loggedInterventions);
+  useEffect(() => {
+    loggedRef.current = loggedInterventions;
+  }, [loggedInterventions]);
 
   // ONE TAP, ONE INTERVENTION (finding F-135). A read that finds nothing does not prove a write
   // still in flight will not commit after it, so a retry must not be a new log. Each tap of an
@@ -444,6 +478,71 @@ export default function SessionScriptLiveDelivery({
     [run.run_id],
   );
 
+  const keptLog = useCallback(
+    (
+      athleteId: string,
+      protocolId: string,
+      athleteName: string,
+      protocolTitle: string,
+      beforeRead: Promise<{ execution_id: string; created_at: string }[] | null>,
+    ): KeptSave => {
+      let refusal: { error?: string } = {};
+      let landedItem: { execution_id: string; created_at: string } | null = null;
+      const showLogged = (item: { execution_id: string; created_at: string }) =>
+        setLoggedInterventions((items) => [
+          { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
+          ...items,
+        ]);
+      return {
+        label: `Intervention: ${protocolTitle} for ${athleteName}`,
+        send: ({ signal, requestKey, madeByAccountId }) =>
+          fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              athlete_id: athleteId,
+              protocol_id: protocolId,
+              session_run_id: run.run_id,
+              request_key: requestKey,
+              made_by_account_id: madeByAccountId,
+            }),
+            signal,
+          }),
+        answerOf: async (response) => {
+          const payload = (await response.clone().json().catch(() => ({}))) as { item?: unknown; error?: string };
+          if (isRefusal(response.status)) {
+            refusal = payload;
+            return 'refused';
+          }
+          return response.ok && payload.item ? 'saved' : 'unknown';
+        },
+        // A refused resend: is there a log of this pair in this run that was not there before?
+        checkLanded: async (signal) => {
+          const before = await beforeRead;
+          const after = await readRunExecutions(athleteId, protocolId, signal);
+          if (before === null || after === null) return null;
+          const known = new Set([...before, ...loggedRef.current].map((item) => item.execution_id));
+          landedItem = after.find((item) => !known.has(item.execution_id)) ?? null;
+          return landedItem !== null;
+        },
+        onSaved: (response) => {
+          void (async () => {
+            const item = response
+              ? ((await response.json().catch(() => ({}))) as { item?: { execution_id: string; created_at: string } }).item
+              : landedItem;
+            if (item) showLogged(item);
+          })();
+        },
+        onRefused: (response, landed) =>
+          landed === null
+            ? LOG_UNCHECKED
+            : refusalWords({ error: refusal.error, status: response.status }, {}, 'The intervention was not logged.'),
+      };
+    },
+    [readRunExecutions, run.run_id],
+  );
+
   const logIntervention = useCallback(async () => {
     if (logBusy) return;
     if (!logAthleteId || !logProtocolId) {
@@ -468,15 +567,25 @@ export default function SessionScriptLiveDelivery({
       ]);
       setLogProtocolId('');
     };
+    // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
+    // log of the same pair in this run (from before a reload, say) must not read as this one.
+    // A failed read never stops the log, and a slow one holds it back three seconds at most.
+    const beforeRead = readRunExecutions(
+      logAthleteId,
+      logProtocolId,
+      typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
+    );
     try {
-      // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
-      // log of the same pair in this run (from before a reload, say) must not read as this one.
-      // A failed read never stops the log, and a slow one holds it back three seconds at most.
-      const before = await readRunExecutions(
-        logAthleteId,
-        logProtocolId,
-        typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(3000) : undefined,
-      );
+      // Kept on the open page (W4 item 7, OQ-3): resent with the queue's request key until it goes
+      // through, instead of "Try again". The server writes it once however often it is sent (F-135),
+      // and only for the account that made it (made_by_account_id, OQ-1). The choice is cleared
+      // once kept, so a second tap is a new choice, not the same log twice.
+      const kept = await keepSave(keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, beforeRead));
+      if (kept === 'kept') {
+        setLogProtocolId('');
+        return;
+      }
+      const before = await beforeRead;
       try {
         const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
           method: 'POST',
@@ -530,18 +639,19 @@ export default function SessionScriptLiveDelivery({
     } finally {
       setLogBusy(false);
     }
-  }, [logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, loggedInterventions, readRunExecutions, run.run_id]);
+  }, [keptLog, logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, loggedInterventions, readRunExecutions, run.run_id]);
 
   // A run can stop being live underneath this screen (finished on another
   // device, or settled by a race). The recovery is always the same: ask the
   // server what is live now, and either show that or hand control back.
   // The coach's live run as the server holds it now: the run, null for none, or 'unreadable'.
-  const readLiveRun = useCallback(async (): Promise<LiveSessionScriptRun | null | 'unreadable'> => {
+  const readLiveRun = useCallback(async (signal?: AbortSignal): Promise<LiveSessionScriptRun | null | 'unreadable'> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
+        signal,
       });
       if (!response.ok) return 'unreadable';
       const payload = (await response.json()) as { run?: LiveSessionScriptRun | null };
@@ -573,6 +683,26 @@ export default function SessionScriptLiveDelivery({
     showOtherLiveRun(live);
   }, [readLiveRun, showOtherLiveRun]);
 
+  // This run among the gym's finished sessions: its settled row, null when it is not there settled,
+  // or 'unreadable'.
+  const readSettledRun = useCallback(async (signal?: AbortSignal): Promise<SettledRunSummary | null | 'unreadable'> => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs?finished=true`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        signal,
+      });
+      if (!response.ok) return 'unreadable';
+      const payload = (await response.json()) as { runs?: SettledRunSummary[] };
+      if (!Array.isArray(payload.runs)) return 'unreadable';
+      const settled = payload.runs.find((item) => item.run_id === run.run_id);
+      return settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned') ? settled : null;
+    } catch {
+      return 'unreadable';
+    }
+  }, [run.run_id]);
+
   // A run action whose answer proved nothing: read what the server holds and say that.
   const recoverRunAction = useCallback(
     async (body: Record<string, unknown>) => {
@@ -592,85 +722,147 @@ export default function SessionScriptLiveDelivery({
         return;
       }
       // This run is no longer live: a finish that landed is among the gym's finished sessions.
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs?finished=true`, {
-          method: 'GET',
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (response.ok) {
-          const payload = (await response.json()) as { runs?: SettledRunSummary[] };
-          const settled = payload.runs?.find((item) => item.run_id === run.run_id);
-          if (settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned')) {
-            onSettled(settled);
-            return;
-          }
-          if (Array.isArray(payload.runs)) {
-            setActionError(RUN_END_UNKNOWN);
-            return;
-          }
-        }
-      } catch {
-        // Falls through to "could not be checked".
-      }
-      setActionError(RUN_UNCHECKED);
+      const settled = await readSettledRun();
+      if (settled === 'unreadable') setActionError(RUN_UNCHECKED);
+      else if (settled) onSettled(settled);
+      else setActionError(RUN_END_UNKNOWN);
     },
-    [applyServerRun, detail, onSettled, readLiveRun, run.run_id, showOtherLiveRun],
+    [applyServerRun, detail, onSettled, readLiveRun, readSettledRun, run.run_id, showOtherLiveRun],
+  );
+
+  // A run action kept on the open page (W4 item 7, OQ-3; OW27-35 A): sent now, or after the saves
+  // before it, and resent until it goes through, with the waiting words meanwhile. Each sets a target
+  // state, so a resend changes nothing more (OQ-1's repeat proofs; Overwatch condition 3). A refused
+  // RESEND is checked against what the server holds before any failed words (condition 2).
+  const keptRunAction = useCallback(
+    (body: Record<string, unknown>): KeptSave => {
+      const blocks = detail?.blocks ?? [];
+      let refusal: { error?: string } = {};
+      let settledByCheck: SettledRunSummary | null = null;
+      return {
+        label: runActionLabel(body, blocks),
+        send: ({ signal }) =>
+          fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal,
+          }),
+        answerOf: async (response) => {
+          const payload = (await response.clone().json().catch(() => ({}))) as { run?: unknown; error?: string };
+          if (isRefusal(response.status)) {
+            refusal = payload;
+            return 'refused';
+          }
+          // A yes without the run proves nothing: it is sent again (it sets a state).
+          return response.ok && payload.run ? 'saved' : 'unknown';
+        },
+        checkLanded: async (signal) => {
+          if (body.action === 'finish') {
+            const settled = await readSettledRun(signal);
+            if (settled === 'unreadable') return null;
+            settledByCheck = settled && settled.run_state === body.run_state ? settled : null;
+            return settledByCheck !== null;
+          }
+          const live = await readLiveRun(signal);
+          if (live === 'unreadable') return null;
+          return live !== null && live.run_id === run.run_id && savedRunWords(body, live, blocks) !== null;
+        },
+        onSaved: (response) => {
+          void (async () => {
+            if (response === null) {
+              // Landed after all (the check found it): show what the server holds.
+              if (body.action === 'finish') {
+                if (settledByCheck) onSettled(settledByCheck);
+                return;
+              }
+              const live = await readLiveRun();
+              if (live !== 'unreadable' && live && live.run_id === run.run_id) applyServerRun(live);
+              return;
+            }
+            const payload = (await response.json().catch(() => ({}))) as { run?: LiveSessionScriptRun | SessionScriptRunRow };
+            if (!payload.run) return;
+            if (body.action === 'finish') onSettled(payload.run);
+            else applyServerRun(payload.run as LiveSessionScriptRun);
+          })();
+        },
+        onRefused: (response, landed) => {
+          if (refusal.error === 'SESSION_RUN_NOT_LIVE' || refusal.error === 'SESSION_RUN_NOT_FOUND') {
+            void resyncAfterNotLive();
+            return undefined;
+          }
+          // A refused resend that could not be checked: whether an earlier send landed is not known.
+          if (landed === null) return RUN_UNCHECKED;
+          return describeRunError(refusal.error, response.status);
+        },
+      };
+    },
+    [applyServerRun, detail, onSettled, readLiveRun, readSettledRun, resyncAfterNotLive, run.run_id],
+  );
+
+  // Today's path, for a run action the queue could not keep (the page does not know who is signed in):
+  // sent once, and a lost answer is read back from the server.
+  const sendRunActionNow = useCallback(
+    async (body: Record<string, unknown>): Promise<void> => {
+      let response: Response;
+      try {
+        response = await fetch(
+          `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`,
+          {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          },
+        );
+      } catch {
+        await recoverRunAction(body);
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        run?: LiveSessionScriptRun | SessionScriptRunRow;
+        error?: string;
+      };
+
+      if (isRefusal(response.status)) {
+        if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
+          await resyncAfterNotLive();
+          return;
+        }
+        setActionError(describeRunError(payload.error, response.status));
+        return;
+      }
+
+      if (!response.ok || !payload.run) {
+        await recoverRunAction(body);
+        return;
+      }
+      if (body.action === 'finish') {
+        onSettled(payload.run);
+        return;
+      }
+      applyServerRun(payload.run as LiveSessionScriptRun);
+    },
+    [applyServerRun, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
   );
 
   const mutateRun = useCallback(
     async (body: Record<string, unknown>, busyKey: string): Promise<void> => {
-      // One mutation at a time: a double-tapped control must not race itself.
-      // (Pause/resume are additionally idempotent server-side.) The lock holds
-      // through any recovery read below.
+      // One tap at a time: a double-tapped control must not race itself. The lock holds while the
+      // queue takes the save (at most KEEP_WAIT_MS), or through today's send and read-back.
       if (actionBusy) return;
       setActionBusy(busyKey);
       setActionError('');
       try {
-        let response: Response;
-        try {
-          response = await fetch(
-            `${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`,
-            {
-              method: 'PATCH',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            },
-          );
-        } catch {
-          await recoverRunAction(body);
-          return;
-        }
-
-        const payload = (await response.json().catch(() => ({}))) as {
-          run?: LiveSessionScriptRun | SessionScriptRunRow;
-          error?: string;
-        };
-
-        if (isRefusal(response.status)) {
-          if (payload.error === 'SESSION_RUN_NOT_LIVE' || payload.error === 'SESSION_RUN_NOT_FOUND') {
-            await resyncAfterNotLive();
-            return;
-          }
-          setActionError(describeRunError(payload.error, response.status));
-          return;
-        }
-
-        if (!response.ok || !payload.run) {
-          await recoverRunAction(body);
-          return;
-        }
-        if (body.action === 'finish') {
-          onSettled(payload.run);
-          return;
-        }
-        applyServerRun(payload.run as LiveSessionScriptRun);
+        if ((await keepSave(keptRunAction(body))) === 'kept') return;
+        await sendRunActionNow(body);
       } finally {
         setActionBusy(null);
       }
     },
-    [actionBusy, applyServerRun, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
+    [actionBusy, keptRunAction, sendRunActionNow],
   );
 
   // ---- Finish / abandon -------------------------------------------------
@@ -859,6 +1051,8 @@ export default function SessionScriptLiveDelivery({
           {actionError}
         </p>
       )}
+      {/* The saves this page keeps: waiting, failed, or not sent (W4 item 7). */}
+      <SaveQueueNotice />
 
       {/* The plan, current block first-class. A plain session has none. */}
       {!isPlain && detailState === 'loading' && (

@@ -372,6 +372,8 @@ describe('pause and resume', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
     fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+    // The send now follows the queue's account check (W4 item 7), so it is counted once that settles.
+    await act(async () => {});
     expect(patchCalls(fetchMock)).toHaveLength(1);
 
     await act(async () => {
