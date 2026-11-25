@@ -458,15 +458,70 @@ describe('the committed amateur + pro rows', () => {
     }
   });
 
-  const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
-  (haveFrozen ? it : it.skip)('regenerate byte for byte from the frozen Backbone, drafts included (skipped where that folder is absent)', () => {
+  // Lane W4-8, TL-5b (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; GO answer item 2 on #2162): the typed
+  // steps of the Phase 2 archetype session vs. a pressure fighter now link the drills the lane wrote for their lines, and
+  // the template's 'items' label gains the lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so a rerun
+  // is an exact refusal naming those steps and that label, with or without --allow-overwrite, and writes nothing. With
+  // the lane's rows put back as the frozen Backbone holds them, it still regenerates byte for byte. UNVERIFIED where
+  // written (no frozen folder); App Overwatch runs this case on the PR's head before merging it (#2162).
+  const LANE_W48_TEMPLATE = 'wtp_bc964fe230d8f3';
+  const LANE_W48_STEPS = [1, 2, 6, 9];
+  const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
+  const runFrozen = (from: string, flags: string[] = []) => {
     const out = tempDir();
-    fs.cpSync(SEED_DIR, out, { recursive: true });
-    const result = spawnSync(process.execPath, [SCRIPT, FROZEN, '--out', out], { encoding: 'utf8' });
+    fs.cpSync(from, out, { recursive: true });
+    const result = spawnSync(process.execPath, [SCRIPT, FROZEN, '--out', out, ...flags], { encoding: 'utf8' });
+    return { out, status: result.status, stdout: result.stdout, stderr: result.stderr };
+  };
+  const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
+  (haveFrozen ? it : it.skip)('refuse a rerun from the frozen Backbone over lane W4-8\'s linked steps, naming exactly them, and regenerate byte for byte with them put back (skipped where that folder is absent)', () => {
+    const laneSteps = rows(ITEMS).filter((row) => row.template_id === LANE_W48_TEMPLATE && LANE_W48_STEPS.includes(Number(row.ordinal)));
+    expect(laneSteps.map((row) => Number(row.ordinal))).toEqual(LANE_W48_STEPS);
+    const typedStop = [
+      `refused: this run would write ${laneSteps.length} typed line(s) back over a step that links a drill (OW26-05 B, OW27-09 B). Nothing was written, and --allow-overwrite does not change that.`,
+      ...laneSteps.map((row) => `  ${ITEMS} template_id ${LANE_W48_TEMPLATE}: step ${row.ordinal} links drill ${row.drill_id}; the export would write it back as a typed line`),
+    ];
+    const refused = runFrozen(SEED_DIR);
+    expect([refused.status, refused.stdout]).toEqual([1, '']);
+    expect(refused.stderr).toBe(`${[
+      `backbone-export-amateur-pro: refused: this run would change or remove ${1 + laneSteps.length} committed row(s): edits made in the repo since the export. Nothing was written.`,
+      `  ${TEMPLATES} template_id ${LANE_W48_TEMPLATE}: changes field_labels of ${LANE_W48_TEMPLATE}`,
+      ...laneSteps.map((row) => `  ${ITEMS} template_id ${LANE_W48_TEMPLATE}: changes drill_id of ${row.item_id}`),
+      '--allow-overwrite would not write this run either.',
+      ...typedStop,
+    ].join('\n')}\n`);
+    const forced = runFrozen(SEED_DIR, ['--allow-overwrite']);
+    expect([forced.status, forced.stdout]).toEqual([1, '']);
+    expect(forced.stderr).toBe(`backbone-export-amateur-pro: ${typedStop.join('\n')}\n`);
+    for (const { out } of [refused, forced]) for (const name of WRITTEN) expect(read(out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
+
+    // The lane's rows put back: each linked step gets its typed line (quoted word for word in its drill's source_ref)
+    // and a blank drill_id, and the template's 'items' label loses the lane's 'drill_id' part.
+    const typed = tempDir();
+    fs.cpSync(SEED_DIR, typed, { recursive: true });
+    const sourceRef = new Map(rows(DRILLS).map((row) => [row.drill_id, row.source_ref]));
+    const rewrite = (name: string, edit: (row: Row) => Row) => {
+      const header = readCsv(read(typed, name)).header;
+      fs.writeFileSync(path.join(typed, name), writeCsv(header, rowsOf(read(typed, name)).map(edit).map((row) => header.map((column) => row[column] ?? ''))));
+    };
+    rewrite(ITEMS, (row) => {
+      if (!laneSteps.some((step) => step.item_id === row.item_id)) return row;
+      const line = LANE_W48_LINE.exec(sourceRef.get(row.drill_id) ?? '')?.[1];
+      if (line === undefined) throw new Error(`${row.item_id}: its drill's source_ref quotes no typed line`);
+      return { ...row, drill_id: '', free_text_drill: line };
+    });
+    rewrite(TEMPLATES, (row) => {
+      if (row.template_id !== LANE_W48_TEMPLATE) return row;
+      const labels = JSON.parse(row.field_labels);
+      expect(String(labels.items?.drill_id?.draft ?? '')).toMatch(/^AI draft, lane W4-8/);
+      delete labels.items.drill_id;
+      return { ...row, field_labels: JSON.stringify(labels) };
+    });
+    const result = runFrozen(typed);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('counts: drafts 68, sparringMinutes 3, tracks 14, amateurTracks 7, proTracks 7, blocks 16, blockSessions 498, templates 66, amateurTemplates 61, '
       + 'proTemplates 5, items 162, heldTemplates 0, quoteKeys 193, ownerPassageLists 22, ownerPassages 202, sp10Sentences 0');
-    for (const name of WRITTEN) expect(read(out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
+    for (const name of WRITTEN) expect(read(result.out, name)).toBe(read(typed, name));
   });
 });

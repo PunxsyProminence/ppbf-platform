@@ -1736,3 +1736,15 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_a667ff5dde8e30,drl_4845ed05215e9b,A,false,The coach gives the evaluation and the reset.,Coach-led.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_a676d01358b016,drl_4845ed05215e9b,B,true,"Evaluate → Reset, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_f7a9ea359fa466,drl_4845ed05215e9b,C,false,The athlete gives the evaluation and the reset first; the coach adds or corrects.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ddc1c4c689b985,drl_324847ebccc09f,A,false,"The standard warm-up, then the 3 lateral minutes at an easy, walking pace.",Walking pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d1e25c888aef68,drl_324847ebccc09f,B,true,"The warm-up as written: as standard, plus 3 minutes of lateral movement emphasis.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3edc28b36066c6,drl_324847ebccc09f,C,false,"As written, the coach calling changes of direction in the lateral minutes, the athlete changing at once.",Called direction changes.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7ccde6becf1dc5,drl_f10d64eeeef7f9,A,false,The coach states the problem and the four solutions once.,Coach only.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e3b9b41e1de2d3,drl_f10d64eeeef7f9,B,true,"The briefing as written: the problem, then the solutions.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_772b4a14c15290,drl_f10d64eeeef7f9,C,false,"As written, then each athlete names one solution and the block that trains it.",Athletes name the blocks.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6f3fac414ecd65,drl_0adc2ed7fb91aa,A,false,"The partner at 60% for all 6 rounds, the coach naming one solution for each round.",60% throughout; one named solution per round.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_80a27fa352fa5e,drl_0adc2ed7fb91aa,B,true,"The block as written: partner pressure rising 60% → 70% → 75%, taped channel, no straight-line retreat, 6 × 2 min with 1 min rest.",,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a3fd43e6824f24,drl_0adc2ed7fb91aa,C,false,"As written, the partner also varying the pace and angle of the pressure (cutting off the boxer's usual exit side) within the called intensity.",Partner varies pace and angle.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3d5ba61582341c,drl_d50b21c5fba8cb,A,false,"The coach gives what worked, what failed and the one thing to drill, using one exchange on film.",Coach-led; one exchange.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_813da739a5d80f,drl_d50b21c5fba8cb,B,true,"The debrief and cool-down as written, with film review of two exchanges.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ec70b2d65ef361,drl_d50b21c5fba8cb,C,false,"As written, each athlete giving their own worked / failed / next before the coach adds to it.",Athlete-led.,none,,scaffold_needs_coach_review

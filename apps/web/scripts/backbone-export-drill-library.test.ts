@@ -389,7 +389,8 @@ describe('the committed seed_drill_library.csv (lane NW-b)', () => {
     // typed steps of the three youth manuals (TL-1a, OD-2026-11-19-030), the 10 of the Scripted 60-Minute Class (TL-2) and
     // the 11 of the Friday Sparring and Wednesday Defense Day sheets (TL-3a) and the 7 of the Wednesday Gold Standard Coach
     // Script (TL-3b) and the 13 of the Iso + Plyo 60-Minute Boxing Session (TL-4) and the 10 of Conditioning session A and
-    // the Phase 1 boxing skill session (TL-5a), all with blank exit conditions and correction paths.
-    expect(rows).toHaveLength(579);
+    // the Phase 1 boxing skill session (TL-5a) and the 4 of the Phase 2 archetype session vs. a pressure fighter (TL-5b),
+    // all with blank exit conditions and correction paths.
+    expect(rows).toHaveLength(583);
   });
 });

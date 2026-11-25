@@ -1,0 +1,78 @@
+# Lane W4-8, TL-5b: drills for the typed steps of the Phase 2 archetype session vs. a pressure fighter (review sheet)
+
+Rulings: OD-2026-11-19-030 (OW26-05, Jason: "B: Turn typed lines into library drills"); OD-2026-11-20-001 OW27-09 (Q8.1: "B: A new drill for every line"); Q8.2 (Overwatch on #2050: a heading is a typed line); OD-2026-11-15-011 (AI drafts load once the lane's two adversarial reviewers pass this sheet; fixes by new drill version only). Plan and GO: #2162 (condition 5: sparring steps keep their contact limits; GO answer item 2: the amateur-pro frozen case).
+
+Source: the typed steps of `wtp_bc964fe230d8f3` (Phase 2 — Competitive Amateur — Archetype tactical session — vs. pressure fighter, 90 min; LR-061; stage T2; steps 1, 2, 6, 9 with their plan items), as committed: each step's typed line (quoted word for word in its drill's `source_ref`) and its details. Difficulty `intermediate` on all 4 (the template's).
+
+## What this PR changes
+
+- 4 new library drills, one per typed step, labelled as the lane's earlier drills (lane W4-8 draft marker on all 14 drafted fields, COACHING-CRAFT DRAFT provenance, evidence UNTIERED/unchecked, blank stage keys); scale levels A, B (start), C; at least one own stop rule each; a cue on every technique drill.
+- The 4 steps link their drills (`drill_id` set, `free_text_drill` cleared); `details` unchanged. The template's own `items` label gains the lane's `drill_id` part. It leaves `TYPED_IN_MIXED`, which is then empty: every typed step of the 11 mixed templates links a library drill.
+- Default field bases (every drill, unless its section lists another): name: the step's typed line and its plan items; discipline: the step's block (the library holds only boxing and conditioning); category: the step's block; target_behavior: AI draft from the step's plan items and the session's briefing (step 2); purpose: AI draft from the step's block, its time and the template's name; standard_setup: AI draft; contact as the step's own contact level; execution: the step's plan items, word for word in substance; adds coaching detail they do not give (shown in full on the review sheet); what_good_looks_like: AI draft from the step's plan items; contact_level: the step's own contact level; equipment_needed: the step's plan items, or none; difficulty: the template's difficulty (intermediate); scale_levels: AI draft: A simpler, B the step as written (starting point), C harder, same lesson, no level above the step's contact; stop_rules: AI draft from the step's plan items; cues: the step's own words or a DOC-027 owner passage, word for word.
+
+## Flags for the reviewers and for a coach edit
+
+- Step 6 is controlled sparring (the plan's fourth sparring line; stage T2, Competitive Amateur). Its drill sits at `controlled_sparring`, the step's own level, at every scale level; nothing is above the step (GO condition 5). `requires_coach_authorization` is false, as the plan says and GO condition 5 approved. Its stop rules carry TL-3b's three sparring safety rules word for word, a stop on the partner's called intensity, and DOC-027's forward-pressure correction. The plan items' intensities (60% → 70% → 75%) and round count are quoted as written; the duration column stays blank (sparring volume, OD-2026-11-17-002).
+- Steps 1, 2 and 9 are contact none, and every drill and level but step 6's is contact none. No new warning, gate or disclaimer.
+- Durations: steps 1, 2 and 9 already carry the template's own minutes (12, 3, 10); step 6 is sparring. No duration changes here.
+- Step 9's film review is the plan item's; the drill adds no rule about filming.
+- Frozen Backbone: this template is an amateur-pro export (stage T2). The amateur-pro frozen case becomes an exact refusal naming steps 1, 2, 6 and 9 and the template's field_labels, writing nothing (GO answer item 2). UNVERIFIED where written; App Overwatch runs it before merging (#2162).
+- AI-drafted beyond the steps: every drill's levels A and C; the stop rules not marked as sourced; step 1's 'feet apart and the guard up'; step 9's 'an easy cool-down'.
+
+## The 4 drills
+
+| step | drill_id | name | discipline / category | contact |
+|---|---|---|---|---|
+| 1 | `drl_324847ebccc09f` | Pressure-Session Warm-Up: Standard Warm-Up Plus Lateral Movement | conditioning / warmup | none |
+| 2 | `drl_f10d64eeeef7f9` | Pressure-Fighter Briefing: The Problem and Its Four Solutions | boxing / tactical | none |
+| 6 | `drl_0adc2ed7fb91aa` | Constrained Live vs. Pressure: Taped Channel, No Straight-Line Retreat | boxing / sparring | controlled_sparring |
+| 9 | `drl_d50b21c5fba8cb` | Pressure-Session Debrief: What Worked, What Failed, Two Exchanges on Film | boxing / film | none |
+
+### Step 1. Pressure-Session Warm-Up: Standard Warm-Up Plus Lateral Movement (`drl_324847ebccc09f`)
+
+- Typed line: "Warm-up (12 min)"
+- Purpose: The pressure-fighter session's warm-up (12 min): the standard warm-up, plus 3 minutes of lateral movement, the first of the solutions the session trains. Target: Start the session warm, with 3 minutes of lateral movement in stance done.
+- Setup: Open floor or ring with room to move side to side; no partner and no contact.
+- Execution: The standard warm-up, plus 3 minutes of lateral movement emphasis: moving side to side in stance, feet apart and the guard up.
+- Good: The athlete finishes warm; through the 3 lateral minutes the feet never cross or come together and the guard stays up.
+- Scale: A: The standard warm-up, then the 3 lateral minutes at an easy, walking pace. [Walking pace.] | B (start): The warm-up as written: as standard, plus 3 minutes of lateral movement emphasis. | C: As written, the coach calling changes of direction in the lateral minutes, the athlete changing at once. [Called direction changes.]
+- Stop: Stop the lateral minutes when the feet cross or come together and one cue does not fix it; walk the step until it is clean. (technique_degradation) | Stop any part that hurts; the coach checks before the athlete goes on. (safety)
+- Cue: none (conditioning)
+- Bases: name: the typed line and its plan item ('as standard, plus 3 min of lateral movement emphasis'); discipline: conditioning, warmup: the step's block (warmup), as the lane's other warm-ups; purpose: the typed line's 12 minutes; 'the first of the solutions' is the briefing's (step 2) 'The solutions: lateral movement, …'; execution: the plan item, word for word in substance; 'as standard' is the coach's own warm-up (the line names none); 'feet apart and the guard up' is this lane's; stop_rules: AI draft: the first from the plan item's lateral movement; the second the lane's Phase 1 warm-up stop (TL-5a), word for word; cues: none: a conditioning drill needs no cue (OD-2026-10-06-026 ruling 2), and the step gives none
+
+### Step 2. Pressure-Fighter Briefing: The Problem and Its Four Solutions (`drl_f10d64eeeef7f9`)
+
+- Typed line: "Briefing (3 min)"
+- Purpose: The pressure-fighter session's briefing (3 min): name the one problem the session solves and the solutions its blocks train. Target: Before the blocks start, every athlete can say the problem a pressure fighter poses and its four solutions.
+- Setup: Athletes together with the coach before Block A; no equipment and no contact.
+- Execution: The coach states the specific problem: a pressure fighter closes distance continuously, throws in volume, and wins if you retreat in straight lines to the ropes. Then the solutions: lateral movement, meeting them as they come, uppercuts on entry, and constant resetting of their position.
+- Good: The briefing fits its 3 minutes; each athlete can repeat the problem and the four solutions.
+- Scale: A: The coach states the problem and the four solutions once. [Coach only.] | B (start): The briefing as written: the problem, then the solutions. | C: As written, then each athlete names one solution and the block that trains it. [Athletes name the blocks.]
+- Stop: The briefing drifts from the one problem or runs past its 3 minutes: close it on the four solutions. (intent_drift)
+- Cue: "Lateral movement"
+- Bases: name: the typed line and its plan item's problem and four solutions; category: tactical: the step's block is 'craft', which the library does not hold; a briefing on a tactical problem; execution: the plan item, word for word ('the specific problem — …'); stop_rules: AI draft, as the lane's coach-led closes (TL-5a's Evaluate → Reset); cues: the plan item's first solution, word for word
+
+### Step 6. Constrained Live vs. Pressure: Taped Channel, No Straight-Line Retreat (`drl_0adc2ed7fb91aa`)
+
+- Typed line: "Block B — constrained live (30 min)"
+- Purpose: The pressure-fighter session's Block B (30 min): the solutions drilled in isolation in Block A, now live against a partner instructed to pressure continuously, inside a taped channel. Target: Against continuous pressure, solve it without stepping backward in a straight line: lateral movement, meeting the partner as they come, uppercuts on entry, resetting their position.
+- Setup: Ring or open mat with a taped channel on the floor and its back line marked; pairs in stance, one the pressure partner, one the boxer; a timer. Every round has a role, a purpose and a coaching focus.
+- Execution: Partner instructed to pressure continuously at 60%; the boxer may not step backward in a straight line. Taped channel on the floor; crossing the back line = round lost. 6 × 2 min with 1 min rest. Progression within the block: partner intensity rises 60% → 70% → 75%.
+- Good: The boxer never retreats in a straight line and never crosses the back line; each exchange ends with the boxer off the partner's line or meeting the entry; the partner's pressure stays at the called intensity.
+- Scale: A: The partner at 60% for all 6 rounds, the coach naming one solution for each round. [60% throughout; one named solution per round.] | B (start): The block as written: partner pressure rising 60% → 70% → 75%, taped channel, no straight-line retreat, 6 × 2 min with 1 min rest. | C: As written, the partner also varying the pace and angle of the pressure (cutting off the boxer's usual exit side) within the called intensity. [Partner varies pace and angle.]
+- Stop: Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back. (safety) | Stop the round when contact rises above the level the coach set for this drill. (safety) | Stop the round when an athlete cannot protect themselves structurally. (safety) | Stop the round when the partner's pressure goes past the called intensity, and restate it. (intent_drift) | Stop the round when the boxer freezes under forward pressure; simplify to one defensive action plus exit. (technique_degradation)
+- Cue: "Use feet and angle decisions before hand-fighting the pressure."
+- Bases: name: the typed line's block (constrained live) and its plan items' channel and no-straight-line rule; category: sparring: the step's block; target_behavior: AI draft from the plan items and the briefing's four solutions (step 2); purpose: AI draft; Block A's three linked drills (Pivot-out drill, Uppercut on entry, Frame-and-reset) are the isolated solutions; standard_setup: AI draft: 'ring or open mat', pairs in stance, as TL-3b's controlled-sparring drills; the plan items' taped channel and back line; 'Every round has a role, a purpose and a coaching focus' follows the DOC-027 Sparring Standard as TL-3b carries it; the plan items name no gear; execution: the plan items, word for word (the round count stays in the text; the duration column stays blank, OD-2026-11-17-002); contact_level: the step's own contact level (controlled_sparring), at every scale level (GO condition 5); scale_levels: AI draft: A holds the plan items' first intensity (60%) and names one solution per round; B the block as written; C adds variation inside the called intensity; every level controlled_sparring; stop_rules: the first three word for word as TL-3b's controlled-sparring drills (the Friday sheet's sparring drills' two safety rules and the library's 'cannot protect themselves structurally'); the fourth from the plan items' called intensity; the fifth adapted from DOC-027 ('Freezing under forward pressure.'; 'Simplify to one defensive action plus exit.'), as quoted in docs/content-review/lane2-drills/doc-091.md; cues: DOC-027 (Punxsy Master Source Manual v1, When the Opponent Pressures Forward), as quoted in docs/content-review/lane2-drills/doc-091.md, word for word
+
+### Step 9. Pressure-Session Debrief: What Worked, What Failed, Two Exchanges on Film (`drl_d50b21c5fba8cb`)
+
+- Typed line: "Debrief and cool-down (10 min)"
+- Purpose: The pressure-fighter session's debrief and cool-down (10 min), after the situational block. Target: Close the session with what worked, what failed and one thing to drill next session, checked against film of two exchanges.
+- Setup: Athletes together with the coach after the last block, with room for an easy cool-down; a device to show the film of two exchanges; no contact.
+- Execution: An easy cool-down, then the debrief: what worked, what failed, one thing to drill next session. Film review of two exchanges.
+- Good: One clear "worked", one clear "failed" and one thing to drill next session, each tied to an exchange on the film, inside the 10 minutes.
+- Scale: A: The coach gives what worked, what failed and the one thing to drill, using one exchange on film. [Coach-led; one exchange.] | B (start): The debrief and cool-down as written, with film review of two exchanges. | C: As written, each athlete giving their own worked / failed / next before the coach adds to it. [Athlete-led.]
+- Stop: The debrief drifts from the session's one problem or runs past the 10 minutes: close it on one thing to drill next session. (intent_drift) | Dizziness or light-headedness: stop and breathe normally; the coach checks before the athlete goes on. (safety)
+- Cue: "One thing to drill next session."
+- Equipment: a device to show film (phone, tablet or camera)
+- Bases: name: the typed line and its plan items (what worked, what failed; film review of two exchanges); discipline: boxing, film: the plan items are a debrief with film review, as the library's Sparring Debrief (drl_367b662564784e); category: film: the plan items' film review (the step's block is cooldown, which the library files under conditioning); execution: the plan items, word for word in substance; 'an easy cool-down' is this lane's (the plan items name no cool-down work); equipment_needed: the plan items' 'Film review'; stop_rules: AI draft, as the lane's coach-led closes; the second the lane's Breathing Reset stop (drl_0967cc300cfc5e), as TL-5a's Phase 1 cool-down; cues: the plan item's 'one thing to drill next session', as a call

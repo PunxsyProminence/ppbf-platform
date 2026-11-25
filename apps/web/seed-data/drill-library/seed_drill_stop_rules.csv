@@ -1665,3 +1665,13 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_b9ba70a8c0cad8,drl_02c1253c606e21,1,"Stop the finisher when the efforts stop being high quality (shadow form breaks, or the hard intervals turn into paced ones); do not add more.",drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_0071b66e2cc4b0,drl_a5f52ff0aa9d2e,1,Dizziness or light-headedness: stop and breathe normally; the coach checks before the athlete goes on.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_bbd075be6944f8,drl_4845ed05215e9b,1,The talk drifts away from the session's one focus or runs past the cool-down's minutes: close it on one reset.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3a10db193b02a4,drl_324847ebccc09f,1,Stop the lateral minutes when the feet cross or come together and one cue does not fix it; walk the step until it is clean.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b43ce38fd3f55b,drl_324847ebccc09f,2,Stop any part that hurts; the coach checks before the athlete goes on.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_9ead169d0fcdbb,drl_f10d64eeeef7f9,1,The briefing drifts from the one problem or runs past its 3 minutes: close it on the four solutions.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b6057637d357ef,drl_0adc2ed7fb91aa,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_c8101d91e4521b,drl_0adc2ed7fb91aa,2,Stop the round when contact rises above the level the coach set for this drill.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_ed354a61226fd3,drl_0adc2ed7fb91aa,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_3f054a4c6754d2,drl_0adc2ed7fb91aa,4,"Stop the round when the partner's pressure goes past the called intensity, and restate it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b155a0d8e93f23,drl_0adc2ed7fb91aa,5,Stop the round when the boxer freezes under forward pressure; simplify to one defensive action plus exit.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_54541b7b631b1a,drl_d50b21c5fba8cb,1,The debrief drifts from the session's one problem or runs past the 10 minutes: close it on one thing to drill next session.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b96b87223da7b6,drl_d50b21c5fba8cb,2,Dizziness or light-headedness: stop and breathe normally; the coach checks before the athlete goes on.,drill_specific,safety
