@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
+import { INVISIBLE_FORMAT } from './feedbackSafetyScan';
 import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels';
 import { normalizeCell } from './contentImport/values';
 import { VOCABULARIES } from './contentImport/vocabularies';
@@ -375,8 +376,10 @@ function cleanAdd(add: SessionScriptBlockAdd): SessionScriptBlockAdd {
   // Read and measured as a template step's coach note is (normalizeCell: NFC, LF, no edge space); words
   // that are only invisible characters are no words.
   const text = normalizeCell(add.text);
-  // Format characters (zero-width, joiners, marks, soft hyphen) and Hangul fillers draw nothing (reviewer D).
-  const empty = text.replace(/[\p{Cf}\u115F\u1160\u3164\uFFA0]/gu, '').trim() === '';
+  // Nothing a reader sees: the safety scan's own invisible class (feedbackSafetyScan.ts INVISIBLE_FORMAT --
+  // format characters, default-ignorables such as variation selectors and Hangul fillers, the Braille
+  // blank), as a pain note reads it (painReportNotes.ts), so the two cannot drift (reviewer D; Codex).
+  const empty = text.replace(INVISIBLE_FORMAT, '').trim() === '';
   if (text.length > MAX_BLOCK_TEXT_LENGTH || (empty && !MAY_HOLD_NO_TEXT.includes(add.block_kind))) {
     refuse('SESSION_SCRIPT_BLOCK_TEXT_INVALID');
   }
