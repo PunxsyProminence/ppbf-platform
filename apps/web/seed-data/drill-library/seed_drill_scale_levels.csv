@@ -1583,3 +1583,33 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_28bdb04f8b502e,drl_b6903e7c2c7291,A,false,The coach states the focus and gives the example.,Coach-led.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_dc9b5a5e606214,drl_b6903e7c2c7291,B,true,"The focus as written, with one example from today's session.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_d0c41870798d21,drl_b6903e7c2c7291,C,false,"Athletes give the examples themselves, the coach closing.",Athlete examples.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_90d7b1f59f5917,drl_6a9ba21ab70739,A,false,"Boxer bounce on the spot, no rope.",On the spot.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b1fbca4212fd21,drl_6a9ba21ab70739,B,true,"Jump rope or boxer bounce around the floor, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0e1f6472a68117,drl_6a9ba21ab70739,C,false,"Change direction or pace on the coach's call, keeping the rhythm.",Called changes.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3efe23423607b3,drl_03947956e0019b,A,false,"Arm circles, hip rotations and torso twists only, in a smaller range.",No shadowboxing.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_af4ccfe3cda704,drl_03947956e0019b,B,true,The four exercises as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_974c1dbaa30f2e,drl_03947956e0019b,C,false,"A longer light shadowboxing finish, on the spot.",Longer shadowboxing.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_41ad71da15e1d8,drl_3bfff862173673,A,false,Add a move every 30 seconds instead of every 15.,Slower build.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_1d1c61ea966734,drl_3bfff862173673,B,true,As written: a new move every 15 seconds.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a74d5d73a233d8,drl_3bfff862173673,C,false,Hold the full seven-move combination at a faster pace for the last minute.,Faster finish.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8ccad4d04296ca,drl_d8b4d7db05e1f7,A,false,"Push-ups from the knees or against a wall, and the leg lifts held at 5 each cycle.",Easier push-up; no added leg lift.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_c67747f549c2ea,drl_d8b4d7db05e1f7,B,true,"5 push-ups, 10 squats, leg lifts from 5 adding one per cycle.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_655ed85a8176bd,drl_d8b4d7db05e1f7,C,false,Add one squat as well as one leg lift each cycle.,Two increases.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_78e1d8ea55c95a,drl_d7ee1ff332329d,A,false,"Five punches, then duck and reset, at a steady pace.",Five punches.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7597e647cd6102,drl_d7ee1ff332329d,B,true,"10 fast straight punches, duck, reset.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_43cd72e805221b,drl_d7ee1ff332329d,C,false,The coach calls the duck at a random moment in the burst.,Called duck.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e67286987d07c1,drl_513c67125a9e62,A,false,The coach calls each move.,Coach-called.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a2962e62d8fe54,drl_513c67125a9e62,B,true,"A free shadowboxing round, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5dbb4a8b2383e1,drl_513c67125a9e62,C,false,At least three of the class's moves linked in every combination.,Linked moves.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_1ebc8ba44b92a9,drl_dfa6361ed26d2a,A,false,A gentler stretch and a shorter hold.,Gentler.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_92a720c4b39510,drl_dfa6361ed26d2a,B,true,The stretch and prompt as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0d67c5da5b63a9,drl_dfa6361ed26d2a,C,false,"A longer, slower hold, breathing slowly throughout.",Longer hold.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_31ac1a09a558a2,drl_2840b7b848ba9a,A,false,"A gentler stretch and a shorter hold, a hand on the wall for balance.",Gentler.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e60c26604194cc,drl_2840b7b848ba9a,B,true,The stretch and prompt as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_faab42628344dd,drl_2840b7b848ba9a,C,false,"A longer, slower hold, breathing slowly throughout.",Longer hold.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_fe414092d82be7,drl_035fbd809c8e13,A,false,"A gentler stretch and a shorter hold, a hand on the wall for balance.",Gentler.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2beee9453c0598,drl_035fbd809c8e13,B,true,The stretch and prompt as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5973e714e7f2ea,drl_035fbd809c8e13,C,false,"A longer, slower hold, breathing slowly throughout.",Longer hold.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_69e964d6f897c3,drl_478db0c9f74694,A,false,The coach models the thank-you first.,Coach first.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7ae289ba1a8ce6,drl_478db0c9f74694,B,true,The close as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_033aaa5a38c45a,drl_478db0c9f74694,C,false,One athlete leads the close.,Athlete-led.,none,,scaffold_needs_coach_review
