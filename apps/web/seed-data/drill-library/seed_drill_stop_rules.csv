@@ -1636,4 +1636,6 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_982b56cf72e70b,drl_0126497cf4649f,2,Stop the round when contact rises above the level the coach set for this drill.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_6ad313cd82598d,drl_0126497cf4649f,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_b78d3c97e32d2a,drl_0126497cf4649f,4,"If chaos rises above the educational value of the round, intensity is reduced or the round is stopped.",drill_specific,intent_drift
-{{PPBF_ORG_ID}},stp_6c63b3221d9625,drl_558fc9e8f7ddc3,1,"Technique breaks down under fatigue (stance lost, guard dropped): stop, rest, then restart at level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_36a09bda2524ec,drl_0126497cf4649f,5,"Stop the round when punches stop being controlled or the escape turns into wrestling or scrambling, and one cue does not settle it.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_44957d3bb3eefc,drl_0126497cf4649f,6,"When the higher-pace finish turns into rushing: ""Freeze."" Check stance and spacing, give a one-sentence instruction, take one clean rep, then ""Restart slower"" (Control > pace > complexity).",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6c63b3221d9625,drl_558fc9e8f7ddc3,1,"Technique breaks down under fatigue (stance lost, guard dropped): stop, rest, then restart at level A.",drill_specific,fatigue
