@@ -54,17 +54,19 @@ export interface EmailAlertSource {
  * Queues one send per candidate whose switch is on under that user type and
  * whose gym has the event ticked; nobody else gets a row. A candidate already
  * queued for that event is left as it is, with one exception: a gym notice
- * skipped as not_offered (retired before its send, say) and restored since the
- * skip is queued again when the sweep names the person again. A restored
- * notice is live again and emails anyone who has not had it (Overwatch on
- * #2193, comment 7165858842); a skipped row was never sent, so it is not
- * "had". "Restored since" is the notice's updated_at after the row's
- * finished_at: setAnnouncementActive is the only write that stamps it. A row
- * skipped for any other reason while the notice stayed as it was (a minor's
- * login the source names and the sender refuses) stays skipped, rather than
- * being queued and skipped again on every tick of the overlap. The send key
- * still holds one email per person per notice, and the sender asks every check
- * again. Returns how many rows were written or queued again.
+ * send that was skipped (retired before its send, or the person switched off
+ * at the time, say), and whose notice has been restored since the skip, is
+ * queued again when the sweep names the person again. A restored notice is
+ * live again and emails anyone who has not had it (Overwatch on #2193, comment
+ * 7165858842); a skipped row was never sent, so it is not "had". "Restored
+ * since" is the notice's updated_at after the row's finished_at:
+ * setAnnouncementActive is the only write that stamps it. A skipped row whose
+ * notice is unchanged (a minor's login the source names and the sender
+ * refuses) stays skipped, rather than being queued and skipped again on every
+ * tick of the overlap. A failed row (the address refused on every try) is not
+ * queued again. The send key still holds one email per person per notice, and
+ * the sender asks every check again. Returns how many rows were written or
+ * queued again.
  */
 export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCandidate[]): Promise<number> {
   const due = candidates.filter((candidate) =>
@@ -88,7 +90,6 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
            user_type = excluded.user_type
      where pilot.email_alert_sends.event_kind = 'gym_notice'
        and pilot.email_alert_sends.status = 'skipped'
-       and pilot.email_alert_sends.skip_reason = 'not_offered'
        and exists (select 1 from pilot.announcements n
                     where n.organization_id = pilot.email_alert_sends.organization_id
                       and n.announcement_id::text = pilot.email_alert_sends.event_id

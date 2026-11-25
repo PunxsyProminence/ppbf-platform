@@ -1237,28 +1237,53 @@ describe('email alert staff event sources', () => {
     expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
   });
 
-  test('a notice send skipped for another reason, the notice unchanged, is not queued again by the next sweeps', async () => {
-    const client = await freshDatabase('emailevents_notice_skip_stays');
+  test('a skipped notice send is queued again only when the notice is restored after the skip, and then once', async () => {
+    const client = await freshDatabase('emailevents_notice_skip_restore');
     activeClient = client;
-    await switchOn(client, ['acct-ev-athlete']);
+    await switchOn(client, ['acct-ev-athlete', 'acct-ev-parent']);
     const { sent, dependencies } = recorder();
     await runEmailAlertSweep(dependencies); // sets the checkpoints
 
     // The adult athlete's record corrected to under 18 before their own next
     // read retires the switch: the source still names the login, and the
-    // sender refuses it as not_offered.
+    // sender refuses it as not_offered. The parent switches off between the
+    // queueing and the send, and back on after.
     await client.query(`update pilot.athletes set dob = '2015-01-01' where organization_id = $1 and athlete_id = $2`, [ORG, ATH_A]);
-    await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
-    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 0, skipped: 1 });
-    // The next sweeps read the notice again in their overlap; the row stays
-    // skipped, and is not queued and skipped again on each of them.
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(2);
+    const parentSwitch = (on: boolean) => client.query(
+      `update pilot.email_alert_switches set switched_on = $2, switched_on_at = now(), switched_off_at = case when $2 then null else now() end
+        where organization_id = $1 and account_id = 'acct-ev-parent'`,
+      [ORG, on],
+    );
+    await parentSwitch(false);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 2 });
+    await parentSwitch(true);
+    const sends = async () => (await client.query(
+      `select account_id, status, skip_reason from pilot.email_alert_sends order by account_id`,
+    )).rows.map((row) => `${row.account_id} ${row.status} ${row.skip_reason ?? ''}`.trim());
+    const skipped = ['acct-ev-athlete skipped not_offered', 'acct-ev-parent skipped switched_off'];
+
+    // The next sweeps read the notice again in their overlap; the notice is
+    // unchanged, so each row stays skipped, not queued and skipped again.
     for (let tick = 0; tick < 2; tick += 1) {
       expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 0 });
     }
-    // One try: the one that skipped it.
-    const { rows } = await client.query(`select status, skip_reason, tries from pilot.email_alert_sends`);
-    expect(rows).toEqual([{ status: 'skipped', skip_reason: 'not_offered', tries: 1 }]);
+    expect(await sends()).toEqual(skipped);
     expect(sent).toEqual([]);
+
+    // Restored after the skip: live again, so each is queued again and the
+    // sender asks again. The parent, switched on now, has it; the minor is
+    // refused again. Then nothing more.
+    for (const active of [false, true]) {
+      await setAnnouncementActive({ organizationId: ORG, announcementId: live, active, onlyAuthorAccountId: null });
+      await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+    }
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 2, sent: 1, skipped: 1 });
+    expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
+    expect(await sends()).toEqual(['acct-ev-athlete skipped not_offered', 'acct-ev-parent sent']);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 0 });
+    expect(sent).toHaveLength(1);
   });
 
   test('a source that fails is logged by class, and the next source still queues and sends', async () => {
