@@ -45,6 +45,20 @@ describe('Graph mailer', () => {
     expect(body.saveToSentItems).toBe(true);
   });
 
+  test('the email alert keeps no Sent Items copy; a sign-in link still does by default (answer A on #2159)', async () => {
+    const sentBodies: Array<{ saveToSentItems: unknown }> = [];
+    const capture = deps({
+      fetchImpl: async (_url, init) => {
+        sentBodies.push(JSON.parse(String(init.body)));
+        return okResponse();
+      },
+    });
+    const message = { to: 'parent@example.com', subject: 'Gym: open the app', body: 'open the app' };
+    await sendPlainTextMail(message, { sender: SENDER, saveToSentItems: false }, capture);
+    await sendPlainTextMail(message, { sender: SENDER }, capture);
+    expect(sentBodies.map((body) => body.saveToSentItems)).toEqual([false, true]);
+  });
+
   test('presents the token as a bearer credential', async () => {
     let authorization: string | undefined;
     await sendPlainTextMail(

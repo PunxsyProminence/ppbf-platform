@@ -25,8 +25,9 @@ import { AUTH_PROVIDERS } from './authProviders';
  * NOT A GENERAL MAILER
  *
  * There is one send function and it takes a subject and a plain-text body. No
- * templates, no attachments, no HTML, no bulk. Magic links are the only thing
- * this platform sends, and a narrow surface is the point: nothing here can be
+ * templates, no attachments, no HTML, no bulk. It sends two things: sign-in
+ * links, and the opt-in email alert that says only "open the app" (lane W4-1,
+ * emailAlertSender.ts). A narrow surface is the point: nothing here can be
  * repurposed into a way to mail athletes or guardians without a deliberate
  * change that shows up in review.
  */
@@ -43,6 +44,12 @@ export type MailFetch = (url: string, init: RequestInit) => Promise<Response>;
 export interface MailerConfig {
   /** The mailbox to send as. Must match the Application Access Policy. */
   sender: string;
+  /**
+   * Whether the mailbox keeps a Sent Items copy. Defaults to true, as sign-in
+   * links need. The email alert passes false: its send log is the one record
+   * of an alert, with no address held twice (Overwatch's answer A on #2159).
+   */
+  saveToSentItems?: boolean;
 }
 
 export interface MailerDependencies {
@@ -148,9 +155,10 @@ export async function sendPlainTextMail(
         body: { contentType: 'Text', content: message.body },
         toRecipients: [{ emailAddress: { address: message.to } }],
       },
-      // The sent copy is the record that a link went out and when. Retention
-      // sweeps the token rows; the mailbox keeps the correspondence.
-      saveToSentItems: true,
+      // For a sign-in link the sent copy is the record that it went out and
+      // when. Retention sweeps the token rows; the mailbox keeps the
+      // correspondence. The email alert opts out (MailerConfig).
+      saveToSentItems: config.saveToSentItems ?? true,
     }),
   });
 
