@@ -18,15 +18,17 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the table, its exact column list, the one CHECK compared IN FULL
-// against the text Postgres stores (stoppedComingPolicyMigration.pg.test.ts
-// drives this runner against a real database, so a deparse mismatch fails
-// there first), the primary key, and both foreign keys by column, target and
-// delete rule.
-const EXPECTED_CHECKS = {
-  pilot_org_stopped_coming_gap_days_check:
-    'CHECK ((gap_days = ANY (ARRAY[7, 14, 21, 28, 42, 56])))',
-};
+// Readiness asserts the result, not the attempt (the #2135 runner's shape),
+// each piece looked up ON pilot.organization_stopped_coming_policy and
+// reported by name: the exact column list; each column by type, nullability
+// and default; exactly one CHECK, validated and compared IN FULL against the
+// text Postgres stores; the primary key on organization_id alone; no other
+// unique constraint; exactly two foreign keys, each by column, target table
+// and column, ON DELETE (cascade for the gym, set null for the setter), ON
+// UPDATE NO ACTION and not deferrable. Each is refused on its own
+// (stoppedComingPolicyMigration.pg.test.ts).
+const EXPECTED_CHECK_NAME = 'pilot_org_stopped_coming_gap_days_check';
+const EXPECTED_CHECK = 'CHECK ((gap_days = ANY (ARRAY[7, 14, 21, 28, 42, 56])))';
 
 export const EXPECTED_COLUMNS = [
   'organization_id',
@@ -36,62 +38,71 @@ export const EXPECTED_COLUMNS = [
 ];
 
 const READINESS_QUERY = `
+  with t as (select to_regclass('pilot.organization_stopped_coming_policy') as oid),
+  col as (
+    select a.attname, a.atttypid, a.attnotnull, pg_get_expr(d.adbin, d.adrelid) as default_text
+      from pg_attribute a
+      join t on a.attrelid = t.oid
+      left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+     where a.attnum > 0 and not a.attisdropped
+  ),
+  con as (select c.* from pg_constraint c, t where c.conrelid = t.oid)
   select
-    to_regclass('pilot.organization_stopped_coming_policy') is not null as table_ready,
+    (select oid from t) is not null as table_ready,
     (
       select array_agg(column_name::text order by ordinal_position)
       from information_schema.columns
       where table_schema = 'pilot' and table_name = 'organization_stopped_coming_policy'
-    ) = $4::text[] as columns_ready,
-    (
-      select count(*) = $1 from pg_constraint c
-      join unnest($2::text[], $3::text[]) as expected(conname, condef) on expected.conname = c.conname
-      where c.conrelid = to_regclass('pilot.organization_stopped_coming_policy')
-        and c.contype = 'c' and c.convalidated
-        and pg_get_constraintdef(c.oid) = expected.condef
-    ) as checks_ready,
+    ) = $3::text[] as columns_ready,
+    exists (select 1 from col where attname = 'organization_id'
+              and atttypid = 'text'::regtype and attnotnull and default_text is null) as organization_id_ready,
+    exists (select 1 from col where attname = 'gap_days'
+              and atttypid = 'integer'::regtype and attnotnull and default_text is null) as gap_days_ready,
+    exists (select 1 from col where attname = 'set_by_account_id'
+              and atttypid = 'text'::regtype and not attnotnull and default_text is null) as set_by_account_id_ready,
+    exists (select 1 from col where attname = 'set_at'
+              and atttypid = 'timestamptz'::regtype and attnotnull and default_text = 'clock_timestamp()') as set_at_ready,
+    (select count(*) from con where contype = 'c') = 1
+      and exists (select 1 from con where conname = $1 and contype = 'c' and convalidated
+                    and pg_get_constraintdef(oid) = $2) as check_ready,
     exists (
-      select 1 from pg_constraint c
-      where c.conrelid = to_regclass('pilot.organization_stopped_coming_policy') and c.contype = 'p'
-        and (select array_agg(a.attname::text)
-               from unnest(c.conkey) k(attnum)
-               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
-            = array['organization_id']
+      select 1 from con c, t where c.contype = 'p'
+        and c.conkey = array[(select attnum from pg_attribute where attrelid = t.oid and attname = 'organization_id')]::int2[]
     ) as primary_key_ready,
+    not exists (select 1 from con where contype in ('u', 'x')) as no_other_unique_ready,
+    (select count(*) from con where contype = 'f') = 2 as foreign_key_count_ready,
     exists (
-      select 1 from pg_constraint c
-      where c.conrelid = to_regclass('pilot.organization_stopped_coming_policy') and c.contype = 'f'
-        and c.convalidated and c.confrelid = to_regclass('pilot.organizations') and c.confdeltype = 'c'
-        and (select array_agg(a.attname::text)
-               from unnest(c.conkey) k(attnum)
-               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
-            = array['organization_id']
+      select 1 from con c, t where c.contype = 'f' and c.convalidated
+        and c.confrelid = to_regclass('pilot.organizations')
+        and c.confdeltype = 'c' and c.confupdtype = 'a' and not c.condeferrable
+        and c.conkey = array[(select attnum from pg_attribute where attrelid = t.oid and attname = 'organization_id')]::int2[]
+        and c.confkey = array[(select attnum from pg_attribute where attrelid = to_regclass('pilot.organizations') and attname = 'organization_id')]::int2[]
     ) as organization_fk_ready,
     exists (
-      select 1 from pg_constraint c
-      where c.conrelid = to_regclass('pilot.organization_stopped_coming_policy') and c.contype = 'f'
-        and c.convalidated and c.confrelid = to_regclass('pilot.accounts') and c.confdeltype = 'n'
-        and (select array_agg(a.attname::text)
-               from unnest(c.conkey) k(attnum)
-               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
-            = array['set_by_account_id']
+      select 1 from con c, t where c.contype = 'f' and c.convalidated
+        and c.confrelid = to_regclass('pilot.accounts')
+        and c.confdeltype = 'n' and c.confupdtype = 'a' and not c.condeferrable
+        and c.conkey = array[(select attnum from pg_attribute where attrelid = t.oid and attname = 'set_by_account_id')]::int2[]
+        and c.confkey = array[(select attnum from pg_attribute where attrelid = to_regclass('pilot.accounts') and attname = 'account_id')]::int2[]
     ) as set_by_fk_ready
 `;
-const READINESS_PARAMS = [
-  Object.keys(EXPECTED_CHECKS).length,
-  Object.keys(EXPECTED_CHECKS),
-  Object.values(EXPECTED_CHECKS),
-  EXPECTED_COLUMNS,
-];
 
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // Creating the table's two foreign keys takes a SHARE ROW EXCLUSIVE lock
+    // on pilot.organizations and pilot.accounts (reads go on, writes wait).
+    // Rather than queue behind a long transaction already holding one, and
+    // hold every write to those tables up behind it, give up after 10 seconds
+    // and let the operator re-run in a quieter moment. Nothing is
+    // half-applied: it is one transaction.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
-    const readiness = await client.query(READINESS_QUERY, READINESS_PARAMS);
+    const readiness = await client.query(READINESS_QUERY, [EXPECTED_CHECK_NAME, EXPECTED_CHECK, EXPECTED_COLUMNS]);
     const row = readiness.rows[0];
-    if (!row || Object.values(row).some((value) => value !== true)) {
-      throw new Error('ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY');
+    const missing = row ? Object.entries(row).filter(([, value]) => value !== true).map(([key]) => key) : ['readiness'];
+    if (missing.length > 0) {
+      throw new Error(`ORGANIZATION_STOPPED_COMING_POLICY_TABLE_NOT_READY: ${missing.join(', ')}`);
     }
     await client.query('COMMIT');
   } catch (error) {
