@@ -232,9 +232,24 @@ describe('organization stopped-coming policy migration', () => {
     ['primary_key_ready', 'no primary key',
       `alter table ${T} drop constraint organization_stopped_coming_policy_pkey cascade`],
     ['no_other_unique_ready', 'an extra unique constraint', `alter table ${T} add constraint zz_unique_gap unique (gap_days)`],
+    ['no_other_unique_ready', 'a unique index', `create unique index zz_unique_gap_index on ${T} (gap_days)`],
+    ['organization_id_ready', 'organization_id with a default', `alter table ${T} alter column organization_id set default 'org-x'`],
+    ['set_by_account_id_ready', 'set_by_account_id a varchar', `alter table ${T} alter column set_by_account_id type varchar(200)`],
     ['foreign_key_count_ready', 'a third foreign key',
       `alter table ${T} add constraint zz_org_again foreign key (organization_id)
          references pilot.organizations(organization_id) on delete restrict`],
+    ['organization_fk_ready', 'the gym foreign key cascading on update',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_organization_id_fkey,
+         add constraint organization_stopped_coming_policy_organization_id_fkey foreign key (organization_id)
+           references pilot.organizations(organization_id) on delete cascade on update cascade`],
+    ['organization_fk_ready', 'the gym foreign key deferrable',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_organization_id_fkey,
+         add constraint organization_stopped_coming_policy_organization_id_fkey foreign key (organization_id)
+           references pilot.organizations(organization_id) on delete cascade deferrable`],
+    ['set_by_fk_ready', 'the setter foreign key cascading on update',
+      `alter table ${T} drop constraint organization_stopped_coming_policy_set_by_account_id_fkey,
+         add constraint organization_stopped_coming_policy_set_by_account_id_fkey foreign key (set_by_account_id)
+           references pilot.accounts(account_id) on delete set null on update cascade`],
     ['organization_fk_ready', 'the gym foreign key with no action on delete',
       `alter table ${T} drop constraint organization_stopped_coming_policy_organization_id_fkey,
          add constraint organization_stopped_coming_policy_organization_id_fkey foreign key (organization_id)
