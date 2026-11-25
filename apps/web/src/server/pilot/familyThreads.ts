@@ -203,9 +203,11 @@ export async function listOwnFamilyThreads(organizationId: string, accountId: st
 
   const staffNames = new Map<string, string>();
   const threads = new Map<string, GuardianThread>();
+  // One clock for the whole list: a thread is never cut short at midnight on an 18th birthday.
+  const now = new Date();
   for (const row of rows) {
     // An adult child's thread drops out, as guardianAthleteIds drops the child (OD-2026-10-07-008).
-    if (guardianLinkEnded(row.athlete_dob)) continue;
+    if (guardianLinkEnded(row.athlete_dob, now)) continue;
     let thread = threads.get(row.thread_id);
     if (!thread) {
       thread = { thread_id: row.thread_id, athlete_id: row.athlete_id, created_at: row.thread_created_at, posts: [] };
