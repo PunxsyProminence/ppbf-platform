@@ -206,7 +206,7 @@ async function hereMark(
   );
 }
 
-/** A program membership, as the admin's Programs page records it; an ended one carries its end day. */
+/** A program membership, as the admin's Program Memberships page records it; an ended one carries its end day. */
 async function programMembership(gym: Gym, athleteId: string, program: string, status: 'active' | 'lapsed' | 'ended') {
   await client.query(
     `insert into pilot.program_memberships
