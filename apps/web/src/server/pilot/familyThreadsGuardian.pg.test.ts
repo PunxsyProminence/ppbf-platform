@@ -498,25 +498,45 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     await expect(threads.listOwnFamilyThreads(ORG, GUARDIAN)).resolves.toEqual([]);
   });
 
-  test('a link that ends, a child deleted or a date of birth corrected to an adult just before the threads are read returns nothing (Codex P2)', async () => {
+  // Each fact a guardian's write or read relies on (Overwatch on #2179: every check-then-write path), as a
+  // committed change and its undo: the store's link and child checks, and what the session gate checked.
+  const FACT_CHANGES: Array<[string, (db: Client) => Promise<unknown>, (db: Client) => Promise<unknown>]> = [
+    ['the link removed',
+      (db) => db.query(
+        `delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+        [ORG, `parent-${GUARDIAN}`, CHILD],
+      ),
+      (db) => db.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'guardian')`,
+        [ORG, `parent-${GUARDIAN}`, CHILD],
+      )],
+    ['the child deleted',
+      (db) => db.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD]),
+      (db) => db.query(`update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2`, [ORG, CHILD])],
+    ['the date of birth corrected to an adult',
+      (db) => db.query(`update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB]),
+      (db) => db.query(`update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, MINOR_DOB])],
+    ['the membership in this gym ended',
+      (db) => db.query(`update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG]),
+      (db) => db.query(`update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`, [GUARDIAN, ORG])],
+    ['the account deactivated',
+      (db) => db.query(`update pilot.accounts set active_flag = false where account_id = $1`, [GUARDIAN]),
+      (db) => db.query(`update pilot.accounts set active_flag = true where account_id = $1`, [GUARDIAN])],
+    ['the account marked deleted',
+      (db) => db.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [GUARDIAN]),
+      (db) => db.query(`update pilot.accounts set deleted_at = null where account_id = $1`, [GUARDIAN])],
+    ['the gym suspended',
+      (db) => db.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG]),
+      (db) => db.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [ORG])],
+  ];
+
+  test('each fact the list relies on, changed just before the threads are read: nothing returned (Codex P2 4691991266, Overwatch on #2179)', async () => {
     const client = await freshDatabase('ftg_race');
     const opened = await start(GUARDIAN, CHILD);
     await staffReply(client, opened.thread_id);
     expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
 
-    const changes: Array<[string, (db: Client) => Promise<unknown>]> = [
-      ['the link removed', (db) => db.query(
-        `delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
-        [ORG, `parent-${GUARDIAN}`, CHILD],
-      )],
-      ['the child deleted', (db) => db.query(
-        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD],
-      )],
-      ['the date of birth corrected to an adult', (db) => db.query(
-        `update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB],
-      )],
-    ];
-    for (const [label, change] of changes) {
+    for (const [label, change] of FACT_CHANGES) {
       await client.query('begin');
       beforeThreadsRead = change;
       const list = await threads.listOwnFamilyThreads(ORG, GUARDIAN);
@@ -525,9 +545,15 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       await client.query('rollback');
       expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
     }
+
+    // As at the session gate (resolvePrincipal), a platform owner's session is not refused for the gym's status.
+    await client.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG]);
+    expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toEqual([]);
+    await client.query(`update pilot.accounts set is_platform_owner = true where account_id = $1`, [GUARDIAN]);
+    expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
   });
 
-  test('a child deleted or a date of birth corrected to an adult just before a guardian writes: refused, and nothing kept (Codex P2 on c77aed08)', async () => {
+  test('each fact a guardian write relies on, changed just before the write: refused, and nothing kept (Codex P2s, Overwatch on #2179)', async () => {
     const client = await freshDatabase('ftg_write_race');
     const opened = await start(GUARDIAN, CHILD);
     const reply = await staffReply(client, opened.thread_id);
@@ -536,14 +562,6 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     )).rows[0].n as number;
     const before = await kept();
 
-    const changes: Array<[string, (db: Client) => Promise<unknown>]> = [
-      ['the child deleted', (db) => db.query(
-        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD],
-      )],
-      ['the date of birth corrected to an adult', (db) => db.query(
-        `update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB],
-      )],
-    ];
     const writes: Array<[string, () => Promise<unknown>, number]> = [
       ['open a thread', () => start(GUARDIAN, CHILD), 403],
       ['write again', () => threads.writeAgainInFamilyThread({
@@ -551,20 +569,16 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       }), 404],
       ['record a read', () => threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: reply }), 404],
     ];
-    for (const [changeLabel, change] of changes) {
+    for (const [changeLabel, change, undo] of FACT_CHANGES) {
       for (const [writeLabel, write, status] of writes) {
         beforeGuardianWrite = change;
         const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
         expect(beforeGuardianWrite).toBeNull();
         expect([changeLabel, writeLabel, outcome, await kept()]).toEqual([changeLabel, writeLabel, status, before]);
-        // The child as they were.
-        await client.query(
-          `update pilot.athletes set deleted_at = null, dob = $3::date where organization_id = $1 and athlete_id = $2`,
-          [ORG, CHILD, MINOR_DOB],
-        );
+        await undo(client);
       }
     }
-    // Positive control: with the child as they were, each of the three writes goes through.
+    // Positive control: with every fact as it was, each of the three writes goes through.
     for (const [, write] of writes) await write();
     expect(await kept()).toBe(before + 3);
   });

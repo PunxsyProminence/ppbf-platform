@@ -1,4 +1,5 @@
 import { query, queryOne } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { ForbiddenError } from './errors';
 import { isMinor } from './wallDisplay';
 
@@ -132,19 +133,29 @@ export async function isGuardianLinkedToAthlete(
 }
 
 /**
- * The guardian link as a predicate inside ONE statement, for a reader whose
- * rows must be authorised in the same snapshot that returns them (Codex P2
- * and Overwatch on #2179: a link that ends between a scope read and the read
- * that uses it must not return the child's rows). The same join as
- * linkedAthleteRows, organization-scoped on both levels, with the child's
- * row still live (deleted_at is null). The 18 rule is NOT here: the caller
- * selects the child's date of birth as to_char(dob, 'YYYY-MM-DD') in the same
- * statement and passes it to guardianLinkEnded, this module's one rule
- * (guardianAccess.test.ts fails a file that calls this without it). The
- * arguments are a qualified column (alias.column) and a $n placeholder written
- * in code, never caller input; anything else throws.
+ * A guardian's whole standing as a predicate inside ONE statement, for a read
+ * or a write that must be authorised in the same snapshot that returns or
+ * writes its rows (Codex P2s and Overwatch on #2179: a fact that changes
+ * between a check and the statement that relies on it must be seen by that
+ * statement). Two parts, both organization-scoped:
+ *   - the guardian link: the same join as linkedAthleteRows, with the child's
+ *     row still live (deleted_at is null);
+ *   - what the session gate (auth.ts resolvePrincipal + requireRole parent)
+ *     checked before the route called the store: the account active and not
+ *     deleted (accountDeletedSql, the session's own rule), an active
+ *     membership in this gym with the parent role, and the gym active (a
+ *     platform owner's session is not refused for the gym's status there, nor
+ *     here).
+ * Session mechanics (the token, its expiry, the PIN policy) stay the gate's.
+ * The 18 rule is NOT here: the caller selects the child's date of birth as
+ * to_char(dob, 'YYYY-MM-DD') in the same statement and passes it to
+ * guardianLinkEnded, this module's one rule (guardianAccess.test.ts fails a
+ * file that calls this without it). The arguments are a qualified column
+ * (alias.column) and a $n placeholder written in code, never caller input;
+ * anything else throws, and so does a caller alias starting with g, the
+ * prefix of the predicate's own aliases.
  */
-const QUALIFIED_COLUMN = /^(?!g[lpa]\.)[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
+const QUALIFIED_COLUMN = /^(?!g[a-z]*\.)[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
 export function guardianLinkedPredicateSql(organizationColumn: string, athleteColumn: string, accountParam: string): string {
   if (!QUALIFIED_COLUMN.test(organizationColumn) || !QUALIFIED_COLUMN.test(athleteColumn) || !/^\$\d+$/.test(accountParam)) {
     throw new Error('guardianLinkedPredicateSql takes alias.column references and a $n placeholder');
@@ -156,6 +167,13 @@ export function guardianLinkedPredicateSql(organizationColumn: string, athleteCo
                     join pilot.athletes ga
                       on ga.organization_id = gl.organization_id and ga.athlete_id = gl.athlete_id
                      and ga.deleted_at is null
+                    join pilot.accounts gc
+                      on gc.account_id = gp.account_id and gc.active_flag and not ${accountDeletedSql('gc')}
+                    join pilot.organization_memberships gm
+                      on gm.account_id = gp.account_id and gm.organization_id = gl.organization_id
+                     and gm.role = 'parent' and gm.active_flag
+                    join pilot.organizations gy
+                      on gy.organization_id = gl.organization_id and (gy.status = 'active' or gc.is_platform_owner)
                    where gl.organization_id = ${organizationColumn}
                      and gl.athlete_id = ${athleteColumn}
                      and gp.account_id = ${accountParam})`;

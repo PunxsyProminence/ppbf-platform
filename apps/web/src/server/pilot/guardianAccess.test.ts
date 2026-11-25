@@ -259,9 +259,18 @@ describe('guardianLinkedPredicateSql (one statement, Codex P2 on #2179)', () => 
     expect(sql).toContain('where gl.organization_id = o.organization_id and gl.athlete_id = o.athlete_id and gp.account_id = $2');
   });
 
+  test("carries what the session gate checked: a live account, an active parent membership in this gym, the gym active (Overwatch on #2179)", () => {
+    const sql = guardianLinkedPredicateSql('o.organization_id', 'o.athlete_id', '$2').replace(/\s+/g, ' ');
+    expect(sql).toContain('gc.account_id = gp.account_id and gc.active_flag and not (gc.deleted_at is not null)');
+    expect(sql).toContain("gm.account_id = gp.account_id and gm.organization_id = gl.organization_id and gm.role = 'parent' and gm.active_flag");
+    expect(sql).toContain("gy.organization_id = gl.organization_id and (gy.status = 'active' or gc.is_platform_owner)");
+  });
+
   test.each([
     ['an unqualified column', ['organization_id', 'o.athlete_id', '$2']],
     ['a column of its own aliases', ['gl.organization_id', 'o.athlete_id', '$2']],
+    ['a column of its membership alias', ['o.organization_id', 'gm.athlete_id', '$2']],
+    ['a column of its gym alias', ['gy.organization_id', 'o.athlete_id', '$2']],
     ['an expression', ['o.organization_id', "o.athlete_id or true", '$2']],
     ['a value in place of a placeholder', ['o.organization_id', 'o.athlete_id', "'acct'"]],
   ])('refuses %s', (_label, [org, athlete, account]) => {
