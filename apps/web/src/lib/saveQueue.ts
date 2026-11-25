@@ -61,11 +61,16 @@ const MS_SINCE_MADE_MAX = 24 * 60 * 60 * 1000;
 const WAITED_MS = 1_000;
 /** A send or an account check with no answer by then counts as unknown, so the queue moves on. */
 export const ANSWER_WAIT_MS = 30_000;
+/**
+ * How long a new save waits for an account check that is already out before it is kept anyway
+ * (tied to the account last confirmed, and checked again before it is sent). Shown as a count meanwhile.
+ */
+export const KEEP_WAIT_MS = 5_000;
 
 export type SaveAnswer = 'saved' | 'refused' | 'unknown';
 
 export interface SendContext {
-  /** Aborted when the queue stops waiting for this send: pass it to fetch, so a send given up on never lands later. */
+  /** Aborted when the queue gives up on this send (ANSWER_WAIT_MS): pass it to fetch, so a send given up on never lands later. */
   signal: AbortSignal;
   /**
    * One random id for this save, the same on every send of it: the request key a route takes
@@ -93,8 +98,11 @@ export interface KeptSave {
    * server answered and wrote nothing); anything else unknown. A throw counts as unknown.
    */
   answerOf?: (response: Response) => SaveAnswer | Promise<SaveAnswer>;
-  /** After a refusal of a resend: did an earlier send land after all? true, false, or null (could not tell). */
-  checkLanded?: () => Promise<boolean | null>;
+  /**
+   * After a refusal of a resend: did an earlier send land after all? true, false, or null (could not
+   * tell). The signal is aborted when the queue stops waiting for it (pass it to fetch).
+   */
+  checkLanded?: (signal: AbortSignal) => Promise<boolean | null>;
   /** The save went through: the server's answer, or null when the check found it had landed. */
   onSaved?: (response: Response | null) => void;
   /**
@@ -165,6 +173,8 @@ let recheckTimer: ReturnType<typeof setTimeout> | undefined;
 let notSent: Array<{ count: number; accountId: string | null; mark: number | null }> = [];
 /** Waits released when everything is dropped: a send given up on never holds the next person's saves. */
 const dropWaiters = new Set<() => void>();
+/** Saves handed over and waiting, at most KEEP_WAIT_MS, for an account check before they are kept. */
+let pendingKeeps = 0;
 let generation = 0;
 let busy = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -174,12 +184,11 @@ const listeners = new Set<() => void>();
 
 function notify(): void {
   const held = entries.length + failed.length;
-  const dropped = accountId === null ? 0 : notSent
-    .filter((record) => record.accountId === accountId)
-    .reduce((sum, record) => sum + record.count, 0);
-  if (held === 0 && dropped === 0) snapshot = EMPTY;
-  // While the account is being checked again, the person at the screen may be someone else: a count.
-  else if (rechecking) snapshot = { waiting: [], failed: [], notSent: 0, checking: held };
+  // Every record left after a confirmation is that account's (confirmAccount filters them).
+  const dropped = accountId === null ? 0 : notSent.reduce((sum, record) => sum + record.count, 0);
+  if (held === 0 && dropped === 0 && pendingKeeps === 0) snapshot = EMPTY;
+  // While the account is not confirmed, the person at the screen may be someone else: a count.
+  else if (rechecking || accountId === null) snapshot = { waiting: [], failed: [], notSent: 0, checking: held + pendingKeeps };
   else snapshot = { waiting: entries.map((entry) => entry.save.label), failed: [...failed], notSent: dropped, checking: 0 };
   for (const listener of listeners) {
     try {
@@ -232,13 +241,12 @@ function recheck(): void {
 /** Everything kept, waiting or failed, goes: the account it was tied to is gone or has changed. */
 function dropAll(): void {
   const mark = readGymTabletSignedOutAt();
+  // Counts not yet shown are kept while the mark is the same; any other mark forgets them.
+  notSent = notSent.filter((record) => record.mark === mark);
   if (entries.length > 0) {
     const unsure = entries.filter((entry) => entry.unsure).length;
-    notSent = [];
     if (entries.length > unsure) notSent.push({ count: entries.length - unsure, accountId: entries[0].accountId, mark });
     if (unsure > 0) notSent.push({ count: unsure, accountId: null, mark });
-  } else {
-    notSent = notSent.filter((record) => record.mark === mark);
   }
   generation += 1;
   for (const release of [...dropWaiters]) release();
@@ -258,8 +266,8 @@ function dropAll(): void {
  * the queue goes on only once it has settled. fetch settles at once when aborted, so a send given up
  * on cannot reach the server after a newer one; a send that ignored the signal would hold the queue,
  * its save still shown as waiting, never let a newer save overtake it. A give-up throws.
- * A drop ends the wait at once and aborts the request: a dropped save's late landing is under its own
- * account's session and cannot overtake the next person's saves.
+ * A drop ends the wait at once but leaves the request to finish: it was sent under its own account's
+ * session (a coach who taps, then signs out, keeps that tap) and cannot overtake the next person's saves.
  */
 async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
@@ -277,10 +285,11 @@ async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promis
   });
   try {
     const first = await Promise.race([settled, givenUp, dropped]);
-    if (first !== 'settled') {
+    if (first === 'dropped') throw new Error('dropped');
+    if (first === 'given up') {
       controller.abort();
-      if (first === 'given up') await Promise.race([settled, dropped]);
-      throw new Error(first === 'dropped' ? 'dropped' : 'no answer');
+      await Promise.race([settled, dropped]);
+      throw new Error('no answer');
     }
     return await run;
   } finally {
@@ -289,17 +298,27 @@ async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promis
   }
 }
 
-/** A screen's callback, never allowed to stop the queue: a throw, or no answer by ANSWER_WAIT_MS, gives the fallback. */
-async function safely<T>(callback: () => T | Promise<T>, fallback: T): Promise<T> {
+/**
+ * A screen's callback, never allowed to stop the queue: a throw, no answer by ANSWER_WAIT_MS, or a
+ * drop meanwhile gives the fallback, and aborts the signal the callback was given.
+ */
+async function safely<T>(callback: (signal: AbortSignal) => T | Promise<T>, fallback: T): Promise<T> {
+  const controller = new AbortController();
   let wait: ReturnType<typeof setTimeout> | undefined;
+  let release: () => void = () => {};
   const givenUp = new Promise<T>((resolve) => {
     wait = setTimeout(() => resolve(fallback), ANSWER_WAIT_MS);
+    release = () => resolve(fallback);
+    dropWaiters.add(release);
   });
-  const answered = Promise.resolve().then(callback).catch(() => fallback);
+  const answered = Promise.resolve().then(() => callback(controller.signal)).catch(() => fallback);
   try {
-    return await Promise.race([answered, givenUp]);
+    const result = await Promise.race([answered.then((value) => ({ value })), givenUp.then((value) => ({ value, givenUp: true }))]);
+    if ('givenUp' in result) controller.abort();
+    return result.value;
   } finally {
     clearTimeout(wait);
+    dropWaiters.delete(release);
   }
 }
 
@@ -402,12 +421,15 @@ function install(): void {
     // everything; an ask that cannot answer is asked again every 15 seconds.
     recheck();
   });
-  document.addEventListener('visibilitychange', () => {
-    // Back in view with an account known: one ask, unless one is already out for a re-check.
+  // Back in view (a tab switch), or back in focus (two windows side by side are both visible): with
+  // an account known, one ask, unless one is already out for a re-check.
+  const backInView = () => {
     if (document.visibilityState !== 'visible' || accountId === null) return;
     if (boundaryNewer()) dropAll();
     else if (!(rechecking && learning)) recheck();
-  });
+  };
+  document.addEventListener('visibilitychange', backInView);
+  window.addEventListener('focus', backInView);
   window.addEventListener('storage', () => {
     if (boundaryNewer()) dropAll();
   });
@@ -473,6 +495,8 @@ async function pump(): Promise<void> {
       }
       if (now !== head.accountId) {
         dropAll();
+        // Another account signed in: confirmed now, so a count of saves made while checking reaches them.
+        if (now !== null) confirmAccount(now);
         return;
       }
       confirmAccount(now);
@@ -520,7 +544,7 @@ async function pump(): Promise<void> {
       // Without a check, whether it landed is not known.
       const landed: boolean | null = head.sends === 1
         ? false
-        : head.save.checkLanded ? await safely(() => head.save.checkLanded!(), null) : null;
+        : head.save.checkLanded ? await safely((signal) => head.save.checkLanded!(signal), null) : null;
       if (seen !== generation) return;
       entries.shift();
       if (landed === true) {
@@ -567,8 +591,30 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   const madeAtWall = Date.now();
   const requestKey = newRequestKey();
   if (!requestKey) return 'not_kept';
-  const account = await learnAccount();
-  if (!account || account !== accountId) return 'not_kept';
+  // An account check is out: shown as a count while it is waited on, for at most KEEP_WAIT_MS.
+  const waits = accountId === null || rechecking;
+  if (waits) {
+    pendingKeeps += 1;
+    notify();
+  }
+  let account: string | null;
+  let keepWait: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const late = new Promise<'late'>((resolve) => {
+      keepWait = setTimeout(() => resolve('late'), KEEP_WAIT_MS);
+    });
+    const answer = await Promise.race([learnAccount(), late]);
+    // No answer yet: kept for the account last confirmed while it is being checked again (and checked
+    // again before it is sent); not kept when no account was ever confirmed.
+    account = answer === 'late' ? (rechecking ? accountId : null) : answer;
+  } finally {
+    clearTimeout(keepWait);
+    if (waits) pendingKeeps = Math.max(0, pendingKeeps - 1);
+  }
+  if (!account || account !== accountId) {
+    notify();
+    return 'not_kept';
+  }
   entries.push({ save, requestKey, accountId: account, madeAtPerf, madeAtWall, sends: 0, unsure: rechecking });
   notify();
   // While a save waits for its resend, a new one waits behind it: the queue tries again on its
@@ -604,6 +650,7 @@ export function emptySaveQueueState(): SaveQueueState {
 export function resetSaveQueueForTests(): void {
   dropAll();
   notSent = [];
+  pendingKeeps = 0;
   busy = false;
   listeners.clear();
   notify();

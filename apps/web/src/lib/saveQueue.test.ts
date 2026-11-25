@@ -10,6 +10,7 @@ import { writeGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
 
 import {
   ANSWER_WAIT_MS,
+  KEEP_WAIT_MS,
   RESEND_MS,
   dismissFailedSaves,
   keepSave,
@@ -314,8 +315,9 @@ describe('the queue never stops while saves wait', () => {
     await settle();
     expect(mine.save.onSaved).toHaveBeenCalledTimes(1);
     expect(stuck.send).toHaveBeenCalledTimes(1);
-    // The dropped save's request is aborted too.
-    expect(signals[0].aborted).toBe(true);
+    // A drop before the give-up leaves the request to finish (it went under the last person's own
+    // session); after the give-up it was already aborted.
+    expect(signals[0].aborted).toBe(elapsed === ANSWER_WAIT_MS);
   });
 
   test('a send that throws at once counts as unknown and is resent, leaving no stray timer', async () => {
@@ -364,6 +366,31 @@ describe('the queue never stops while saves wait', () => {
     expect(readSaveQueue().waiting).toEqual(['Body stalls']);
     await jest.advanceTimersByTimeAsync(RESEND_MS);
     expect(save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('a drop while a landed check hangs: the check is released and aborted, and the next person\'s save goes at once', async () => {
+    const checkSignals: AbortSignal[] = [];
+    const kept = scriptedSave('End session', ['throw', answer(409)], {
+      checkLanded: (signal: AbortSignal) => {
+        checkSignals.push(signal);
+        return new Promise<boolean>(() => {});
+      },
+    });
+    await keepSave(kept.save);
+    await settle();
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(checkSignals).toHaveLength(1);
+    clearRoleSession();
+    sessionAccount = 'acct-b';
+    writeGymTabletSignedOutAt(Date.now());
+    createPersistentRoleSession('coach');
+    await settle();
+    expect(checkSignals[0].aborted).toBe(true);
+    const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    await keepSave(mine.save);
+    await settle();
+    expect(mine.save.onSaved).toHaveBeenCalledTimes(1);
+    expect(kept.save.onRefused).not.toHaveBeenCalled();
   });
 
   test('a landed check that never answers reads as not known after the wait, and the next save goes', async () => {
@@ -779,6 +806,87 @@ describe('nothing survives a sign-out or an account change', () => {
       notSent: 0,
       checking: 0,
     });
+  });
+
+  test('a drop during the account check before a resend: the next person\'s first save goes at once, not 15 seconds later', async () => {
+    await waitingSave('Ada Reyes: here');
+    sessionAccount = 'hang';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    clearRoleSession();
+    sessionAccount = 'acct-b';
+    writeGymTabletSignedOutAt(Date.now());
+    createPersistentRoleSession('coach');
+    await settle();
+    const mine = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    await keepSave(mine.save);
+    await settle();
+    expect(mine.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('the check before a send finding another account confirms it: a count of saves made while checking reaches that person at once', async () => {
+    // The background ask hangs, so the pump's own check is the one that finds the other account.
+    sessionAccount = 'hang';
+    createPersistentRoleSession('coach');
+    await settle();
+    sessionAnswers = ['acct-b'];
+    const unsure = scriptedSave('Ben Ortiz: here', [answer(200)]);
+    const result = keepSave(unsure.save);
+    await jest.advanceTimersByTimeAsync(KEEP_WAIT_MS);
+    await expect(result).resolves.toBe('kept');
+    await settle();
+    expect(sessionAnswers).toEqual([]);
+    expect(unsure.save.send).not.toHaveBeenCalled();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 1, checking: 0 });
+  });
+
+  test('a save handed over while a check hangs is shown as a count at once, and kept after a few seconds for the account last confirmed', async () => {
+    sessionAccount = 'hang';
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    window.dispatchEvent(new Event('focus'));
+    const kept = scriptedSave('Ada Reyes: here', [answer(200)]);
+    const result = keepSave(kept.save);
+    await settle();
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 1 });
+    await jest.advanceTimersByTimeAsync(KEEP_WAIT_MS);
+    await expect(result).resolves.toBe('kept');
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 1 });
+    expect(kept.save.send).not.toHaveBeenCalled();
+    // The check answers the same person: the line shows, and the save goes.
+    releaseSession?.('acct-a');
+    sessionAccount = 'acct-a';
+    await settle();
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('a save handed over before any account was confirmed, with the check hanging: a count for a few seconds, then not kept', async () => {
+    resetSaveQueueForTests();
+    sessionAccount = 'hang';
+    const kept = scriptedSave('Ada Reyes: here', [answer(200)]);
+    const result = keepSave(kept.save);
+    await settle();
+    expect(readSaveQueue().checking).toBe(1);
+    await jest.advanceTimersByTimeAsync(KEEP_WAIT_MS);
+    await expect(result).resolves.toBe('not_kept');
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 0 });
+    expect(kept.save.send).not.toHaveBeenCalled();
+  });
+
+  test('two drops on the same device mark add up: the count shown is both', async () => {
+    const first = scriptedSave('One', ['throw']);
+    await keepSave(first.save);
+    await settle();
+    clearRoleSession();
+    prepareSaveQueue();
+    await settle();
+    expect(readSaveQueue().notSent).toBe(1);
+    const second = scriptedSave('Two', ['throw']);
+    await keepSave(second.save);
+    await settle();
+    clearRoleSession();
+    prepareSaveQueue();
+    await settle();
+    expect(readSaveQueue().notSent).toBe(2);
   });
 
   test('a sign-out or sign-in mark from another tab drops failed words too, not only waiting saves', async () => {
