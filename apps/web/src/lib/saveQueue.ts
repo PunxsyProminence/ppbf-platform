@@ -175,6 +175,8 @@ let notSent: Array<{ count: number; accountId: string | null; mark: number | nul
 const dropWaiters = new Set<() => void>();
 /** Saves handed over and waiting, at most KEEP_WAIT_MS, for an account check before they are kept. */
 let pendingKeeps = 0;
+/** Sends a drop left running, with the account they went under (see withinWait). */
+let leftRunning: Array<{ owner: string; done: Promise<void> }> = [];
 let generation = 0;
 let busy = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -268,8 +270,11 @@ function dropAll(): void {
  * its save still shown as waiting, never let a newer save overtake it. A give-up throws.
  * A drop ends the wait at once but leaves the request to finish: it was sent under its own account's
  * session (a coach who taps, then signs out, keeps that tap) and cannot overtake the next person's saves.
+ * A send's request so left running is remembered with its account (`owner`): if that same account is
+ * confirmed again, its next send waits for it first (until its give-up), so order holds for that coach.
  */
-async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>, owner?: string): Promise<T> {
+  const startedAt = Date.now();
   const controller = new AbortController();
   // Through a promise, so a start that throws at once is a rejection here, not a stray timer.
   const run = Promise.resolve().then(() => start(controller.signal));
@@ -285,7 +290,10 @@ async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promis
   });
   try {
     const first = await Promise.race([settled, givenUp, dropped]);
-    if (first === 'dropped') throw new Error('dropped');
+    if (first === 'dropped') {
+      if (owner !== undefined) leftRunningFor(owner, settled, controller, ANSWER_WAIT_MS - (Date.now() - startedAt));
+      throw new Error('dropped');
+    }
     if (first === 'given up') {
       controller.abort();
       await Promise.race([settled, dropped]);
@@ -296,6 +304,24 @@ async function withinWait<T>(start: (signal: AbortSignal) => Promise<T>): Promis
     clearTimeout(wait);
     dropWaiters.delete(release);
   }
+}
+
+/** A request a drop left running: settled, or aborted when its give-up time comes. */
+function leftRunningFor(owner: string, settled: Promise<unknown>, controller: AbortController, remainingMs: number): void {
+  let wait: ReturnType<typeof setTimeout> | undefined;
+  const givenUp = new Promise<'given up'>((resolve) => {
+    wait = setTimeout(() => resolve('given up'), Math.max(0, remainingMs));
+  });
+  const record: { owner: string; done: Promise<void> } = { owner, done: Promise.resolve() };
+  record.done = Promise.race([settled, givenUp])
+    .then((result) => {
+      if (result === 'given up') controller.abort();
+    })
+    .finally(() => {
+      clearTimeout(wait);
+      leftRunning = leftRunning.filter((other) => other !== record);
+    });
+  leftRunning.push(record);
 }
 
 /**
@@ -501,6 +527,12 @@ async function pump(): Promise<void> {
       }
       confirmAccount(now);
     }
+    // This account's own earlier request, left running by a drop, lands first (or is given up on).
+    const earlier = leftRunning.filter((record) => record.owner === head.accountId).map((record) => record.done);
+    if (earlier.length > 0) {
+      await Promise.all(earlier);
+      if (seen !== generation) return;
+    }
     let response: Response | null = null;
     let accountGone = false;
     try {
@@ -515,7 +547,7 @@ async function pump(): Promise<void> {
         });
         const gone = answered.status === 401 || (await codeOf(answered)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT';
         return { response: answered, accountGone: gone };
-      }));
+      }, head.accountId));
     } catch {
       response = null;
     }
@@ -591,8 +623,12 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   const madeAtWall = Date.now();
   const requestKey = newRequestKey();
   if (!requestKey) return 'not_kept';
-  // An account check is out: shown as a count while it is waited on, for at most KEEP_WAIT_MS.
-  const waits = accountId === null || rechecking;
+  // A sign-out or sign-in mark since: everything goes first, so the save is not counted for the last account.
+  if (boundaryNewer()) dropAll();
+  // Re-checking an account already confirmed: shown in the count while the answer is waited on (at
+  // most KEEP_WAIT_MS), since it will show again either way. With no account confirmed yet it may not
+  // be kept at all, so the count would promise too much: the screen's own words stand meanwhile.
+  const waits = rechecking && accountId !== null;
   if (waits) {
     pendingKeeps += 1;
     notify();
@@ -651,6 +687,7 @@ export function resetSaveQueueForTests(): void {
   dropAll();
   notSent = [];
   pendingKeeps = 0;
+  leftRunning = [];
   busy = false;
   listeners.clear();
   notify();
