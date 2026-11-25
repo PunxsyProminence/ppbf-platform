@@ -8855,7 +8855,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Who has stopped coming: the gym's live, not-left athletes who came at least once (a register present day, or a standing here mark the register does not hold: an untied open-gym run, a tap that created no register mark, or a cancelled class; OW27-32 A on this page only, App Overwatch on #2172) and have not come for the gym's number of days. Returns the gym's gap_days, is_default and today, and per athlete id, name, last day they came and days since; no date of birth, membership, run or mark. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1.",
+    "notes": "Who has stopped coming: the gym's live, not-left athletes, with at least one active program membership where the gym records any for them (App Overwatch on #2172; no membership recorded is decided by not-left alone), who came at least once (a register present day, or a standing here mark the register does not hold: an untied open-gym run, a tap that created no register mark, or a cancelled class; OW27-32 A on this page only, App Overwatch on #2172) and have not come for the gym's number of days. Returns the gym's gap_days, is_default and today, and per athlete id, name, last day they came and days since; no date of birth, membership, run or mark. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

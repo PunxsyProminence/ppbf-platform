@@ -2,8 +2,9 @@
 // OW27-30 to OW27-32; Overwatch's W4-6 answers Q2 A and Q3 A). './db' is
 // mocked to route into the embedded server, so the module's real SQL runs
 // against pilot.attendance_reconciled (the register, through
-// getAttendanceLast28Days), pilot.session_run_athletes and
-// pilot.session_script_runs built by the full schema.
+// getAttendanceLast28Days), pilot.session_run_athletes,
+// pilot.session_script_runs and pilot.program_memberships (Overwatch on #2172)
+// built by the full schema.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -205,6 +206,16 @@ async function hereMark(
   );
 }
 
+/** A program membership, as the admin's Programs page records it; an ended one carries its end day. */
+async function programMembership(gym: Gym, athleteId: string, program: string, status: 'active' | 'lapsed' | 'ended') {
+  await client.query(
+    `insert into pilot.program_memberships
+       (organization_id, membership_id, athlete_id, program_name, status, started_on, ended_on, created_by_account_id)
+     values ($1, gen_random_uuid()::text, $2, $3, $4, $5::date, case when $4 = 'ended' then $6::date end, $7)`,
+    [gym.organizationId, athleteId, program, status, daysAgo(200), daysAgo(30), gym.admin.accountId],
+  );
+}
+
 /** An account with an active membership in this gym, in `role`. */
 async function member(gym: Gym, role: PilotRole): Promise<ActorIdentity> {
   const accountId = `${role}-member@${gym.organizationId}`;
@@ -376,6 +387,61 @@ describe('listStoppedComing on a real database', () => {
 
     // The other gym sees only its own athlete, who came yesterday.
     await expect(listStoppedComing(other.coach, TODAY)).resolves.toMatchObject({ athletes: [] });
+  });
+
+  test('program memberships (Overwatch on #2172): active is listed; lapsed or ended only is not; none recorded is decided by active_flag alone; another gym\'s rows do not count', async () => {
+    const gym = await newGym('members');
+    const other = await newGym('members-other');
+    // Each came 20 days ago, so each is listed unless the membership rule leaves them off.
+    const cases: Array<[string, string, Array<['active' | 'lapsed' | 'ended', string]>, boolean]> = [
+      ['mae', 'Mae Active', [['active', 'Youth Boxing']], true],
+      ['lou', 'Lou Lapsed', [['lapsed', 'Youth Boxing']], false],
+      ['ned', 'Ned Ended', [['ended', 'Youth Boxing']], false],
+      ['ola', 'Ola None', [], true],
+      ['pam', 'Pam Again', [['ended', 'Youth Boxing'], ['active', 'Youth Boxing']], true], // re-enrolled: a new active row
+      ['raf', 'Raf Both', [['lapsed', 'Youth Boxing'], ['ended', 'Open Gym']], false],
+      ['sid', 'Sid Mixed', [['lapsed', 'Youth Boxing'], ['active', 'Open Gym']], true],
+    ];
+    for (const [id, name, memberships] of cases) {
+      await addAthlete(gym, id, name);
+      await registerDay(gym, id, daysAgo(20), 'present');
+      for (const [status, program] of memberships) await programMembership(gym, id, program, status);
+    }
+    // Marked as left, with an active membership: still not listed (active_flag is still required).
+    await addAthlete(gym, 'tia', 'Tia Left', { active: false });
+    await registerDay(gym, 'tia', daysAgo(20), 'present');
+    await programMembership(gym, 'tia', 'Youth Boxing', 'active');
+    // The other gym's rows for the same ids: an active one for lou does not list this gym's lou,
+    // and a lapsed one for ola does not leave this gym's ola off.
+    await addAthlete(other, 'lou', 'Lou Elsewhere');
+    await programMembership(other, 'lou', 'Youth Boxing', 'active');
+    await addAthlete(other, 'ola', 'Ola Elsewhere');
+    await programMembership(other, 'ola', 'Youth Boxing', 'lapsed');
+
+    const expected = cases
+      .filter(([, , , listed]) => listed)
+      .map(([id, name]) => ({ athlete_id: id, full_name: name, last_came_day: daysAgo(20), days_since_came: 20 }))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    expect(expected.map((a) => a.athlete_id)).toEqual(['mae', 'ola', 'pam', 'sid']);
+    for (const reader of [gym.coach, gym.admin]) {
+      await expect(listStoppedComing(reader, TODAY)).resolves.toEqual({
+        gap_days: 14, is_default: true, today: TODAY, athletes: expected,
+      });
+    }
+
+    // The office lapses Mae's only membership: she leaves the list; reactivated, she is back.
+    await client.query(
+      `update pilot.program_memberships set status = 'lapsed' where organization_id = $1 and athlete_id = 'mae'`,
+      [gym.organizationId],
+    );
+    await expect(listStoppedComing(gym.coach, TODAY)).resolves.toMatchObject({
+      athletes: expected.filter((a) => a.athlete_id !== 'mae'),
+    });
+    await client.query(
+      `update pilot.program_memberships set status = 'active' where organization_id = $1 and athlete_id = 'mae'`,
+      [gym.organizationId],
+    );
+    await expect(listStoppedComing(gym.coach, TODAY)).resolves.toMatchObject({ athletes: expected });
   });
 
   test('the gym\'s own number of days decides the list', async () => {
