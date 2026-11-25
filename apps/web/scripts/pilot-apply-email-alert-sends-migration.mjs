@@ -23,10 +23,11 @@ function sslConfig() {
 // each compared IN FULL against the text Postgres stores
 // (emailAlertSendsMigration.pg.test.ts drives this runner against a real
 // database); the primary key; the one-row-per-event key by name and column
-// order, not deferrable (ON CONFLICT refuses a deferrable key), and no other
-// unique key; exactly three foreign keys (gym, account, and the person's
-// membership of that gym), each by column, target and cascade, none
-// deferrable; and every index on the table by full definition. For
+// order, not deferrable (ON CONFLICT refuses a deferrable key); exactly three
+// foreign keys (gym, account, and the person's membership of that gym), each
+// by column, target and cascade, none deferrable; and every index on the table
+// by full definition, which also refuses any other unique key (each has an
+// index). For
 // pilot.email_alert_checkpoints: its columns, its one CHECK, its primary key
 // and its only index.
 export const EXPECTED_SEND_CHECKS = {
@@ -164,9 +165,6 @@ const READINESS_QUERY = `
         and not c.condeferrable
         and ${keyColumns('local')} = array['organization_id', 'account_id', 'event_kind', 'event_id']
     ) as send_once_key_ready,
-    (
-      select count(*) = 1 from pg_constraint c where c.conrelid = ${SENDS} and c.contype = 'u'
-    ) as send_no_other_unique_keys,
     ${sendKeyReady('email_alert_sends_organization_id_fkey', "'organization_id'", 'pilot.organizations')} as send_organization_fk_ready,
     ${sendKeyReady('email_alert_sends_account_id_fkey', "'account_id'", 'pilot.accounts')} as send_account_fk_ready,
     ${sendKeyReady('pilot_email_alert_send_membership_fk', "'account_id', 'organization_id'", 'pilot.organization_memberships')} as send_membership_fk_ready,
