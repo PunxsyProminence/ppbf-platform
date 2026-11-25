@@ -626,6 +626,40 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('an athlete deleted the way the office deletes one, while a save waits, does not deadlock: the deletion commits and the save gets 403', async () => {
+    const client = await freshDatabase('emailsw_delete_order');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_delete_order'), max: 4 });
+    const office = await activePool.connect();
+    try {
+      // deleteAthleteRecord's order (dataDeletion.ts): the athlete row, then its account.
+      await office.query('BEGIN');
+      await office.query('select 1 from pilot.athletes where athlete_id = $1 and organization_id = $2 for update', [ADULT_ATHLETE, ORG_ID]);
+      await office.query('update pilot.athletes set deleted_at = now() where athlete_id = $1 and organization_id = $2', [ADULT_ATHLETE, ORG_ID]);
+      let settled = false;
+      const save = setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW);
+      save.then(() => { settled = true; }, () => { settled = true; });
+      for (let i = 0; i < 200 && !settled; i += 1) {
+        const { rows } = await client.query(
+          `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if (rows[0].n > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await office.query(
+        `update pilot.accounts set deleted_at = now(), active_flag = false
+          where organization_id = $1 and athlete_id = $2 and role = 'athlete'`,
+        [ORG_ID, ADULT_ATHLETE],
+      );
+      await office.query('COMMIT');
+      await expect(save).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([]);
+    } finally {
+      office.release();
+      await client.end();
+    }
+  });
+
   test('a membership removed between sign-in and the save gets the plain 403, and nothing is written', async () => {
     const client = await freshDatabase('emailsw_no_membership');
     activeClient = client;

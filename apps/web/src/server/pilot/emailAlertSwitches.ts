@@ -197,15 +197,22 @@ export async function setEmailAlertSwitch(
   }
 
   const saved = await withTransaction(async (client) => {
+    // An athlete's row is held first (FOR SHARE, until this commits), then the
+    // account: the order deleteAthleteRecord (dataDeletion.ts) and the
+    // guardian-retirement trigger take, so a save and a deletion never deadlock.
+    if (userType === 'adult_athlete') {
+      await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for share', [
+        subject.organizationId, subject.athleteId?.trim(),
+      ]);
+    }
     const stored = await lockSwitchRow(client, subject);
-    // An athlete's age again, inside the save: the account row is locked (a
-    // re-link waits), and FOR SHARE holds the athlete row until this commits,
-    // so a date of birth corrected to under 18 or a record deleted since the
-    // read above is seen here (Codex on #2169). Nothing is written before it.
+    // The age again, inside the save: the account row is locked (a re-link
+    // waits) and the athlete row is held, so a date of birth corrected to under
+    // 18 or a record deleted since the read above is seen here (Codex on
+    // #2169). Nothing is written before it.
     if (userType === 'adult_athlete') {
       const athlete = await client.query<{ dob: string | null }>(
-        `${LINKED_ATHLETE_DOB_SQL}
-        for share of ath`,
+        LINKED_ATHLETE_DOB_SQL,
         [subject.organizationId, subject.accountId, subject.athleteId?.trim()],
       );
       if (!athlete.rows[0] || isMinor(athlete.rows[0].dob, now)) return null;
