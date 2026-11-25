@@ -46,17 +46,17 @@ describe('familyThreads: an unknown date of birth reads as a minor (OD-2026-10-0
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
   });
 
-  test("a child whose date of birth is unknown stays in the guardian's thread list scope", async () => {
-    mockQuery
-      // guardianAthleteIds: one adult child, one with an unknown date of birth.
-      .mockResolvedValueOnce([
-        { athlete_id: 'ath-adult', dob: '2000-01-01' },
-        { athlete_id: 'ath-unknown-dob', dob: null },
-      ])
-      // the thread read.
-      .mockResolvedValueOnce([]);
-    await expect(listOwnFamilyThreads('org-1', 'guardian-1')).resolves.toEqual([]);
-    const [, params] = mockQuery.mock.calls[1];
-    expect(params).toEqual(['org-1', 'guardian-1', ['ath-unknown-dob']]);
+  test("a child whose date of birth is unknown stays in the guardian's thread list; an adult's thread drops out, in the one read", async () => {
+    const row = (athleteId: string, dob: string | null) => ({
+      thread_id: `t-${athleteId}`, athlete_id: athleteId, athlete_dob: dob, thread_created_at: '2026-11-25T03:00:00.000Z',
+      post_id: `t-${athleteId}`, author_role: 'parent', author_account_id: null, post_text: 'Hello',
+      created_at: '2026-11-25T03:00:00.000Z', seen: false,
+    });
+    // One statement returns the threads with each child's date of birth (Codex P2 on #2179).
+    mockQuery.mockResolvedValueOnce([row('ath-adult', '2000-01-01'), row('ath-unknown-dob', null)]);
+    const list = await listOwnFamilyThreads('org-1', 'guardian-1');
+    expect(list.map((thread) => thread.athlete_id)).toEqual(['ath-unknown-dob']);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 'guardian-1']);
   });
 });
