@@ -71,7 +71,7 @@ export function tieSummary(title: string, copied: readonly Copied[]): string {
 
 const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
 // The tie's refusals given only after its request key was looked up and found unrecorded
-// (setSessionRunClass): the tie never landed. Any other refusal of a resend leaves it not known.
+// (the server's tie in sessionRunClass.ts): the tie never landed. Any other refusal of a resend leaves it not known.
 // Decided by the key alone, never by the run holding the class asked for, which another tab or
 // device tying the same class would also produce (OVERWATCH 7170099938 on #2178).
 const TIE_REFUSED_AFTER_KEY = new Set([

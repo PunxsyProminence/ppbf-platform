@@ -2264,7 +2264,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       // entered when ending it was lost (round 17, reviewers A and B). The notes are not repeated.
       expect(readSaveQueue().failed).toEqual([{
         label: 'Record as completed',
-        words: 'This session was not ended from this screen: the session had already ended when it reached the server. What was entered when ending it was not recorded.',
+        words: 'This tap did not end the session: the session had already ended when it reached the server. What was entered with it was not recorded.',
         known: true,
       }]);
       const list = screen.getByRole('alert');

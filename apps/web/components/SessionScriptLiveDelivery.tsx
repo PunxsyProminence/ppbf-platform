@@ -988,7 +988,7 @@ export default function SessionScriptLiveDelivery({
             // The coach's notes themselves are never repeated there.
             return landed === null
               ? unknownOffPage('Check this session under Finished sessions.')
-              : `This session was not ended from this screen: ${goneWords(refusal.error)}. What was entered when ending it was not recorded.`;
+              : `This tap did not end the session: ${goneWords(refusal.error)}. What was entered with it was not recorded.`;
           }
           // A refused resend that could not be checked: whether an earlier send landed is not known.
           const reason = describeRunError(refusal.error, response.status);
