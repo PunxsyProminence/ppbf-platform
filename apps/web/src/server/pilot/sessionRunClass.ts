@@ -62,7 +62,7 @@ export const SESSION_CLASS_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['SESSION_RUN_NOT_TIED', 'This session is not tied to a class, so there is no class register to mark.'],
   ['SESSION_CLASS_NOT_STARTED', 'This class has not started yet, so nobody is a no-show.'],
   ['SESSION_CLASS_ALREADY_LIVE', 'Another live session is already running this class. Start without a class, or ask that coach to end theirs.'],
-  ['SESSION_NO_SHOWS_KEY_REUSED', 'This tap was already sent for other athletes. Nobody was marked Absent.'],
+  ['SESSION_NO_SHOWS_KEY_REUSED', 'This tap was already sent for other athletes. Nothing more was marked.'],
 ]);
 
 type Tier = Pick<ActorIdentity, 'organizationId' | 'accountId' | 'role'>;
@@ -300,6 +300,13 @@ export interface NoShowsTap {
   athleteIds: readonly string[];
   /** The tap's key, the same on every resend; null when the page sent none (it is then sent once). */
   requestKey: string | null;
+  /**
+   * When the coach tapped, for a tap kept in the open page and sent late; without it, now. The marks
+   * are made as of then (never before the class started), as a late here tap's are, so a here tap
+   * made after this tap still wins on the register when it lands after it (OD-2026-10-21-004
+   * ruling 1; Overwatch condition 1 on #2158).
+   */
+  tappedAt?: string;
 }
 
 /**
@@ -323,7 +330,7 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
     const run = await lockOwnRun(client, actor, runId);
     if (tap.requestKey !== null) {
       const first = await client.query<{ athlete_ids: string[]; marked: string[] }>(
-        `select details->'athlete_ids' as athlete_ids, details->'marked' as marked
+        `select details->'athlete_ids' as athlete_ids, details->'marked_athlete_ids' as marked
            from pilot.audit_events
           where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
             and details->>'action' = 'mark_no_shows' and details->>'request_key' = $3
@@ -350,6 +357,10 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
       actor.organizationId,
       item.start_at,
     );
+    // As of the tap, never before the class started (exact to the microsecond, so in SQL).
+    const markedAt = tap.tappedAt === undefined
+      ? new Date().toISOString()
+      : (await client.query<{ at: string }>('select greatest($1::timestamptz, $2::timestamptz)::text as at', [tap.tappedAt, item.start_at])).rows[0].at;
     const marked = await markClassNoShowsAbsent(
       client,
       actor.organizationId,
@@ -361,7 +372,7 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
       },
       standing,
       named,
-      new Date().toISOString(),
+      markedAt,
     );
     for (const athleteId of marked) {
       const mark = { organizationId: actor.organizationId, runId, classId, athleteId, accountId: actor.accountId, role };
@@ -375,7 +386,7 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
         organization_id: actor.organizationId,
         entity_type: 'session_script_run',
         entity_id: runId,
-        details: { run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey, athlete_ids: named, marked },
+        details: { run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey, athlete_ids: named, marked_athlete_ids: marked },
         shadow_mirror: false,
       },
       client,

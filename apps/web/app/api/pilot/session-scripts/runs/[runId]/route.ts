@@ -55,9 +55,12 @@ function badRequest(code: string) {
 
 // The no-shows tap names its athletes and may carry a request key (W4 item 7, OVERWATCH
 // 7160191377): text of 1 to 200 characters, never blank, with no NUL (PostgreSQL cannot store one
-// in the audit record), at most NO_SHOWS_MAX names (a class holds at most 200).
+// in the audit record), at most NO_SHOWS_MAX names (a class is created with a capacity of at most
+// 200; the limit leaves room). A kept tap sent late also carries tapped_ms_ago, as a here tap does
+// (athletes/route.ts, the same limit): its marks are made as of the tap.
 const NO_SHOWS_MAX = 500;
 const TEXT_MAX = 200;
+const TAPPED_MS_AGO_MAX = 24 * 60 * 60 * 1000;
 const NUL = String.fromCharCode(0);
 
 function isIdText(value: unknown): value is string {
@@ -165,7 +168,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       case 'mark_no_shows': {
-        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'request_key'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'request_key', 'tapped_ms_ago'].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
@@ -178,10 +181,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (record.request_key !== undefined && !isIdText(record.request_key)) {
           return badRequest(`request_key:expected text of 1 to ${TEXT_MAX} characters`);
         }
+        // null is "not sent", as for a here tap.
+        const tappedMsAgo = record.tapped_ms_ago ?? undefined;
+        if (
+          tappedMsAgo !== undefined
+          && (typeof tappedMsAgo !== 'number' || !Number.isSafeInteger(tappedMsAgo) || tappedMsAgo < 0 || tappedMsAgo > TAPPED_MS_AGO_MAX)
+        ) {
+          return badRequest('tapped_ms_ago');
+        }
         const result = await markSessionNoShowsAbsent(
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
-          { athleteIds, requestKey: record.request_key ?? null },
+          {
+            athleteIds,
+            requestKey: record.request_key ?? null,
+            // The server's clock less the page's count since the tap; no clock on the tablet is read.
+            ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
+          },
         );
         return NextResponse.json(result);
       }

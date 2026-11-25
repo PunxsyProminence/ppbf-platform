@@ -451,10 +451,28 @@ describe('tie_class and mark_no_shows', () => {
     [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: null }],
     [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: 'k'.repeat(201) }],
     [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: `key${NUL}` }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: -1 }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: 1.5 }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: '100' }],
+    [{ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: 24 * 60 * 60 * 1000 + 1 }],
   ])('refuses %j before touching the module', async (body) => {
     const response = await patch(body);
     expect(response.status).toBe(400);
     expect(mockNoShows).not.toHaveBeenCalled();
+  });
+
+  it('passes a kept tap\'s time as the server\'s clock less tapped_ms_ago (null is not sent), up to a day', async () => {
+    mockNoShows.mockResolvedValue({ marked: [] });
+    const before = Date.now();
+    await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], request_key: 'key-1', tapped_ms_ago: 60_000 });
+    const after = Date.now();
+    const tap = mockNoShows.mock.calls[0][2] as { tappedAt?: string };
+    expect(Date.parse(String(tap.tappedAt))).toBeGreaterThanOrEqual(before - 60_000);
+    expect(Date.parse(String(tap.tappedAt))).toBeLessThanOrEqual(after - 60_000);
+    await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: null });
+    expect(mockNoShows).toHaveBeenLastCalledWith(ACTOR, RUN_ID, { athleteIds: ['ath-1'], requestKey: null });
+    expect((await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: 24 * 60 * 60 * 1000 })).status).toBe(200);
+    expect((await patch({ action: 'mark_no_shows', athlete_ids: ['ath-1'], tapped_ms_ago: 0 })).status).toBe(200);
   });
 
   it('takes up to 500 names of up to 200 characters each, and a key of up to 200', async () => {

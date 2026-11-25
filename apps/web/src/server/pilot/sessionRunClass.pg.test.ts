@@ -798,8 +798,8 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Each tap is recorded on the run with the names it sent, each once and sorted, and whom it marked.
     const names = [gym.ada, gym.ben, gym.cy, 'athlete-dee', 'athlete-eve', 'athlete-unknown'];
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked: [gym.ben, 'athlete-eve'] },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked: [] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [gym.ben, 'athlete-eve'] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [] },
     ]);
   });
 
@@ -1021,7 +1021,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     const meanwhile = await gymState(gym, runId);
     await letTheClockMove();
 
-    // The resend, and one that overtakes it, answer as the first did and write nothing.
+    // Two resends at once answer as the first did and write nothing.
     const resent = await Promise.all([
       markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost')),
       markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-lost')),
@@ -1052,9 +1052,54 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId, naming([gym.ben], 'key-lost'))))
       .toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked: [gym.ben] },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked: [] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked_athlete_ids: [gym.ben] },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked_athlete_ids: [] },
     ]);
+  });
+
+  test('first sends of one key at once: the run\'s lock lets one apply, and the others answer as it did', async () => {
+    const gym = await newGym('racing-no-shows');
+    const { run_id: runId } = await start(gym, gym.coach);
+    const sends = await Promise.all([1, 2, 3].map(() => markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada, gym.ben], 'key-race'))));
+    expect(sends).toEqual([{ marked: [gym.ada, gym.ben] }, { marked: [gym.ada, gym.ben] }, { marked: [gym.ada, gym.ben] }]);
+    expect(await noShowTaps(gym, runId)).toHaveLength(1);
+    expect((await registerAudit(gym)).map((row) => row.entity_id)).toEqual([`${gym.klass}:${gym.ada}`, `${gym.klass}:${gym.ben}`]);
+  });
+
+  // Found by both merge-check reviewers of #2182: a no-shows tap and a later here tap, both kept while
+  // the wifi was down, land in that order. Marked Absent as of when it landed, the no-shows tap would
+  // read as the later register change and the here tap made after it would lose (register_newer).
+  test('a kept no-shows tap sent late marks Absent as of its tap: a here tap made after it, landing after it, puts the athlete Present', async () => {
+    const gym = await newGym('late-no-shows');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await startedAnHourAgo(gym, runId);
+    await client.query(
+      `update pilot.scheduler_classes set start_at = start_at - interval '1 hour' where organization_id = $1 and class_id = $2`,
+      [gym.organizationId, gym.klass],
+    );
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+    const stamp = async (athleteId: string) => (await client.query<{ at_tap: boolean; at_start: boolean }>(
+      `select a.updated_at = $3::timestamptz as at_tap, a.checked_in_at = c.start_at and a.updated_at = c.start_at as at_start
+         from pilot.scheduler_attendance a
+         join pilot.scheduler_classes c on c.organization_id = a.organization_id and c.class_id = a.class_id
+        where a.organization_id = $1 and a.athlete_id = $2`,
+      [gym.organizationId, athleteId, tappedTwoMinutesAgo],
+    )).rows[0];
+
+    // Tapped two minutes ago, landing now: Ben is Absent as of the tap.
+    const tappedTwoMinutesAgo = minutesAgo(2);
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { athleteIds: [gym.ben], requestKey: 'key-late', tappedAt: tappedTwoMinutesAgo }))
+      .toEqual({ marked: [gym.ben] });
+    expect(await stamp(gym.ben)).toMatchObject({ at_tap: true });
+    // Ben walked in a minute ago; that here tap lands after the no-shows tap, and wins on the register.
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minutesAgo(1) }))
+      .toMatchObject({ register: { effect: 'flipped', previous_status: 'absent' } });
+    expect(await register(gym, gym.ben)).toMatchObject({ status: 'present' });
+
+    // A tap time from before the class started is taken as its start.
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { athleteIds: [gym.ada], requestKey: 'key-early', tappedAt: minutesAgo(180) }))
+      .toEqual({ marked: [gym.ada] });
+    expect(await stamp(gym.ada)).toMatchObject({ at_start: true });
   });
 });
 

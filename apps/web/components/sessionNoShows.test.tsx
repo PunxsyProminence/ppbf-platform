@@ -191,21 +191,24 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     });
     const bodies = patches().map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'], request_key: expect.any(String) });
-    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[0]).toEqual({ action: 'mark_no_shows', athlete_ids: ['ath-1', 'ath-2'], request_key: expect.any(String), tapped_ms_ago: expect.any(Number) });
+    expect(bodies[1]).toEqual({ ...bodies[0], tapped_ms_ago: expect.any(Number) });
     expect(String(bodies[0].request_key).length).toBeGreaterThan(0);
+    // Each send says how long ago the coach tapped: the marks are made as of the tap.
+    expect(Number(bodies[0].tapped_ms_ago)).toBeLessThan(RESEND_MS);
+    expect(Number(bodies[1].tapped_ms_ago)).toBeGreaterThanOrEqual(RESEND_MS);
     // The answer the server replays is the first send's: it says how many that send marked.
     expect(screen.getByText('2 signed-up athletes were marked Absent on the class register.')).toBeTruthy();
   });
 
-  test('a resend answered with nobody marked says nobody needed marking: the server would have replayed a send that landed', async () => {
+  test('a resend answered with nobody marked says nobody it named needed marking: the server would have replayed a send that landed', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ marked: [] })), (sends) => (sends > 0 ? 0 : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.getByText('Nobody needed marking: everyone signed up already has a mark.')).toBeTruthy();
+    expect(screen.getByText('Nobody needed marking: everyone this tap named already has a mark.')).toBeTruthy();
   });
 
   test('a refused resend the server shows as landed (this run, none of the names sent still a no-show) reads as done (condition 2)', async () => {
@@ -217,7 +220,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
+    expect(screen.getByText('Everyone this tap named now has a mark on the class register.')).toBeTruthy();
   });
 
   test('a refused resend while a name it sent is still a no-show is not read as landed: its words are said here', async () => {
@@ -230,7 +233,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByRole('alert').textContent).toBe('Not yet.');
   });
 
-  test.each(['SESSION_CLASS_CANCELLED', 'SESSION_CLASS_NOT_STARTED', 'SESSION_CLASS_NOT_YOURS', 'SESSION_RUN_NOT_TIED', 'SESSION_NO_SHOWS_KEY_REUSED'])(
+  test.each(['SESSION_CLASS_CANCELLED', 'SESSION_CLASS_NOT_STARTED', 'SESSION_CLASS_NOT_YOURS', 'SESSION_RUN_NOT_TIED'])(
     'a resend refused with %s, given only after the server looked the key up, is known not landed, though the class shows no no-shows',
     async (error) => {
       jest.useFakeTimers();
@@ -240,11 +243,36 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
         await jest.advanceTimersByTimeAsync(RESEND_MS);
       });
       expect(screen.getByRole('alert').textContent).toBe('Refused.');
-      expect(screen.queryByText('The class register now shows no no-shows.')).toBeNull();
+      expect(screen.queryByText('Everyone this tap named now has a mark on the class register.')).toBeNull();
       // Read nothing to decide: only the class read before the tap.
       expect(classReads()).toHaveLength(1);
     },
   );
+
+  test('a resend refused as the key reused with other names is not known, never read as not landed: a send of that key did land', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_NO_SHOWS_KEY_REUSED', message: 'Refused.' }, 409)), (sends) => (sends > 0 ? 0 : 2));
+    await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByRole('alert').textContent).toMatch(/not known/i);
+    expect(screen.queryByText('Refused.')).toBeNull();
+    expect(classReads()).toHaveLength(1);
+  });
+
+  test('a resend refused as not found (refused before the key is looked up) is checked against the class, then handed to the console', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_RUN_NOT_FOUND' }, 404)), (sends) => (sends > 0 ? 0 : 2));
+    const onRunNotLive = await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    // The landed check's read is the one sent with the queue's signal.
+    expect(classReads().filter(([, init]) => (init as RequestInit).signal)).toHaveLength(1);
+    expect(onRunNotLive).not.toHaveBeenCalled();
+    expect(screen.getByText('Everyone this tap named now has a mark on the class register.')).toBeTruthy();
+  });
 
   test('a resend refused as no longer live, given after the key was looked up, hands that to the console without reading the class', async () => {
     jest.useFakeTimers();
@@ -254,7 +282,7 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(onRunNotLive).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('The class register now shows no no-shows.')).toBeNull();
+    expect(screen.queryByText('Everyone this tap named now has a mark on the class register.')).toBeNull();
     expect(classReads()).toHaveLength(1);
   });
 
