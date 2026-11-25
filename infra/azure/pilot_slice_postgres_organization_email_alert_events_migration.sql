@@ -24,15 +24,16 @@
 -- row; on delete set null, so a departed admin does not delete the setting.
 -- The audit stream holds each change with the old and new value.
 --
--- NO MEMBER DATA. A gym setting: which events, for which user type, and who
+-- WHAT IS STORED. A gym setting: which events, for which user type, and who
 -- set it. No athlete, parent or event content is stored here, and no address
--- column. The setter is the admin's account id, which can itself be their
--- sign-in address (see the email-alert-switches migration).
+-- column. The only person named is the admin who set it, by account id, which
+-- is usually their sign-in address (see the email-alert-switches migration).
 --
 -- DELETION (Overwatch GO on #2159, condition 4). The gym key cascades: a
--- deleted gym takes its rows with it. A deleted admin account leaves the rows
--- and clears set_by_account_id. The retention period is not ruled
--- (docs/DATA_RETENTION.md row).
+-- deleted gym takes its rows with it. Staff accounts are never hard-deleted
+-- (the purge deletes parent accounts only), so the setter stays; were an
+-- admin's account row deleted, the key would clear set_by_account_id and keep
+-- the rows. The retention period is not ruled (docs/DATA_RETENTION.md row).
 --
 -- No `begin;`/`commit;` here on purpose: the runner
 -- (apps/web/scripts/pilot-apply-organization-email-alert-events-migration.mjs)
