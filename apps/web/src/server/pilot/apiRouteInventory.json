@@ -6295,6 +6295,94 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-thread-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-thread-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the post's athlete (in familyThreads.recordFamilyThreadReadByStaff)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller records the first time they saw one guardian post in a family thread in their own gym (half of it on screen in the coach panel, FC-05 Q-1 A; W4 item 4). Only a guardian's post; a staff post, a forged id, another gym's post or an unreachable athlete is the same 404. The database guard also requires an active staff seat. Written on conflict do nothing, so the first time stays.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Every family thread on one athlete (W4 item 4, scrub FAM-09; familyThreads.ts listFamilyThreadsForStaff): the guardian's opening post, the guardian's own later posts and the staff answers, with the guardian's name from the parent record (Overwatch Q4 A on #2161, as family-message-replies) and which guardian posts are new to this staff member (their own reads only). No account id in the answer. Scoped by assertActorCanAccessAthlete (whole gym since #1480; Q3 A).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the thread's athlete (in familyThreads.replyInFamilyThread)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A staff member answers under a guardian's thread on an athlete they reach (W4 item 4; Overwatch Q3 A on #2161). A forged id, another gym's thread or an unreachable athlete is the same 404; the database guard also requires an active staff seat in this gym. Append-only. Audit row entity family_thread_reply in the same transaction, shadow_mirror false (no SHADOW event, no telemetry; joins no audit read allow-list). Nothing sent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",
@@ -8885,6 +8973,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "The \"reached out\" mark on the stopped-coming page (SC-3a-2; OW27-33 B; Overwatch W4-6 Q4 A: who and when only, no free text, one current mark per athlete). Body is exactly { athlete_id, reached_out: true | false }. true marks the athlete as reached out by the caller, only for an athlete on the list now, by the list's own rules (not marked as left, an active program membership where any is recorded, came at least once, and not for the gym's number of days; all but the gym's number of days read inside the mark's transaction); any other is refused with 409 and nothing is written. A take-back needs no list check. a current mark newer than the athlete's last day they came stands (already_marked), a stale one is ended as 'replaced' by the caller and the new mark inserted in the same transaction (Overwatch on #2176). false takes back a newer current mark ('taken_back', the row kept); a stale mark or none is not_marked. The last day they came is read from both sources (register and the staff-only presence record) inside the mark's transaction (Overwatch on #2163, answer A: through this module and route, no separate reached-out route). Every write and its audit row (create, or update with action clear and cleared_kind) commit together, not mirrored. Answers { ok, outcome } only; no account id. Lane W4-6 SC-3a-2.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/on-the-floor/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/on-the-floor",
+    "gate": "requirePrincipal + requireRole(ON_THE_FLOOR_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in listOnTheFloorForStaff; 403 without); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Who is on the floor now, for the coach and admin line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; FN-0 signed off on #2160; GO on #2192). Counts a standing here mark on a live run of this gym (less one a later Absent or Excused on the tied class's register took off, FN0-Q6 A) or a present register mark on a class whose gym day is today (a family's own mark from the class's start, a staff mark from when written, FN0-Q2 A); cancelled classes stay on this staff line (FN0-Q1 A). Returns the gym day and each counted live athlete's id and name, in name order; no run, class, mark time, marker or source. writes: before reading it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). Not attendance; no figure reads it. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Parents and athletes are refused until FN-2.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

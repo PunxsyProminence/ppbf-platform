@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|setStoppedComingReachedOut)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
@@ -84,6 +84,18 @@ const STOPPED_COMING_READERS = [
   'src/server/pilot/stoppedComing.ts',
 ];
 
+// The "on the floor now" line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; privacy
+// review FN-0, signed off on #2160): onTheFloor.ts reads which athletes stand marked on a live run,
+// for the coach and admin line, and its one route is the only caller of listOnTheFloorForStaff.
+// Approved for exactly these two files, the route pinned below to coach, organization_admin and
+// admin (OVERWATCH: GO W4-3 on #2192); parents and athletes are added only by FN-2, which narrows
+// this test's family rule rather than dropping it. Ids and names of counted athletes leave the
+// module; no run, mark, marker or time does.
+const ON_THE_FLOOR_READERS = [
+  'app/api/pilot/on-the-floor/route.ts',
+  'src/server/pilot/onTheFloor.ts',
+];
+
 // The modules that define the reads and writers. privacyTiers.ts names them to forbid them on public surfaces.
 const DEFINING_MODULES = [
   'src/server/pilot/privacyTiers.ts',
@@ -118,8 +130,11 @@ const DEFINING_MODULES = [
 // stoppedComing.ts (lane W4-6, SC-1) reads one day per athlete from
 // session_run_athletes: the last standing mark the register does not hold. It returns no
 // run, mark or marker; see STOPPED_COMING_READERS.
+// onTheFloor.ts (lane W4-3, FN-1) reads which athletes stand marked on a live run, for the staff
+// line; it returns ids and names only, never the run, mark, marker or time; see ON_THE_FLOOR_READERS.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
+  'src/server/pilot/onTheFloor.ts',
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
@@ -154,14 +169,14 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(routes.length).toBeGreaterThan(100);
     expect(ALL_SOURCE.length).toBeGreaterThan(routes.length + 200);
     const all = ALL_SOURCE.map(relative);
-    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS]) {
+    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS, ...ON_THE_FLOOR_READERS]) {
       expect(all).toContain(file);
     }
   });
 
-  it('exactly the three staff routes, the defining modules, the session-note read and the stopped-coming read reach them, anywhere in the app', () => {
+  it('exactly the three staff routes, the defining modules, the session-note read, the stopped-coming read and the on-the-floor read reach them, anywhere in the app', () => {
     expect(ALL_SOURCE.filter((file) => REACHES.test(source(file))).map(relative).sort())
-      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS].sort());
+      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS, ...ON_THE_FLOOR_READERS].sort());
   });
 
   it('the session-note route admits only coach, organization admin and the legacy admin name', () => {
@@ -235,12 +250,86 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     );
   });
 
+  it('the on-the-floor route admits only coach, organization admin and the legacy admin name', () => {
+    const text = source(path.join(WEB_DIR, ON_THE_FLOOR_READERS[0]));
+    const handlers = Array.from(text.matchAll(HANDLER)).length;
+    expect(handlers).toBe(1);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.ON_THE_FLOOR_READ_ROLES\]\s*\)/g))).toHaveLength(1);
+    // Defined once, at the start of a line (not in a comment), as exactly the three staff roles.
+    expect(Array.from(text.matchAll(/^const ON_THE_FLOOR_READ_ROLES = (.*)$/gm), (match) => match[1]))
+      .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
+    // Nothing runs before the role gate: the session is resolved, then the gate is the very next
+    // statement, so no branch (a family one included) can answer ahead of it.
+    expect(text).toMatch(
+      /export async function GET\(request: NextRequest\) \{\n  try \{\n    const principal = await requirePrincipal\(request\);\n    requireRole\(principal, \[\.\.\.ON_THE_FLOOR_READ_ROLES\]\);\n/,
+    );
+    // The route reaches the presence record through its own module's read only: no other pinned read
+    // (isSessionRunningForAthleteToday, which FN-0 F13 rules out for this line, included).
+    const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
+    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
+    // The read is asked for the current moment: that moment also drives the idle close, which writes.
+    expect(Array.from(text.matchAll(/listOnTheFloorForStaff\(([^)]*\)?)\)/g), (match) => match[1])).toEqual(['principal, new Date()']);
+  });
+
+  // The exemption for onTheFloor.ts (TABLE_FILES above) is for one read only: which athletes stand
+  // marked on a live run, inside markedOnLiveRuns. Pinned as the stopped-coming read is, because a
+  // new read added to that file would otherwise pass the file-level list unnoticed: the staff notes
+  // table is never named, the presence table only in that one FROM, the module's one value export is
+  // listOnTheFloorForStaff, and it refuses a caller with no staff membership before anything is read.
+  it('onTheFloor.ts reads ids of standing marks on live runs, in one place, behind the staff refusal', () => {
+    const text = source(path.join(PILOT_DIR, 'onTheFloor.ts'));
+    const lines = text.split('\n');
+    expect(text).not.toMatch(/session_staff_notes/);
+    // Named on exactly two lines: one doc-comment line in the header, and the one FROM.
+    const naming = lines.filter((line) => NAMES_A_TABLE.test(line)).map((line) => line.trim());
+    expect(naming).toHaveLength(2);
+    expect(naming.filter((line) => line === 'from pilot.session_run_athletes m')).toHaveLength(1);
+    expect(naming.filter((line) => line.startsWith('* '))).toHaveLength(1);
+    const block = text.slice(text.indexOf('async function markedOnLiveRuns('), text.indexOf('async function presentOnTodaysRegister('));
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toContain('from pilot.session_run_athletes m');
+    // The one thing selected from it: the athlete id, once each.
+    expect(block).toMatch(/`select distinct m\.athlete_id\n/);
+    // Every export but a type is counted: the one there may be is listOnTheFloorForStaff, which refuses first.
+    const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
+    expect(exports).toHaveLength(1);
+    expect(exports[0].startsWith('export async function listOnTheFloorForStaff(')).toBe(true);
+    const exportLines = lines.filter((line) => /\bexport\b/.test(line)).map((line) => line.trim());
+    expect(exportLines).toHaveLength(3);
+    expect(exportLines.filter((line) => /^export interface \w+ \{$/.test(line))).toHaveLength(2);
+    expect(lines.findIndex((line) => NAMES_A_TABLE.test(line) && line.trim().startsWith('* ')))
+      .toBeLessThan(lines.findIndex((line) => /^import /.test(line)));
+    expect(text).toMatch(
+      /export async function listOnTheFloorForStaff\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorStaffLine> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
+    );
+    // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or
+    // check-in record, named anywhere in the file.
+    const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
+    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
+    expect(text).not.toMatch(/\b(attendance_reconciled|activity_log|athlete_check_ins)\b|pilot\.attendance(?![\w_])/);
+    // Nor through an import: these seven, and nothing loaded any other way. A new source brought in by
+    // a helper from another module (a wellness check-in, the reconciled view) fails here.
+    expect(Array.from(text.matchAll(/^import .*$/gm), (match) => match[0])).toEqual([
+      "import { GYM_TIME_ZONE, gymDayIso } from '../../lib/gymTime';",
+      "import type { ActorIdentity } from './access';",
+      "import { organizationActionableRoster } from './coachAthleteRoster';",
+      "import { query } from './db';",
+      "import { ForbiddenError } from './errors';",
+      "import { closeIdleSessionRuns } from './sessionScriptRuns';",
+      "import { staffNoteRoleInOrganization } from './sessionStaffNotes';",
+    ]);
+    expect(text).not.toMatch(/\brequire\s*\(|\bimport\s*\(/);
+  });
+
   it('no route, page, component or other module names either table in its own text', () => {
     expect(ALL_SOURCE.filter((file) => NAMES_A_TABLE.test(source(file))).map(relative).sort()).toEqual(TABLE_FILES);
   });
 
-  it('no route under an athlete, parent, guardian, family, board, public or platform path reaches them', () => {
-    const audience = /\/api\/(pilot\/)?(athlete|parent|guardian|family|board|public|platform|wall|kiosk)\b/;
+  it('no route under an athlete, parent, guardian, family, board, public, platform, wall, kiosk or tv path reaches them', () => {
+    // tv: the paired gym TV keeps "showing only who is present, by initials" (OD-2026-10-17-008
+    // ruling 1); FN-0 F1 asks for it here (lane W4-3, FN-1).
+    const audience = /\/api\/(pilot\/)?(athlete|parent|guardian|family|board|public|platform|wall|kiosk|tv)\b/;
     const reaching = routes.map(relative).filter((file) => audience.test(`/${file.replace(/^app/, '')}`.replace('//', '/')));
     expect(reaching.length).toBeGreaterThan(0);
     for (const file of reaching) {
