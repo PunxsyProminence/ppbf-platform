@@ -188,10 +188,13 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
       }
       // No scale level runs above the drill's own contact (a step's limit, GO condition 5); level B, the drill as
       // designed, runs at it. An easier level may sit lower (the open sparring drill's level A is controlled sparring).
+      // A blank level contact is 'none' (the import's blankDefault); a value outside the vocabulary ranks -1 and fails.
+      const rank = (value: string) => CONTACT.indexOf(value || 'none');
       for (const level of scales.get(drill.drill_id) ?? []) {
-        expect({ drill: drill.drill_id, level: level.scale_level, above: CONTACT.indexOf(level.contact_level) > CONTACT.indexOf(drill.contact_level) })
-          .toEqual({ drill: drill.drill_id, level: level.scale_level, above: false });
-        if (level.scale_level === 'B') expect({ drill: drill.drill_id, b: level.contact_level }).toEqual({ drill: drill.drill_id, b: drill.contact_level });
+        const at = { drill: drill.drill_id, level: level.scale_level };
+        expect({ ...at, known: rank(level.contact_level) >= 0, above: rank(level.contact_level) > rank(drill.contact_level) })
+          .toEqual({ ...at, known: true, above: false });
+        if (level.scale_level === 'B') expect({ ...at, b: rank(level.contact_level) }).toEqual({ ...at, b: rank(drill.contact_level) });
       }
     }
   });
