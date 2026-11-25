@@ -313,9 +313,7 @@ const COACH_RUN: Record<string, number[]> = {
  * (ordinals).
  */
 const TYPED_IN_MIXED: Record<string, number[]> = {
-  wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min
   wtp_bc964fe230d8f3: [1, 2, 6, 9], // Phase 2 — Competitive Amateur — Archetype tactical session — vs. press
-  wtp_c2c4bec001a56b: [1, 4, 5, 6, 7], // Phase 1 — Foundation / Novice — Boxing skill session, 90 minutes (mont
 };
 
 /**

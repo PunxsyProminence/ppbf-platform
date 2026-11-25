@@ -541,6 +541,8 @@ describe('the committed youth + recreational rows', () => {
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
     wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday Gold Standard Coach Script (TL-3b)
     wtp_456e418b1741b8: [6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
+    wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min (TL-5a)
+    wtp_c2c4bec001a56b: [1, 4, 5, 6, 7], // Phase 1 boxing skill session, 90 minutes (TL-5a)
   };
   // Of those, the steps that also took their own stated time (details.block_time, or minutes in the block_title) as
   // duration_minutes (Codex P1 and App Overwatch on #2177): the export would blank that cell too.
