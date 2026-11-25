@@ -184,15 +184,25 @@ test('a listed athlete shows no membership status (App Overwatch on #2172: membe
   await renderPage(mockFetch({}));
   const rows = screen.getAllByRole('listitem');
   expect(rows).toHaveLength(2);
-  // A row on this list has an active membership or none, so "active" is the status a row could show.
-  for (const row of rows) expect(row.textContent).not.toMatch(/member|status|active|lapsed|ended|program|enrol/i);
+  // A row on this list has an active membership or none, so "active" is the status a row could show; a
+  // membership record also holds the scholarship and the program, and payment is the membership slot's.
+  for (const row of rows) {
+    expect(row.textContent).not.toMatch(/member|status|active|lapsed|ended|program|enrol|scholarship|discount|paid|fee/i);
+  }
+  // And above a list that has rows, the empty state's sentences are not shown.
+  expect(pageText()).not.toContain('No one this list covers');
+  expect(pageText()).not.toContain('It does not cover');
 });
 
 test('the intro says who the list leaves out, as a rule, above any list', async () => {
   await renderPage(mockFetch({}));
-  expect(pageText()).toContain(
+  const intro = screen.getByText(/It leaves out athletes marked as left the gym/);
+  expect(intro.textContent?.replace(/\s+/g, ' ')).toContain(
     'It leaves out athletes marked as left the gym and athletes whose program memberships have all lapsed or ended.',
   );
+  // Above the list: the sentence comes before the first row in the document.
+  const firstRow = screen.getAllByRole('listitem')[0];
+  expect(intro.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test.each([
