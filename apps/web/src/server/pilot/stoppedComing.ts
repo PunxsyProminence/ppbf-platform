@@ -17,17 +17,20 @@
  *     present day is not limited to 28 days) OR a standing "here" mark
  *     (pilot.session_run_athletes, removed_at null) that the register does not
  *     hold: its run is untied (open gym; session_script_runs.class_id null), or
- *     the tap's register write did not happen (register_written_at null: the
- *     class was cancelled before the tap, or another coach had its cover, and
- *     sessionRunClass.ts skipped the write), or the class it was written to is
- *     cancelled (the view reads no cancelled class). A tap whose register mark
- *     stands defers to the register, so a later Absent there wins
+ *     the tap created no register mark (register_written_at null; only a tap
+ *     that creates the mark sets it, sessionRunClass.ts: the write was skipped
+ *     because the class was cancelled or another coach had its cover, or the
+ *     register already said Present, or the tap turned an Absent or Excused
+ *     into Present, or the session was tied later over a newer register mark),
+ *     or the class it was written to is cancelled (the view reads no cancelled
+ *     class). A tap whose register mark it created and which still stands
+ *     defers to the register, so a later Absent there wins
  *     (docs/current/ATTENDANCE_PRECEDENCE.md). The later of the two sources is
  *     the last day they came.
  *     STILL AS RULED, NOTED: the tie is read as it is now, so a run untied after
- *     a tap counts that tap as open gym; and a tap that turned an Absent into
- *     Present set no register pointer (sessionRunClass.ts), so it counts here
- *     even if the register is later set back to Absent.
+ *     a tap counts that tap as open gym; and a tap that created no register
+ *     mark counts here even when that day's register is (or is later set to)
+ *     Absent.
  *   - Listed when today minus that day is the gym's number of days or more: no
  *     day they came among the last N gym days, today included.
  *
