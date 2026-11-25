@@ -558,8 +558,8 @@ describe('the committed youth + recreational rows', () => {
     // Lane W4-8 (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; plan and GO on #2162): each typed step in
     // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template's 'items' label gains the
     // lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so the guard names exactly those
-    // steps (drill_id is their one committed cell the export would change; the cleared free_text_drill is a blank it
-    // would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
+    // steps (drill_id is their committed cell the export would change, with duration_minutes on the LANE_W48_DURATIONS
+    // steps; the cleared free_text_drill is a blank it would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
     // step PR's head before merging it (#2162).
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);

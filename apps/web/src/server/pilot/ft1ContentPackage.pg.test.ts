@@ -275,8 +275,10 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
  * go, each linked step gets its typed line back (each drill quotes its line word for word in its source_ref; a
  * line a scripted step held only as its block title stays there), and its template's 'items' label loses the
  * lane's 'drill_id' part (only that part: a template can hold an owner's top-level 'items.drill_id', D-OQ99). A step
- * that took its own clock time as its duration (#2177) gets its blank duration back, and the template's 'items' label
- * loses the lane's 'duration_minutes' part. typedLinesContent.test.ts checks the lane's rows.
+ * that took its own block time as its duration (#2177) gets its blank duration back, and the template's 'items' label
+ * loses the lane's 'duration_minutes' part; no assertion here depends on that part of the restore (those templates are
+ * not in this package's plan), which keeps the stripped files equal to the pre-lane files. typedLinesContent.test.ts
+ * checks the lane's rows, and reads block times the same way.
  */
 const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
 function withoutLaneW48(files: Record<string, string>): Record<string, string> {
@@ -288,9 +290,14 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
   const laneTimed = new Set(rowsOf(files[TEMPLATES_CSV])
     .filter((row) => String(JSON.parse(row.field_labels || '{}').items?.duration_minutes?.basis ?? '').startsWith('lane W4-8'))
     .map((row) => row.template_id));
-  const clockMinutes = (blockTime: unknown): string => {
+  const blockMinutes = (blockTime: unknown): string => {
     const match = /^(\d{1,2}):(\d{2})\s*(?:–|-|to)\s*(\d{1,2}):(\d{2})$/.exec(typeof blockTime === 'string' ? blockTime : '');
-    return match ? String(Number(match[3]) * 60 + Number(match[4]) - (Number(match[1]) * 60 + Number(match[2]))) : '';
+    if (!match) return '';
+    const [a, b, c, d] = match.slice(1).map(Number);
+    const inBound = (minutes: number) => Number.isInteger(minutes) && minutes >= 1 && minutes <= 90;
+    if (a <= 23 && c <= 23 && b < 60 && d < 60 && inBound(c * 60 + d - (a * 60 + b))) return String(c * 60 + d - (a * 60 + b));
+    if (b < 60 && d < 60 && inBound((c * 60 + d - (a * 60 + b)) / 60)) return String((c * 60 + d - (a * 60 + b)) / 60);
+    return '';
   };
   const typedAgain = (row: Row): Row => {
     const drill = laneDrills.get(row.drill_id);
@@ -299,7 +306,7 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
     if (line === undefined) throw new Error(`${drill.drill_id}: source_ref quotes no typed line`);
     const details = row.details !== '' ? JSON.parse(row.details) : {};
     const heldInTitle = details.block_title === line;
-    const timed = laneTimed.has(row.template_id) && row.duration_minutes !== '' && row.duration_minutes === clockMinutes(details.block_time);
+    const timed = laneTimed.has(row.template_id) && row.duration_minutes !== '' && row.duration_minutes === blockMinutes(details.block_time);
     return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line, duration_minutes: timed ? '' : row.duration_minutes };
   };
   const linkedTemplates = new Set(rowsOf(files[ITEMS_CSV]).filter((row) => laneDrills.has(row.drill_id)).map((row) => row.template_id));
