@@ -59,7 +59,9 @@ export type AnnouncementPlacement = (typeof ANNOUNCEMENT_PLACEMENTS)[number];
 
    Moved here unchanged from app/api/pilot/announcements/get/route.ts (lane
    W4-1, EM-4b; named in the plan on #2159, section 6), so the live read and
-   the email alert for a new notice share one rule. */
+   the email alert for a new notice are held to one rule: a test holds every
+   placement the alert emails (NOTICE_PLACEMENTS_EMAILED, emailAlertEvents.ts)
+   to mayReadLivePlacement. */
 const EVERY_PLACEMENT: readonly AnnouncementPlacement[] = [
   'gym_notices',
   'athlete_workspace',

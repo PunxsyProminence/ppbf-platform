@@ -2432,7 +2432,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "POST is a read (mechanical writesLikely=true is wrong): lists gym announcements (not athlete data). view=authoring is gated to platform_owner/organization_admin/admin/coach/board. Otherwise only live notices, and each role may ask only for its own placements (LIVE_PLACEMENTS_BY_ROLE in route.ts, issue #1475 Part B): a placement outside the role's row answers as an unknown placement, before any read. Every signed-in role reaches gym_notices and everywhere; board gets a projected shape.",
+    "notes": "POST is a read (mechanical writesLikely=true is wrong): lists gym announcements (not athlete data). view=authoring is gated to platform_owner/organization_admin/admin/coach/board. Otherwise only live notices, and each role may ask only for its own placements (LIVE_PLACEMENTS_BY_ROLE in src/server/pilot/announcements.ts, issue #1475 Part B): a placement outside the role's row answers as an unknown placement, before any read. Every signed-in role reaches gym_notices and everywhere; board gets a projected shape.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

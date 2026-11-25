@@ -411,15 +411,21 @@ async function expectStillReadableAsPage(
   }
 }
 
-// The boards each user type sees once signed in, written out here rather than
-// read from the module: ParentHub.tsx reads parent_hub and AthleteWorkspace.tsx
-// athlete_workspace, each with everywhere; staff see every board but the
-// sign-in page's (Overwatch on #2159, comment 7160013584).
-const SIGNED_IN_BOARDS: Readonly<Record<string, readonly string[]>> = {
-  staff: ['coach_workspace', 'athlete_workspace', 'parent_hub'],
+// The placements each user type's signed-in screens show, read from the pages,
+// not from emailAlertEvents.ts (everywhere is added by listLiveAnnouncements):
+//   - staff: CoachWorkspace.tsx reads coach_workspace; /notices
+//     (app/notices/page.tsx, admin and coach) lists every placement but
+//     everywhere, the sign-in page's gym_notices included;
+//   - parent: ParentHub.tsx reads parent_hub;
+//   - adult athlete: AthleteWorkspace.tsx reads athlete_workspace.
+const SIGNED_IN_SCREENS: Readonly<Record<string, readonly string[]>> = {
+  staff: ['coach_workspace', 'gym_notices', 'athlete_workspace', 'parent_hub'],
   parent: ['parent_hub'],
   adult_athlete: ['athlete_workspace'],
 };
+// The ruling, apart from the screens: a sign-in-page notice emails nobody,
+// wherever else it shows (Overwatch on #2159, comment 7160013584).
+const NEVER_EMAILED: readonly string[] = ['gym_notices'];
 
 /**
  * What each signed-in person's notice boards show: the live notices of their
@@ -433,7 +439,8 @@ async function noticesPageReach(inWindow: ReadonlySet<string>): Promise<Reach> {
     if (!on || !userType) continue;
     const ids = new Set<string>();
     for (const placement of ANNOUNCEMENT_PLACEMENTS) {
-      if (!SIGNED_IN_BOARDS[userType].includes(placement) || !mayReadLivePlacement(role as PilotRole, placement)) continue;
+      if (!SIGNED_IN_SCREENS[userType].includes(placement) || NEVER_EMAILED.includes(placement)) continue;
+      if (!mayReadLivePlacement(role as PilotRole, placement)) continue;
       for (const row of await listLiveAnnouncements(org, { placement, kind: 'notice', limit: 25 })) {
         if (inWindow.has(row.announcement_id)) ids.add(row.announcement_id);
       }
@@ -826,6 +833,8 @@ describe('email alert staff event sources', () => {
 
     const toA = await athleteMessage(client, ORG, ATH_A);
     const toAFromAdmin = await athleteMessage(client, ORG, ATH_A, { authorRole: 'organization_admin' });
+    // 'admin' is a membership role of its own: createCoachObservation stores it.
+    const toAFromAdminRole = await athleteMessage(client, ORG, ATH_A, { authorRole: 'admin' });
     const toAFromParent = await athleteMessage(client, ORG, ATH_A, { authorRole: 'parent' });
     const toAUnknownAuthor = await athleteMessage(client, ORG, ATH_A, { authorRole: null });
     const familyNoteOnA = await athleteMessage(client, ORG, ATH_A, { noteType: 'parent_message' });
@@ -837,12 +846,14 @@ describe('email alert staff event sources', () => {
 
     const { from, to } = await lastHour(client);
     const source = reachOf(await coachMessageSource.candidates(from, to), 'coach_message', () => 'adult_athlete');
-    const inWindow = new Set([toA, toAFromAdmin, toAFromParent, toAUnknownAuthor, familyNoteOnA, toC, toGone, toB, otherGym]);
+    const inWindow = new Set([
+      toA, toAFromAdmin, toAFromAdminRole, toAFromParent, toAUnknownAuthor, familyNoteOnA, toC, toGone, toB, otherGym,
+    ]);
     const page = await coachMessagesPageReach(inWindow);
 
     expect(sorted(source)).toEqual(sorted(page));
     expect(sorted(source)).toEqual(sorted(new Map([
-      [`${ORG}|acct-ev-athlete`, [toA, toAFromAdmin].sort()],
+      [`${ORG}|acct-ev-athlete`, [toA, toAFromAdmin, toAFromAdminRole].sort()],
       [`${OTHER_ORG}|acct-ev-other-athlete`, [otherGym]],
     ])));
     expect([...source.values()].flat()).not.toContain(old);
@@ -851,6 +862,45 @@ describe('email alert staff event sources', () => {
     expect(await emailAlertEventStillReadable({
       organization_id: ORG, account_id: 'acct-ev-athlete', user_type: 'parent', event_kind: 'coach_message', event_id: toA,
     })).toBe(false);
+    // The two accounts the page never shows ATH_B's message to are refused at
+    // the send too (they are not in PEOPLE, so the check above skips them).
+    for (const accountId of ['acct-ev-roaming-athlete', 'acct-ev-athlete-now-coach']) {
+      expect({
+        accountId,
+        reads: await emailAlertEventStillReadable({
+          organization_id: ORG, account_id: accountId, user_type: 'adult_athlete', event_kind: 'coach_message', event_id: toB,
+        }),
+      }).toEqual({ accountId, reads: false });
+    }
+  });
+
+  test('a scheduled notice is queued by the sweep, with its real checkpoint, only once its start time has passed', async () => {
+    const client = await freshDatabase('emailevents_scheduled');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent']);
+    const { dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const scheduled = randomUUID();
+    await client.query(
+      `insert into pilot.announcements
+         (organization_id, announcement_id, message, author_name, author_role, placement, kind, active, starts_at)
+       values ($1, $2::uuid, 'Notice', 'Office', 'organization_admin', 'everywhere', 'notice', true,
+               now() + interval '2 seconds')`,
+      [ORG, scheduled],
+    );
+    const queuedFor = async () => (await client.query<{ account_id: string }>(
+      'select account_id from pilot.email_alert_sends where event_kind = $1 and event_id = $2 order by account_id',
+      ['gym_notice', scheduled],
+    )).rows.map((row) => row.account_id);
+
+    // Posted, not yet live: the sweep reads past it, and its checkpoint moves on.
+    await sweepEmailAlertSource(gymNoticeSource);
+    expect(await queuedFor()).toEqual([]);
+
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await sweepEmailAlertSource(gymNoticeSource);
+    expect(await queuedFor()).toEqual(['acct-ev-parent']);
   });
 
   test('a retired notice is not sent; a live one and a coach message reach a parent, a coach and an adult athlete', async () => {
