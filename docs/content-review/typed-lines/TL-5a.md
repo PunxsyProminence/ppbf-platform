@@ -15,6 +15,8 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 
 - Every step is contact none, and every drill and scale level is contact none. No new warning, gate or disclaimer.
 - Conditioning session A's steps 5 and 6 are the owner's own items (D-PK73-3; DOC-072 W-PHYS-01-C). Their drills carry DOC-072's stop rule word for word; their cues are the typed lines reworded as calls (no committed source gives one).
+- Issue order (Codex P1 on #2201; App Overwatch's answer there): the issue path orders steps by ordinal (`workoutTemplates.ts`, `order by i.ordinal asc`) and does not read `details.within_item_id`, where D-PK73-3's placement of steps 5 and 6 is held. Until this lane's TL-ORD merges, an issued Conditioning session A lists the fresh check and the after check after the cool-down and the record step; each check's card says when it runs. TL-ORD places a nested item right after its parent; App Overwatch releases TL-5a only with TL-ORD merged.
+- Phase 1's step 5 (the burst finisher): the plan item's efforts take about 4 of the block's 8 minutes either way (8 × 20 s + 10 s, or 4 × 30 s + 30 s). The drill keeps that dose; no source says what fills the rest of the block (App Overwatch's answer on #2201: keep the source's dose, say what it gives).
 - Phase 1's step 4 keeps the owner's round-focus rule (D-OQ58) and the DOC-027 owner passage beside the block (its stop rules and cue word for word). Round 5 is "Open at 70%" on the bag (contact none).
 - Phase 1's step 1: the plan items' headings 'Neuromuscular activation' and 'Cervical activation' stay in the step's details; the drill says 'Activation' and 'Neck'.
 - Phase 1's step 7 (Evaluate → Reset): the sources give the step's name and place only (DOC-027's session template; D-OQ57); its content is an AI draft, and what "Reset" covers is a question for Jason in the PR.
@@ -129,7 +131,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 ### Phase 1 skill session, step 5. Burst Finisher: 20/10 on Bike or Treadmill, or Maximal Shadow Rounds (`drl_02c1253c606e21`)
 
 - Typed line: "Conditioning finisher — 8 min"
-- Purpose: The Phase 1 skill session's conditioning finisher (8 min, non-strength days only): burst conditioning (Category 3). Target: An 8-minute burst finisher: hard short efforts with organized recovery.
+- Purpose: The Phase 1 skill session's conditioning finisher (8 min, non-strength days only): burst conditioning (Category 3). The plan item's efforts, either option, take about 4 of the block's 8 minutes. Target: A burst finisher as the plan item gives it: hard short efforts with organized recovery, about 4 of the block's 8 minutes.
 - Setup: A bike or curved treadmill for the first option; floor space in stance for the shadow option; no partner and no contact.
 - Execution: Non-strength days only. Either 8 × 20 s hard / 10 s easy on a bike or curved treadmill, or 4 × 30 s maximal shadow with 30 s rest.
 - Good: Every effort hard and high quality; the shadow option stays in form at maximal speed; recovery is used, not skipped.
@@ -137,7 +139,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 - Stop: Stop the finisher when the efforts stop being high quality (shadow form breaks, or the hard intervals turn into paced ones); do not add more. (fatigue)
 - Cue: none (conditioning)
 - Equipment: bike or curved treadmill (first option only)
-- Bases: name: the step's plan item's two options; equipment_needed: the step's plan item ('on bike or curved treadmill'); what_good_looks_like: AI draft from the step's plan items and DOC-027's Category 3 ('Short high-quality efforts are followed by organized recovery windows.'); purpose: the template's conditioning category for this item: 'Category 3 is burst conditioning.' (DOC-027, on the template); the plan item's '(non-strength days only)'; execution: the step's plan items, word for word in substance; stop_rules: AI draft from DOC-027's Category 3 standard ('Short high-quality efforts are followed by organized recovery windows.'); cues: none: a conditioning drill needs no cue (OD-2026-10-06-026 ruling 2), and the step gives none
+- Bases: name: the step's plan item's two options; equipment_needed: the step's plan item ('on bike or curved treadmill'); what_good_looks_like: AI draft from the step's plan items and DOC-027's Category 3 ('Short high-quality efforts are followed by organized recovery windows.'); purpose: the template's conditioning category for this item: 'Category 3 is burst conditioning.' (DOC-027, on the template); the plan item's '(non-strength days only)'; 'about 4 of the block's 8 minutes' is the plan item's own arithmetic (8 × 20 s + 10 s, or 4 × 30 s + 30 s), App Overwatch on #2201; target_behavior: AI draft from the typed line and the step's own details; the minutes are the plan item's own arithmetic, App Overwatch on #2201; execution: the step's plan items, word for word in substance; stop_rules: AI draft from DOC-027's Category 3 standard ('Short high-quality efforts are followed by organized recovery windows.'); cues: none: a conditioning drill needs no cue (OD-2026-10-06-026 ruling 2), and the step gives none
 
 ### Phase 1 skill session, step 6. Phase 1 Cool-Down: Easy Movement, Static Stretching, 4-2-6 Breathing, Log (`drl_a5f52ff0aa9d2e`)
 
