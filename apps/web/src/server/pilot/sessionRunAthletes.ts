@@ -127,7 +127,8 @@ export async function setRunAthletePresent(input: {
     // Not before the run began (see above).
     const tappedAt = input.tappedAt === undefined
       ? null
-      : new Date(Math.max(Date.parse(input.tappedAt), Number(owned.started_ms))).toISOString();
+      // Rounded up: a Date holds whole milliseconds, and the start may carry a fraction of one.
+      : new Date(Math.max(Date.parse(input.tappedAt), Math.ceil(Number(owned.started_ms)))).toISOString();
     let outcome: RunAthleteOutcome;
     let remarked = false;
     let closedWindowIds: string[] = [];

@@ -1169,8 +1169,19 @@ describe('a late tap or take-back keeps its tap time on the session mark', () =>
     const startedAt = new Date(rows[0].started_at).toISOString();
 
     expect(await lateTap(gym.coach, runId, gym.ada, true, ago(6 * 60 * 60 * 1000))).toEqual({ outcome: 'marked' });
-    expect(new Date((await markTimes(gym, runId, gym.ada)).marked_at).toISOString()).toBe(startedAt);
-    expect((await markAudit(gym)).map((row) => row.details.tapped_at)).toEqual([startedAt]);
+    const markedAt = new Date((await markTimes(gym, runId, gym.ada)).marked_at).getTime();
+    // The run's start, rounded up to a whole millisecond.
+    expect(markedAt - new Date(startedAt).getTime()).toBeGreaterThanOrEqual(0);
+    expect(markedAt - new Date(startedAt).getTime()).toBeLessThanOrEqual(1);
+    // Compared in the database, to the microsecond: never before the run began.
+    const order = await client.query<{ ok: boolean }>(
+      `select m.marked_at >= r.started_at as ok from pilot.session_run_athletes m
+         join pilot.session_script_runs r on r.organization_id = m.organization_id and r.run_id = m.run_id
+        where m.organization_id = $1 and m.run_id = $2 and m.athlete_id = $3`,
+      [gym.organizationId, runId, gym.ada],
+    );
+    expect(order.rows[0].ok).toBe(true);
+    expect((await markAudit(gym)).map((row) => row.details.tapped_at)).toEqual([new Date(markedAt).toISOString()]);
   });
 
   test('changes made after the mark still land: a late take-back made after the tap, then a late tap made after that take-back', async () => {
