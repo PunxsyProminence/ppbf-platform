@@ -496,15 +496,20 @@ describe('searchDoors', () => {
     expect(searchDoors('coach', 'concussion')[0].href).toBe('/coach/sports-medicine');
   });
 
-  /* CF-14 (lane U1). No page answers "who has stopped coming"; Passbook Gaps
-     says it is not that check (passbook-gaps/page.tsx). Its door must not
-     claim the words, so a coach searching them is not sent there. */
-  it('no door claims "stopped coming" until a page answers it', () => {
-    const gaps = BUILDING.find((d) => d.href === '/coach/passbook-gaps');
-    expect(gaps).toBeDefined();
-    for (const door of BUILDING) {
-      expect(`${door.label} ${door.keywords ?? ''} ${door.hint ?? ''}`).not.toMatch(/stopped coming/i);
-    }
+  /* CF-14 (lane U1, then lane W4-6 SC-2). A page now answers "who has stopped
+     coming": /coach/stopped-coming (W4 item 6). Its door, and only its door,
+     claims the words, so a coach or the gym admin searching them lands there,
+     and Passbook Gaps, which says it is not that check
+     (passbook-gaps/page.tsx), still does not claim them. */
+  it('only the Stopped Coming door claims "stopped coming", and a search for the words finds it first', () => {
+    const claiming = BUILDING.filter((door) => /stopped coming/i.test(`${door.label} ${door.keywords ?? ''} ${door.hint ?? ''}`));
+    expect(claiming.map((door) => door.href)).toEqual(['/coach/stopped-coming']);
+    expect(claiming[0].label).toBe('Stopped Coming');
+    expect(claiming[0].roles).toEqual(['coach', 'admin']);
+    expect(searchDoors('coach', 'stopped coming')[0].href).toBe('/coach/stopped-coming');
+    expect(searchDoors('admin', 'stopped coming')[0].href).toBe('/coach/stopped-coming');
+    expect(searchDoors('athlete', 'stopped coming').map((door) => door.href)).not.toContain('/coach/stopped-coming');
+    expect(searchDoors('parent', 'stopped coming').map((door) => door.href)).not.toContain('/coach/stopped-coming');
   });
 
   it('matches a subsequence, so an abbreviation finds the surface', () => {
