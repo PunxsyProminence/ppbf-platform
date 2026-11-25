@@ -22,6 +22,7 @@ function code(source: string): string {
 
 const COLUMNS = [
   'organization_id',
+  'mark_id',
   'athlete_id',
   'marked_by_account_id',
   'marked_by_role',
@@ -29,28 +30,39 @@ const COLUMNS = [
   'cleared_at',
   'cleared_by_account_id',
 ];
+const COLUMN_LINE = /^([a-z_]+)\s+(text|uuid|timestamptz)\s+(not )?null\b/;
+const CONSTRAINT_LINE = /^(constraint [a-z_]+|check \(|primary key \(|foreign key \(|references pilot\.|on delete )/;
 
 describe('athlete reached-out marks schema ownership', () => {
   test('the table has exactly these columns: who and when, nowhere to type a note', () => {
     const create = code(migration).match(/create table if not exists pilot\.athlete_reached_out_marks \(([\s\S]*?)\n\);/);
     expect(create).not.toBeNull();
-    const columns = create![1]
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => /^[a-z_]+\s+(text|uuid|date|timestamptz|integer|boolean|jsonb)\b/.test(line))
-      .map((line) => line.split(/\s+/)[0]);
+    const lines = create![1].split('\n').map((line) => line.trim()).filter(Boolean);
+    // Every line is a column of a known type or part of a constraint: a column of any
+    // other type (varchar, json, bytea, ...) is a line this test does not know, and fails.
+    const unknown = lines.filter((line) => !COLUMN_LINE.test(line) && !CONSTRAINT_LINE.test(line));
+    expect(unknown).toEqual([]);
+    const columns = lines.map((line) => line.match(COLUMN_LINE)?.[1]).filter(Boolean);
     expect(columns).toEqual(COLUMNS);
     // The runner's readiness check pins the same list in the live database.
     const pinned = runner.match(/EXPECTED_COLUMNS = \[([\s\S]*?)\];/);
     expect(pinned![1].match(/'([a-z_]+)'/g)!.map((name) => name.replace(/'/g, ''))).toEqual(COLUMNS);
-    for (const word of ['note', 'reason', 'comment', 'message', 'channel', 'text_', 'detail', 'health']) {
-      expect(columns.join(' ')).not.toContain(word);
-    }
   });
 
-  test('one current mark per athlete, and only staff roles may hold one', () => {
-    expect(code(migration)).toMatch(/primary key \(organization_id, athlete_id\)/);
+  test('one current mark per athlete, every take-back kept, and only staff roles may hold one', () => {
+    expect(code(migration)).toMatch(/primary key \(organization_id, mark_id\)/);
+    expect(code(migration)).toMatch(
+      /create unique index if not exists uq_athlete_reached_out_marks_current\s+on pilot\.athlete_reached_out_marks\(organization_id, athlete_id\)\s+where cleared_at is null;/,
+    );
     expect(code(migration)).toMatch(/check \(marked_by_role in \('coach', 'organization_admin', 'admin'\)\)/);
+  });
+
+  test('an account\'s delete clears its id from the marks (a staff account id is often an email address)', () => {
+    for (const column of ['marked_by_account_id', 'cleared_by_account_id']) {
+      expect(code(migration)).toMatch(
+        new RegExp(`foreign key \\(${column}\\)\\s+references pilot\\.accounts\\(account_id\\)\\s+on delete set null`),
+      );
+    }
   });
 
   test('registered as every migration is: package scripts and all three places in the workflow', () => {
@@ -63,8 +75,11 @@ describe('athlete reached-out marks schema ownership', () => {
     expect(workflow).toMatch(/case " [a-z0-9 -]* athlete-reached-out-marks /);
   });
 
-  test('a public surface may never read it, and the retention table names it', () => {
+  test('a public surface may never read it, and the retention table names it and what a purge does to it', () => {
     expect(PUBLIC_SURFACE_FORBIDDEN_TABLES).toContain('pilot.athlete_reached_out_marks');
-    expect(retention).toMatch(/`pilot\.athlete_reached_out_marks`[^|]*\| Period not yet ruled/);
+    const row = retention.split('\n').find((line) => line.includes('`pilot.athlete_reached_out_marks`'));
+    expect(row).toMatch(/\| Period not yet ruled \| -- \| Not yet ruled \|$/);
+    expect(row).toContain('by cascade when the purge deletes it');
+    expect(row).toContain("an account's delete clears its id");
   });
 });

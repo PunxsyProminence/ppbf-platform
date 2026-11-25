@@ -19,24 +19,25 @@ function sslConfig() {
 }
 
 // Readiness asserts the result, not the attempt, each piece looked up ON
-// pilot.athlete_reached_out_marks and reported by name: the exact column list;
-// each column by type, nullability and default; exactly two CHECKs, validated
-// and compared IN FULL against the text Postgres stores; the primary key on
-// (organization_id, athlete_id); no other unique constraint or unique index;
-// exactly two foreign keys, each by column, target table and column, ON DELETE
-// CASCADE, ON UPDATE NO ACTION and not deferrable. Each is refused on its own
-// (reachedOutMarksMigration.pg.test.ts), except the target COLUMNS of each
-// foreign key, which no test drifts: neither target has a second unique key of
-// the same shape to point one at.
+// pilot.athlete_reached_out_marks and reported by name: the table; the exact
+// column list; each column by type, nullability and default; exactly two
+// CHECKs, validated and compared IN FULL against the text Postgres stores; the
+// primary key on (organization_id, mark_id), not deferrable; exactly one other
+// unique index, the current-mark index on (organization_id, athlete_id) WHERE
+// cleared_at IS NULL, and no unique or exclusion constraint; exactly four
+// foreign keys, each by source columns, target table and columns, ON DELETE,
+// ON UPDATE NO ACTION, validated and not deferrable. Each condition is drifted
+// on its own in reachedOutMarksMigration.pg.test.ts.
 const EXPECTED_CHECKS = {
   pilot_athlete_reached_out_marks_role_check:
     "CHECK ((marked_by_role = ANY (ARRAY['coach'::text, 'organization_admin'::text, 'admin'::text])))",
   pilot_athlete_reached_out_marks_clear_check:
-    'CHECK (((cleared_at IS NULL) = (cleared_by_account_id IS NULL)))',
+    'CHECK (((cleared_by_account_id IS NULL) OR (cleared_at IS NOT NULL)))',
 };
 
 export const EXPECTED_COLUMNS = [
   'organization_id',
+  'mark_id',
   'athlete_id',
   'marked_by_account_id',
   'marked_by_role',
@@ -45,8 +46,23 @@ export const EXPECTED_COLUMNS = [
   'cleared_by_account_id',
 ];
 
-const attnum = (table, column) => `(select attnum from pg_attribute where attrelid = to_regclass('${table}') and attname = '${column}')`;
 const OWN = 'pilot.athlete_reached_out_marks';
+const attnum = (table, column) => `(select attnum from pg_attribute where attrelid = to_regclass('${table}') and attname = '${column}')`;
+const attnums = (table, columns) => `array[${columns.map((column) => attnum(table, column)).join(', ')}]::int2[]`;
+// type: a regtype; notNull: boolean; defaultText: what pg_get_expr prints, or null.
+const column = (name, type, notNull, defaultText = null) => `
+    exists (select 1 from col where attname = '${name}' and atttypid = '${type}'::regtype
+              and ${notNull ? '' : 'not '}attnotnull
+              and default_text ${defaultText === null ? 'is null' : `= '${defaultText}'`}) as ${name}_ready`;
+// onDelete: pg_constraint.confdeltype ('c' cascade, 'n' set null).
+const foreignKey = (name, columns, target, targetColumns, onDelete) => `
+    exists (
+      select 1 from con c where c.contype = 'f' and c.convalidated
+        and c.confrelid = to_regclass('${target}')
+        and c.confdeltype = '${onDelete}' and c.confupdtype = 'a' and not c.condeferrable
+        and c.conkey = ${attnums(OWN, columns)}
+        and c.confkey = ${attnums(target, targetColumns)}
+    ) as ${name}_fk_ready`;
 
 const READINESS_QUERY = `
   with t as (select to_regclass('${OWN}') as oid),
@@ -57,7 +73,8 @@ const READINESS_QUERY = `
       left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
      where a.attnum > 0 and not a.attisdropped
   ),
-  con as (select c.* from pg_constraint c, t where c.conrelid = t.oid)
+  con as (select c.* from pg_constraint c, t where c.conrelid = t.oid),
+  uniq as (select i.* from pg_index i, t where i.indrelid = t.oid and i.indisunique and not i.indisprimary)
   select
     (select oid from t) is not null as table_ready,
     (
@@ -65,20 +82,14 @@ const READINESS_QUERY = `
       from information_schema.columns
       where table_schema = 'pilot' and table_name = 'athlete_reached_out_marks'
     ) = $3::text[] as columns_ready,
-    exists (select 1 from col where attname = 'organization_id'
-              and atttypid = 'text'::regtype and attnotnull and default_text is null) as organization_id_ready,
-    exists (select 1 from col where attname = 'athlete_id'
-              and atttypid = 'text'::regtype and attnotnull and default_text is null) as athlete_id_ready,
-    exists (select 1 from col where attname = 'marked_by_account_id'
-              and atttypid = 'text'::regtype and attnotnull and default_text is null) as marked_by_account_id_ready,
-    exists (select 1 from col where attname = 'marked_by_role'
-              and atttypid = 'text'::regtype and attnotnull and default_text is null) as marked_by_role_ready,
-    exists (select 1 from col where attname = 'marked_at'
-              and atttypid = 'timestamptz'::regtype and attnotnull and default_text = 'clock_timestamp()') as marked_at_ready,
-    exists (select 1 from col where attname = 'cleared_at'
-              and atttypid = 'timestamptz'::regtype and not attnotnull and default_text is null) as cleared_at_ready,
-    exists (select 1 from col where attname = 'cleared_by_account_id'
-              and atttypid = 'text'::regtype and not attnotnull and default_text is null) as cleared_by_account_id_ready,
+    ${column('organization_id', 'text', true)},
+    ${column('mark_id', 'uuid', true)},
+    ${column('athlete_id', 'text', true)},
+    ${column('marked_by_account_id', 'text', false)},
+    ${column('marked_by_role', 'text', true)},
+    ${column('marked_at', 'timestamptz', true, 'clock_timestamp()')},
+    ${column('cleared_at', 'timestamptz', false)},
+    ${column('cleared_by_account_id', 'text', false)},
     (select count(*) from con where contype = 'c') = $4
       and (
         select count(*) from con
@@ -86,27 +97,22 @@ const READINESS_QUERY = `
         where con.contype = 'c' and con.convalidated and pg_get_constraintdef(con.oid) = expected.condef
       ) = $4 as checks_ready,
     exists (
-      select 1 from con c where c.contype = 'p'
-        and c.conkey = array[${attnum(OWN, 'organization_id')}, ${attnum(OWN, 'athlete_id')}]::int2[]
+      select 1 from con c where c.contype = 'p' and not c.condeferrable
+        and c.conkey = ${attnums(OWN, ['organization_id', 'mark_id'])}
     ) as primary_key_ready,
-    not exists (select 1 from con where contype in ('u', 'x'))
-      and not exists (select 1 from pg_index i, t where i.indrelid = t.oid and i.indisunique and not i.indisprimary)
-      as no_other_unique_ready,
-    (select count(*) from con where contype = 'f') = 2 as foreign_key_count_ready,
-    exists (
-      select 1 from con c where c.contype = 'f' and c.convalidated
-        and c.confrelid = to_regclass('pilot.organizations')
-        and c.confdeltype = 'c' and c.confupdtype = 'a' and not c.condeferrable
-        and c.conkey = array[${attnum(OWN, 'organization_id')}]::int2[]
-        and c.confkey = array[${attnum('pilot.organizations', 'organization_id')}]::int2[]
-    ) as organization_fk_ready,
-    exists (
-      select 1 from con c where c.contype = 'f' and c.convalidated
-        and c.confrelid = to_regclass('pilot.athletes')
-        and c.confdeltype = 'c' and c.confupdtype = 'a' and not c.condeferrable
-        and c.conkey = array[${attnum(OWN, 'organization_id')}, ${attnum(OWN, 'athlete_id')}]::int2[]
-        and c.confkey = array[${attnum('pilot.athletes', 'organization_id')}, ${attnum('pilot.athletes', 'athlete_id')}]::int2[]
-    ) as athlete_fk_ready
+    (select count(*) from uniq) = 1
+      and exists (
+        select 1 from uniq u where u.indisvalid and u.indimmediate and u.indexprs is null
+          -- indkey is an int2vector numbered from 0; its text form ('1 3') compares cleanly.
+          and string_to_array(u.indkey::text, ' ')::int2[] = ${attnums(OWN, ['organization_id', 'athlete_id'])}
+          and pg_get_expr(u.indpred, u.indrelid) = '(cleared_at IS NULL)'
+      ) as current_mark_index_ready,
+    not exists (select 1 from con where contype in ('u', 'x')) as no_unique_constraint_ready,
+    (select count(*) from con where contype = 'f') = 4 as foreign_key_count_ready,
+    ${foreignKey('organization', ['organization_id'], 'pilot.organizations', ['organization_id'], 'c')},
+    ${foreignKey('athlete', ['organization_id', 'athlete_id'], 'pilot.athletes', ['organization_id', 'athlete_id'], 'c')},
+    ${foreignKey('marked_by', ['marked_by_account_id'], 'pilot.accounts', ['account_id'], 'n')},
+    ${foreignKey('cleared_by', ['cleared_by_account_id'], 'pilot.accounts', ['account_id'], 'n')}
 `;
 const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKS),
@@ -118,11 +124,12 @@ const READINESS_PARAMS = [
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
-    // Creating the two foreign keys takes a SHARE ROW EXCLUSIVE lock on
-    // pilot.organizations and pilot.athletes (reads go on, writes wait). Rather
-    // than queue behind a long transaction already holding one, and hold every
-    // write to those tables up behind it, give up after 10 seconds and let the
-    // operator re-run in a quieter moment. Nothing is half-applied.
+    // Creating the four foreign keys takes a SHARE ROW EXCLUSIVE lock on
+    // pilot.organizations, pilot.athletes and pilot.accounts (reads go on,
+    // writes wait). Rather than queue behind a long transaction already
+    // holding one, and hold every write to those tables up behind it, give up
+    // after 10 seconds and let the operator re-run in a quieter moment.
+    // Nothing is half-applied.
     await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY, READINESS_PARAMS);

@@ -1,8 +1,8 @@
 // Real PostgreSQL-backed test for the athlete-reached-out-marks migration
 // (lane W4-6, SC-3a-1; OW27-33 B; Overwatch W4-6 Q4 A: who and when only, one
-// current mark per athlete, a take-back keeps the row). The runner is driven
-// through its real entrypoint, so its readiness check runs against a real
-// Postgres here.
+// current mark per athlete, a take-back keeps the row). The runner's exported
+// applyMigrationTransaction (what its run() calls) is driven here, so the real
+// migration and the readiness check run against a real Postgres.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -36,6 +36,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 const ORG_ID = 'org-reachedout';
 const OTHER_ORG_ID = 'org-reachedout-elsewhere';
 const COACH_ID = 'acct-reachedout-coach';
+const LEAVER_ID = 'acct-reachedout-leaver';
 const T = 'pilot.athlete_reached_out_marks';
 
 let PG_PORT: number;
@@ -44,6 +45,7 @@ let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 let databaseCount = 0;
+let templateName: Promise<string> | null = null;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -66,22 +68,26 @@ async function findFreePort(): Promise<number> {
   });
 }
 
+async function createDatabase(name: string, template?: string): Promise<Client> {
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${name}`);
+  await admin.query(template ? `create database ${name} template ${template}` : `create database ${name}`);
+  await admin.end();
+  const client = new Client({ connectionString: connectionStringFor(name) });
+  await client.connect();
+  return client;
+}
+
 /**
- * The full schema, two gyms, a coach, and two athletes in the first gym and one
- * in the other. `runRunner: false` leaves the table as the full schema (the
- * workflow's `all` list) built it; `preMigration` drops it.
+ * The full schema, two gyms, two coach accounts, and two athletes in the first
+ * gym and one in the other. `runRunner: false` leaves the table as the full
+ * schema (the workflow's `all` list) built it; `preMigration` drops it.
  */
 async function freshDatabase({ preMigration = false, runRunner = true } = {}): Promise<{ client: Client; name: string }> {
   databaseCount += 1;
   const name = `reachedout_${databaseCount}`;
-  const admin = new Client({ connectionString: connectionStringFor('postgres') });
-  await admin.connect();
-  await admin.query(`drop database if exists ${name}`);
-  await admin.query(`create database ${name}`);
-  await admin.end();
-
-  const client = new Client({ connectionString: connectionStringFor(name) });
-  await client.connect();
+  const client = await createDatabase(name);
   await applyFullSchema(client, { infraDir: INFRA_DIR });
   for (const org of [ORG_ID, OTHER_ORG_ID]) {
     await client.query(
@@ -89,11 +95,13 @@ async function freshDatabase({ preMigration = false, runRunner = true } = {}): P
       [org],
     );
   }
-  await client.query(
-    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, login_email)
-     values ($1, 'coach', $2, 'microsoft', null, null) on conflict do nothing`,
-    [COACH_ID, ORG_ID],
-  );
+  for (const account of [COACH_ID, LEAVER_ID]) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, login_email)
+       values ($1, 'coach', $2, 'microsoft', null, null) on conflict do nothing`,
+      [account, ORG_ID],
+    );
+  }
   for (const [org, athlete] of [[ORG_ID, 'ada'], [ORG_ID, 'ben'], [OTHER_ORG_ID, 'ada']]) {
     await client.query(
       `insert into pilot.athletes
@@ -111,12 +119,88 @@ async function freshDatabase({ preMigration = false, runRunner = true } = {}): P
   return { client, name };
 }
 
-async function mark(client: Client, athleteId: string, { org = ORG_ID, role = 'coach' } = {}) {
+/** A copy of one migrated database, for the readiness drifts (much faster than a fresh schema each). */
+async function migratedCopy(): Promise<Client> {
+  if (!templateName) {
+    templateName = freshDatabase().then(async ({ client, name }) => {
+      await client.end();
+      return name;
+    });
+  }
+  const template = await templateName;
+  databaseCount += 1;
+  return createDatabase(`reachedout_${databaseCount}`, template);
+}
+
+async function mark(
+  client: Client,
+  athleteId: string,
+  { org = ORG_ID, role = 'coach', account = COACH_ID }: { org?: string; role?: string; account?: string | null } = {},
+) {
   await client.query(
-    `insert into ${T} (organization_id, athlete_id, marked_by_account_id, marked_by_role) values ($1, $2, $3, $4)`,
-    [org, athleteId, COACH_ID, role],
+    `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, gen_random_uuid(), $2, $3, $4)`,
+    [org, athleteId, account, role],
   );
 }
+
+async function takeBack(client: Client, athleteId: string, account: string | null = COACH_ID) {
+  await client.query(
+    `update ${T} set cleared_at = clock_timestamp(), cleared_by_account_id = $3
+      where organization_id = $1 and athlete_id = $2 and cleared_at is null`,
+    [ORG_ID, athleteId, account],
+  );
+}
+
+// Each foreign key, re-added under its own name with one thing wrong.
+const FOREIGN_KEYS = [
+  {
+    piece: 'organization_fk_ready', name: 'athlete_reached_out_marks_organization_id_fkey',
+    right: 'foreign key (organization_id) references pilot.organizations(organization_id)', onDelete: 'cascade', wrongDelete: 'no action',
+    wrongColumns: 'foreign key (athlete_id) references pilot.organizations(organization_id)',
+    wrongTable: 'foreign key (organization_id) references pilot.accounts(account_id)',
+    wrongTarget: ['create unique index zz_target on pilot.organizations (organization_name)',
+      'foreign key (organization_id) references pilot.organizations(organization_name)'],
+  },
+  {
+    piece: 'athlete_fk_ready', name: 'pilot_athlete_reached_out_marks_athlete_fk',
+    right: 'foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id)', onDelete: 'cascade', wrongDelete: 'no action',
+    wrongColumns: 'foreign key (athlete_id, organization_id) references pilot.athletes(organization_id, athlete_id)',
+    wrongTable: 'foreign key (organization_id, athlete_id) references pilot.zz_pairs(organization_id, athlete_id)',
+    wrongTarget: ['create unique index zz_target on pilot.athletes (organization_id, full_name)',
+      'foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, full_name)'],
+  },
+  {
+    piece: 'marked_by_fk_ready', name: 'pilot_athlete_reached_out_marks_marked_by_fk',
+    right: 'foreign key (marked_by_account_id) references pilot.accounts(account_id)', onDelete: 'set null', wrongDelete: 'cascade',
+    wrongColumns: 'foreign key (cleared_by_account_id) references pilot.accounts(account_id)',
+    wrongTable: 'foreign key (marked_by_account_id) references pilot.organizations(organization_id)',
+    wrongTarget: ['create unique index zz_target on pilot.accounts (login_email)',
+      'foreign key (marked_by_account_id) references pilot.accounts(login_email)'],
+  },
+  {
+    piece: 'cleared_by_fk_ready', name: 'pilot_athlete_reached_out_marks_cleared_by_fk',
+    right: 'foreign key (cleared_by_account_id) references pilot.accounts(account_id)', onDelete: 'set null', wrongDelete: 'cascade',
+    wrongColumns: 'foreign key (marked_by_account_id) references pilot.accounts(account_id)',
+    wrongTable: 'foreign key (cleared_by_account_id) references pilot.organizations(organization_id)',
+    wrongTarget: ['create unique index zz_target on pilot.accounts (login_email)',
+      'foreign key (cleared_by_account_id) references pilot.accounts(login_email)'],
+  },
+];
+const replaceKey = (name: string, definition: string) =>
+  `alter table ${T} drop constraint ${name}, add constraint ${name} ${definition}`;
+const FOREIGN_KEY_DRIFTS: Array<[string, string, string]> = FOREIGN_KEYS.flatMap((key) => [
+  [key.piece, `${key.name}: on delete ${key.wrongDelete}`, replaceKey(key.name, `${key.right} on delete ${key.wrongDelete}`)],
+  [key.piece, `${key.name}: on update cascade`, replaceKey(key.name, `${key.right} on delete ${key.onDelete} on update cascade`)],
+  [key.piece, `${key.name}: deferrable`, replaceKey(key.name, `${key.right} on delete ${key.onDelete} deferrable`)],
+  [key.piece, `${key.name}: not validated`, replaceKey(key.name, `${key.right} on delete ${key.onDelete} not valid`)],
+  [key.piece, `${key.name}: from the wrong columns`, replaceKey(key.name, `${key.wrongColumns} on delete ${key.onDelete}`)],
+  [key.piece, `${key.name}: to the wrong table`,
+    `create table pilot.zz_pairs (organization_id text, athlete_id text, primary key (organization_id, athlete_id));
+     ${replaceKey(key.name, `${key.wrongTable} on delete ${key.onDelete}`)}`],
+  [key.piece, `${key.name}: to the wrong columns of the right table`,
+    `${key.wrongTarget[0]}; ${replaceKey(key.name, `${key.wrongTarget[1]} on delete ${key.onDelete}`)}`],
+]);
 
 beforeAll(async () => {
   PG_PORT = await findFreePort();
@@ -180,7 +264,7 @@ describe('athlete reached-out marks migration', () => {
     }
   });
 
-  test('creates the table from nothing, passes readiness, and a re-apply keeps the row', async () => {
+  test('creates the table from nothing, passes readiness, and a re-apply keeps the rows', async () => {
     const { client } = await freshDatabase({ preMigration: true });
     try {
       expect((await client.query(`select to_regclass('${T}') as t`)).rows[0].t).toBeNull();
@@ -188,8 +272,8 @@ describe('athlete reached-out marks migration', () => {
       expect((await client.query(`select count(*)::int as n from ${T}`)).rows[0].n).toBe(0);
       await mark(client, 'ada');
       await applyMigrationTransaction(client, migrationSql);
-      const { rows } = await client.query(`select organization_id, athlete_id, marked_by_role from ${T}`);
-      expect(rows).toEqual([{ organization_id: ORG_ID, athlete_id: 'ada', marked_by_role: 'coach' }]);
+      const { rows } = await client.query(`select organization_id, athlete_id, marked_by_account_id, marked_by_role from ${T}`);
+      expect(rows).toEqual([{ organization_id: ORG_ID, athlete_id: 'ada', marked_by_account_id: COACH_ID, marked_by_role: 'coach' }]);
     } finally {
       await client.end();
     }
@@ -207,12 +291,26 @@ describe('athlete reached-out marks migration', () => {
     }
   });
 
-  // Each piece of the readiness check, refused on its own and named in the error.
-  test.each([
+  const INDEX = 'pilot.uq_athlete_reached_out_marks_current';
+  // With no table, every piece that looks at the table fails with it.
+  const NO_TABLE = [
+    'table_ready', 'columns_ready', 'organization_id_ready', 'mark_id_ready', 'athlete_id_ready', 'marked_by_account_id_ready',
+    'marked_by_role_ready', 'marked_at_ready', 'cleared_at_ready', 'cleared_by_account_id_ready', 'checks_ready', 'primary_key_ready',
+    'current_mark_index_ready', 'foreign_key_count_ready', 'organization_fk_ready', 'athlete_fk_ready', 'marked_by_fk_ready',
+    'cleared_by_fk_ready',
+  ];
+  // Each condition of the readiness check, drifted on its own. The refusal must name exactly the
+  // pieces listed (the piece, or the 4th entry when a drift trips more), so a readiness check that
+  // stops looking at any one condition turns its row red.
+  test.each<[string, string, string, string[]?]>([
+    ['table_ready', 'no table at all', `drop table ${T} cascade`, NO_TABLE],
     ['columns_ready', 'an extra column (a note)', `alter table ${T} add column note text`],
     ['organization_id_ready', 'organization_id with a default', `alter table ${T} alter column organization_id set default 'org-x'`],
+    ['mark_id_ready', 'mark_id as text', `alter table ${T} alter column mark_id type text`],
+    ['mark_id_ready', 'mark_id with a default', `alter table ${T} alter column mark_id set default gen_random_uuid()`],
     ['athlete_id_ready', 'athlete_id a varchar', `alter table ${T} alter column athlete_id type varchar(200)`],
-    ['marked_by_account_id_ready', 'marked_by_account_id nullable', `alter table ${T} alter column marked_by_account_id drop not null`],
+    ['marked_by_account_id_ready', 'marked_by_account_id not null (an account delete could not clear it)',
+      `alter table ${T} alter column marked_by_account_id set not null`],
     ['marked_by_role_ready', 'marked_by_role with a default', `alter table ${T} alter column marked_by_role set default 'coach'`],
     ['marked_at_ready', 'marked_at with no default', `alter table ${T} alter column marked_at drop default`],
     ['marked_at_ready', 'marked_at nullable', `alter table ${T} alter column marked_at drop not null`],
@@ -221,40 +319,47 @@ describe('athlete reached-out marks migration', () => {
     ['checks_ready', 'a role list that is not the answered one',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_role_check,
          add constraint pilot_athlete_reached_out_marks_role_check check (marked_by_role in ('coach', 'organization_admin', 'admin', 'parent'))`],
-    ['checks_ready', 'the take-back pair loosened',
+    ['checks_ready', 'the take-back rule loosened',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_clear_check,
-         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_at is null or cleared_by_account_id is not null)`],
+         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_by_account_id is null or cleared_at is not null or marked_by_role = 'admin')`],
     ['checks_ready', 'a CHECK not validated',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_clear_check,
-         add constraint pilot_athlete_reached_out_marks_clear_check check ((cleared_at is null) = (cleared_by_account_id is null)) not valid`],
-    ['checks_ready', 'a third CHECK', `alter table ${T} add constraint zz_extra check (marked_by_account_id <> '')`],
-    ['primary_key_ready', 'no primary key', `alter table ${T} drop constraint athlete_reached_out_marks_pkey cascade`],
-    ['no_other_unique_ready', 'an extra unique constraint', `alter table ${T} add constraint zz_unique unique (organization_id, marked_at)`],
-    ['no_other_unique_ready', 'a unique index', `create unique index zz_unique_index on ${T} (marked_by_account_id, athlete_id)`],
-    ['foreign_key_count_ready', 'a third foreign key',
+         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_by_account_id is null or cleared_at is not null) not valid`],
+    ['checks_ready', 'a third CHECK', `alter table ${T} add constraint zz_extra check (marked_by_role <> '')`],
+    ['primary_key_ready', 'no primary key', `alter table ${T} drop constraint athlete_reached_out_marks_pkey`],
+    ['primary_key_ready', 'the primary key deferrable (an upsert could not use it)',
+      `alter table ${T} drop constraint athlete_reached_out_marks_pkey, add primary key (organization_id, mark_id) deferrable`],
+    ['primary_key_ready', 'the primary key on other columns',
+      `alter table ${T} drop constraint athlete_reached_out_marks_pkey, add primary key (organization_id, athlete_id, mark_id)`],
+    ['primary_key_ready', 'the primary key reversed',
+      `alter table ${T} drop constraint athlete_reached_out_marks_pkey, add primary key (mark_id, organization_id)`],
+    ['current_mark_index_ready', 'no current-mark index', `drop index ${INDEX}`],
+    ['current_mark_index_ready', 'the index over every mark, not only current ones',
+      `drop index ${INDEX}; create unique index zz_all on ${T} (organization_id, athlete_id)`],
+    ['current_mark_index_ready', 'the index under another condition',
+      `drop index ${INDEX}; create unique index zz_cond on ${T} (organization_id, athlete_id) where cleared_at is null and marked_by_role = 'coach'`],
+    ['current_mark_index_ready', 'the index columns reversed',
+      `drop index ${INDEX}; create unique index zz_rev on ${T} (athlete_id, organization_id) where cleared_at is null`],
+    ['current_mark_index_ready', 'the index on an expression',
+      `drop index ${INDEX}; create unique index zz_expr on ${T} (organization_id, lower(athlete_id)) where cleared_at is null`],
+    ['current_mark_index_ready', 'a second unique index', `create unique index zz_second on ${T} (marked_by_account_id, athlete_id)`],
+    ['current_mark_index_ready', 'the index not valid', `update pg_index set indisvalid = false where indexrelid = '${INDEX}'::regclass`],
+    ['current_mark_index_ready', 'the index checked at commit, not at once',
+      `update pg_index set indimmediate = false where indexrelid = '${INDEX}'::regclass`],
+    // A unique constraint brings its own unique index, so the current-mark index is no longer the only one.
+    ['no_unique_constraint_ready', 'a unique constraint', `alter table ${T} add constraint zz_unique unique (organization_id, marked_at)`,
+      ['current_mark_index_ready', 'no_unique_constraint_ready']],
+    ['no_unique_constraint_ready', 'an exclusion constraint', `alter table ${T} add constraint zz_excl exclude using btree (marked_by_role with =)`],
+    ['foreign_key_count_ready', 'a fifth foreign key',
       `alter table ${T} add constraint zz_org_again foreign key (organization_id) references pilot.organizations(organization_id)`],
-    ['organization_fk_ready', 'the gym foreign key with no action on delete',
-      `alter table ${T} drop constraint athlete_reached_out_marks_organization_id_fkey,
-         add constraint athlete_reached_out_marks_organization_id_fkey foreign key (organization_id) references pilot.organizations(organization_id)`],
-    ['organization_fk_ready', 'the gym foreign key cascading on update',
-      `alter table ${T} drop constraint athlete_reached_out_marks_organization_id_fkey,
-         add constraint athlete_reached_out_marks_organization_id_fkey foreign key (organization_id)
-           references pilot.organizations(organization_id) on delete cascade on update cascade`],
-    ['athlete_fk_ready', 'the athlete foreign key with no action on delete',
-      `alter table ${T} drop constraint pilot_athlete_reached_out_marks_athlete_fk,
-         add constraint pilot_athlete_reached_out_marks_athlete_fk foreign key (organization_id, athlete_id)
-           references pilot.athletes(organization_id, athlete_id)`],
-    ['athlete_fk_ready', 'the athlete foreign key deferrable',
-      `alter table ${T} drop constraint pilot_athlete_reached_out_marks_athlete_fk,
-         add constraint pilot_athlete_reached_out_marks_athlete_fk foreign key (organization_id, athlete_id)
-           references pilot.athletes(organization_id, athlete_id) on delete cascade deferrable`],
-  ])('readiness refuses %s: %s', async (piece, _label, alteration) => {
-    const { client } = await freshDatabase();
+    ...FOREIGN_KEY_DRIFTS,
+  ])('readiness refuses %s: %s', async (piece, _label, alteration, pieces = [piece]) => {
+    const client = await migratedCopy();
     try {
+      await expect(applyMigrationTransaction(client, 'select 1')).resolves.toBeUndefined();
       await client.query(alteration);
-      const refusal = applyMigrationTransaction(client, 'select 1');
-      await expect(refusal).rejects.toThrow('ATHLETE_REACHED_OUT_MARKS_TABLE_NOT_READY');
-      await expect(refusal).rejects.toThrow(piece);
+      await expect(applyMigrationTransaction(client, 'select 1'))
+        .rejects.toThrow(new RegExp(`^ATHLETE_REACHED_OUT_MARKS_TABLE_NOT_READY: ${pieces.join(', ')}$`));
     } finally {
       await client.end();
     }
@@ -266,27 +371,71 @@ describe('athlete reached-out marks migration', () => {
       for (const role of ['athlete', 'parent', 'board', 'volunteer', 'staff', 'platform_owner', '']) {
         await expect(mark(client, 'ada', { role })).rejects.toMatchObject({ code: '23514' });
       }
-      for (const [athlete, role] of [['ada', 'coach'], ['ben', 'organization_admin']]) {
-        await mark(client, athlete, { role });
-      }
-      await client.query(`delete from ${T}`);
+      await mark(client, 'ada', { role: 'coach' });
+      await mark(client, 'ben', { role: 'organization_admin' });
+      await takeBack(client, 'ada');
       await mark(client, 'ada', { role: 'admin' });
+      expect((await client.query(`select count(*)::int as n from ${T}`)).rows[0].n).toBe(3);
     } finally {
       await client.end();
     }
   });
 
-  test('one current mark per athlete; a take-back names who, and only a take-back does', async () => {
+  test('one current mark per athlete; a take-back keeps its row, and only a take-back names who took it back', async () => {
     const { client } = await freshDatabase();
     try {
       await mark(client, 'ada');
-      await expect(mark(client, 'ada')).rejects.toMatchObject({ code: '23505' });
-      await expect(client.query(`update ${T} set cleared_at = now() where athlete_id = 'ada'`)).rejects.toMatchObject({ code: '23514' });
+      await expect(mark(client, 'ada')).rejects.toMatchObject({ code: '23505', constraint: 'uq_athlete_reached_out_marks_current' });
+      // The current-mark index is what an "insert unless already marked" leans on.
+      const again = await client.query(
+        `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role)
+         values ($1, gen_random_uuid(), 'ada', $2, 'coach')
+         on conflict (organization_id, athlete_id) where cleared_at is null do nothing`,
+        [ORG_ID, COACH_ID],
+      );
+      expect(again.rowCount).toBe(0);
       await expect(client.query(`update ${T} set cleared_by_account_id = $1 where athlete_id = 'ada'`, [COACH_ID]))
         .rejects.toMatchObject({ code: '23514' });
-      await client.query(`update ${T} set cleared_at = now(), cleared_by_account_id = $1 where athlete_id = 'ada'`, [COACH_ID]);
-      const { rows } = await client.query(`select athlete_id, cleared_at is not null as cleared from ${T}`);
-      expect(rows).toEqual([{ athlete_id: 'ada', cleared: true }]);
+      await takeBack(client, 'ada', LEAVER_ID);
+      await mark(client, 'ada');
+      await takeBack(client, 'ada');
+      await mark(client, 'ada', { account: LEAVER_ID });
+      await mark(client, 'ben');
+      const { rows } = await client.query(
+        `select athlete_id, marked_by_account_id, cleared_by_account_id, cleared_at is not null as cleared
+           from ${T} order by athlete_id, marked_at`,
+      );
+      expect(rows).toEqual([
+        { athlete_id: 'ada', marked_by_account_id: COACH_ID, cleared_by_account_id: LEAVER_ID, cleared: true },
+        { athlete_id: 'ada', marked_by_account_id: COACH_ID, cleared_by_account_id: COACH_ID, cleared: true },
+        { athlete_id: 'ada', marked_by_account_id: LEAVER_ID, cleared_by_account_id: null, cleared: false },
+        { athlete_id: 'ben', marked_by_account_id: COACH_ID, cleared_by_account_id: null, cleared: false },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an account\'s delete (the purge\'s step) clears its id from every mark and take-back, and keeps the marks', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await mark(client, 'ada', { account: LEAVER_ID });
+      await takeBack(client, 'ada', LEAVER_ID);
+      await mark(client, 'ada', { account: LEAVER_ID });
+      await mark(client, 'ben');
+      await takeBack(client, 'ben', LEAVER_ID);
+      await client.query('delete from pilot.accounts where account_id = $1', [LEAVER_ID]);
+      const { rows } = await client.query(
+        `select athlete_id, marked_by_account_id, marked_by_role, marked_at is not null as has_time,
+                cleared_by_account_id, cleared_at is not null as cleared
+           from ${T} order by athlete_id, marked_at`,
+      );
+      expect(rows).toEqual([
+        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true },
+        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: false },
+        { athlete_id: 'ben', marked_by_account_id: COACH_ID, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true },
+      ]);
+      expect(JSON.stringify((await client.query(`select * from ${T}`)).rows)).not.toContain(LEAVER_ID);
     } finally {
       await client.end();
     }
@@ -294,32 +443,41 @@ describe('athlete reached-out marks migration', () => {
 
   // (A gym cannot be deleted while it has athletes, pilot.athletes' own foreign key, so a mark,
   // which needs an athlete, goes with its athlete first; the gym cascade is the backstop.)
-  test('a mark names a live athlete of its own gym; deleting the athlete takes the mark', async () => {
+  test('a mark names an existing athlete of its own gym and a real account; deleting the athlete takes its marks', async () => {
     const { client } = await freshDatabase();
     try {
-      await expect(mark(client, 'nobody')).rejects.toMatchObject({ code: '23503' });
-      // The other gym's athlete id, under this gym: refused.
+      await expect(mark(client, 'nobody')).rejects.toMatchObject({ code: '23503', constraint: 'pilot_athlete_reached_out_marks_athlete_fk' });
+      // 'ben' is an athlete of the first gym only: under the other gym, refused.
+      await expect(mark(client, 'ben', { org: OTHER_ORG_ID }))
+        .rejects.toMatchObject({ code: '23503', constraint: 'pilot_athlete_reached_out_marks_athlete_fk' });
       await expect(mark(client, 'ada', { org: 'org-nowhere' })).rejects.toMatchObject({ code: '23503' });
+      // An account column cannot hold a sentence: it must name an account.
+      await expect(mark(client, 'ada', { account: 'reached out by phone, said they are busy' }))
+        .rejects.toMatchObject({ code: '23503', constraint: 'pilot_athlete_reached_out_marks_marked_by_fk' });
+      await mark(client, 'ada');
+      await expect(takeBack(client, 'ada', 'not an account'))
+        .rejects.toMatchObject({ code: '23503', constraint: 'pilot_athlete_reached_out_marks_cleared_by_fk' });
+      await takeBack(client, 'ada');
       await mark(client, 'ada');
       await mark(client, 'ben');
       await mark(client, 'ada', { org: OTHER_ORG_ID });
       await client.query(`delete from pilot.athletes where organization_id = $1 and athlete_id = 'ben'`, [ORG_ID]);
-      // The other gym's athlete of the same id goes; this gym's 'ada' and her mark stay.
+      // The other gym's athlete of the same id goes; this gym's 'ada' and her two marks stay.
       await client.query(`delete from pilot.athletes where organization_id = $1 and athlete_id = 'ada'`, [OTHER_ORG_ID]);
       const { rows } = await client.query(`select organization_id, athlete_id from ${T} order by 1, 2`);
-      expect(rows).toEqual([{ organization_id: ORG_ID, athlete_id: 'ada' }]);
+      expect(rows).toEqual([{ organization_id: ORG_ID, athlete_id: 'ada' }, { organization_id: ORG_ID, athlete_id: 'ada' }]);
     } finally {
       await client.end();
     }
   });
 
-  test('the runner gives up after its lock timeout instead of queueing writes behind a busy athletes table', async () => {
+  test('the runner gives up after its lock timeout instead of queueing writes behind a busy accounts table', async () => {
     const { client, name } = await freshDatabase({ preMigration: true });
     const holder = new Client({ connectionString: connectionStringFor(name) });
     await holder.connect();
     try {
       await holder.query('BEGIN');
-      await holder.query('lock table pilot.athletes in row exclusive mode');
+      await holder.query('lock table pilot.accounts in row exclusive mode');
       const started = Date.now();
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toMatchObject({ code: '55P03' });
       expect(Date.now() - started).toBeGreaterThanOrEqual(9_000);
