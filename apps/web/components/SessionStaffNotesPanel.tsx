@@ -280,7 +280,7 @@ export default function SessionStaffNotesPanel(
             onKeptRefused(
               landed === null
                 ? 'whether a new note was saved is not known. Check the notes before writing it again.'
-                : `a new note was not saved: ${reason} Its words are back in the box when the notes are opened.`,
+                : `a new note was not saved: ${reason} Its words are back in the box when this athlete's notes are next opened.`,
               landed === null ? '' : what.text.trim(),
             );
             return undefined;

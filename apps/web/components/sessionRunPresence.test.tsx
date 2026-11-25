@@ -1222,7 +1222,7 @@ test('on the live floor, notes refused with the panel closed are each said, name
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS * 2);
     });
-    const said = 'Ada Reyes: a new note was not saved: That athlete is not marked here. Its words are back in the box when the notes are opened.';
+    const said = 'Ada Reyes: a new note was not saved: That athlete is not marked here. Its words are back in the box when this athlete\'s notes are next opened.';
     expect(screen.getAllByText(said)).toHaveLength(2);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Here Ada Reyes' }));
@@ -1242,6 +1242,71 @@ test('on the live floor, notes refused with the panel closed are each said, name
     });
     expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('First note.\n\nSecond note.');
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+  } finally {
+    act(() => {
+      resetSaveQueueForTests();
+    });
+    jest.useRealTimers();
+  }
+});
+
+test('a sign-out clears the kept words of refused notes as well as the lines: nothing of them reaches the next person', async () => {
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  createPersistentRoleSession('coach');
+  resetSaveQueueForTests();
+  jest.useFakeTimers();
+  try {
+    let posts = 0;
+    const answer = (body: unknown, status = 200) => {
+      const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
+      return response as unknown as Response;
+    };
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: 'acct-a' });
+      if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
+        if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
+        posts += 1;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        return answer({ error: 'That athlete is not marked here.' }, 409);
+      }
+      if (url === URL_FOR) return answer({ present: [{ ...ADA, marked_at: 'x' }], gym: [ADA, BEN, CY] });
+      return answer({});
+    }) as unknown as typeof fetch;
+    prepareSaveQueue();
+    await act(async () => {
+      render(<SessionRunPresence runId="ssrun 1" />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText(/New note/), { target: { value: 'Wrist taped.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(/^Ada Reyes: a new note was not saved/)).toBeTruthy();
+    await act(async () => {
+      clearRoleSession();
+    });
+    await act(async () => {
+      createPersistentRoleSession('coach');
+    });
+    expect(screen.queryByText(/^Ada Reyes: a new note was not saved/)).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('');
   } finally {
     act(() => {
       resetSaveQueueForTests();

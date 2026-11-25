@@ -768,7 +768,7 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(screen.getByText(NOTES_WAITING)).toBeTruthy();
     await wait(RESEND_MS);
     expect(onKeptRefused).toHaveBeenCalledWith(
-      'a new note was not saved: That athlete is not marked here. Its words are back in the box when the notes are opened.',
+      'a new note was not saved: That athlete is not marked here. Its words are back in the box when this athlete\'s notes are next opened.',
       'Wrist taped.',
     );
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
@@ -798,6 +798,52 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(onWordsReturned).toHaveBeenCalledTimes(1);
     // Said once, in the list: not again in the panel.
     expect(screen.queryByText('NOT SAVED')).toBeNull();
+    expect(screen.queryByText(/^That athlete is not marked here/)).toBeNull();
+  });
+
+  test('handed-back words go after what is already in the box, never over it', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: () => answer({ ok: true, note_id: 'note-9' }) });
+    const view = await openKept();
+    fireEvent.change(draftField(), { target: { value: 'Half typed' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      view.rerender(
+        <>
+          <SessionStaffNotesPanel
+            runId="ssrun 1"
+            athleteId="ath-1"
+            buttonLabel="Staff notes on Ada Reyes"
+            keptOnThisPage
+            onKeptRefused={jest.fn()}
+            returnedWords="Wrist taped."
+            onWordsReturned={jest.fn()}
+          />
+          <SaveQueueNotice />
+        </>,
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(draftField().value).toBe('Half typed\n\nWrist taped.');
+  });
+
+  test('a refusal while a kept finish waits goes to the page\'s list even with a live list to hand to, since the finish takes that list away', async () => {
+    jest.useFakeTimers();
+    const onKeptRefused = jest.fn();
+    serveKept({ notes: () => [], write: (send) => (send === 1 ? 'lost' : answer({ error: 'That athlete is not marked here.' }, 409)) });
+    await openKept({ onKeptRefused, finishWaiting: true });
+    await addNote('Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await wait(RESEND_MS);
+    expect(onKeptRefused).not.toHaveBeenCalled();
+    expect(screen.getByText('Staff note: That athlete is not marked here.')).toBeTruthy();
   });
 
   test('a refused note whose box now holds the next note keeps its words in the refusal; the next note stays', async () => {
