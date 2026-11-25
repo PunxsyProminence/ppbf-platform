@@ -38,7 +38,7 @@ import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
-import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianLinkEnded, guardianLinkedPredicateSql, isGuardianLinkedToAthlete } from './guardianAccess';
 
 export const FAMILY_THREAD_POST_MAX_LENGTH = 2000;
 
@@ -206,15 +206,20 @@ export async function writeAgainInFamilyThread(input: {
 
 /**
  * The threads this guardian opened, about children linked to them now, each
- * with every post in it oldest first. Newest thread first. An empty scope
- * reads nothing.
+ * with every post in it oldest first. Newest thread first.
+ *
+ * ONE STATEMENT (Codex P2 and Overwatch on #2179): the link, the child's
+ * existence and the child's date of birth are read in the same statement as
+ * the posts, so a link that ends, a child deleted or a date of birth corrected
+ * to an adult's between two reads cannot leave a stale scope that still
+ * returns the thread. The age itself is guardianAccess's one rule
+ * (guardianLinkEnded), applied to the date of birth read with the rows.
  */
 export async function listOwnFamilyThreads(organizationId: string, accountId: string): Promise<GuardianThread[]> {
-  const athleteIds = await guardianAthleteIds(organizationId, accountId);
-  if (athleteIds.length === 0) return [];
   const rows = await query<{
     thread_id: string;
     athlete_id: string;
+    athlete_dob: string | null;
     thread_created_at: string;
     post_id: string;
     author_role: string;
@@ -224,6 +229,7 @@ export async function listOwnFamilyThreads(organizationId: string, accountId: st
     seen: boolean;
   }>(
     `select o.post_id::text as thread_id, o.athlete_id,
+            to_char(a.dob, 'YYYY-MM-DD') as athlete_dob,
             to_char(o.created_at at time zone 'UTC', ${ISO_UTC}) as thread_created_at,
             p.post_id::text as post_id, p.author_role,
             case when p.author_role = 'parent' then null else p.author_account_id end as author_account_id,
@@ -233,19 +239,23 @@ export async function listOwnFamilyThreads(organizationId: string, accountId: st
                      where r.organization_id = p.organization_id and r.post_id = p.post_id
                        and r.reader_account_id = $2) as seen
        from pilot.family_thread_posts o
+       join pilot.athletes a
+         on a.organization_id = o.organization_id and a.athlete_id = o.athlete_id and a.deleted_at is null
        join pilot.family_thread_posts p
          on p.organization_id = o.organization_id and p.thread_id = o.post_id
       where o.organization_id = $1
         and o.post_id = o.thread_id
         and o.author_account_id = $2
-        and o.athlete_id = any($3::text[])
+        and ${guardianLinkedPredicateSql('o.organization_id', 'o.athlete_id', '$2')}
       order by o.created_at desc, o.post_id, p.created_at asc, p.post_id asc`,
-    [organizationId, accountId, athleteIds],
+    [organizationId, accountId],
   );
 
   const staffNames = new Map<string, string>();
   const threads = new Map<string, GuardianThread>();
   for (const row of rows) {
+    // An adult child's thread drops out, as guardianAthleteIds drops the child (OD-2026-10-07-008).
+    if (guardianLinkEnded(row.athlete_dob)) continue;
     let thread = threads.get(row.thread_id);
     if (!thread) {
       thread = { thread_id: row.thread_id, athlete_id: row.athlete_id, created_at: row.thread_created_at, posts: [] };

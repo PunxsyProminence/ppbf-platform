@@ -132,6 +132,27 @@ export async function isGuardianLinkedToAthlete(
 }
 
 /**
+ * The guardian link as a predicate inside ONE statement, for a reader whose
+ * rows must be authorised in the same snapshot that returns them (Codex P2
+ * and Overwatch on #2179: a link that ends between a scope read and the read
+ * that uses it must not return the child's rows). The same join as
+ * linkedAthleteRows, organization-scoped on both levels; the caller joins
+ * the live athlete row (deleted_at is null) and selects its date of birth as
+ * to_char(dob, 'YYYY-MM-DD') for guardianLinkEnded, so the 18 rule stays this
+ * module's one rule. The arguments are column references and a placeholder
+ * written in code, never caller input.
+ */
+export function guardianLinkedPredicateSql(organizationColumn: string, athleteColumn: string, accountParam: string): string {
+  return `exists (select 1
+                    from pilot.guardian_links gl
+                    join pilot.parents gp
+                      on gp.organization_id = gl.organization_id and gp.parent_id = gl.parent_id
+                   where gl.organization_id = ${organizationColumn}
+                     and gl.athlete_id = ${athleteColumn}
+                     and gp.account_id = ${accountParam})`;
+}
+
+/**
  * Every athlete this parent account is linked to in this organization.
  * Distinct, because one account may back more than one parent row and a
  * scope list must not carry duplicates. An empty array means an empty
