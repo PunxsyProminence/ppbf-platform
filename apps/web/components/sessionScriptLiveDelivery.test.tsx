@@ -2276,6 +2276,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
         return sends === 1 ? lost() : jsonResponse({ run: liveRun({ show_on_wall: true }) });
       },
     });
+    // The line's status region is there before anything is asked, empty, so its first words are announced.
+    expect(document.getElementById('asked-not-saved-ssrun_1')).toBeEmptyDOMElement();
     await tap('Allow on a TV', 'switch');
     const line = screen.getByText(/^Not saved yet: Allow on a TV: on\. The buttons follow what you asked/);
     expect(line.id).not.toBe('');
@@ -2516,6 +2518,17 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
     expect(screen.getByText(/^Not saved yet: Pause session\./)).toBeInTheDocument();
+  });
+
+  it('a log made before the page has confirmed who is signed in is still said to wait, in the log panel, once kept', async () => {
+    jest.useFakeTimers();
+    const check = lateSession();
+    await renderKept(liveRun(), { session: check.session, logPost: lost });
+    await openLog();
+    await logPair();
+    await check.answer();
+    expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(screen.getByText('One intervention is not saved yet. This page keeps sending it while it stays open.')).toBeInTheDocument();
   });
 
   it('a finish made before the page has confirmed who is signed in still locks the controls once kept', async () => {

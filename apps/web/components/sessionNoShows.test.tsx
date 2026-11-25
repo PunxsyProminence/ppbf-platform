@@ -110,8 +110,9 @@ test('a run ended elsewhere is handed back to the live screen', async () => {
 
 describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
   beforeEach(() => {
-    resetSaveQueueForTests();
+    // Signed in first, then the queue reset: the sign-in's ask must not outlive the reset.
     createPersistentRoleSession('coach');
+    resetSaveQueueForTests();
   });
   afterEach(() => {
     act(() => {
@@ -196,6 +197,30 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     serveKept(() => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409), () => 2);
     const onRunNotLive = await tapMark();
     expect(onRunNotLive).toHaveBeenCalledTimes(1);
+  });
+
+  test('a tap made before the page has confirmed who is signed in still waits, and says so, once kept', async () => {
+    jest.useFakeTimers();
+    serveKept(() => 'throw', () => 2);
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    const answers: Array<() => void> = [];
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/pilot/auth/session')) {
+        return new Promise<Response>((resolve) => {
+          answers.push(() => resolve(json({ authenticated: true, account_id: 'acct-a' })));
+        });
+      }
+      return base(input, init);
+    });
+    await tapMark();
+    expect(answers.length).toBeGreaterThan(0);
+    await act(async () => {
+      for (const answer of answers.splice(0)) answer();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(patches()).toHaveLength(1);
+    expect(screen.getByText('Marking the no-shows Absent is not saved yet. This page keeps sending it while it stays open.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Mark all 2 Absent' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('signing out drops a kept tap: the button is free again and its waiting words go', async () => {
