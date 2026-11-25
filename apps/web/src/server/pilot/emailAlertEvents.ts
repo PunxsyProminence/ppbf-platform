@@ -42,9 +42,11 @@
  *   - coach_message: a coach's or admin's message to an athlete, to that
  *     athlete's own account (athlete/coach-messages/route.ts); the sender sends
  *     only to an athlete 18 or over.
- *   - family_note (to come): a coach's message to a family, to the guardians
- *     linked to the child (parent/messages/route.ts), once W4-4's #2179 lands
- *     its one-statement guardian-link rule to reuse.
+ *   - family_note: a coach's or admin's message to a family (a
+ *     'parent_message' note), to each guardian whose /parent messages page
+ *     shows it (parent/messages/route.ts): linked to the live child, signed in
+ *     as a parent of the gym (guardianLinkedPredicateSql, guardianAccess.ts,
+ *     W4-4's one-statement rule), and the child under 18 (guardianLinkEnded).
  * The parent's new message arrives in EM-4c.
  */
 
@@ -54,6 +56,7 @@ import { emailAlertCandidateUserType } from '@/src/shared/emailAlerts';
 import type { ClaimedEmailAlertSend, EmailAlertCandidate, EmailAlertSource } from './emailAlertQueue';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import { guardianLinkedPredicateSql, guardianLinkEnded } from './guardianAccess';
 
 const STAFF_ROLES = ['coach', 'organization_admin', 'admin'];
 const ADMIN_ROLES = ['organization_admin', 'admin'];
@@ -201,12 +204,16 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * emails nobody). Every placement there is one the role may read
  * (mayReadLivePlacement, announcements.ts, the page's own rule); a test holds
  * the table to that rule. A notice retired, or ended, by the send is not sent.
- * Its time is on the database clock, as the sweep's overlap needs:
- * created_at, or a start time still to come when it was posted (by then the
- * row has committed); a start time already past counts as the posting. So a
- * notice that was retired when it would have gone live is sent if it is
- * restored within the sweep's ten-minute overlap, and never if it is restored
- * later; a notice already sent is not sent again when restored.
+ * Its time is on the database clock, as the sweep's overlap needs: the latest
+ * of its posting, its start time and its last restore. A start time already
+ * past counts as the posting. A RESTORE SETS IT LIVE AGAIN (Overwatch on
+ * #2193, comment 7165858842): restoring a retired notice emails everyone who
+ * reads it and has not had it, and nobody twice, because the send log's key
+ * is one row per person per notice (OW27-03 B); a send skipped because the
+ * notice was retired before it went out is queued again (emailAlertQueue.ts). The restore time is the row's
+ * updated_at: setAnnouncementActive is the only write to a notice and stamps
+ * it on every call, so a Restore pressed on a notice already live counts the
+ * same and reaches only those who have not had it.
  */
 /** The roles a notice can be emailed to; a test holds NOTICE_PLACEMENTS_EMAILED to mayReadLivePlacement for each. */
 export const NOTICE_READER_ROLES: readonly string[] = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
@@ -221,7 +228,7 @@ export const NOTICE_PLACEMENTS_EMAILED: Readonly<Record<EmailAlertUserType, read
   parent: ['parent_hub', 'everywhere'],
   adult_athlete: ['athlete_workspace', 'everywhere'],
 };
-const NOTICE_LIVE_FROM = 'greatest(n.created_at, coalesce(n.starts_at, n.created_at))';
+const NOTICE_LIVE_FROM = 'greatest(n.created_at, coalesce(n.starts_at, n.created_at), n.updated_at)';
 const NOTICE_LIVE_NOW = `n.kind = 'notice' and n.active
         and (n.starts_at is null or n.starts_at <= now()) and (n.ends_at is null or n.ends_at > now())`;
 
@@ -282,16 +289,77 @@ const GYM_NOTICE: AlertEvent = {
   },
 };
 
+/**
+ * A coach's or admin's message to a family (EM-4b, family_note): a
+ * 'parent_message' note, to each guardian whose /parent messages page shows it
+ * (GET /api/pilot/parent/messages: guardianAthleteIds, then
+ * listParentMessages). Whether one guardian reads one note is asked with W4-4's
+ * one rule, guardianLinkedPredicateSql (the guardian link to the live child,
+ * and the sign-in checks the session gate makes for a parent of this gym),
+ * plus guardianLinkEnded on the child's date of birth: at 18 the link goes
+ * dormant and the note drops off the page. The author's account is joined as
+ * listParentMessages joins it: a note whose author was purged
+ * (coach_account_id set to null) is not on the page, so it emails nobody. The
+ * sweep's candidates are every account behind a guardian record linked to the
+ * note's child; each is then asked that rule, so the source and the send-time
+ * check are one rule.
+ */
+const FAMILY_NOTE_READ = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
+   from pilot.coach_observations co
+   join pilot.athletes ath on ath.organization_id = co.organization_id and ath.athlete_id = co.athlete_id
+   join pilot.accounts author on author.account_id = co.coach_account_id
+  where co.organization_id = $1 and co.note_id = $2::uuid and co.note_type = 'parent_message'
+    and ${guardianLinkedPredicateSql('co.organization_id', 'co.athlete_id', '$3')}`;
+
+async function guardianReadsFamilyNote(organizationId: string, noteId: string, accountId: string): Promise<boolean> {
+  const row = await queryOne<{ dob: string | null }>(FAMILY_NOTE_READ, [organizationId, noteId, accountId]);
+  return row !== null && !guardianLinkEnded(row.dob);
+}
+
+const FAMILY_NOTE: AlertEvent = {
+  kind: 'family_note',
+  source: {
+    checkpointKey: 'family_note',
+    candidates: async (from, to) => {
+      const rows = await query<{ organization_id: string; account_id: string; event_id: string }>(
+        `select distinct co.organization_id, p.account_id, co.note_id::text as event_id
+           from pilot.coach_observations co
+           join pilot.guardian_links gl on gl.organization_id = co.organization_id and gl.athlete_id = co.athlete_id
+           join pilot.parents p on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
+          where co.note_type = 'parent_message' and p.account_id is not null
+            and co.created_at > $1 and co.created_at <= $2`,
+        [from, to],
+      );
+      const candidates: EmailAlertCandidate[] = [];
+      for (const row of rows) {
+        if (await guardianReadsFamilyNote(row.organization_id, row.event_id, row.account_id)) {
+          candidates.push({
+            organizationId: row.organization_id,
+            accountId: row.account_id,
+            userType: 'parent',
+            eventKind: 'family_note',
+            eventId: row.event_id,
+          });
+        }
+      }
+      return candidates;
+    },
+  },
+  stillReads: async (send) =>
+    send.user_type === 'parent' && guardianReadsFamilyNote(send.organization_id, send.event_id, send.account_id),
+};
+
 const SAFETY_ESCALATION_EVENT = sqlEvent(SAFETY_ESCALATION);
 const PARENT_REPLY_EVENT = sqlEvent(PARENT_REPLY);
 const COACH_MESSAGE_EVENT = sqlEvent(COACH_MESSAGE);
 
-const EVENTS: readonly AlertEvent[] = [SAFETY_ESCALATION_EVENT, PARENT_REPLY_EVENT, GYM_NOTICE, COACH_MESSAGE_EVENT];
+const EVENTS: readonly AlertEvent[] = [SAFETY_ESCALATION_EVENT, PARENT_REPLY_EVENT, GYM_NOTICE, COACH_MESSAGE_EVENT, FAMILY_NOTE];
 
 export const safetyEscalationSource = SAFETY_ESCALATION_EVENT.source;
 export const parentReplySource = PARENT_REPLY_EVENT.source;
 export const gymNoticeSource = GYM_NOTICE.source;
 export const coachMessageSource = COACH_MESSAGE_EVENT.source;
+export const familyNoteSource = FAMILY_NOTE.source;
 
 /** The sources the sweep reads, in this order (EM-4c adds the parent's new message). */
 export const EMAIL_ALERT_EVENT_SOURCES: readonly EmailAlertSource[] = EVENTS.map((event) => event.source);

@@ -29,6 +29,7 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 let activeClient: Client | null = null;
@@ -53,7 +54,13 @@ jest.mock('./db', () => ({
 }));
 
 import { assertActorCanAccessAthlete, athleteIdsForCoach, requireRole } from './access';
-import { ANNOUNCEMENT_PLACEMENTS, listLiveAnnouncements, mayReadLivePlacement, type AnnouncementPlacement } from './announcements';
+import {
+  ANNOUNCEMENT_PLACEMENTS,
+  listLiveAnnouncements,
+  mayReadLivePlacement,
+  setAnnouncementActive,
+  type AnnouncementPlacement,
+} from './announcements';
 import { listAthleteCoachMessages } from './athleteCoachMessages';
 import type { PilotRole } from './contracts';
 import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
@@ -62,6 +69,7 @@ import {
   EMAIL_ALERT_EVENT_SOURCES,
   EMAIL_ALERT_READ_RULE_KINDS,
   emailAlertEventStillReadable,
+  familyNoteSource,
   gymNoticeSource,
   NOTICE_PLACEMENTS_EMAILED,
   NOTICE_READER_ROLES,
@@ -72,6 +80,10 @@ import { emailAlertSenderDependencies, runEmailAlertSweep, type EmailAlertSender
 import { listEscalations } from './escalationLadder';
 import { listRepliesForStaff } from './familyMessageReplies';
 import type { OutboundMessage } from './graphMailer';
+import { PILOT_SESSION_COOKIE } from './env';
+import { hashToken } from './security';
+import { GET as parentMessagesGET } from '@/app/api/pilot/parent/messages/route';
+import { gymDayIso } from '@/src/lib/gymTime';
 import { EMAIL_ALERT_EVENTS, emailAlertCandidateUserType } from '@/src/shared/emailAlerts';
 
 jest.setTimeout(180_000);
@@ -282,11 +294,11 @@ async function notice(
   await client.query(
     `insert into pilot.announcements
        (organization_id, announcement_id, message, author_name, author_role, placement, kind, active,
-        starts_at, ends_at, created_at)
+        starts_at, ends_at, created_at, updated_at)
      values ($1, $2::uuid, 'Notice', 'Office', 'organization_admin', $3, $4, $5,
              case when $6::int is null then null else now() + make_interval(mins => $6::int) end,
              case when $7::int is null then null else now() + make_interval(mins => $7::int) end,
-             now() - make_interval(mins => $8))`,
+             now() - make_interval(mins => $8), now() - make_interval(mins => $8))`,
     [org, id, values.placement ?? 'gym_notices', values.kind ?? 'notice', values.active ?? true,
       values.startsInMinutes ?? null, values.endsInMinutes ?? null, values.minutesAgo ?? 5],
   );
@@ -431,6 +443,12 @@ const NEVER_EMAILED: readonly string[] = ['gym_notices'];
  * What each signed-in person's notice boards show: the live notices of their
  * own boards, with everywhere (listLiveAnnouncements), where their role may
  * read the placement (announcements/get/route.ts), in the window.
+ *
+ * Every live notice, up to the read's 25, not the 3 a board draws
+ * (AnnouncementBanner.tsx, limit = 3, newest posted first). A known gap, put to
+ * Overwatch on #2159 (comment 7159860480, "also noted"): a notice that goes
+ * live behind three newer ones (scheduled, or restored) is emailed but is not
+ * on the board. The fix is the board's order, outside this lane.
  */
 async function noticesPageReach(inWindow: ReadonlySet<string>): Promise<Reach> {
   const reach: Reach = new Map();
@@ -482,6 +500,152 @@ function recorder(): { sent: OutboundMessage[]; dependencies: EmailAlertSenderDe
     gymName: async () => 'GYM',
   };
   return { sent, dependencies };
+}
+
+// FAMILY NOTES (family_note). A child under 18 in each gym, the one id naming
+// a different child in each (deletedAthletes.ts); a deleted child; a child who
+// is 18; a child who turns 18 today and one who turns 18 tomorrow, on the
+// gym's day. Guardian records: this gym's parent; a second guardian, behind
+// two records; a guardian whose membership is off; one whose login is switched
+// off; one whose login is deleted; a record with no login; a coach's login
+// behind a guardian record; and the other gym's guardian.
+const KID = 'ath-ev-kid';
+const KID_GONE = 'ath-ev-kid-gone';
+const KID_ADULT = 'ath-ev-kid-adult';
+const KID_18_TODAY = 'ath-ev-kid-18-today';
+const KID_18_TOMORROW = 'ath-ev-kid-18-tomorrow';
+// Every login behind a guardian record, with its gym. Which of them the
+// /parent messages page answers is the route's to say (familyNotesPageReach).
+const GUARDIAN_LOGINS: ReadonlyArray<[string, string]> = [
+  ['acct-ev-parent', ORG],
+  ['acct-ev-parent-two', ORG],
+  ['acct-ev-parent-off', ORG], // membership off
+  ['acct-ev-parent-inactive', ORG], // login switched off
+  ['acct-ev-parent-deleted', ORG], // login deleted
+  ['acct-ev-coach-own', ORG], // a coach's login
+  ['acct-ev-other-parent', OTHER_ORG],
+];
+
+/**
+ * The date of birth of someone who turns 18 `days` days after the gym's
+ * today. 29 February eighteen years back never exists (18 is not a multiple
+ * of 4): the day before is already 18, the day after not yet. A run that
+ * crosses the gym's midnight between the fixture and the check would see a
+ * different day.
+ */
+function turns18In(days: number): string {
+  const [year, month, day] = (gymDayIso(new Date()) as string).split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, day + days));
+  const born = target.getUTCFullYear() - 18;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (target.getUTCMonth() === 1 && target.getUTCDate() === 29) return days <= 0 ? `${born}-02-28` : `${born}-03-01`;
+  return `${born}-${pad(target.getUTCMonth() + 1)}-${pad(target.getUTCDate())}`;
+}
+
+async function familyFixture(client: Client) {
+  const children: Array<[string, string, string, string, boolean]> = [
+    [KID, ORG, 'acct-ev-coach-own', '2015-01-01', false],
+    [KID_GONE, ORG, 'acct-ev-coach-own', '2015-01-01', true],
+    [KID_ADULT, ORG, 'acct-ev-coach-own', '2000-01-01', false],
+    [KID_18_TODAY, ORG, 'acct-ev-coach-own', turns18In(0), false],
+    [KID_18_TOMORROW, ORG, 'acct-ev-coach-own', turns18In(1), false],
+    [KID, OTHER_ORG, 'acct-ev-other-coach', '2015-01-01', false],
+  ];
+  for (const [athleteId, org, coachId, dob, deleted] of children) {
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Event Child', $4::date, '60', 'active', 'contact', true, $3, now(), now(),
+               case when $5 then now() else null end)`,
+      [org, athleteId, coachId, dob, deleted],
+    );
+  }
+  // account, gym, membership on, login on, login deleted
+  const logins: Array<[string, string, boolean, boolean, boolean]> = [
+    ['acct-ev-parent-two', ORG, true, true, false],
+    ['acct-ev-parent-off', ORG, false, true, false],
+    ['acct-ev-parent-inactive', ORG, true, false, false],
+    ['acct-ev-parent-deleted', ORG, true, true, true],
+    ['acct-ev-other-parent', OTHER_ORG, true, true, false],
+  ];
+  for (const [accountId, org, on, loginOn, deleted] of logins) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag, deleted_at)
+       values ($1, 'parent', $2, 'magic_link', $1 || '@example.com', $3, case when $4 then now() else null end)`,
+      [accountId, org, loginOn, deleted],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'parent', $3)`,
+      [accountId, org, on],
+    );
+  }
+  const guardians: Array<[string, string, string | null, string[]]> = [
+    [ORG, 'par-ev-1', 'acct-ev-parent', [KID, KID_GONE, KID_ADULT, KID_18_TODAY, KID_18_TOMORROW]],
+    [ORG, 'par-ev-2', 'acct-ev-parent-two', [KID]],
+    [ORG, 'par-ev-7', 'acct-ev-parent-two', [KID]], // the same login, a second record for the same child
+    [ORG, 'par-ev-3', 'acct-ev-parent-off', [KID]],
+    [ORG, 'par-ev-8', 'acct-ev-parent-inactive', [KID]],
+    [ORG, 'par-ev-9', 'acct-ev-parent-deleted', [KID]],
+    [ORG, 'par-ev-4', null, [KID]],
+    [ORG, 'par-ev-5', 'acct-ev-coach-own', [KID]],
+    [OTHER_ORG, 'par-ev-6', 'acct-ev-other-parent', [KID]],
+  ];
+  for (const [org, parentId, accountId, athleteIds] of guardians) {
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Event Guardian')`,
+      [org, parentId, accountId],
+    );
+    for (const athleteId of athleteIds) {
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, 'parent')`,
+        [org, parentId, athleteId],
+      );
+    }
+  }
+}
+
+async function familyNote(
+  client: Client,
+  org: string,
+  athleteId: string,
+  values: { author?: string; noteType?: string; minutesAgo?: number } = {},
+): Promise<string> {
+  const noteId = randomUUID();
+  await client.query(
+    `insert into pilot.coach_observations (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text, created_at)
+     values ($1, $2::uuid, $3, $4, $5, 'Bring gloves Thursday.', now() - make_interval(mins => $6))`,
+    [org, noteId, athleteId, values.author ?? (org === ORG ? 'acct-ev-coach-own' : 'acct-ev-other-coach'),
+      values.noteType ?? 'parent_message', values.minutesAgo ?? 5],
+  );
+  return noteId;
+}
+
+/**
+ * What GET /api/pilot/parent/messages, the route itself, gives each guardian
+ * login in the window, signed in with a real session in its own gym: the
+ * route's session gate (resolvePrincipal) and role check decide who gets a
+ * page at all, not this test.
+ */
+async function familyNotesPageReach(client: Client, inWindow: ReadonlySet<string>): Promise<Reach> {
+  const reach: Reach = new Map();
+  for (const [accountId, org] of GUARDIAN_LOGINS) {
+    const token = `token-${accountId}-${randomUUID()}`;
+    await client.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
+       values ($1, $2, $3, now() + interval '1 hour', 'magic_link')`,
+      [hashToken(token), accountId, org],
+    );
+    const response = await parentMessagesGET(new NextRequest('http://localhost/api/pilot/parent/messages', {
+      headers: { cookie: `${PILOT_SESSION_COOKIE}=${token}` },
+    }));
+    if (response.status !== 200) continue;
+    const { items } = (await response.json()) as { items: Array<{ note_id: string }> };
+    const ids = items.map((item) => item.note_id).filter((id) => inWindow.has(id));
+    if (ids.length) reach.set(`${org}|${accountId}`, ids.sort());
+  }
+  return reach;
 }
 
 /**
@@ -670,7 +834,7 @@ describe('email alert staff event sources', () => {
     expect((await runEmailAlertSweep(dependencies)).queued).toBe(0);
     expect((await client.query('select event_kind from pilot.email_alert_checkpoints order by 1')).rows)
       .toEqual([
-        { event_kind: 'coach_message' }, { event_kind: 'gym_notice' },
+        { event_kind: 'coach_message' }, { event_kind: 'family_note' }, { event_kind: 'gym_notice' },
         { event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' },
       ]);
 
@@ -776,22 +940,32 @@ describe('email alert staff event sources', () => {
     const notYetLive = await notice(client, ORG, { placement: 'everywhere', startsInMinutes: 60 });
     const ended = await notice(client, ORG, { placement: 'everywhere', endsInMinutes: -1 });
     const old = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 120 });
+    // Posted two hours ago, retired, and restored a minute ago: a restore sets
+    // it live again (Overwatch on #2193, comment 7165858842), so it counts from
+    // then. A minute back, not now(): lastHour's "to" comes back through
+    // node-postgres as a Date, cut to the millisecond, and a restore in that
+    // same millisecond would fall just after it (reviewer A on #2193).
+    const restored = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 120, active: false });
+    await client.query(
+      `update pilot.announcements set active = true, updated_at = now() - interval '1 minute' where announcement_id = $1`,
+      [restored],
+    );
     const otherGym = await notice(client, OTHER_ORG, { placement: 'everywhere' });
 
     const { from, to } = await lastHour(client);
     const source = reachOf(await gymNoticeSource.candidates(from, to), 'gym_notice', userTypeOf);
     const inWindow = new Set([
       wall, parentsOnly, athletesOnly, coachesOnly, everywhere, motivation, retired, startedLately, backdated, notYetLive,
-      ended, otherGym,
+      ended, restored, otherGym,
     ]);
     const page = await noticesPageReach(inWindow);
 
     expect(sorted(source)).toEqual(sorted(page));
 
     // The sign-in page's notice (wall) reaches nobody.
-    const forStaff = [parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately, backdated].sort();
-    const forParents = [parentsOnly, everywhere, startedLately, backdated].sort();
-    const forAthletes = [athletesOnly, everywhere, startedLately, backdated].sort();
+    const forStaff = [parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately, backdated, restored].sort();
+    const forParents = [parentsOnly, everywhere, startedLately, backdated, restored].sort();
+    const forAthletes = [athletesOnly, everywhere, startedLately, backdated, restored].sort();
     expect(sorted(source)).toEqual(sorted(new Map([
       ...['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover', 'acct-ev-coach-expired',
         'acct-ev-coach-future', 'acct-ev-coach-none', 'acct-ev-home-admin'].map((id) => [`${ORG}|${id}`, forStaff] as [string, string[]]),
@@ -903,7 +1077,100 @@ describe('email alert staff event sources', () => {
     expect(await queuedFor()).toEqual(['acct-ev-parent']);
   });
 
-  test('a retired notice is not sent; a live one and a coach message reach a parent, a coach and an adult athlete', async () => {
+  test('family_note names exactly the guardians whose /parent messages page shows each new note, while the child is under 18', async () => {
+    const client = await freshDatabase('emailevents_family_notes');
+    activeClient = client;
+    await familyFixture(client);
+
+    const toKid = await familyNote(client, ORG, KID);
+    const toKidByAdmin = await familyNote(client, ORG, KID, { author: 'acct-ev-admin' });
+    const toKidGone = await familyNote(client, ORG, KID_GONE);
+    const toKidAdult = await familyNote(client, ORG, KID_ADULT);
+    const toKid18Today = await familyNote(client, ORG, KID_18_TODAY);
+    const toKid18Tomorrow = await familyNote(client, ORG, KID_18_TOMORROW);
+    const notAFamilyNote = await familyNote(client, ORG, KID, { noteType: 'athlete_message' });
+    const old = await familyNote(client, ORG, KID, { minutesAgo: 120 });
+    const otherGym = await familyNote(client, OTHER_ORG, KID);
+    // Its author's account purged since (the parent-authored purge sets
+    // coach_account_id to null): no longer on the page.
+    const authorPurged = await familyNote(client, ORG, KID);
+    await client.query(`update pilot.coach_observations set coach_account_id = null where note_id = $1::uuid`, [authorPurged]);
+
+    const { from, to } = await lastHour(client);
+    const source = reachOf(await familyNoteSource.candidates(from, to), 'family_note', () => 'parent');
+    const inWindow = new Set([
+      toKid, toKidByAdmin, toKidGone, toKidAdult, toKid18Today, toKid18Tomorrow, notAFamilyNote, otherGym, authorPurged,
+    ]);
+    const page = await familyNotesPageReach(client, inWindow);
+
+    expect(sorted(source)).toEqual(sorted(page));
+    // Each note once per login, though the second guardian's login is behind
+    // two records for the child.
+    expect(sorted(source)).toEqual(sorted(new Map([
+      [`${ORG}|acct-ev-parent`, [toKid, toKidByAdmin, toKid18Tomorrow].sort()],
+      [`${ORG}|acct-ev-parent-two`, [toKid, toKidByAdmin].sort()],
+      [`${OTHER_ORG}|acct-ev-other-parent`, [otherGym]],
+    ])));
+    expect([...source.values()].flat()).not.toContain(old);
+
+    // Just before the send: yes exactly where the page shows the note, for
+    // every guardian login and every note in the window.
+    const asks = (accountId: string, org: string, eventId: string, userType = 'parent') =>
+      emailAlertEventStillReadable({
+        organization_id: org, account_id: accountId, user_type: userType as 'parent', event_kind: 'family_note', event_id: eventId,
+      });
+    for (const [accountId, org] of GUARDIAN_LOGINS) {
+      const shown = page.get(`${org}|${accountId}`) ?? [];
+      for (const eventId of inWindow) {
+        expect({ accountId, eventId, reads: await asks(accountId, org, eventId) })
+          .toEqual({ accountId, eventId, reads: shown.includes(eventId) });
+      }
+    }
+    // A send queued under another user type reads as no.
+    expect(await asks('acct-ev-parent', ORG, toKid, 'staff')).toBe(false);
+    // And each change after the sweep is seen at the send: the link removed,
+    // the membership switched off, the child turned 18.
+    await client.query(`delete from pilot.guardian_links where organization_id = $1 and parent_id in ('par-ev-2', 'par-ev-7')`, [ORG]);
+    expect(await asks('acct-ev-parent-two', ORG, toKid)).toBe(false);
+    // The gym suspended: its session gate lets no parent in, and the source
+    // names nobody there; back to active, the guardian reads the note again.
+    await client.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [OTHER_ORG]);
+    const suspended = reachOf(await familyNoteSource.candidates(from, to), 'family_note', () => 'parent');
+    expect(sorted(suspended)).toEqual(sorted(await familyNotesPageReach(client, inWindow)));
+    expect(suspended.has(`${OTHER_ORG}|acct-ev-other-parent`)).toBe(false);
+    expect(await asks('acct-ev-other-parent', OTHER_ORG, otherGym)).toBe(false);
+    await client.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [OTHER_ORG]);
+    expect(await asks('acct-ev-other-parent', OTHER_ORG, otherGym)).toBe(true);
+    await client.query(`update pilot.organization_memberships set active_flag = false where account_id = 'acct-ev-other-parent'`);
+    expect(await asks('acct-ev-other-parent', OTHER_ORG, otherGym)).toBe(false);
+    expect(await asks('acct-ev-parent', ORG, toKid)).toBe(true);
+    await client.query(`update pilot.athletes set dob = '2000-01-01' where organization_id = $1 and athlete_id = $2`, [ORG, KID]);
+    expect(await asks('acct-ev-parent', ORG, toKid)).toBe(false);
+  });
+
+  test('a family note reaches each switched-on guardian of the child, at the sign-in address, once', async () => {
+    const client = await freshDatabase('emailevents_family_tick');
+    activeClient = client;
+    await familyFixture(client);
+    await switchOn(client, ['acct-ev-parent']);
+    await client.query(
+      `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at)
+       values ($1, 'acct-ev-parent-two', 'parent', true, now())`,
+      [ORG],
+    );
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    await familyNote(client, ORG, KID, { minutesAgo: JUST_NOW });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 2, sent: 2 });
+    expect(sent.map((m) => m.to).sort()).toEqual(['acct-ev-parent-two@example.com', 'acct-ev-parent@example.com']);
+    for (const message of sent) expect(message).toEqual({ to: message.to, subject: 'GYM: open the app', body: 'open the app' });
+
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(sent).toHaveLength(2);
+  });
+
+  test('a retired notice is not sent; a notice restored later is sent then, once; a live one and a coach message reach a parent, a coach and an adult athlete', async () => {
     const client = await freshDatabase('emailevents_notice_tick');
     activeClient = client;
     await switchOn(client, ['acct-ev-parent', 'acct-ev-coach-own', 'acct-ev-athlete']);
@@ -912,31 +1179,111 @@ describe('email alert staff event sources', () => {
 
     const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
     // Retired when it would have gone live, a quarter of an hour ago; restored
-    // below, outside the sweep's ten-minute overlap: it is never sent.
+    // below, after the sweep's ten-minute overlap. A restore sets it live
+    // again (Overwatch on #2193, comment 7165858842), so it is sent then.
     const restoredLater = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 15, active: false });
     const toBeRetired = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
     const message = await athleteMessage(client, ORG, ATH_A, { minutesAgo: JUST_NOW });
     for (const source of [gymNoticeSource, coachMessageSource]) await sweepEmailAlertSource(source);
     expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(7);
 
-    await client.query('update pilot.announcements set active = false where announcement_id = $1', [toBeRetired]);
-    await client.query('update pilot.announcements set active = true, updated_at = now() where announcement_id = $1', [restoredLater]);
-    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 4, skipped: 3 });
-    const { rows } = await client.query(
-      `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_kind, event_id`,
-    );
-    const label = new Map([[live, 'live'], [toBeRetired, 'retired'], [message, 'message']]);
-    expect(rows.map((row) => `${row.account_id} ${label.get(row.event_id)} ${row.status === 'sent' ? 'sent' : row.skip_reason}`).sort())
-      .toEqual([
-        'acct-ev-athlete live sent', 'acct-ev-athlete message sent', 'acct-ev-athlete retired not_offered',
-        'acct-ev-coach-own live sent', 'acct-ev-coach-own retired not_offered',
-        'acct-ev-parent live sent', 'acct-ev-parent retired not_offered',
-      ]);
+    // Retire and restore through the app's own write, setAnnouncementActive,
+    // which stamps updated_at (an admin's change: no author check).
+    const setActive = async (announcementId: string, active: boolean) => {
+      expect(await setAnnouncementActive({ organizationId: ORG, announcementId, active, onlyAuthorAccountId: null }))
+        .toMatchObject({ announcement_id: announcementId, active });
+      // The sweep's "to" comes back as a Date cut to the millisecond; a sweep
+      // in the same millisecond as the write would read just short of it (the
+      // next tick's overlap reads it again; a test sweeps once).
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    };
+    await setActive(toBeRetired, false);
+    await setActive(restoredLater, true);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 3, sent: 7, skipped: 3 });
+    const sends = async () => {
+      const { rows } = await client.query(
+        `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_kind, event_id`,
+      );
+      const label = new Map([[live, 'live'], [toBeRetired, 'retired'], [restoredLater, 'restored'], [message, 'message']]);
+      return rows.map((row) => `${row.account_id} ${label.get(row.event_id)} ${row.status === 'sent' ? 'sent' : row.skip_reason}`).sort();
+    };
+    const expected = [
+      'acct-ev-athlete live sent', 'acct-ev-athlete message sent', 'acct-ev-athlete restored sent', 'acct-ev-athlete retired not_offered',
+      'acct-ev-coach-own live sent', 'acct-ev-coach-own restored sent', 'acct-ev-coach-own retired not_offered',
+      'acct-ev-parent live sent', 'acct-ev-parent restored sent', 'acct-ev-parent retired not_offered',
+    ].sort();
+    expect(await sends()).toEqual(expected);
     // The adult athlete at the confirmed address; staff and parents at their sign-in address.
     expect(sent.map((m) => m.to).sort()).toEqual([
-      'acct-ev-athlete.confirmed@example.com', 'acct-ev-athlete.confirmed@example.com',
-      'acct-ev-coach-own@example.com', 'acct-ev-parent@example.com',
+      'acct-ev-athlete.confirmed@example.com', 'acct-ev-athlete.confirmed@example.com', 'acct-ev-athlete.confirmed@example.com',
+      'acct-ev-coach-own@example.com', 'acct-ev-coach-own@example.com',
+      'acct-ev-parent@example.com', 'acct-ev-parent@example.com',
     ]);
+
+    // A notice already sent, retired and restored again, emails nobody twice.
+    await setActive(live, false);
+    await setActive(live, true);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(await sends()).toEqual(expected);
+    expect(sent).toHaveLength(7);
+
+    // The notice retired before its sends went out was skipped, so nobody has
+    // had it: restored, it is queued again for each reader and sent, once
+    // (reviewer A on #2193).
+    await setActive(toBeRetired, true);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 3, sent: 3, skipped: 0 });
+    expect(await sends()).toEqual(expected.map((row) => row.replace(' retired not_offered', ' retired sent')).sort());
+    expect(sent).toHaveLength(10);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+  });
+
+  test('a skipped notice send is queued again only when the notice is restored after the skip, and then once', async () => {
+    const client = await freshDatabase('emailevents_notice_skip_restore');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-athlete', 'acct-ev-parent']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    // The adult athlete's record corrected to under 18 before their own next
+    // read retires the switch: the source still names the login, and the
+    // sender refuses it as not_offered. The parent switches off between the
+    // queueing and the send, and back on after.
+    await client.query(`update pilot.athletes set dob = '2015-01-01' where organization_id = $1 and athlete_id = $2`, [ORG, ATH_A]);
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(2);
+    const parentSwitch = (on: boolean) => client.query(
+      `update pilot.email_alert_switches set switched_on = $2, switched_on_at = now(), switched_off_at = case when $2 then null else now() end
+        where organization_id = $1 and account_id = 'acct-ev-parent'`,
+      [ORG, on],
+    );
+    await parentSwitch(false);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 2 });
+    await parentSwitch(true);
+    const sends = async () => (await client.query(
+      `select account_id, status, skip_reason from pilot.email_alert_sends order by account_id`,
+    )).rows.map((row) => `${row.account_id} ${row.status} ${row.skip_reason ?? ''}`.trim());
+    const skipped = ['acct-ev-athlete skipped not_offered', 'acct-ev-parent skipped switched_off'];
+
+    // The next sweeps read the notice again in their overlap; the notice is
+    // unchanged, so each row stays skipped, not queued and skipped again.
+    for (let tick = 0; tick < 2; tick += 1) {
+      expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 0 });
+    }
+    expect(await sends()).toEqual(skipped);
+    expect(sent).toEqual([]);
+
+    // Restored after the skip: live again, so each is queued again and the
+    // sender asks again. The parent, switched on now, has it; the minor is
+    // refused again. Then nothing more.
+    for (const active of [false, true]) {
+      await setAnnouncementActive({ organizationId: ORG, announcementId: live, active, onlyAuthorAccountId: null });
+      await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+    }
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 2, sent: 1, skipped: 1 });
+    expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
+    expect(await sends()).toEqual(['acct-ev-athlete skipped not_offered', 'acct-ev-parent sent']);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0, skipped: 0 });
+    expect(sent).toHaveLength(1);
   });
 
   test('a source that fails is logged by class, and the next source still queues and sends', async () => {
@@ -982,7 +1329,7 @@ describe('email alert staff event sources', () => {
 
   test('each source is an event on the shared list, read in a fixed order, with a send-time read rule', () => {
     expect(EMAIL_ALERT_EVENT_SOURCES.map((source) => source.checkpointKey))
-      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message']);
+      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message', 'family_note']);
     expect([safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource].map((source) => source.checkpointKey))
       .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message']);
     const listed = Object.values(EMAIL_ALERT_EVENTS).flat() as string[];

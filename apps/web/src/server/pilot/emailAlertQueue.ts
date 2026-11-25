@@ -53,7 +53,20 @@ export interface EmailAlertSource {
 /**
  * Queues one send per candidate whose switch is on under that user type and
  * whose gym has the event ticked; nobody else gets a row. A candidate already
- * queued for that event is left as it is. Returns how many rows were written.
+ * queued for that event is left as it is, with one exception: a gym notice
+ * send that was skipped (retired before its send, or the person switched off
+ * at the time, say), and whose notice has been restored since the skip, is
+ * queued again when the sweep names the person again. A restored notice is
+ * live again and emails anyone who has not had it (Overwatch on #2193, comment
+ * 7165858842); a skipped row was never sent, so it is not "had". "Restored
+ * since" is the notice's updated_at after the row's finished_at:
+ * setAnnouncementActive is the only write that stamps it. A skipped row whose
+ * notice is unchanged (a minor's login the source names and the sender
+ * refuses) stays skipped, rather than being queued and skipped again on every
+ * tick of the overlap. A failed row (the address refused on every try) is not
+ * queued again. The send key still holds one email per person per notice, and
+ * the sender asks every check again. Returns how many rows were written or
+ * queued again.
  */
 export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCandidate[]): Promise<number> {
   const due = candidates.filter((candidate) =>
@@ -71,7 +84,16 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
        left join pilot.organization_email_alert_events g
          on g.organization_id = c.organization_id and g.user_type = c.user_type and g.event_kind = c.event_kind
       where coalesce(g.ticked, true)
-     on conflict on constraint pilot_email_alert_send_once_key do nothing
+     on conflict on constraint pilot_email_alert_send_once_key do update
+       set status = 'queued', skip_reason = null, finished_at = null, tries = 0,
+           next_try_at = clock_timestamp(), last_status_code = null, last_error_code = null,
+           user_type = excluded.user_type
+     where pilot.email_alert_sends.event_kind = 'gym_notice'
+       and pilot.email_alert_sends.status = 'skipped'
+       and exists (select 1 from pilot.announcements n
+                    where n.organization_id = pilot.email_alert_sends.organization_id
+                      and n.announcement_id::text = pilot.email_alert_sends.event_id
+                      and n.updated_at > pilot.email_alert_sends.finished_at)
      returning send_id`,
     [
       column((candidate) => candidate.organizationId),

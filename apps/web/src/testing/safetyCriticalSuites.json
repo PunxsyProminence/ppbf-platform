@@ -151,6 +151,11 @@
       "guards": "The SHADOW chat route's request-review and authorization boundary: an authenticated, authorized high-risk request is owed one human-review row however it then goes (answered, withheld, queued, refused, throttled or failed), asked for from the allowance the owner named (OD-2026-10-01-006) and written unless that hour is spent; and no row or slot charge is made behind a 401, 403 or 404 or for a request whose authorization never succeeded. Since #1081 this is the only suite that runs the route for either half (the allowances' arithmetic is the limiter suites'); if it stops loading, an emergency report can stop reaching a human, or a review row can leak a subject the caller may not access, with the run still green."
     },
     {
+      "path": "src/server/pilot/familyThreadsReaders.test.ts",
+      "minimumTests": 4,
+      "guards": "No new reader of a family thread (W4 item 4; Overwatch GO on PR #2161): every non-test file naming pilot.family_thread_posts or pilot.family_thread_reads, and every file importing the familyThreads.ts store, is pinned, and none reads a whole row. If it stops loading, a screen or route could start reading a guardian's message about their child, or the replies to it, for the other guardian or the child, with the run still green."
+    },
+    {
       "path": "src/server/pilot/painReportReviewReaders.test.ts",
       "minimumTests": 7,
       "guards": "No new reader of a pain report's note or review (DR-25; Overwatch GO on PR #2133): every non-test file naming pilot.shadow_near_misses is pinned, only the allowed files name the note and review columns, and no statement naming the table reads a whole row (select *, alias.*, returning *, row-to-JSON). If it stops loading, a coach or a family screen could start reading a child's note, including one held for admins only, with the run still green."
