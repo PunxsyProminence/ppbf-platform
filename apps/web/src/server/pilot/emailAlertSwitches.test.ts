@@ -55,11 +55,12 @@ it('a coach is decided by role alone: no date of birth is read', async () => {
  * #2169 the membership is read again under the save's locks, so a membership
  * row deleted before the save is refused by that read (the pg suite's "a
  * membership removed between sign-in and the save"), and the insert's key is
- * reached only by a delete that lands between that read and the insert. That
- * last case cannot be timed on a real database, so it is held here: the
- * membership key's 23503 is the 403, and any other database error on the save
- * stays an error, so a wider catch cannot quietly turn a real fault into "not
- * offered".
+ * reached only by a delete that lands between that read and the insert. The pg
+ * suite times that last case too ("a membership deleted while the save waits on
+ * the membership key", a delete held open on a second connection). Here the
+ * mapping is pinned exactly: the membership key's 23503 is the 403, and any
+ * other database error on the save stays an error, so a wider catch cannot
+ * quietly turn a real fault into "not offered".
  */
 it('the membership key refusing the insert is the plain 403, not a raw error', async () => {
   const membershipGone = Object.assign(new Error('database error'), {

@@ -269,10 +269,14 @@ export async function setEmailAlertSwitch(
     try {
       return await saveSwitch(client, subject, userType, switchedOn, stored);
     } catch (error) {
-      // A membership row deleted after lockPerson read it, by a writer that
-      // takes neither the account nor the gym row (EM-1a's membership key):
-      // the same answer as anyone not offered a switch, not a raw error. Only
-      // that key's 23503; anything else stays an error.
+      // Defensive: a membership row deleted after lockPerson read it, by a
+      // writer that takes neither the account nor the gym row. No writer does
+      // that today: the only delete of membership rows
+      // (scripts/pilot-cleanup-membership-orphans.mjs) removes rows whose
+      // account is already gone, which lockPerson refuses. EM-1a's membership
+      // key then refuses the insert: the same answer as anyone not offered a
+      // switch, not a raw error. Only that key's 23503; anything else stays an
+      // error. The pg suite times it with a held delete.
       const pgError = error as { code?: unknown; constraint?: unknown };
       if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
         throw new ForbiddenError('Forbidden: email alerts are not offered to this account');

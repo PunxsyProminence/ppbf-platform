@@ -764,6 +764,25 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('a membership deleted while the save waits on the membership key: the plain 403, nothing written', async () => {
+    const client = await freshDatabase('emailsw_membership_key_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_membership_key_race'), max: 4 });
+    try {
+      // The delete is held open on a second connection: lockPerson's read still
+      // sees the membership, the insert's key check waits on the delete, and the
+      // key refuses the insert once it commits (reviewer B on #2169).
+      const save = whileHeld(client,
+        ['delete from pilot.organization_memberships where account_id = $1 and organization_id = $2', [COACH_ID, ORG_ID]],
+        () => setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW));
+      await expect(save).rejects.toMatchObject({ status: 403, message: 'Forbidden: email alerts are not offered to this account' });
+      expect(await switchRows(client)).toEqual([]);
+      expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the retire decides again under its own locks: an athlete corrected back to 18 or over while it waits keeps the row and address', async () => {
     const client = await freshDatabase('emailsw_retire_race');
     activeClient = client;
