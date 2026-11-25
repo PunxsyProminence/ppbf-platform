@@ -1897,6 +1897,10 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     }
     await expectRefused(edit(gym, scriptId, { add: [text({ text: '\u200B \u2060' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ text: '\u200E\u00AD\u3164\u2063' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    // Default-ignorables and the Braille blank draw nothing either (Codex on #2196).
+    for (const blank of ['\u2800', '\uFE0F', '\u034F', '\u2800\uFE0F \u034F\u180E']) {
+      await expectRefused(edit(gym, scriptId, { add: [text({ text: blank })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    }
     await expectRefused(edit(gym, scriptId, { add: [text({ text: 'x'.repeat(1001) })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: 'drill_round' })] }), 'SESSION_SCRIPT_BLOCK_KIND_INVALID', 422);
     await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: 'full_contact' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
