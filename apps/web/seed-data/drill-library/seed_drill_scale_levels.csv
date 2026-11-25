@@ -1613,3 +1613,36 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_69e964d6f897c3,drl_478db0c9f74694,A,false,The coach models the thank-you first.,Coach first.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_7ae289ba1a8ce6,drl_478db0c9f74694,B,true,The close as written.,,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_033aaa5a38c45a,drl_478db0c9f74694,C,false,One athlete leads the close.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_fd91f37b0e4172,drl_00fb56aab4ee4a,A,false,"Gear on, then light movement only.",Light movement.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_4efd93d81ab135,drl_00fb56aab4ee4a,B,true,"Gear on, then light movement or shadowboxing, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_55846ce837a508,drl_00fb56aab4ee4a,C,false,Light shadowboxing rounds on the week's skills once the gear is on.,Shadowboxing on the week's skills.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9cdbc98d3edbbe,drl_005bea3042938a,A,false,The coach assigns the task before the block.,Assigned task.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_496a8f87705445,drl_005bea3042938a,B,true,"Athletes choose from the list, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_73491efcf23c71,drl_005bea3042938a,C,false,Athletes plan their own block (tasks and order) before it starts and keep to it.,Own plan.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d89f45ed751a76,drl_7654a30ec2e74c,A,false,"Rounds at weekday technical sparring intensity, the same rotation and round length.",Weekday technical intensity.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_1c92672232b0a0,drl_7654a30ec2e74c,B,true,"Open sparring as written: slightly higher than weekday technical sparring, still controlled.",,open_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ba9fe6a1b8a3ed,drl_7654a30ec2e74c,C,false,"The same round length, each round with one of the week's skills named as its focus before the bell.",Named focus.,open_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6d702d16e7b05a,drl_c846f6c648b34e,A,false,Track one of the six items for the whole block.,One item.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0a440907fe65fd,drl_c846f6c648b34e,B,true,"Track the six items, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d70a6050c63752,drl_c846f6c648b34e,C,false,"Name one pattern that worked again and again, and tell the coach after the block.",Report a pattern.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e674b23fb1484c,drl_83eee740e9f95d,A,false,"One task, with the coach showing how.",One task.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_99f6a26e7a99f0,drl_83eee740e9f95d,B,true,"Rotate through the tasks, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_31dcdad7f02232,drl_83eee740e9f95d,C,false,An athlete leads a small group through the tasks.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5467c5223ad336,drl_1d5d3c1176e56f,A,false,Holds reduced to 2 seconds; eyes open; seated.,Shorter holds.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b52293d19d07a3,drl_1d5d3c1176e56f,B,true,"4-4-4-4 for 4 cycles, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_991d45cf12c354,drl_1d5d3c1176e56f,C,false,Athletes keep the 4-4-4-4 count on their own for the 4 cycles.,Self-counted.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_309a5c3e75f9a2,drl_f2ac7bda9131cb,A,false,A cue every 10 seconds.,Slower cues.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a3bea2bd3d74c0,drl_f2ac7bda9131cb,B,true,"A cue every 5 seconds, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d41fee3ad53cbb,drl_f2ac7bda9131cb,C,false,The coach varies the side and the timing of the cue.,Varied cue.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_43db751414f5ba,drl_d3ca8b49ec5e5e,A,false,"Slip and roll in place, then add movement for the last minute.",Movement late.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2da9bd3e8ce922,drl_d3ca8b49ec5e5e,B,true,"Slip and roll with full movement, moderate tempo, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b77b319b26e4fd,drl_d3ca8b49ec5e5e,C,false,Slip and roll to the coach's cues while moving.,Cued.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_c9a96b58392755,drl_a5d2a79b8224ab,A,false,"Slip then jab only, at 50% speed.",No roll.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3a8a42a77cf80d,drl_a5d2a79b8224ab,B,true,"Slip, roll, jab at 50% speed, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_70352eec259137,drl_a5d2a79b8224ab,C,false,The coach calls the start of each sequence.,Called start.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2a8b92dee96b40,drl_8b5cad86b115a9,A,false,Phantom rope; plank from the knees.,Easier stations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_69b45ad0c1fe37,drl_8b5cad86b115a9,B,true,Two rounds as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9bf80734bd942c,drl_8b5cad86b115a9,C,false,"The same two rounds, athletes keeping their own steady breathing count through each station.",Self-counted breathing.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_fe7d7fcc6abfd1,drl_5093325d1b6985,A,false,The coach asks one of the three questions.,One question.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_67123301205083,drl_5093325d1b6985,B,true,"The three questions and the closing line, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_61665b1347b0a4,drl_5093325d1b6985,C,false,An athlete asks the questions and the coach closes.,Athlete-led.,none,,scaffold_needs_coach_review
