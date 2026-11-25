@@ -20,6 +20,8 @@
 //    now() inside SQL, so only real Postgres can prove it accumulates across repeated pauses.
 // 5. The two invariants the database cannot hold: a cursor from another script is refused, and
 //    another coach's run is indistinguishable from a missing one.
+// 6. A repeated run action changes nothing (W4 item 7, the retry queue): cursor, pause, resume and
+//    Show on TV sent twice leave the row as the first left it; a second finish is refused 409.
 //
 // Spins up the same disposable, local-only embedded Postgres the other migration suites use. It
 // NEVER connects to production or staging.
@@ -1040,5 +1042,113 @@ describe('a plain session', () => {
     const plain = await startSessionScriptRun(ORG_A, COACH_A, {});
     await finishSessionScriptRun(ORG_A, COACH_A, plain.run_id, { runState: 'completed' });
     expect(await listSettledRunsForScript(ORG_A, 'scr-hist')).toEqual([]);
+  });
+});
+
+// W4 item 7: the live page keeps a save whose answer was lost and sends it again later. Run actions
+// carry no request key because each one sets a target state; that holds only if the IDENTICAL call
+// made a second time changes nothing. Each case makes the call, reads the whole row, waits long
+// enough for the database clock to move (so a re-stamped now() would show), makes the same call
+// again and reads the row again. This module writes no audit event and no other table for these
+// actions, so the run row is everything a repeat could change.
+describe('a repeated run action changes nothing (W4 item 7 retry queue)', () => {
+  async function wholeRun(runId: string) {
+    const { rows } = await client.query('select * from pilot.session_script_runs where run_id = $1', [runId]);
+    expect(rows).toHaveLength(1);
+    return rows[0];
+  }
+
+  const letTheClockMove = () => client.query('select pg_sleep(0.05)');
+
+  it('moving the cursor to the same block twice: the cursor stays there and the row is otherwise unchanged', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-rep-move', ['blk-rm1', 'blk-rm2', 'blk-rm3']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-rep-move' });
+
+    expect((await moveSessionScriptRunCursor(ORG_A, COACH_A, live.run_id, 'blk-rm2')).current_block_id).toBe('blk-rm2');
+    const before = await wholeRun(live.run_id);
+    await letTheClockMove();
+    expect((await moveSessionScriptRunCursor(ORG_A, COACH_A, live.run_id, 'blk-rm2')).current_block_id).toBe('blk-rm2');
+    expect(await wholeRun(live.run_id)).toEqual(before);
+  });
+
+  it('pausing twice: the second pause leaves paused_at where the first put it', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-rep-pause', ['blk-rp1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-rep-pause' });
+
+    const first = await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    expect(first.paused_at).not.toBeNull();
+    const before = await wholeRun(live.run_id);
+    await letTheClockMove();
+    const second = await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    expect(second.is_paused).toBe(true);
+    expect(new Date(second.paused_at as string).getTime()).toBe(new Date(first.paused_at as string).getTime());
+    expect(await wholeRun(live.run_id)).toEqual(before);
+  });
+
+  it('resuming twice: the second resume banks nothing more and paused_at stays null', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-rep-resume', ['blk-rr1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-rep-resume' });
+    await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    // A real interval to bank, so the first resume has something to add and a second could add again.
+    await client.query(
+      `update pilot.session_script_runs set paused_at = now() - interval '30 seconds' where run_id = $1`,
+      [live.run_id],
+    );
+
+    const first = await resumeSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    expect(first.paused_at).toBeNull();
+    expect(first.paused_seconds).toBeGreaterThanOrEqual(30);
+    const before = await wholeRun(live.run_id);
+    await letTheClockMove();
+    const second = await resumeSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    expect(second.paused_at).toBeNull();
+    expect(second.paused_seconds).toBe(first.paused_seconds);
+    expect(await wholeRun(live.run_id)).toEqual(before);
+  });
+
+  it('Show on TV set on twice: the second leaves the row as the first left it', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-rep-wall', ['blk-rw1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-rep-wall' });
+
+    expect((await setSessionScriptRunShowOnWall(ORG_A, COACH_A, live.run_id, true)).show_on_wall).toBe(true);
+    const before = await wholeRun(live.run_id);
+    await letTheClockMove();
+    expect((await setSessionScriptRunShowOnWall(ORG_A, COACH_A, live.run_id, true)).show_on_wall).toBe(true);
+    expect(await wholeRun(live.run_id)).toEqual(before);
+  });
+
+  it('finishing twice with the same input: the second is refused 409 SESSION_RUN_NOT_LIVE and the settled row is unchanged', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-rep-finish', ['blk-rf1', 'blk-rf2']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-rep-finish' });
+    // Finished while paused, so the first finish banks a pause a second one could bank again.
+    await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    await client.query(
+      `update pilot.session_script_runs set paused_at = now() - interval '20 seconds' where run_id = $1`,
+      [live.run_id],
+    );
+    const input = {
+      runState: 'completed' as const,
+      blocksCompleted: 2,
+      athletesPresent: 7,
+      deviationNote: 'cut the last round short',
+      whatWorked: 'slip drill landed',
+      whatDidNot: 'too long on the bag',
+    };
+
+    const settled = await finishSessionScriptRun(ORG_A, COACH_A, live.run_id, input);
+    expect(settled).toMatchObject({ run_state: 'completed', paused_at: null, what_worked: 'slip drill landed' });
+    expect(settled.ended_at).not.toBeNull();
+    expect(settled.paused_seconds).toBeGreaterThanOrEqual(20);
+    const before = await wholeRun(live.run_id);
+    await letTheClockMove();
+
+    const again = await finishSessionScriptRun(ORG_A, COACH_A, live.run_id, input).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(again).toBeInstanceOf(SessionScriptRunError);
+    expect(again).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    // run_state, ended_at, paused_seconds and every end note, exactly as the first finish wrote them.
+    expect(await wholeRun(live.run_id)).toEqual(before);
   });
 });

@@ -21,6 +21,12 @@ interface RouteContext {
 //   GET                              the athletes marked present in this run, by name, and the
 //                                    gym's athletes the caller may mark (the live screen's picker)
 //   POST { athlete_id, present }     mark one present, or take the mark back
+//        optional tapped_ms_ago        whole milliseconds since the coach tapped, for a tap or
+//                                     take-back kept in the open page and sent late (W4 item 7).
+//                                     The mark records that time (never before the run began); on
+//                                     a tied session the register treats it as a tap made then, so
+//                                     an Absent or Excused set after it wins (OD-2026-10-21-004
+//                                     ruling 1). Without it the tap counts as made now, as before.
 //
 // STAFF ONLY, like every other route under runs/: coach, organization admin and the legacy admin
 // name. platform_owner is refused (running a session is gym work, OD-2026-10-08-003 R2), and so
@@ -50,6 +56,9 @@ const NUL = '\u0000';
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
+
+// A day at most: the page drops what it keeps at sign-out, and the role cache lasts 8 hours.
+const TAPPED_MS_AGO_MAX = 24 * 60 * 60 * 1000;
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
@@ -85,7 +94,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return badRequest('INVALID_BODY');
     }
     const record = body as Record<string, unknown>;
-    const extras = Object.keys(record).filter((key) => key !== 'athlete_id' && key !== 'present');
+    const extras = Object.keys(record).filter((key) => !['athlete_id', 'present', 'tapped_ms_ago'].includes(key));
     if (extras.length > 0) {
       return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
     }
@@ -95,6 +104,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (typeof record.present !== 'boolean') {
       return badRequest('present');
+    }
+    // null is "not sent", as for the other optional fields a kept save may carry.
+    const tappedMsAgo = record.tapped_ms_ago ?? undefined;
+    if (
+      tappedMsAgo !== undefined
+      && (typeof tappedMsAgo !== 'number' || !Number.isSafeInteger(tappedMsAgo) || tappedMsAgo < 0 || tappedMsAgo > TAPPED_MS_AGO_MAX)
+    ) {
+      return badRequest('tapped_ms_ago');
     }
 
     const { outcome, register } = await setRunAthletePresent({
@@ -107,6 +124,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       runId,
       athleteId,
       present: record.present,
+      // The server's clock less the page's count since the tap; no clock on the tablet is read.
+      ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
     });
     const holdWarning = register?.effect === 'created' || register?.effect === 'flipped'
       ? await readStaffHoldWarning(principal.role, principal.organizationId, athleteId)
