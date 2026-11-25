@@ -114,16 +114,15 @@ on OD-2026-11-24-001, `OWNER_DECISIONS.md:807`). If App Overwatch reads its
 own question as product intent under G8, or as narrowing one of Jason's
 answers, it is asked of Jason in this PR too. This routing departs from the
 brief, which says to propose the words of the line and the register-only case
-"as questions for App Overwatch". If App Overwatch holds the brief's routing,
-it may answer FN0-Q1 and FN0-Q2 itself in this PR, but only with an option
-that narrows none of Jason's answers (FN0-Q1 C; for FN0-Q2, the words with
-B's timing, the refresh rate staying with Jason); a pick that narrows one goes to Jason. FN0-Q1 rides with FN0-Q2
-because both are about which register marks count. On the words, the
-kernel and the brief point different ways: the kernel puts how a screen
-looks with Jason (`AGENT_KERNEL.md:87-88`), and the brief names App
-Overwatch. This review follows the kernel; whether the brief governs here
-instead is App Overwatch's reading to make, and the fallback applies to
-FN0-Q2's words only if it reads so. INFERRED.
+"as questions for App Overwatch". Every option in FN0-Q1 and FN0-Q2 either
+narrows Jason's C or widens what a family or a coach reads today (FN0-Q1 C
+gives families and every coach cancelled-class marks, F5), and the words
+are a screen's look, which the kernel puts with him (`AGENT_KERNEL.md:87-88`);
+so both go to him, under G8 (`OWNER_DECISIONS.md:15070-15072`) and the
+kernel. FN0-Q1 rides with FN0-Q2 because both are about which register
+marks count. App Overwatch signs off this review (Q3.5 B) and can withdraw
+either question in this PR if it reads the brief as governing; this review
+does not recommend that. INFERRED.
 
 **On OD-2026-10-13-013 ("asked once, ruled once").** It has a standing ruling
 applied to every case its words or plain principle reach, without asking
@@ -718,7 +717,8 @@ Jason before FN-2 is FN0-Q4.
 The line joins two sources, and the idle close hides its own failure (2.1).
 OBSERVED. If a read fails, "Nobody is marked ..." on the coach line, or no
 line to a parent, would read as "not on the floor"; and a list built from one
-source when the other failed would look complete. INFERRED. The coach home
+source when the other failed would look complete. The same holds while the
+read is still in progress. INFERRED. The coach home
 already has words for this case: "Whether you have a session in progress could
 not be checked." (`apps/web/components/CoachWorkspace.tsx:1320-1321`).
 OBSERVED.
@@ -874,9 +874,10 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    (F12); a parent's carries no class, start time or room either (Q3.2 B not
    chosen), and an athlete's no run, class or time of the mark either
    (section 4's athlete row; recommended, not ruled by Q3.4 A).
-4. A coach whose staff membership has ended, a board member, the platform
-   owner and a staff-role or volunteer account are refused by the line's
-   read (a request naming another organization gets its own gym's answer,
+4. A coach, organization admin or admin without an active staff membership
+   here (the empty list `sessionRunAthletes.ts:296-299` returns), a board
+   member, the platform owner and a staff-role or volunteer account are
+   refused by the line's read (a request naming another organization gets its own gym's answer,
    check 8), not given an empty answer,
    which would read as "Nobody ..." (F15): no names, no yes/no and no count
    (F1, F3, F5). Until FN-2 opens them, parents and athletes are refused the
@@ -917,7 +918,12 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
 10. When either source fails, the whole read fails; the coach line says it
     could not be checked, never "Nobody ..."; families see what FN0-Q5 rules;
     a family's failure text is the same whatever the cause; no log line
-    carries an athlete name or id (F15).
+    carries an athlete name or id (F15). While the read is in progress, no
+    line reads as complete or zero: no "Nobody ...", no "You're not marked
+    ...", and no family screen that reads as "not on the floor"; the coach
+    line says it is checking, as the coach home does ("Checking whether you
+    have a session in progress...", `CoachWorkspace.tsx:1317-1318`), and
+    families see what FN0-Q5 rules.
 11. The homes of the board and of staff-role and volunteer accounts show
     what FN0-Q3 rules (under its option A, the classes running now, title and
     times only, from one gym's guarded read); the platform owner's home shows
@@ -979,9 +985,7 @@ applications of OD-2026-10-21-005, not words of yours, and this review sends eve
 register-only case, a person with only a register mark and so no end time
 (`W4_SIZING.md:542-543`); a present mark on a cancelled class sits next to
 that case rather than inside it, but it is about which register marks count,
-as FN0-Q2 is, so it rides with it (section 1). If App Overwatch holds the brief's routing, it may
-answer this itself, but only with C; a pick of A or B goes to you (section
-1). The office can
+as FN0-Q2 is, so it rides with it (section 1). The office can
 cancel a class after it starts (`apps/web/src/server/pilot/schedulerCancelRule.ts:78-79`;
 OD-2026-10-22-001), so children marked present may still be on the floor.
 Overwatch's application: "a cancelled class's attendance stops counting (rows
@@ -1025,10 +1029,7 @@ line, "using the names already ruled" (OW27-11, OW27-12, `OWNER_DECISIONS.md:187
 `:1501`), A for a case your OW27-19 card did not show. The brief named App
 Overwatch for these words and the register-only case, and the sizing leaves
 them to FN-0 (`W4_SIZING.md:542-543`); App Overwatch's check sees that this
-reaches you and is not already ruled. If App Overwatch holds the brief's
-routing, it may answer the words itself, with B's timing, leaving the refresh
-rate to you (F14); a pick of A's
-start time or of C goes to you (section 1).
+reaches you and is not already ruled (section 1).
 The case the card did not show: a family's register mark can say "on the
 floor now" before the child arrives. An "I'm here" tap marks one class (one
 button per class, `apps/web/components/AthleteImHere.tsx:352-376`; one
@@ -1066,7 +1067,8 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     marked on the coach's head count (Q3.3 A's "for safety and the head
     count", `OWNER_DECISIONS.md:1287`). Cons: narrows your C for the time
     before a class starts; a child who taps in early shows only from the
-    class's start; a child's own tap for a class they never come to still
+    class's start, on the coach's head count too, against Q3.3 A's "for
+    safety and the head count"; a child's own tap for a class they never come to still
     shows them from its start (F2); a staff mark written early (a roster
     marked at noon for an evening class) still shows those children from
     when it is written; an athlete who taps "I'm here" in the morning for an
@@ -1145,7 +1147,10 @@ is still open, because each of these roles has limits on what it may see
   "Counts only ... never a row" (`privacyTiers.ts:84-86`), and the record
   calls the board an "oversight / aggregate-governance role"
   (OD-2026-08-27-001, a lane's transcription and an analogy, F3); a class list is rows, though of
-  classes, not people; not an "on the floor" line; leaving the platform
+  classes, not people; it opens a read to roles the scheduler read refuses
+  today, against the kernel floor's "role gates ... untouched"
+  (`AGENT_KERNEL.md:104-105`), which only B leaves as it is; not an "on the
+  floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
   it, as B's con says for all three; not sized.
 - **B: no line on those three homes.** Pros: no new access for any role; matches the sizing. Cons: narrows your Q12 A if
@@ -1227,9 +1232,10 @@ before families see the line.
   (`OWNER_DECISIONS.md:8034`).
 
 **FN0-Q5 (for Jason). What does a parent or an athlete see when the app
-cannot check the line?**
+cannot check the line, or is still checking?**
 Plain: if the app cannot tell whether a child is on the floor (a failed
-read), what does the Parent Hub or the athlete home say?
+read), or has not heard back yet, what does the Parent Hub or the athlete
+home say?
 Why it is his: it is a new line on minors' screens; the L1 rule bars new
 warnings, gates or disclaimers for minors, and RULES section 1 leaves any to
 you ("unless the owner directs it", `W4_SIZING.md:136-137`). Words for a failed
@@ -1248,17 +1254,21 @@ INFERRED. With no line at all, a failed read looks like "not on the floor"
 - **A (recommended): OW25-35 A's shape.** "Whether [child's first name] is
   on the floor could not be checked just now." for a parent; "Whether you're
   on the floor could not be checked just now." for an athlete; no warning
-  colour, nothing blocked, the same text whatever the cause. Pros: a failure
+  colour, nothing blocked, the same text whatever the cause. While it is
+  still checking: "Checking whether [first name] is on the floor..." or
+  "Checking whether you're on the floor...", the coach home's form
+  (`apps/web/components/CoachWorkspace.tsx:1317-1318`). Pros: a failure
   never reads as "not on the floor" (F15); the latest shape you chose for
   these screens. Cons: OW25-35 A was given for a medical restriction; your
   athlete-hold answer chose your own words over this shape.
 - **B: the chalkboard's form.** "Can't check the floor right now." on both
-  homes. Pros: the same form as the chalkboard's "Can't read the board right
+  homes, and "Loading..." while it checks, as the chalkboard does
+  (`apps/web/components/Chalkboard.tsx:274`). Pros: the same form as the chalkboard's "Can't read the board right
   now." already on those two homes (F15;
   `apps/web/components/Chalkboard.tsx:274`). Cons: those words are a lane's, not
   yours.
-- **C: nothing.** Pros: no new line on minors' screens. Cons: a failed read
-  then looks like "not on the floor" (F15; kernel floor, "an unknown value
+- **C: nothing.** Pros: no new line on minors' screens. Cons: a failed read,
+  or one still in progress, then looks like "not on the floor" (F15; kernel floor, "an unknown value
   never looks complete or zero", `AGENT_KERNEL.md:106-107`).
 - **D: your own words.**
 
