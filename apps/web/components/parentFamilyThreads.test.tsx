@@ -265,6 +265,27 @@ describe("seeing the gym's reply (half on screen, FC-05 Q-1 A)", () => {
     expect(within(screen.getByText('Yes, see you Saturday.').closest('li') as HTMLElement).getByText('New')).toBeInTheDocument();
   });
 
+  test('New stays on a reply for the visit after a re-read in which it comes back seen', async () => {
+    let reads = 0;
+    install(() => {
+      reads += 1;
+      const posts = THREAD.posts.map((post) => ({ ...post, new_to_me: reads === 1 && post.new_to_me }));
+      return jsonResponse({ ok: true, items: [{ ...THREAD, posts }] });
+    });
+    render(<Hub activeChildId="ath_1" />);
+    await waitFor(() => expect(watched()).toEqual(['p2']));
+    await act(async () => show('p2', 0.9));
+    await waitFor(() => expect(screen.getByTestId('unseen')).toHaveTextContent('none'));
+
+    // Writing again reads the list again; the server now says p2 has been seen.
+    fireEvent.change(screen.getByLabelText(/Write again about Second Child/), { target: { value: 'Thanks' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Send again about Second Child/ }));
+    });
+    await waitFor(() => expect(reads).toBe(2));
+    expect(within(screen.getByText('Yes, see you Saturday.').closest('li') as HTMLElement).getByText('New')).toBeInTheDocument();
+  });
+
   test('a reply recorded as seen is not sent again when the tab is left and opened again', async () => {
     const fetchMock = install(() => jsonResponse({ ok: true, items: [THREAD] }));
     const { rerender } = render(<Hub activeChildId="ath_1" />);

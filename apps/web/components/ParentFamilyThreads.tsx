@@ -197,15 +197,21 @@ export default function ParentFamilyThreads({
 }>) {
   const { read, reload, seen, markSeen, drafts, setDraft, notes, sending, send, readsSent } = threads;
   const listRef = useRef<HTMLDivElement>(null);
+  // Read when a watch starts: a reply recorded as seen is not watched again.
+  const seenRef = useRef(seen);
+  useEffect(() => {
+    seenRef.current = seen;
+  }, [seen]);
 
   /* SEEING A REPLY FROM THE GYM: at least half of it on screen, or, for one
      taller than the screen, half the screen filled with it. */
   useEffect(() => {
     if (read.state !== 'loaded' || !listRef.current || typeof IntersectionObserver === 'undefined') return;
     const sent = readsSent.current;
+    const recorded = seenRef.current;
     const unseen = new Set(
       read.items.flatMap((thread) => thread.posts)
-        .filter((post) => post.from === 'staff' && post.new_to_me && !seen.has(post.post_id) && !sent.has(post.post_id))
+        .filter((post) => post.from === 'staff' && post.new_to_me && !recorded.has(post.post_id) && !sent.has(post.post_id))
         .map((post) => post.post_id),
     );
     if (unseen.size === 0) return;
@@ -240,8 +246,6 @@ export default function ParentFamilyThreads({
       if (unseen.has(element.dataset.readPost ?? '')) observer.observe(element);
     });
     return () => observer.disconnect();
-    // `seen` is read when the watch starts; a reply recorded seen is already out of `sent`'s reach.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [read, markSeen, readsSent]);
 
   const activeName = activeChildId ? childNames.get(activeChildId) ?? 'your child' : null;
