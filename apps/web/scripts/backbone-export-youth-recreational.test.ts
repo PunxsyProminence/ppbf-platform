@@ -538,6 +538,11 @@ describe('the committed youth + recreational rows', () => {
     wtp_d861f584584788: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 9-12 (TL-1b)
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (test run 4-5) (TL-2)
   };
+  // Of those, the steps that also took their own clock time (details.block_time) as duration_minutes (Codex P1 and
+  // App Overwatch on #2177): the export would blank that cell too.
+  const LANE_W48_DURATIONS: Record<string, number[]> = {
+    wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+  };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -558,7 +563,9 @@ describe('the committed youth + recreational rows', () => {
     // step PR's head before merging it (#2162).
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
-    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, 'drill_id']));
+    const timed = (row: Record<string, string>) => (LANE_W48_DURATIONS[row.template_id] ?? []).includes(Number(row.ordinal));
+    expect(named.filter(([file]) => file === ITEMS))
+      .toEqual(laneSteps.map((row) => [ITEMS, row.template_id, timed(row) ? 'drill_id, duration_minutes' : 'drill_id']));
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
       .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
     // A lane template changes in field_labels and, if lane YR drafted it, in exactly its drafted cells (header order).

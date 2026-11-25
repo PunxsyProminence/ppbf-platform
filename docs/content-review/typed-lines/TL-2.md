@@ -145,3 +145,9 @@ Source: the 10 typed steps of `wtp_900c0a3fd4422a` (Scripted 60-Minute Class (te
 - Stop: The close runs long or drifts: end it on the coach's closing line. (intent_drift)
 - Cue: "Thank your teammates for helping you improve today."
 - Bases: discipline: boxing, technical, as the Long Road mental-skill drills (e.g. Mindfulness practice); category: technical, as the Long Road mental-skill drills; execution: the step's own Coach Closing Script, in substance; standard_setup: AI draft; the circle is this lane's; contact none, as the step's own contact level; name: the step's block title and its Coach Closing Script ('thank your teammates'); purpose: the step's own Purpose part, in substance; scale_levels: AI draft: A simpler, B as written (starting point), C harder; C's athlete-led close is this lane's; stop_rules: AI draft (intent drift); the class script gives no stop rule; cues: the step's Coach Closing Script, lifted from its second sentence
+
+## Durations (Codex P1 and App Overwatch on #2177)
+
+- Issuing, timers and presets read `duration_minutes`, never `details` (`workoutTemplates.ts`). Each of the 10 linked steps holds a clock range of its own in `details.block_time` (no other step of the template shares it), so each now carries that range as its duration: steps 1, 2, 8, 9 and 10 run 5 minutes (e.g. "4:35–4:40"), steps 11 to 15 run 2 minutes (e.g. "4:50–4:52"). Nothing else in the rows changes.
+- The template's own `items` label gains a `duration_minutes` part (INFERRED; its basis names each step, its block time and its minutes). `typedLinesContent.test.ts` checks the rule on every lane-linked step.
+- Not changed here: steps 3 to 7, linked before this lane to existing library drills, also hold their own block times ("4:10–4:12" and so on) and a blank duration; they are not this lane's rows.

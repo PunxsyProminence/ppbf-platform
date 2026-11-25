@@ -82,6 +82,14 @@ function namedSteps(drill: Row): { steps: string[]; line: string } {
   return { steps: match[1].split(', ').map((ref) => ref.replace(' step ', ' ')), line: match[2] };
 }
 
+/** The minutes of a clock range such as '4:35–4:40' or '3:30 to 3:40'; null for anything else (e.g. '0–8 min'). */
+function clockMinutes(blockTime: unknown): number | null {
+  const match = /^(\d{1,2}):(\d{2})\s*(?:–|-|to)\s*(\d{1,2}):(\d{2})$/.exec(typeof blockTime === 'string' ? blockTime : '');
+  if (!match) return null;
+  const span = Number(match[3]) * 60 + Number(match[4]) - (Number(match[1]) * 60 + Number(match[2]));
+  return span > 0 ? span : null;
+}
+
 function closeNames(a: string, b: string): boolean {
   return a === b || ` ${b} `.includes(` ${a} `) || ` ${a} `.includes(` ${b} `);
 }
@@ -192,6 +200,30 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
       // The lane's label is a part of the template's own 'items' label, so the template screen marks the steps as drafts.
       const label = JSON.parse(templateRows.find((row) => row.template_id === templateId)?.field_labels ?? '{}').items?.drill_id;
       expect({ templateId, status: label?.status, draft: MARKER.test(label?.draft ?? '') }).toEqual({ templateId, status: 'INFERRED', draft: true });
+    }
+  });
+
+  it('give each linked step its own clock time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
+    // Issuing, timers and presets read duration_minutes, never details (workoutTemplates.ts, WorkoutTemplateItemRow
+    // .details). A linked step whose details hold a block_time of its own (a clock range no other step of its template
+    // shares) runs for that many minutes. A block time several steps share is the block's, not a step's, and a
+    // sparring step's duration stays blank (the duration column may not hold sparring volume).
+    const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
+    const blockTime = (item: Row) => (item.details ? JSON.parse(item.details).block_time : undefined);
+    const holders = new Map<string, number>();
+    for (const item of items) holders.set(`${item.template_id} ${blockTime(item)}`, (holders.get(`${item.template_id} ${blockTime(item)}`) ?? 0) + 1);
+    const timed = items.filter((item) => laneIds.has(item.drill_id) && clockMinutes(blockTime(item)) !== null
+      && holders.get(`${item.template_id} ${blockTime(item)}`) === 1 && !['controlled_sparring', 'open_sparring'].includes(item.contact_level));
+    expect(timed.length).toBeGreaterThan(0);
+    for (const item of timed) {
+      const step = `${item.template_id} ${item.ordinal}`;
+      expect({ step, duration: item.duration_minutes }).toEqual({ step, duration: String(clockMinutes(blockTime(item))) });
+    }
+    const templateRows = rows('workout-templates/seed_workout_templates.csv');
+    for (const templateId of new Set(timed.map((item) => item.template_id))) {
+      const label = JSON.parse(templateRows.find((row) => row.template_id === templateId)?.field_labels ?? '{}').items?.duration_minutes;
+      expect({ templateId, status: label?.status, lane: String(label?.basis ?? '').startsWith('lane W4-8') })
+        .toEqual({ templateId, status: 'INFERRED', lane: true });
     }
   });
 
