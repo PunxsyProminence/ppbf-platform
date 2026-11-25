@@ -796,17 +796,21 @@ export default function SessionScriptLiveDelivery({
         setLogError(LOG_UNCHECKED);
         return;
       }
-      const known = new Set([...(before ?? []), ...loggedInterventions].map((item) => item.execution_id));
-      // A tap that sent a key is matched by it (OVERWATCH 7158257725): another tab's tap of the pair is
-      // never taken for this one. Without a key, or from a server that names none, any new log, as before.
+      // A tap that sent a key is matched by it alone (OVERWATCH 7158257725): another tab's tap of the
+      // pair is never taken for this one, and this tap's own log is found even when an earlier attempt
+      // of it landed late, into the before picture, or there is no before picture. Without a key, or
+      // from a server that names none, any new log, as before.
       const byKey = requestKey !== null && requestKey !== undefined && !namesNoKeys(after);
-      const fresh = after.filter((item) => !known.has(item.execution_id) && (!byKey || item.request_key === requestKey));
+      const known = new Set([...(before ?? []), ...loggedInterventions].map((item) => item.execution_id));
+      const fresh = byKey
+        ? after.filter((item) => item.request_key === requestKey)
+        : after.filter((item) => !known.has(item.execution_id));
       if (fresh.length === 0) {
         setLogError(LOG_NOT_SAVED);
         return;
       }
-      // Without the before picture, a record this screen did not log cannot be placed.
-      if (before === null) {
+      // Without the before picture, a record this screen did not log cannot be placed (by key it can).
+      if (!byKey && before === null) {
         setLogError(LOG_UNCHECKED);
         return;
       }
