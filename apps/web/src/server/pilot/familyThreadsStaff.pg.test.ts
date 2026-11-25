@@ -43,37 +43,62 @@ let activeClient: Client | null = null;
 // production they would run on another connection, outside the transaction, so a write that
 // forgot the transaction's client must fail here rather than pass by sharing this one.
 let inTransaction = false;
+// A second connection to the same database: another session, whose changes commit on their own.
+let sideClient: Client | null = null;
+// Runs once, committed from the second connection, just before the statement a staff path relies
+// on: the one that writes a reply or a read (alone, or inside the store's transaction after any
+// earlier statement of it), or the one that returns the thread list. A check made in any earlier
+// statement has then already been read (Overwatch on #2179: every check-then-write path).
+let beforeStaffStatement: ((client: Client) => Promise<unknown>) | null = null;
 
-jest.mock('./db', () => ({
-  query: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
-    const result = await activeClient.query(text, params);
-    return result.rows;
-  }),
-  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
-    const result = await activeClient.query(text, params);
-    return result.rows[0] ?? null;
-  }),
-  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const client = activeClient;
-    await client.query('BEGIN');
-    inTransaction = true;
-    try {
-      const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
-      inTransaction = false;
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      inTransaction = false;
-      await client.query('ROLLBACK').catch(() => {});
-      throw error;
-    }
-  }),
-}));
+jest.mock('./db', () => {
+  const isStaffStatement = (text: string) =>
+    /insert into pilot\.family_thread_(posts|reads)/.test(text) || text.includes('from pilot.family_thread_posts o');
+  const landChange = async (text: string) => {
+    if (!beforeStaffStatement || !isStaffStatement(text)) return;
+    const change = beforeStaffStatement;
+    beforeStaffStatement = null;
+    if (!sideClient) throw new Error('test bug: no second connection');
+    await change(sideClient);
+  };
+  return {
+    query: jest.fn(async (text: string, params: unknown[] = []) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
+      await landChange(text);
+      const result = await activeClient.query(text, params);
+      return result.rows;
+    }),
+    queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      if (inTransaction) throw new Error('pooled query inside a transaction: pass its client');
+      await landChange(text);
+      const result = await activeClient.query(text, params);
+      return result.rows[0] ?? null;
+    }),
+    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      const client = activeClient;
+      await client.query('BEGIN');
+      inTransaction = true;
+      try {
+        const result = await fn({
+          query: async (text: string, values: unknown[]) => {
+            await landChange(text);
+            return client.query(text, values);
+          },
+        });
+        inTransaction = false;
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        inTransaction = false;
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    }),
+  };
+});
 
 jest.setTimeout(180_000);
 
@@ -217,6 +242,8 @@ async function freshDatabase(name: string): Promise<Client> {
     [OTHER_ORG, CHILD, ORG, SIBLING],
   );
   activeClient = client;
+  sideClient = new Client({ connectionString: connectionStringFor(name) });
+  await sideClient.connect();
   return client;
 }
 
@@ -274,6 +301,9 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  beforeStaffStatement = null;
+  if (sideClient) await sideClient.end();
+  sideClient = null;
   if (activeClient) await activeClient.end();
   activeClient = null;
 });
@@ -465,6 +495,84 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     await expect(reply(COACH, opened.thread_id)).rejects.toMatchObject({ status: 404 });
     await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)).rejects.toMatchObject({ status: 404 });
     expect(await counts(client)).toEqual(before);
+  });
+
+  // Each fact a staff path relies on (Overwatch on #2179: every check-then-write path), as a committed
+  // change and its undo, with the refusal a reply or a read gets: the athlete gate's live athlete, and
+  // what the session gate checked (the seat).
+  const STAFF_FACT_CHANGES: Array<[string, number, (db: Client) => Promise<unknown>, (db: Client) => Promise<unknown>]> = [
+    ['the athlete deleted', 404,
+      (db) => db.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD]),
+      (db) => db.query(`update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2`, [ORG, CHILD])],
+    // Ended here while the same account is still an active coach of another gym: only this gym's seat counts.
+    ['the seat in this gym ended', 403,
+      async (db) => {
+        await db.query(`update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2`, [COACH, ORG]);
+        await db.query(
+          `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+          [COACH, OTHER_ORG],
+        );
+      },
+      async (db) => {
+        await db.query(`delete from pilot.organization_memberships where account_id = $1 and organization_id = $2`, [COACH, OTHER_ORG]);
+        await db.query(`update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2`, [COACH, ORG]);
+      }],
+    // requireRole reads the role on this gym's membership; the reply is written under that role.
+    ['the seat in this gym no longer a coach one', 403,
+      (db) => db.query(`update pilot.organization_memberships set role = 'organization_admin' where account_id = $1 and organization_id = $2`, [COACH, ORG]),
+      (db) => db.query(`update pilot.organization_memberships set role = 'coach' where account_id = $1 and organization_id = $2`, [COACH, ORG])],
+    ['the account deactivated', 403,
+      (db) => db.query(`update pilot.accounts set active_flag = false where account_id = $1`, [COACH]),
+      (db) => db.query(`update pilot.accounts set active_flag = true where account_id = $1`, [COACH])],
+    ['the account marked deleted', 403,
+      (db) => db.query(`update pilot.accounts set deleted_at = now() where account_id = $1`, [COACH]),
+      (db) => db.query(`update pilot.accounts set deleted_at = null where account_id = $1`, [COACH])],
+    // The account's home gym another, active one: the status read is the gym acted in.
+    ['the gym suspended', 403,
+      async (db) => {
+        await db.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [COACH, OTHER_ORG]);
+        await db.query(`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG]);
+      },
+      async (db) => {
+        await db.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [ORG]);
+        await db.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [COACH, ORG]);
+      }],
+  ];
+
+  test('each fact a staff reply or read relies on, changed just before it: refused, and nothing kept (Overwatch on #2179)', async () => {
+    const client = await freshDatabase('fts_write_race');
+    const opened = await open(GUARDIAN);
+    const before = await counts(client);
+    const writes: Array<[string, () => Promise<unknown>]> = [
+      ['reply', () => reply(COACH, opened.thread_id)],
+      ['record a read', () => threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)],
+    ];
+    for (const [changeLabel, status, change, undo] of STAFF_FACT_CHANGES) {
+      for (const [writeLabel, write] of writes) {
+        beforeStaffStatement = change;
+        const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
+        expect(beforeStaffStatement).toBeNull();
+        expect([changeLabel, writeLabel, outcome, await counts(client)]).toEqual([changeLabel, writeLabel, status, before]);
+        await undo(client);
+      }
+    }
+    // Positive control: with every fact as it was, the reply (with its audit row) and the read go through.
+    for (const [, write] of writes) await write();
+    expect(await counts(client)).toEqual({ posts: before.posts + 1, reads: before.reads + 1, audits: before.audits + 1 });
+  });
+
+  test('each fact the staff list relies on, changed after its gate and just before the threads are read: nothing returned (Overwatch on #2179)', async () => {
+    const client = await freshDatabase('fts_list_race');
+    const opened = await open(GUARDIAN);
+    await reply(COACH, opened.thread_id);
+    for (const [label, , change, undo] of STAFF_FACT_CHANGES) {
+      beforeStaffStatement = change;
+      const list = await threads.listFamilyThreadsForStaff(staff(COACH), CHILD);
+      expect(beforeStaffStatement).toBeNull();
+      expect([label, list]).toEqual([label, []]);
+      await undo(client);
+      expect(await threads.listFamilyThreadsForStaff(staff(COACH), CHILD)).toHaveLength(1);
+    }
   });
 
   test('a removed guardian or staff account leaves the thread, unnamed; a reply needs words', async () => {
