@@ -56,6 +56,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 
 const ORG_ID = 'org-sweep';
 const COACH_ID = 'acct-sweep-coach';
+const PARENT_ID = 'acct-sweep-parent';
 const ATHLETE_ID = 'ath-sweep';
 const NOTE_ID = '6b0f3a52-2c1e-4c55-9a0e-5d2f4f0c1a01';
 const TEMPLATE_DB = 'sweep_indexes_template';
@@ -100,7 +101,7 @@ async function adminQuery(sql: string): Promise<void> {
  * The schema production runs, as it stands BEFORE this migration: the full
  * schema (which applies this migration too, in its place in the deploy order)
  * with this migration's two indexes dropped again, plus one gym, coach,
- * athlete and note for the event rows to hang from.
+ * parent, athlete and family note for the event rows to hang from.
  */
 async function freshDatabase(name: string): Promise<Client> {
   await adminQuery(`drop database if exists ${name}`);
@@ -187,11 +188,11 @@ async function seedEvents(client: Client): Promise<void> {
   );
   await client.query(
     `insert into pilot.family_message_replies
-       (organization_id, reply_id, note_id, athlete_id, author_role, reply_text, created_at)
-     select $1, gen_random_uuid(), $2::uuid, $3, 'parent', 'Thanks, see you Thursday.',
+       (organization_id, reply_id, note_id, athlete_id, author_account_id, author_role, reply_text, created_at)
+     select $1, gen_random_uuid(), $2::uuid, $3, $4, 'parent', 'Thanks, see you Thursday.',
             now() - make_interval(mins => g * 7)
      from generate_series(1, 400) as g`,
-    [ORG_ID, NOTE_ID, ATHLETE_ID],
+    [ORG_ID, NOTE_ID, ATHLETE_ID, PARENT_ID],
   );
   await client.query('analyze pilot.safety_escalations');
   await client.query('analyze pilot.family_message_replies');
@@ -251,8 +252,9 @@ beforeAll(async () => {
       [ORG_ID],
     );
     await template.query(
-      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`,
-      [COACH_ID, ORG_ID],
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'coach', $3, 'microsoft'), ($2, 'parent', $3, 'microsoft')`,
+      [COACH_ID, PARENT_ID, ORG_ID],
     );
     await template.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
