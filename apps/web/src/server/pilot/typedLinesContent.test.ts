@@ -53,10 +53,11 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 746bc1a5)
 };
 
-/** The lane-linked steps that carry their own block time as their duration (#2177); a step PR adds its templates here. */
+/** The lane-linked steps that carry their own stated time as their duration (#2177); a step PR adds its templates here. */
 const TIMED_STEPS: Record<string, number[]> = {
   wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
   wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a; step 9's own block time is open sparring, so it stays blank)
+  wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a; the minutes in each step's own title)
 };
 
 type Row = Record<string, string>;
@@ -231,29 +232,44 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
     }
   });
 
-  it('give each linked step its own block time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
+  it('give each linked step its own stated time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
     // Issuing, timers and presets read duration_minutes, never details (workoutTemplates.ts, WorkoutTemplateItemRow
-    // .details). A linked step whose details hold a block_time of its own (a time range no other step of its template
-    // shares) runs for that many minutes. A block time several steps share is the block's, not a step's; and only a
-    // step at contact none or light_technical may hold a duration (the import's rule, specs/templates.ts). Durations
-    // a step states some other way (details.time, or minutes inside its typed line) are not read here.
+    // .details). A linked step whose details state a time of its own runs for that many minutes: its block_time range,
+    // or, where it has none of its own, the minutes its block_title states ("(5 MIN)"), either held by no other step of
+    // its template. A time several steps share is the block's, not a step's; and only a step at contact none or
+    // light_technical may hold a duration (the import's rule, specs/templates.ts). Durations a step states some other
+    // way (details.time, or minutes inside its typed line) are not read here.
     const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
-    const blockTime = (item: Row) => (item.details ? JSON.parse(item.details).block_time : undefined);
+    const detail = (item: Row, key: string) => (item.details ? JSON.parse(item.details)[key] : undefined);
     const holders = new Map<string, number>();
-    for (const item of items) holders.set(`${item.template_id} ${blockTime(item)}`, (holders.get(`${item.template_id} ${blockTime(item)}`) ?? 0) + 1);
-    const timed = items.filter((item) => laneIds.has(item.drill_id) && blockMinutes(blockTime(item)) !== null
-      && holders.get(`${item.template_id} ${blockTime(item)}`) === 1 && ['none', 'light_technical'].includes(item.contact_level));
+    for (const item of items) {
+      for (const key of ['block_time', 'block_title']) {
+        const at = `${item.template_id} ${key} ${detail(item, key)}`;
+        holders.set(at, (holders.get(at) ?? 0) + 1);
+      }
+    }
+    const own = (item: Row, key: string) => holders.get(`${item.template_id} ${key} ${detail(item, key)}`) === 1;
+    const statedTime = (item: Row): { text: string; minutes: number } | null => {
+      const range = own(item, 'block_time') ? blockMinutes(detail(item, 'block_time')) : null;
+      if (range !== null) return { text: detail(item, 'block_time'), minutes: range };
+      const title = own(item, 'block_title') ? String(detail(item, 'block_title') ?? '') : '';
+      const found = [...title.matchAll(/\((\d{1,2}) MIN\)/g)];
+      const minutes = found.length === 1 ? Number(found[0][1]) : 0;
+      return minutes >= 1 && minutes <= 90 ? { text: found[0][0], minutes } : null;
+    };
+    const timed = items.filter((item) => laneIds.has(item.drill_id) && statedTime(item) !== null
+      && ['none', 'light_technical'].includes(item.contact_level));
     const byTemplate: Record<string, number[]> = {};
     for (const item of timed) (byTemplate[item.template_id] ??= []).push(Number(item.ordinal));
     expect(byTemplate).toEqual(TIMED_STEPS);
     const templateRows = rows('workout-templates/seed_workout_templates.csv');
     for (const item of timed) {
       const step = `${item.template_id} ${item.ordinal}`;
-      const minutes = blockMinutes(blockTime(item));
+      const { text, minutes } = statedTime(item) as { text: string; minutes: number };
       expect({ step, duration: item.duration_minutes }).toEqual({ step, duration: String(minutes) });
       const label = JSON.parse(templateRows.find((row) => row.template_id === item.template_id)?.field_labels ?? '{}').items?.duration_minutes;
       const basis = String(label?.basis ?? '');
-      expect({ step, status: label?.status, lane: basis.startsWith('lane W4-8'), named: basis.includes(`${item.ordinal} ('${blockTime(item)}' → ${minutes})`) })
+      expect({ step, status: label?.status, lane: basis.startsWith('lane W4-8'), named: basis.includes(`${item.ordinal} ('${text}' → ${minutes})`) })
         .toEqual({ step, status: 'INFERRED', lane: true, named: true });
     }
   });
