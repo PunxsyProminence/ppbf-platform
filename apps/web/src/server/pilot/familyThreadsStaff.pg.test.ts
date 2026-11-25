@@ -189,12 +189,14 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, `parent-${account}`, account, fullName],
     );
   }
-  // The first guardian's account also holds a parent record in this gym linked to no child, and
-  // one in the other gym linked to that gym's child; both names sort before theirs. Staff must
-  // still see the name on the record linked to this child in this gym (Q4 A).
+  // The first guardian's account also holds a parent record in this gym linked to no child, one
+  // in this gym linked only to the sibling, and one in the other gym linked to that gym's child;
+  // all three names sort before theirs. Staff must still see the name on the record linked to
+  // this child in this gym (Q4 A).
   await client.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
-     values ($1, 'parent-unlinked-record', $2, 'Aab Unlinked Record'), ($3, 'parent-elsewhere-record', $2, 'Aaa Elsewhere Record')`,
+     values ($1, 'parent-unlinked-record', $2, 'Aab Unlinked Record'), ($1, 'parent-sibling-record', $2, 'Aac Sibling Record'),
+            ($3, 'parent-elsewhere-record', $2, 'Aaa Elsewhere Record')`,
     [ORG, GUARDIAN, OTHER_ORG],
   );
   const links: Array<[string, string, string]> = [
@@ -211,8 +213,8 @@ async function freshDatabase(name: string): Promise<Client> {
   }
   await client.query(
     `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
-     values ($1, 'parent-elsewhere-record', $2, 'guardian')`,
-    [OTHER_ORG, CHILD],
+     values ($1, 'parent-elsewhere-record', $2, 'guardian'), ($3, 'parent-sibling-record', $4, 'guardian')`,
+    [OTHER_ORG, CHILD, ORG, SIBLING],
   );
   activeClient = client;
   return client;
