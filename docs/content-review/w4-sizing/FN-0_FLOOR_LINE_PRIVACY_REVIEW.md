@@ -24,8 +24,9 @@ five for Jason.
   2.1) and `OWNER_DECISIONS.md`, cited lines moved and were re-pinned. In
   `sessionStaffNotes.ts`, `apply-migrations.yml` and `ACTIVE_WORK.md`, every
   change is below the lines cited here; `apps/web/package.json` is named, not
-  cited by line, and the search it appears in was re-run at this commit.) Paths under `apps/web/` are written in
-  full; migrations are under `infra/azure/`.
+  cited by line, and the search it appears in was re-run at this commit.) Paths under `apps/web/` are given in
+  full at least once; elsewhere a cite may use the file name alone.
+  Migrations are under `infra/azure/`.
 - **Labels:** OBSERVED (read in the code or the record, with file:line),
   INFERRED (my reasoning past what was read), UNVERIFIED (not checked).
   Nothing here was run: no route, test, database or screen. Every OBSERVED
@@ -72,8 +73,8 @@ Other rulings that bear on the line:
 | OD-2026-10-06-024, ruling 1 | "An active hold blocks nothing at check-in or drill assignment; staff see a warning in both places." | `OWNER_DECISIONS.md:8957` |
 | OD-2026-10-17-014 | "the app has no age rule on staff roles (coach, staff, volunteer, admin)" | `OWNER_DECISIONS.md:6899` |
 | OD-2026-09-28-005 | the platform account sees "de-identified, aggregate data across gyms and never an individual athlete's file" (option A, chosen) | `OWNER_DECISIONS.md:16054-16057` |
-| OD-2026-11-19-007, ruling 2 (OW25-53 A) | "the gym admin sets the tablet sign-out time in gym settings"; in code one of 15, 30, 60, 120 or 240 minutes, default 60 (`apps/web/src/shared/tabletIdle.ts:11-13`) | `OWNER_DECISIONS.md:2675` |
-| OD-2026-11-20-001, OW27-12 A | Approved TV words: "Nobody is marked here yet today." ("it counts I'm here and the coach's register") | `OWNER_DECISIONS.md:1897`, `:1900` |
+| OD-2026-11-19-007, ruling 2 (OW25-53 A; RECONSTRUCTED) | "the gym admin sets the tablet sign-out time in gym settings"; in code one of 15, 30, 60, 120 or 240 minutes, default 60 (`apps/web/src/shared/tabletIdle.ts:11-13`) | `OWNER_DECISIONS.md:2675` |
+| OD-2026-11-20-001, OW27-12 A (RECONSTRUCTED) | Approved TV words: "Nobody is marked here yet today." ("it counts I'm here and the coach's register") | `OWNER_DECISIONS.md:1897`, `:1900` |
 | OD-2026-09-28-008 | "offline storage stays parked"; restated in Backbone's note on OW27-34 A: "Offline storage on the device stays parked" | `OWNER_DECISIONS.md:15973-15975`; `:1466` |
 | OD-2026-11-23-006 | "no pain-report notes on the class screen; coaches read them on the coach home" | `OWNER_DECISIONS.md:863` |
 | OD-2026-10-17-008, ruling 1 | "the gym TV keeps showing only who is present, by initials" | `OWNER_DECISIONS.md:6997` |
@@ -110,8 +111,10 @@ own question as product intent under G8, or as narrowing one of Jason's
 answers, it is asked of Jason in this PR too. This routing departs from the
 brief, which says to propose the words of the line and the register-only case
 "as questions for App Overwatch". If App Overwatch holds the brief's routing,
-it answers FN0-Q1 and FN0-Q2 itself in this PR, and they are not put to Jason.
-INFERRED.
+it may answer FN0-Q1 and FN0-Q2 itself in this PR, but only with an option
+that narrows none of Jason's answers (FN0-Q1 C; for FN0-Q2, the words with
+B's timing); a pick that narrows one goes to Jason. FN0-Q1 rides with FN0-Q2
+because both are about which register marks count. INFERRED.
 
 **On OD-2026-10-13-013 ("asked once, ruled once").** It has a standing ruling
 applied to every case its words or plain principle reach, without asking
@@ -120,11 +123,15 @@ built". Jason picked Q3.1 C ("either record counts as on the floor", the
 recorded ruling, `:1501`) and Q3.5 B against the recommendation. So this
 review recommends building C as chosen: a register-only mark shows as "on
 the floor now", with the card's con (after they have gone home) as he
-accepted it. It recommends one narrowing, for a case the card did not show:
-a register-only mark counts from its class's start, not from when it was
-written, so the line does not say a child is on the floor before they arrive
-(F2). That goes to him in FN0-Q2, and until he answers the build follows C as
-chosen. Narrower words are an option put to him, not a recommendation
+accepted it. It recommends three narrowings, each for a case the card did
+not show, and each goes to him: a present mark on a class cancelled after it
+started, for families (FN0-Q1); a register-only mark before its class starts,
+so the line does not say a child is on the floor before they arrive (FN0-Q2,
+F2); and a run mark the register later set Absent or Excused (FN0-Q6, F16).
+Until he answers, the build keeps what families get today where an existing
+read already decides the case (FN0-Q1: the family read leaves cancelled-class
+marks out), and otherwise follows C as chosen (FN0-Q2, FN0-Q6); section 4
+says so. Narrower words are an option put to him, not a recommendation
 (FN0-Q2). Where a ruling's plain
 principle may already reach a case, the question says so (FN0-Q5, FN0-Q6).
 INFERRED.
@@ -246,7 +253,7 @@ file on the floor line.
 | Finished runs | coach, organization admin, admin | who was marked on each settled run | `apps/web/app/api/pilot/session-scripts/runs/route.ts:69-72` |
 | Coach home live panel | the coach running the run | "Session in progress" and "Athletes Present" for their own run | `apps/web/components/CoachWorkspace.tsx:1325-1326`, `:3296` |
 | Parent Hub attendance list | parent, own linked minor children | each register mark for the child on screen, dated by the class | `apps/web/components/ParentHub.tsx:1276-1298`; family read `scheduler/route.ts:569-582`, `:678-686` |
-| `/schedule`, family view | parent and athlete, own marks | each register mark with its class, its status, "via" the method (parent, coach, admin or self check-in) and the time of the mark; "Records could not be loaded just now." on a failed read | `apps/web/app/schedule/page.tsx:1554-1558`, `:1591-1597` |
+| `/schedule`, family view | parent and athlete, own marks | each register mark with its class, its status, "via" the method (parent, coach, admin, walk-in or self check-in, `apps/web/src/shared/attendanceMethodWords.ts:8-14`) and the time of the mark; "Records could not be loaded just now." on a failed read | `apps/web/app/schedule/page.tsx:1554-1558`, `:1591-1597` |
 | Athlete "I'm here" | the athlete | their own check-in for today's class | `AthleteWorkspace.tsx:3270-3275`; `scheduler/route.ts:688-697` |
 
 A search of `ParentHub.tsx` and `AthleteWorkspace.tsx` for "on the floor",
@@ -273,8 +280,9 @@ attendance figure, report, board or grant figure changes"
 (`OWNER_DECISIONS.md:1441`). That is FN0-Q3.
 - **The authority the code cites.** For staff-only, the module, the registry,
   the migration, the convention test and the staff route cite OD-2026-10-10-003
-  items 3 and 4 (`sessionRunAthletes.ts:44`; `privacyTiers.ts:574`; migration
-  `:35-39`; convention test `:1-4`; `runs/[runId]/athletes/route.ts:34`); the
+  items 3 and 4 (`sessionRunAthletes.ts:44`; `privacyTiers.ts:574`;
+  `infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:35-39`;
+  `sessionRunPresenceStaffOnly.convention.test.ts:1-4`; `runs/[runId]/athletes/route.ts:34`); the
   registry, the migration and the test also cite OD-2026-10-11-007. OBSERVED.
   OD-2026-10-10-003's items rule that "A coach's own session note is staff
   only" and that an admin may withdraw a departed coach's capacity note
@@ -300,7 +308,11 @@ attendance figure, report, board or grant figure changes"
   (`runs/[runId]/athletes/route.ts:31-34`) and the convention test. The test
   carries a minors'-privacy guard, so it is narrowed, not dropped: it should
   still fail for any family, board, platform or public route that reaches the
-  table, except the one floor-line read, and that read should be shown to
+  table, except the one floor-line read. Its audience pattern
+  (`sessionRunPresenceStaffOnly.convention.test.ts:160`) keeps `wall` and
+  `kiosk` and should add `tv`: `/api/pilot/tv/session` does not match it
+  today, and the paired TV is held to initials (OD-2026-10-07-008 ruling 1,
+  `OWNER_DECISIONS.md:8713`). The floor-line read should be shown to
   return only the yes/no to a family and nothing at all to a board,
   platform-owner, staff-role or volunteer caller (any count Jason rules under
   FN0-Q3 comes from its own read) ("Do not
@@ -551,7 +563,7 @@ would be a new answer to Q3.1, not a build choice.
 present, and by what method, is safeguarding evidence"
 (`ATTENDANCE_PRECEDENCE.md:100-101`). For register marks the family read
 already sends the marker's role and the method (2.2), and the family view of
-`/schedule` shows the method ("via" parent, coach, admin or self check-in)
+`/schedule` shows the method ("via" parent, coach, admin, walk-in or self check-in)
 and the time of each mark (2.3); a search of `apps/web/components` found no
 component that shows the role. The run's marker is staff only (2.1).
 OBSERVED. So keeping "who marked" off the family line is a choice about the
@@ -679,7 +691,8 @@ OBSERVED.
 - **What a family sees is FN0-Q5.** For families the kernel floor points to a
   line saying the read failed. The record points two ways. The Parent Hub
   already shows "Unavailable" to a parent when a read about the child fails
-  (`apps/web/components/ParentHub.tsx:1125-1129`, `:1221-1223`, `:1373-1375`),
+  (`apps/web/components/ParentHub.tsx:1221-1223`; the comments at
+  `:1125-1129` and `:1373-1375` describe the same state),
   and the family view of `/schedule` shows "Records could not be loaded just
   now." when its read fails (`apps/web/app/schedule/page.tsx:1558`); searches
   of `OWNER_DECISIONS.md` for "unavailable" and "could not be loaded" found no
@@ -697,8 +710,8 @@ OBSERVED.
     loading: "a quote and a loading  .... under the quote"
     (`OWNER_DECISIONS.md:11295-11297`); the lane read them as "whenever there's nothing real to
     show (still loading, or the read failed)" (`OWNER_DECISIONS.md:11299-11300`); and PR #1144,
-    as the entry reports it, built a saying above "Can't read the board right
-    now." after a failed read (OD-2026-10-03-010, `OWNER_DECISIONS.md:11308-11310`). This is
+    as the entry reports it, built a gym saying with "Can't read the board
+    right now." after a failed read (OD-2026-10-03-010, `OWNER_DECISIONS.md:11308-11310`). This is
     the same two homes the line goes on; the failed-read words there are the
     lane's, under his design.
   (OW27-43 sent such words to him too, for a staff page.) OBSERVED. OW25-35 A
@@ -737,10 +750,16 @@ mark counts), and section 4 and check 5 defer to his answer.
 
 ## 4. What the line may show, and must never show, by role
 
-The verdicts assume FN0-Q1 to FN0-Q5 are answered as recommended; a different
-answer changes the rows it names. FN0-Q6 and FN0-Q2's start time are the
-exceptions: until Jason answers them, the build follows C as chosen (the run
-mark counts, F16; a register-only mark counts from when it is written, F2).
+The verdicts assume the questions are answered as recommended; a different
+answer changes the rows it names. Until Jason answers the three that narrow
+his C, the build keeps what families get today where an existing read
+decides the case, and otherwise follows C as chosen (section 1):
+- FN0-Q1: a mark on a cancelled class stays off the family line, as the
+  family read already leaves it out (`scheduler/route.ts:617`), and stays on
+  the coach line (option A);
+- FN0-Q2: a register-only mark counts from when it is written (option B, F2);
+- FN0-Q6: a run mark counts even after a later register Absent or Excused
+  (option B, F16).
 
 **Which marks count, for every role.** A person counts when either:
 - they have a standing mark (`removed_at is null`) on a run that is
@@ -752,8 +771,8 @@ mark counts, F16; a register-only mark counts from when it is written, F2).
   from the class's start time to the end of that gym day (FN0-Q2,
   recommended; until Jason answers, from when the mark is written, Q3.1 C as
   chosen). A mark on a cancelled class counts only as
-  FN0-Q1 rules (recommended: on the coach line only, as the family read
-  already leaves it out).
+  FN0-Q1 rules (recommended, and the interim until Jason answers: on the
+  coach line only, as the family read already leaves it out).
 
 Both are shown as "on the floor now" unless Jason picks other words for a
 register-only mark (FN0-Q2).
@@ -769,7 +788,7 @@ which FN0-Q1 splits by reader.
 | Coach, organization admin, admin (coach home, admin home): the coach line | The names of every live athlete of this gym who counts, from either source (Q3.3 A). Presence only, as answered (F12). Staff gate as F5. That it could not be checked, when the read fails (F15). | Anyone the rule above leaves out. Absent or excused shown as "not here" (F4). "Nobody ..." when the read failed (F15). |
 | Parent (Parent Hub) | For each of their own children who counts, a line saying so (Q3.2 A), in the words FN0-Q2 rules. Scope as F6. When the read fails, what FN0-Q5 rules. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the time of the mark, the coach, the run, the room (Q3.2 B not chosen; a run mark's time is staff only today, `runs/[runId]/athletes/route.ts:74`; a register mark's time already reaches families on the schedule read, 2.2, but not on this line). A child who is 18 or over, unlinked, or deleted. Who marked the child or how (F11). A hold, pain, readiness or injury state (F12). "Not here" or "absent" (F4). A failed read shown as "not on the floor" (F15). |
 | Athlete (athlete home) | Their own status (Q3.4 A, "A line about themselves only ... Their own status"): on the floor now, or not marked on the floor right now (FN0-Q2). When the read fails, what FN0-Q5 rules. | Anyone else: no name, no count (Q3.4 B not chosen), no id; not who else is in the session, nor the coach ("nothing about others", Q3.4 A). Recommended, not ruled by Q3.4 A: not the run, the class or the time of the mark, so the athlete's line carries no more than the parent's (Q3.2 A). Who marked them or how (F11). A hold or health state (F12). A failed read shown as "not on the floor" (F15). |
-| Board, staff-role and volunteer accounts | Under FN0-Q3 A, the classes running now (title and times only) and no person. Under its other options, only what Jason rules there. | Names, initials or ids (F3). Any count that includes run marks unless Jason rules it (F1, FN0-Q3). On the board's home, a number below 5. |
+| Board, staff-role and volunteer accounts | Under FN0-Q3 A, the classes running now (title and times only) and no person, as far as class titles name none (FN0-Q3 A's con). Under its other options, only what Jason rules there. | Names, initials or ids (F3). Any count that includes run marks unless Jason rules it (F1, FN0-Q3). On the board's home, a number below 5. |
 | Platform owner | Nothing, under FN0-Q3 A ("platform for platform gym for gym"). Under its other options, only what Jason rules there. | Names, initials or ids (F3; OD-2026-09-28-005). Any per-gym class list or count unless Jason rules it. |
 | Signed out: public wall, paired TV | Unchanged: classes and counts on the public address, initials on a paired TV (OD-2026-10-07-008 ruling 1). | Any part of the line. |
 
@@ -801,7 +820,8 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
 3. A family response carries no run id, mark time or "since" time, coach,
    method or marker (F1, F11), and no hold, pain, readiness or injury state
    (F12); a parent's carries no class, start time or room either (Q3.2 B not
-   chosen), and an athlete's none of the run's class or times (F1).
+   chosen), and an athlete's no run, class or time of the mark either
+   (section 4's athlete row; recommended, not ruled by Q3.4 A).
 4. A coach whose staff membership has ended, a board member, the platform
    owner, a staff-role or volunteer account, and a caller from another
    organization get an empty answer from the line's read: no names, no
@@ -821,13 +841,13 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
 7. `sessionRunPresenceStaffOnly.convention.test.ts`, `privacyTiers.ts`,
    `sessionRunAthletes.ts` and the staff route comment say who now reads the
    derived run-mark fact (a yes/no for families), and the test still fails
-   for any other family, board, platform or public route that reaches the
-   table (F1). The new read's name goes into the test's `REACHES` pattern
+   for any other family, board, platform, public or TV route that reaches the
+   table (its audience pattern keeps `wall` and `kiosk` and adds `tv`, F1). The new read's name goes into the test's `REACHES` pattern
    (`sessionRunPresenceStaffOnly.convention.test.ts:47-48`), its module onto
    `TABLE_FILES` (`:102`) and a reach list for the "exactly" check
    (`:142-145`, lists at `:54-60`, `:66-69` and `:72-78`), and its one route onto a list of its own
    with its own role check (the `STAFF_ROUTES` check admits only the three
-   staff roles, `:54`, `:170`), as `isSessionRunningForAthleteToday` is
+   staff roles, `:53`, `:170`), as `isSessionRunningForAthleteToday` is
    pinned: the test
    says it "does NOT catch a new export added to a file already on the lists"
    (`:16-17`).
@@ -845,8 +865,9 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
 11. The homes of the board and of staff-role and volunteer accounts show
     what FN0-Q3 rules (under its option A, the classes running now, title and
     times only, from one gym's guarded read); the platform owner's home shows
-    nothing under option A; none shows a name, and none a count built from
-    run marks unless Jason rules one.
+    nothing under option A; none shows a name (under option A, as far as class
+    titles name none), and none a count built from run marks unless Jason
+    rules one.
 12. A signed-out caller, `/api/pilot/wall` and `/api/pilot/tv/session` get
     nothing from the line: their payloads are unchanged (F10).
 
@@ -877,9 +898,10 @@ no copy in this repository).
 **What each question holds up (INFERRED, from the sizing's PR split,
 `W4_SIZING.md:549-554`).** FN-1, the read: FN0-Q1, FN0-Q6 and FN0-Q2's
 start time change which marks count, and FN0-Q4 decides whether Jason hears
-F1 and F14 first. Until FN0-Q2 and FN0-Q6 are answered the read can follow C
-as chosen (section 4). FN-2 and
-FN-3, the screens: FN0-Q2 and FN0-Q5 set the words. FN0-Q3 sets what the
+F1 and F14 first. Until FN0-Q1, FN0-Q2 and FN0-Q6 are answered the read can
+follow the interim in section 4. FN-2 and
+FN-3, the screens: FN0-Q2 sets the words for both, and FN0-Q5 the family
+words on a failed read, in FN-2. FN0-Q3 sets what the
 board's, the platform owner's and the staff-role and volunteer homes show;
 the sizing's screen PRs cover only the Parent Hub, the athlete home, the
 coach home and the admin home (`W4_SIZING.md:553-554`), so any line FN0-Q3
@@ -897,8 +919,9 @@ yours, and this review sends every narrowing of your answers to you
 (section 1). The brief named App Overwatch for the words and the
 register-only case, a person with only a register mark and so no end time
 (`W4_SIZING.md:542-543`); a present mark on a cancelled class sits next to
-that case, not inside it. If App Overwatch holds the brief's routing, it
-answers this itself (section 1). The office can
+that case, not inside it. If App Overwatch holds the brief's routing, it may
+answer this itself, but only with C; a pick of A or B goes to you (section
+1). The office can
 cancel a class after it starts (`apps/web/src/server/pilot/schedulerCancelRule.ts:78-79`;
 OD-2026-10-22-001), so children marked present may still be on the floor.
 Overwatch's application: "a cancelled class's attendance stops counting (rows
@@ -920,6 +943,9 @@ on such a class still counts while its run is live (section 4).
 - **C: shown to everyone as any other mark.** Pros: Q3.1 C read literally.
   Cons: gives families a mark the family read withholds today; a parent may
   see a line for a class that never ran.
+- Until you answer, the build keeps today's family read, which is option A
+  (section 4): showing families less than C, rather than more than they get
+  today, keeps the behaviour that exists (`scheduler/route.ts:617`).
 
 **FN0-Q2 (for Jason). What are the words of the line, and from when does a
 register-only mark count?**
@@ -936,7 +962,8 @@ line, "using the names already ruled" (OW27-11, OW27-12, `OWNER_DECISIONS.md:187
 Overwatch for these words and the register-only case, and the sizing leaves
 them to FN-0 (`W4_SIZING.md:542-543`); App Overwatch's check sees that this
 reaches you and is not already ruled. If App Overwatch holds the brief's
-routing, it answers this itself (section 1).
+routing, it may answer the words itself, with B's timing; a pick of A's
+start time or of C goes to you (section 1).
 The case the card did not show: a family's register mark can say "on the
 floor now" before the child arrives. One "I'm here" tap marks every class the
 athlete is registered to that day (`apps/web/components/AthleteImHere.tsx:16-19`),
@@ -980,7 +1007,12 @@ child on the line all day. OBSERVED (the code), INFERRED (the effect).
   floor now" stays for a running-session mark. Pros: says only what the
   register says (kernel floor, "Nothing false ships"), true at any hour,
   before arrival or after leaving. Cons: narrows your C's "on the floor" for a
-  register-only mark; two kinds of line.
+  register-only mark; two kinds of line, so a family learns whether a live
+  session or only the register marked the child, which the other options
+  keep off the line (F11, check 3); and on a session tied to a class the
+  line changes from "on the floor now" to "marked here today" when the run
+  ends, because the register copy stays (`sessionRunAthletes.ts:206-211`),
+  which shows the family when the session ended (F14).
 - **D: your own words.**
 - Until you answer, the build follows your C as chosen (B) (section 4).
 
