@@ -137,7 +137,7 @@ recorded ruling, `OWNER_DECISIONS.md:1501`) and Q3.5 B against the recommendatio
 review recommends building C as chosen: a register-only mark shows as "on
 the floor now", with the card's con (after they have gone home) as he
 accepted it. It recommends three narrowings of Q3.1 C, each for a case the
-card did not show, and each goes to him: a present mark on a cancelled class, for families
+card did not show, and each was put to him: a present mark on a cancelled class, for families
 (FN0-Q1); a register-only mark the family wrote, before its class starts,
 so the line does not say a child is on the floor before they arrive (FN0-Q2,
 F2); and a run mark the register later set Absent or Excused (FN0-Q6, F16).
@@ -150,7 +150,8 @@ temporary narrowings an earlier version of this review set: the staff branch
 keeps cancelled-class marks on the coach line, and the three other homes get
 what Q12 A gives them (FN0-Q3). OD-2026-10-10-007 records his complaint about questions
 that "slowly adds constrainsts" (`OWNER_DECISIONS.md:8034`); each of the
-three is put once, each with the option that builds C as chosen. Narrower words are an option put to him, not a recommendation
+three was put once, each with the option that builds C as chosen, and App
+Overwatch answered the first itself. Narrower words are an option put to him, not a recommendation
 (FN0-Q2). Where a ruling's plain
 principle may already reach a case, the question says so (FN0-Q5, FN0-Q6).
 INFERRED.
@@ -330,10 +331,9 @@ mark feeds no "board or grant figure", which OW27-32 treated as needing
 Jason's ruling (section 1); Backbone's note on his answer there keeps "no
 attendance figure, report, board or grant figure changes"
 (`OWNER_DECISIONS.md:1441`). App Overwatch's application of Q12 A now puts
-"how many are here" on the board's and the platform owner's homes (FN0-Q3,
-section 6), and this review counts it by section 4's rule, which includes
-run marks; that tension is flagged for App Overwatch's sign-off (FN0-Q3).
-INFERRED.
+"how many are here" on the board's and the platform owner's homes (FN0-Q3);
+it is counted from register marks only, as the TV counts, so no board or
+platform figure reads a run mark unless Jason rules it in. INFERRED.
 - **The authority the code cites.** For staff-only, the module, the registry,
   the migration, the convention test and the staff route cite OD-2026-10-10-003
   items 3 and 4 (`sessionRunAthletes.ts:44`; `privacyTiers.ts:574`;
@@ -351,8 +351,8 @@ INFERRED.
   the athlete or the parent. So, by my reading, the staff-only rule is in
   code, and the newer answers (OD-2026-11-21-006) govern: **not a CONFLICT**.
   INFERRED. The OW27-19 card told Jason only that a run mark "is not
-  attendance" (`:1258`), not that it is staff-only today; whether that goes to
-  him is FN0-Q4.
+  attendance" (`:1258`), not that it is staff-only today; App Overwatch's
+  FN0-Q4 A tells him in one line.
 - **Recommendation for the read (FN-1, with its family branches opened by
   FN-2):** only that yes/no leaves the server for a family reader, for their own child or themselves; the run, its coach, its
   class, its times, and who else is in it stay staff only, as the registry
@@ -374,8 +374,8 @@ INFERRED.
   today, and the paired TV keeps "showing only who is present, by initials"
   (OD-2026-10-17-008 ruling 1, `OWNER_DECISIONS.md:6997`). The floor-line read should be shown to
   return only the yes/no to a family and nothing at all to a board,
-  platform-owner, staff-role or volunteer caller (any count Jason rules under
-  FN0-Q3 comes from its own read) ("Do not
+  platform-owner, staff-role or volunteer caller (the count on their homes,
+  FN0-Q3, comes from its own register-only read) ("Do not
   weaken authorization, organization isolation, safeguarding
   ... merely to make a task pass", `AGENT_KERNEL.md:546`). The table stays on
   the public-surface denylist (`privacyTiers.ts:723-724`).
@@ -607,14 +607,13 @@ would be a new answer to Q3.1, not a build choice.
   to warn or block. One line may count as new words for families: the line
   when the read fails (F15). Words for a failed read on a family or athlete
   screen have gone to Jason, or to his design, three times before (F15), so
-  whether his latest answer already reaches it is FN0-Q5, put to Jason, not
-  settled on my own. Some recommendations narrow when or where
+  App Overwatch has since ruled its shape (OW25-35 A and the kernel floor),
+  and the exact words go to Jason with FN0-Q2 (FN0-Q5). Some recommendations narrow when or where
   the line shows, and each is carried by a ruling or a question: the class's
   gym day for a register mark (F2, CT-13's day rule); a register mark on a
   cancelled class for families, as the family read already does (FN0-Q1);
   a family's register mark counted from its class's start (F2, FN0-Q2 A),
-  with narrower words offered to Jason in option C, not recommended; which homes
-  get a line (FN0-Q3); a stale run not
+  with narrower words offered to Jason in option C, not recommended; a stale run not
   counted as live (F13, the 3-hour ruling); a later Absent or Excused on a
   tied class (F16, FN0-Q6). INFERRED.
 - The public wall and the paired TV are unchanged: the line is for signed-in
@@ -752,8 +751,9 @@ that Q3.2 B offered ("Helps with pickup timing", `:1276`) and Jason did not
 choose. Every linked guardian gets it, including one a release restriction
 concerns. INFERRED. How often the line refreshes sets how closely a guardian
 can time this; that is a screen-flow choice, which the kernel gives to Jason
-with the lane (`AGENT_KERNEL.md:87-88`), so it is asked in FN0-Q2. This review recommends no new gate (L1 rule). Whether this, with F1, goes to
-Jason before FN-2 is FN0-Q4.
+with the lane (`AGENT_KERNEL.md:87-88`), so it is asked in FN0-Q2. This review recommends no new gate (L1 rule). App Overwatch's
+FN0-Q4 A tells Jason this, with F1, in one line before FN-2; no
+per-guardian hold is built.
 
 **F15. A failed read must not look like "nobody".** The kernel floor says
 "an unknown value never looks complete or zero" (`AGENT_KERNEL.md:106-107`).
@@ -800,8 +800,9 @@ OBSERVED.
     lane's, under his design.
   (OW27-43 sent such words to him too, for a staff page.) OBSERVED. OW25-35 A
   is the latest and covers "the member's screens and the parent's Safety
-  page" (`OWNER_DECISIONS.md:3328`); whether its plain principle already reaches the line's
-  failed read, under OD-2026-10-13-013, is FN0-Q5. INFERRED.
+  page" (`OWNER_DECISIONS.md:3328`); App Overwatch has since ruled that its
+  shape reaches the line's failed read, with the kernel floor, and the
+  exact words go with FN0-Q2 (FN0-Q5). INFERRED.
 
 **F16. A run mark and a later register Absent can disagree, and the line has
 to pick one.** Both rulings below hold as written: ruling 1 decides which mark
@@ -870,16 +871,17 @@ register-only mark (FN0-Q2).
 Never: a deleted athlete; another organization's athlete or run; an absent or
 excused mark; a run mark taken back; a settled run; a register mark for a
 class on another day. The same rule feeds the coach line, the parent's line,
-the athlete's line and the count on the three homes FN0-Q3 covers, except
-for a cancelled class, which FN0-Q1 A splits by reader.
+the athlete's line, and its register half the count on the three homes
+FN0-Q3 covers (no run marks there), except for a cancelled class, which
+FN0-Q1 A splits by reader and which those counts leave out.
 
 | Role (home) | May show | Must never show |
 |---|---|---|
 | Coach, organization admin, admin (coach home, admin home): the coach line | The names of every live athlete of this gym who counts, from either source (Q3.3 A). Presence only, as answered (F12). Staff gate as F5. That it could not be checked, when the read fails (F15). | Anyone the rule above leaves out. Absent or excused shown as "not here" (F4). "Nobody ..." when the read failed (F15). |
 | Parent (Parent Hub) | For each of their own children who counts, a line saying so (Q3.2 A), in the words FN0-Q2 rules. Scope as F6. When the read fails, what FN0-Q5 rules. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the time of the mark, the coach, the run, the room (Q3.2 B not chosen; a run mark's time is staff only today, `runs/[runId]/athletes/route.ts:74`; a register mark's time already reaches families on the schedule read, 2.2, but not on this line). A child who is 18 or over, unlinked, or deleted. Who marked the child or how (F11). A hold, pain, readiness or injury state (F12). "Not here" or "absent" (F4). A failed read shown as "not on the floor" (F15). |
 | Athlete (athlete home) | Their own status (Q3.4 A, "A line about themselves only ... Their own status"): on the floor now, or not counted on the floor right now (FN0-Q2). When the read fails, what FN0-Q5 rules. | Anyone else: no name, no count (Q3.4 B not chosen), no id; not who else is in the session, nor the coach ("nothing about others", Q3.4 A). Recommended, not ruled by Q3.4 A: not the run, the class or the time of the mark, so the athlete's line carries no more than the parent's (Q3.2 A). Who marked them or how (F11). A hold or health state (F12). A failed read shown as "not on the floor" (F15). |
-| Board, staff-role and volunteer accounts | Under Q12 A as App Overwatch applied it (FN0-Q3): the classes running now (title and times), each live session's round, and how many are on the floor by section 4's rule, with no person named, as far as class titles name none. On the board's home the count follows the board's floor: below 5 it reads as the existing hidden figure (`privacyTiers.ts:84-86`). | Names, initials or ids (F3; Q12 A, "Names appear only where the person may already see them", and neither reads who is present by name today). On the board's home, a number below 5. |
-| Platform owner | Under Q12 A as App Overwatch applied it (FN0-Q3): de-identified and aggregate, per OD-2026-09-28-005: each gym's classes running now, each live session's round, and its count by section 4's rule, held to the floor every platform figure holds (F3). | Names, initials, athlete ids (F3; OD-2026-09-28-005). A per-gym count below 5. Anything read through the session-run routes it was taken off (OD-2026-10-07-011 ruling 2). |
+| Board, staff-role and volunteer accounts | Under Q12 A as App Overwatch applied it (FN0-Q3): the classes running now (title and times), each live session's round, and one count per home of how many are here, from present register marks under section 4's register half (no run marks, FN0-Q3), with no person named, as far as class titles name none (a flagged risk, FN0-Q3). On the board's home the count follows the board's floor: below 5 it reads as the existing hidden figure (`privacyTiers.ts:84-86`). | Names, initials or ids (F3; Q12 A, "Names appear only where the person may already see them", and neither reads who is present by name today). On the board's home, a number below 5. |
+| Platform owner | Under Q12 A as App Overwatch applied it (FN0-Q3): de-identified and aggregate, per OD-2026-09-28-005: each gym's classes running now (titles a flagged risk, FN0-Q3), each live session's round, and one count per gym from present register marks under section 4's register half (no run marks), held to the floor of 5 the platform routes' comments describe (F3). | Names, initials, athlete ids (F3; OD-2026-09-28-005). A per-gym count below 5. Anything read through the session-run routes it was taken off (OD-2026-10-07-011 ruling 2). |
 | Signed out: public wall, paired TV | Unchanged: classes and counts on the public address, initials on a paired TV (OD-2026-10-07-008 ruling 1). | Any part of the line. |
 
 **For every role:** the server cuts the response by role before it is sent;
@@ -973,8 +975,11 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
     `pilotRoleRouting.ts:48-50`), of staff-role and volunteer accounts and of
     the platform owner show what App Overwatch's FN0-Q3 answer gives them,
     from their own guarded read: the classes running now (title and times),
-    each live session's round and the count by section 4's rule. None shows a
-    name, initials or an athlete id. The board's count reads as the hidden
+    each live session's round and one count per home (per gym for the
+    platform owner) from present register marks under section 4's register
+    half, never run marks, so check 7's guard holds for these reads. None
+    shows a name, initials or an athlete id from the line's own data (class
+    titles are the flagged risk, FN0-Q3). The board's count reads as the hidden
     figure below 5, and the platform owner's per-gym count below 5 is not
     shown. A failed read shows that it could not be checked (F15).
 12. A signed-out caller, `/api/pilot/wall` and `/api/pilot/tv/session` get
@@ -1010,8 +1015,8 @@ no copy in this repository).
 `W4_SIZING.md:549-554`).** FN-1, the read: FN0-Q1, FN0-Q6 and FN0-Q2's
 start time change which marks count. FN-1 can build those three as separate
 conditions before they are answered, serving staff only until FN-2; FN-2 and
-FN-3 ship after (section 4), and FN0-Q4 decides whether Jason hears F1 and
-F14 before FN-2. This moves the opening of the family cuts, which the sizing
+FN-3 ship after (section 4), and under FN0-Q4 A Jason hears F1 and F14 in
+one line before FN-2. This moves the opening of the family cuts, which the sizing
 puts in FN-1 (`W4_SIZING.md:552`), to FN-2, sized as screens only (`:553`):
 a departure from the sizing, for App Overwatch to note. FN-2 and
 FN-3, the screens: FN0-Q2 sets the words for both, and FN0-Q5 the family
@@ -1026,7 +1031,8 @@ application, section 1). Does a present register mark on a cancelled class
 put a child on the line?**
 Plain: if the office cancels a class after children were marked present,
 are they still shown on the floor?
-Why it is his: the recommended option narrows your Q3.1 C ("Either record
+Why it was put to you (App Overwatch has since answered it as its
+application, section 1): the recommended option narrows your Q3.1 C ("Either record
 counts", your option's text, `OWNER_DECISIONS.md:1264`; the recorded ruling,
 "either record counts as on the floor", `:1501`) for families. It follows
 an application recorded in OD-2026-10-22-001 as one of Overwatch's
@@ -1176,37 +1182,57 @@ TV shows: the class, the round and how many are here. Names appear only
 where the person may already see them"; quoted from a file not in this
 repository, section 1), with what each part rests on here:
 - **Every one of the three homes shows the classes running now, each live
-  session's round and how many are on the floor.** "Running now" comes from
+  session's round and how many are here.** "Running now" comes from
   the class schedule: a class whose `start_at` is at or before now and whose
   `end_at` is after now, and which is not cancelled
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:15-16`,
   `:22`); title and times only, no coach or room. The round is the live
   run's round clock, which the paired TV already shows and which carries no
-  account id (`apps/web/src/server/pilot/gymTvs.ts:574-577`). The count
-  follows section 4's rule (Q3.1 C, Jason's later and specific answer on
-  what counts as "on the floor now"), so it includes run marks. The TV's own
-  count reads today's present register marks only (`gymTvs.ts:657`;
-  `wallDisplayDb.ts:176-181`), and Overwatch's 10-13 note kept run marks out
-  of any "board or grant figure" (F1). This review reads Q3.1 C as governing
-  the line's count on every home; App Overwatch confirms or changes that at
-  sign-off. INFERRED.
+  account id (`apps/web/src/server/pilot/gymTvs.ts:574-577`). "How many are
+  here", as the TV shows it, counts present register marks only
+  (`gymTvs.ts:657`; `wallDisplayDb.ts:176-181`), so on these homes the count
+  is section 4's register half (class gym day, not cancelled, and a family's
+  mark as FN0-Q2 rules), without run marks. Counting run marks there would
+  make a board and platform figure from them: the migration says whether a
+  run mark "should ever count toward a participation figure is an owner
+  decision that has not been made"
+  (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:29-32`),
+  and OW27-32's card says departing from Overwatch's 10-13 note "needs your
+  ruling" (`OWNER_DECISIONS.md:1437`). So run marks stay out of these
+  counts unless Jason rules them in, which App Overwatch may put to him with
+  FN0-Q2 and FN0-Q6. With the register half only, these reads never reach
+  the run-marks table, and check 7's guard holds for them unchanged.
+  INFERRED.
+- **One count per home** (per gym for the platform owner), no per-class
+  count: on the board's home a per-class count below 5 could be worked out
+  from the total and the classes shown, and the TV's layout has both
+  (`wallDisplay.ts:450-458`). INFERRED.
 - **No home of the three shows a name, initials or an athlete id.** Q12 A
   puts names "only where the person may already see them": the board's tier
   is "never a row, never a name" (`privacyTiers.ts:84-86`), the platform
   owner's is "no athlete ids, no names" (`privacyTiers.ts:73-79`), and
   staff-role and volunteer accounts read no athlete record by name today
-  (`pilotRoleRouting.ts:51-52`, a code comment; F3). "No person" also rests
-  on class titles naming none: a title is staff-written text and a class
-  can have a capacity of 1
-  (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:18`).
+  (`pilotRoleRouting.ts:51-52`, a code comment) and read nobody's presence
+  by name (the wall of names gives every signed-in role initials and years,
+  by its route's comment; F3). "No person" also rests on class titles naming
+  none: a title is staff-written text
+  (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:14`) and
+  a class can have a capacity of 1 (`:18`), so a title with a count of 1 can
+  name a child's presence; the public wall already pairs them for the
+  default gym (F3). For the platform owner a gym's class titles are not
+  "de-identified" data in the plain sense the platform tier warns of
+  (`privacyTiers.ts:77-79`). This review flags both for App Overwatch's
+  sign-off; it does not drop the titles App Overwatch's application gives.
   INFERRED.
 - **The board's count holds the board's floor.** Below 5 it reads as the
   existing hidden figure (`privacyTiers.ts:84-86`; F3). That floor is a repo
   contract, not an owner ruling (F3), and it is not a narrowing App
   Overwatch removed: it is how every board figure reads today.
 - **The platform owner's home is de-identified and aggregate,** per
-  OD-2026-09-28-005, gym by gym, and holds the floor every platform figure
-  holds (F3; App Overwatch: "with its small-count floor if one applies").
+  OD-2026-09-28-005, gym by gym, and holds the floor of 5 that the platform
+  routes' comments say every platform figure holds (F3, comments read, code
+  path not traced; App Overwatch: "with its small-count floor if one
+  applies").
   App Overwatch applied Q12 A's "On every screen" to this home, past the
   review's earlier reading of "platform for platform gym for gym"
   (OD-2026-10-02-013, F3). OD-2026-10-07-011 ruling 2 took the platform owner
@@ -1228,8 +1254,12 @@ repository, section 1), with what each part rests on here:
   `OWNER_DECISIONS.md:1258`); the kernel floor keeps role gates untouched
   (`AGENT_KERNEL.md:104-105`), and Jason is "owner and final authority"
   (`AGENT_KERNEL.md:38-40`). INFERRED.
-- **Sizing.** These lines are outside the sized PRs (`W4_SIZING.md:553-554`);
-  a PR for them is App Overwatch's to size.
+- **Sizing and timing.** These lines are outside the sized PRs
+  (`W4_SIZING.md:553-554`); a PR for them is App Overwatch's to size, and it
+  ships after FN0-Q2 is answered, since their count uses FN0-Q2's rule for a
+  family's mark and their words come with FN0-Q2. Cancelled classes stay out
+  of these counts, as "a cancelled class's attendance stops counting"
+  (OD-2026-10-22-001's application, `OWNER_DECISIONS.md:5974`).
 
 **FN0-Q4 (for App Overwatch; answered: A, section 1). Do F1 and F14 go to
 Jason before FN-2 ships?**
@@ -1254,7 +1284,7 @@ FN-1 serves families nothing before it (section 4), so none of the options costs
 anything; the choice is only whether, and how, Jason hears these two facts
 before families see the line.
 - **A (recommended): App Overwatch decides, and Jason gets one line on F1 and
-  F14, posted in this PR with the five questions, before FN-2 ships.** I read
+  F14, posted in this PR with the questions to him, before FN-2 ships.** I read
   F1 and F14 as inside his Q3.2 A answer (a parent sees their own child's
   line), so not breaking the hard floor; they do touch minors' privacy and
   safeguarding, and OD-2026-10-21-005's "touching" standard gives a one-line
@@ -1271,7 +1301,7 @@ before families see the line.
   narrowly (no floor broken, so he hears nothing). Cons: the cards did not
   show him that run marks are staff-only today (`OWNER_DECISIONS.md:1258`), or that one
   guardian cannot be held back.
-- **C: ask Jason in this PR, with the five questions.** For use if App
+- **C: ask Jason in this PR, with the questions to him.** For use if App
   Overwatch reads either finding as breaking the hard floor. Ruling 3 gives
   him only a line then, so asking goes beyond it; it rests on G8 ("minors'
   privacy ... go to Jason"), the kernel floor ("Minors' privacy ...
@@ -1300,8 +1330,8 @@ failed hold check, where on 2026-10-01 you turned down "We could not check
 ..." and wrote your own line; and the chalkboard, whose failed-read line is
 the lane's words under your design. OW25-35 A's words are about a medical
 restriction; whether its plain principle already reaches this line under
-OD-2026-10-13-013 is a reading, so it is put to you rather than applied.
-INFERRED. With no line at all, a failed read looks like "not on the floor"
+OD-2026-10-13-013 is a reading, so it was put to you rather than applied;
+App Overwatch has since ruled the shape (heading). INFERRED. With no line at all, a failed read looks like "not on the floor"
 (F15).
 - **A (recommended): OW25-35 A's shape.** "Whether [child's first name] is
   on the floor could not be checked just now." for a parent; "Whether you're
@@ -1319,7 +1349,7 @@ INFERRED. With no line at all, a failed read looks like "not on the floor"
   now." already on those two homes (F15;
   `apps/web/components/Chalkboard.tsx:274`). Cons: those words are a lane's, not
   yours.
-- **C: nothing.** Pros: no new line on minors' screens. Cons: a failed read,
+- **C: nothing** (ruled out by App Overwatch's answer). Pros: no new line on minors' screens. Cons: a failed read,
   or one still in progress, then looks like "not on the floor" (F15; kernel floor, "an unknown value
   never looks complete or zero", `AGENT_KERNEL.md:106-107`).
 - **D: your own words.**
