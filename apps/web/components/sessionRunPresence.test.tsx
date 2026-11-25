@@ -1250,9 +1250,9 @@ test('on the live floor, notes refused with the panel closed are each said, name
   }
 });
 
-// The live list with one notes route: the session answers `account()`, the list has Ada and Ben marked
-// here, and each note POST gets `notePost(n)`.
-async function showLiveNotes(handlers: { account: () => string; notePost: (n: number) => 'lost' | 'refused' }) {
+// The live list with one notes route: the session answers `account()` (when its promise settles, for a
+// check held out), the list has Ada and Ben marked here, and each note POST gets `notePost(n)`.
+async function showLiveNotes(handlers: { account: () => string | Promise<string>; notePost: (n: number) => 'lost' | 'refused' }) {
   const answer = (body: unknown, status = 200) => {
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
@@ -1260,7 +1260,7 @@ async function showLiveNotes(handlers: { account: () => string; notePost: (n: nu
   let posts = 0;
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: handlers.account() });
+    if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: await handlers.account() });
     if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
       if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
       posts += 1;
@@ -1271,8 +1271,9 @@ async function showLiveNotes(handlers: { account: () => string; notePost: (n: nu
     return answer({});
   }) as unknown as typeof fetch;
   prepareSaveQueue();
+  let view: ReturnType<typeof render> | undefined;
   await act(async () => {
-    render(
+    view = render(
       <>
         <SessionRunPresence runId="ssrun 1" />
         <SaveQueueNotice />
@@ -1280,6 +1281,7 @@ async function showLiveNotes(handlers: { account: () => string; notePost: (n: nu
     );
     await jest.advanceTimersByTimeAsync(0);
   });
+  return view as ReturnType<typeof render>;
 }
 
 async function writeNote(athleteName: string, words: string) {
@@ -1376,6 +1378,90 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     });
     expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('');
     expect(screen.queryByText(/Its words: “Wrist taped\.”/)).toBeNull();
+  });
+  test('while the page checks again who is signed in, the list only counts its lines and gives no words back; once the same coach is confirmed, both return', async () => {
+    let account: () => string | Promise<string> = () => 'acct-a';
+    let answerCheck: (id: string) => void = () => undefined;
+    await showLiveNotes({ account: () => account(), notePost: (n) => (n === 1 ? 'lost' : 'refused') });
+    await writeNote('Ada Reyes', 'Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    // A sign-in elsewhere writes no device mark: back on this tab, the check is out and not answered yet.
+    account = () => new Promise<string>((resolve) => {
+      answerCheck = resolve;
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByText(ADA_SAID)).toBeNull();
+    expect(screen.getByText('1 message about a save on this list shows again once the page has checked who is signed in.')).toBeTruthy();
+    // Nothing to dismiss unread.
+    expect(screen.queryByRole('button', { name: 'OK' })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    // The same coach after all: named again, and the words come back when the notes are next opened.
+    await act(async () => {
+      answerCheck('acct-a');
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('Wrist taped.');
+  });
+
+  test('a note refused after the whole list has gone is said in the page\'s list, without its words, not handed to the gone list', async () => {
+    const view = await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused') });
+    await writeNote('Ada Reyes', 'Wrist taped.');
+    // The console moves on (another run, or the live screen left): the list goes, the page's list stays.
+    await act(async () => {
+      view.rerender(<SaveQueueNotice />);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(FAILED_WORDS)).toBeTruthy();
+    expect(screen.getByText(/Staff note/)).toBeTruthy();
+    expect(screen.queryByText(/Wrist taped/)).toBeNull();
+    expect(screen.queryByText(/Ada Reyes/)).toBeNull();
+  });
+
+  test('after one drop, a later refusal for the new coach stays on the list through later changes of the queue', async () => {
+    let account = 'acct-a';
+    await showLiveNotes({ account: () => account, notePost: (n) => (n === 1 ? 'lost' : 'refused') });
+    account = 'acct-b';
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await writeNote('Ada Reyes', 'Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    // Another kept save goes through the queue: the line stays.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark here Cy Marsh' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
   });
 });
 

@@ -8,7 +8,7 @@ import SessionStaffNotesPanel from './SessionStaffNotesPanel';
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests, saveQueueGeneration } from '@/src/lib/saveQueue';
 
 const THEIRS = {
   note_id: 'note-2',
@@ -636,6 +636,20 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
     expect(sent).toHaveLength(1);
     expect(sent[0].body).toEqual({ run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Wrist taped.' });
     expect(waitingLine()).toBeNull();
+  });
+
+  test('off the live floor a drop of the queue leaves the box alone: a draft being typed stays (condition 4)', async () => {
+    jest.useFakeTimers();
+    serveKept({ notes: () => [], write: () => answer({ ok: true, note_id: 'note-9' }) });
+    await openKept({ kept: false });
+    fireEvent.change(draftField(), { target: { value: 'Half a note' } });
+    const before = saveQueueGeneration();
+    await act(async () => {
+      clearRoleSession();
+    });
+    // The queue did drop (another tab's live floor may have kept saves); this panel's box is today's.
+    expect(saveQueueGeneration()).not.toBe(before);
+    expect(draftField().value).toBe('Half a note');
   });
 
   test('on the live floor a change and a removal still go today\'s way: sent once, with no key, nothing kept (a change has no key to be sent twice safely)', async () => {

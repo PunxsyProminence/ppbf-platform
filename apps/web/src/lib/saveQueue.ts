@@ -680,6 +680,15 @@ export function saveQueueGeneration(): number {
   return generation;
 }
 
+/**
+ * True only while the account signed in is confirmed and not being checked again (each change is told
+ * to subscribers). Until then the person at the screen may be someone else: a screen shows only a
+ * count of what it holds for the last account, never names or words, as the page's list does.
+ */
+export function saveQueueAccountConfirmed(): boolean {
+  return accountId !== null && !rechecking;
+}
+
 /** Clears the failed words and the not-sent count once the person has read them. */
 export function dismissFailedSaves(): void {
   if (failed.length === 0 && notSent.length === 0) return;

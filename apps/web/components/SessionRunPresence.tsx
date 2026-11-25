@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { keepSave, readSaveQueue, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, readSaveQueue, saveQueueAccountConfirmed, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -313,6 +313,9 @@ export default function SessionRunPresence({
       setNoteWords(NO_REFUSALS);
     });
   }, []);
+  // While the page checks again who is signed in (a sign-in elsewhere writes no device mark), they are
+  // only counted, and no words go back into a box: the person at the screen may be the next one.
+  const accountConfirmed = useSyncExternalStore(subscribeSaveQueue, saveQueueAccountConfirmed, () => false);
   // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
   // words kept for the box.
   const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string): boolean => {
@@ -576,7 +579,15 @@ export default function SessionRunPresence({
       ) : null}
 
       {/* Kept taps' refusals stay through a list that could not be read; OK clears them. */}
-      {keptRefusals.size > 0 ? (
+      {keptRefusals.size > 0 && !accountConfirmed ? (
+        <div role="alert" className={ALERT}>
+          <p>
+            {keptRefusals.size === 1
+              ? '1 message about a save on this list shows again once the page has checked who is signed in.'
+              : `${keptRefusals.size} messages about saves on this list show again once the page has checked who is signed in.`}
+          </p>
+        </div>
+      ) : keptRefusals.size > 0 ? (
         <div role="alert" className={ALERT}>
           {[...keptRefusals].map(([athleteId, text]) => <p key={athleteId}>{text}</p>)}
           <button type="button" className="btn btn--kiosk mt-[var(--s2)]" onClick={() => setKeptRefusals(NO_REFUSALS)}>
@@ -713,7 +724,7 @@ export default function SessionRunPresence({
                               keptOnThisPage
                               isFinishWaiting={isFinishWaiting}
                               onKeptRefused={(words, noteText) => noteRefused(athlete, words, noteText)}
-                              returnedWords={noteWords.get(athlete.athlete_id)}
+                              returnedWords={accountConfirmed ? noteWords.get(athlete.athlete_id) : undefined}
                               onWordsReturned={() => wordsReturned(athlete.athlete_id)}
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
