@@ -135,8 +135,10 @@ async function lockSwitchRow(client: PoolClient, subject: EmailAlertSwitchSubjec
  *     or over (the same read as emailAlertUserTypeFor).
  * The gym's own status is answered apart (gymActive), as sign-in reads it: the
  * organization row FOR SHARE after the account lock, as parentPasswordSignIn.ts
- * does (setOrganizationStatus is its only writer and holds no account row). A
- * gym not active refuses a save, but is no reason to clear anyone's switch.
+ * does. Its only writer, setOrganizationStatus, and the gym-setting saves that
+ * lock it (tabletIdlePolicy.ts, stoppedComingPolicy.ts) take no account lock
+ * that waits on this one. A gym not active refuses a switch-on, but is no
+ * reason to clear anyone's switch.
  */
 async function lockPerson(
   client: PoolClient,
@@ -260,8 +262,10 @@ export async function setEmailAlertSwitch(
   const saved = await withTransaction(async (client) => {
     // Everything the save rests on, again under its own locks (lockPerson):
     // nothing is written unless the person is still offered this user type.
+    // A gym not active refuses a switch-on; a switch-off grants nothing and is
+    // kept, so an opt-out is never lost to a suspension lifted later.
     const { userType: underLock, gymActive, stored } = await lockPerson(client, subject, now);
-    if (underLock !== userType || !gymActive) return null;
+    if (underLock !== userType || (switchedOn && !gymActive)) return null;
     try {
       return await saveSwitch(client, subject, userType, switchedOn, stored);
     } catch (error) {

@@ -644,13 +644,15 @@ describe('emailAlertSwitches.ts on a real database', () => {
       'update pilot.accounts set deleted_at = now() where account_id = $1',
       'update pilot.accounts set updated_at = now() where account_id = $1',
     ]],
+    // This gym's membership only: the other gym's stays an active coach, so only a read
+    // pinned to this gym refuses.
     ['the membership switched off', [
       'update pilot.accounts set updated_at = now() where account_id = $1',
-      'update pilot.organization_memberships set active_flag = false where account_id = $1',
+      `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = '${ORG_ID}'`,
     ]],
     ['the membership made a volunteer', [
       'update pilot.accounts set updated_at = now() where account_id = $1',
-      "update pilot.organization_memberships set role = 'volunteer' where account_id = $1",
+      `update pilot.organization_memberships set role = 'volunteer' where account_id = $1 and organization_id = '${ORG_ID}'`,
     ]],
   ] as const)('%s while a coach\'s save waits on the account is seen inside the save: 403, never switched on', async (_label, changes) => {
     const client = await freshDatabase('emailsw_member_race');
@@ -718,7 +720,8 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   }
 
-  test('the gym suspended while a save waits on its row is seen inside the save: 403, never switched on, and nothing cleared', async () => {
+  // Every status but active, as sign-in refuses each (auth.ts).
+  test.each(['suspended', 'inactive', 'pending'])('the gym made %s while a save waits on its row is seen inside the save: 403, never switched on, and nothing cleared', async (status) => {
     const client = await freshDatabase('emailsw_gym_race');
     activeClient = client;
     activePool = new Pool({ connectionString: connectionStringFor('emailsw_gym_race'), max: 4 });
@@ -728,7 +731,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
          values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
         [ORG_ID, ADULT_ID],
       );
-      const save = whileHeld(client, [`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG_ID]],
+      const save = whileHeld(client, [`update pilot.organizations set status = $2 where organization_id = $1`, [ORG_ID, status]],
         () => setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW));
       await expect(save).rejects.toMatchObject({ status: 403 });
       // Refused, but the person is still offered: their confirmed address stays.
@@ -736,6 +739,26 @@ describe('emailAlertSwitches.ts on a real database', () => {
         account_id: ADULT_ID, switched_on: false, confirmed_address: 'someone@example.test',
       })]);
       expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a switch-off made while the gym is suspended under it is still saved: an opt-out is never lost', async () => {
+    const client = await freshDatabase('emailsw_gym_off_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_gym_off_race'), max: 4 });
+    try {
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      const save = whileHeld(client, [`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG_ID]],
+        () => setEmailAlertSwitch({ ...subject('coach'), switchedOn: false }, NOW));
+      await expect(save).resolves.toEqual({ offered: true, user_type: 'staff', switched_on: false });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: COACH_ID, switched_on: false })]);
+      // Reactivated later: the person stays opted out.
+      await client.query(`update pilot.organizations set status = 'active' where organization_id = $1`, [ORG_ID]);
+      await expect(readEmailAlertSwitch(subject('coach'), NOW)).resolves.toEqual({
+        offered: true, user_type: 'staff', switched_on: false,
+      });
     } finally {
       await client.end();
     }
