@@ -13,7 +13,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
-import SessionRunClass, { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
+import SessionRunClass, { goneWords, unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import {
   keepSave,
@@ -981,7 +981,14 @@ export default function SessionScriptLiveDelivery({
           if (settledHere.current) return undefined;
           if (refusal.error === 'SESSION_RUN_NOT_LIVE' || refusal.error === 'SESSION_RUN_NOT_FOUND') {
             void resyncAfterNotLive();
-            return undefined;
+            if (body.action !== 'finish') return undefined;
+            // A finish the session ended without (another tab or device, the idle close) loses what was
+            // entered when ending it. The console only says the session has ended and then goes, so the
+            // page's list names this finish too: not saved, or not known (round 17, reviewers A and B).
+            // The coach's notes themselves are never repeated there.
+            return landed === null
+              ? unknownOffPage('Check this session under Finished sessions.')
+              : `This session was not ended from this screen: ${goneWords(refusal.error)}. What was entered when ending it was not recorded.`;
           }
           // A refused resend that could not be checked: whether an earlier send landed is not known.
           const reason = describeRunError(refusal.error, response.status);

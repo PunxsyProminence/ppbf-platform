@@ -2254,11 +2254,71 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
         runsGet: () => jsonResponse({ run: null }),
       });
       fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      fireEvent.change(screen.getByLabelText('What worked'), { target: { value: 'Slip line clicked.' } });
       await tap('Record as completed');
       await wait(RESEND_MS);
       expect(onSettled).not.toHaveBeenCalled();
       expect(settledReads).toBe(0);
       expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      // Known not saved, and named in the page's list, which stays when the console goes: what was
+      // entered when ending it was lost (round 17, reviewers A and B). The notes are not repeated.
+      expect(readSaveQueue().failed).toEqual([{
+        label: 'Record as completed',
+        words: 'This session was not ended from this screen: the session had already ended when it reached the server. What was entered when ending it was not recorded.',
+        known: true,
+      }]);
+      const list = screen.getByRole('alert');
+      expect(within(list).getByText(FAILED_WORDS)).toBeInTheDocument();
+      expect(list.textContent).not.toContain('Slip line clicked');
+    });
+
+    it('finish: refused on its first send because the session had already ended is named in the page\'s list as not saved', async () => {
+      jest.useFakeTimers();
+      const { onSettled, onRunGone } = await renderKept(liveRun(), {
+        patch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409),
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await tap('Record as abandoned');
+      await wait(0);
+      expect(onSettled).not.toHaveBeenCalled();
+      expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      expect(readSaveQueue().failed).toEqual([expect.objectContaining({ label: 'Record as abandoned', known: true })]);
+    });
+
+    it('finish: a resend refused as not found, before its key is looked up, is named in the page\'s list as not known', async () => {
+      jest.useFakeTimers();
+      let sends = 0;
+      const { onSettled } = await renderKept(liveRun(), {
+        patch: () => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          return jsonResponse({ error: 'SESSION_RUN_NOT_FOUND' }, false, 404);
+        },
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await tap('Record as completed');
+      await wait(RESEND_MS);
+      expect(onSettled).not.toHaveBeenCalled();
+      expect(readSaveQueue().failed).toEqual([{
+        label: 'Record as completed',
+        words: unknownOffPage('Check this session under Finished sessions.'),
+        known: false,
+      }]);
+      expect(screen.getByText(UNKNOWN_WORDS)).toBeInTheDocument();
+    });
+
+    it('a pause refused because the session is no longer live is not added to the page\'s list: the console says the session ended', async () => {
+      jest.useFakeTimers();
+      const { onRunGone } = await renderKept(liveRun(), {
+        patch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409),
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      await tap('Pause session');
+      await wait(0);
+      expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      expect(readSaveQueue().failed).toEqual([]);
     });
 
     it('finish: a resend of a finish that landed is answered as replayed with the settled run, and the console settles it', async () => {
