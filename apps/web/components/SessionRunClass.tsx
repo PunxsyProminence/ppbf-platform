@@ -28,7 +28,9 @@ type Copied = { athlete_id: string; effect: string; previous_status?: string };
  * was saved is not known, so it is not called failed. Said where the coach tapped.
  */
 /** Off the screen, the page's list says it under its own "not known" heading, after the save's name. */
-export const UNKNOWN_OUTCOME = 'the server refused it when it was sent again, and whether it was saved could not be checked.';
+export function unknownOffPage(check: string): string {
+  return `the server refused it when it was sent again, and whether it was saved could not be checked. ${check}`;
+}
 export function unknownOutcomeWords(label: string): string {
   return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
 }
@@ -79,6 +81,7 @@ export default function SessionRunClass({
   onClassChange,
   onRunNotLive,
   onClassCancelled,
+  finishWaiting = false,
 }: {
   readonly runId: string;
   readonly classId: string | null;
@@ -87,6 +90,8 @@ export default function SessionRunClass({
   readonly onRunNotLive: () => void;
   /** Whether the tied class has been cancelled since, as last read (the who-is-here footer follows it). */
   readonly onClassCancelled?: (cancelled: boolean) => void;
+  /** A finish is kept and waiting: once it lands this screen goes, so a refusal is said in the page's list. */
+  readonly finishWaiting?: boolean;
 }) {
   const [view, setView] = useState<RunClassView | null>(null);
   const [choosing, setChoosing] = useState(false);
@@ -115,7 +120,12 @@ export default function SessionRunClass({
       }),
     [],
   );
-  // While this line is on the page; a refusal after it has gone gives its words to the page's list.
+  // While this line is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const toPageList = useRef(finishWaiting);
+  useEffect(() => {
+    toPageList.current = finishWaiting;
+  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -202,7 +212,9 @@ export default function SessionRunClass({
         }
         const reason = refusal.message ?? 'The class could not be changed.';
         // Off the page, the page's list says it, after the save's own name.
-        if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+        if (!onPage.current || toPageList.current) {
+          return landed === null ? unknownOffPage('Check which class the session is tied to on the class screen.') : reason;
+        }
         setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;
       },

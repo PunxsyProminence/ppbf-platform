@@ -255,6 +255,43 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     expect(screen.getByRole('status').textContent).toBe('That class cannot be tied now.');
   });
 
+  test('a tie refused while a kept finish waits is said in the page\'s list: the console goes once the finish lands', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    serveTie('run-2', [], () => 'class-youth');
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409);
+      }
+      return base(input, init);
+    });
+    prepareSaveQueue();
+    await act(async () => {
+      render(
+        <>
+          <SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={jest.fn()} finishWaiting />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tie to a class...' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Tie to this class' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText('Tie the session to Youth boxing: That class cannot be tied now.')).toBeTruthy();
+  });
+
   test('signing out drops a kept tie: its waiting words go', async () => {
     jest.useFakeTimers();
     serveTie('run-1', [], () => null);

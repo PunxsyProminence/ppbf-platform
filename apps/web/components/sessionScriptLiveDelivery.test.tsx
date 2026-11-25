@@ -8,7 +8,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery';
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
-import { UNKNOWN_OUTCOME } from './SessionRunClass';
+import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
@@ -2395,7 +2395,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     // Not known, so never under "Not saved:" (condition 2).
     expect(within(screen.getByRole('alert')).getByText(UNKNOWN_WORDS)).toBeInTheDocument();
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
-    expect(screen.getByText(`Pause session: ${UNKNOWN_OUTCOME}`)).toBeInTheDocument();
+    expect(screen.getByText(`Pause session: ${unknownOffPage('Check the session on the class screen before doing it again.')}`)).toBeInTheDocument();
   });
 
   it('a log refused after the console has gone is said in the page\'s list, without the athlete', async () => {
@@ -2565,6 +2565,96 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.getByText('RUNNING')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resume session' })).toBeInTheDocument();
     expect(screen.getByText(/^Not saved yet: Pause session\./)).toBeInTheDocument();
+  });
+
+  it('once a kept log lands, its line goes even while another save still waits', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+      patch: lost,
+    });
+    await openLog();
+    await logPair();
+    await tap('Pause session');
+    expect(screen.getByText('One intervention is not saved yet. This page keeps sending it while it stays open.')).toBeInTheDocument();
+    await wait(RESEND_MS);
+    expect(screen.getByText('logged')).toBeInTheDocument();
+    expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
+    expect(screen.queryByText(/intervention is not saved yet/)).toBeNull();
+  });
+
+  it('another account confirmed on this page forgets every pair\'s key: the next person\'s log is never the last person\'s', async () => {
+    jest.useFakeTimers();
+    let account = 'acct-a';
+    const { fetchMock } = await renderKept(liveRun(), {
+      session: () => jsonResponse({ authenticated: true, account_id: account }),
+      logPost: lost,
+    });
+    await openLog();
+    await logPair();
+    // Someone else signed in by a path that writes no device mark; the page checks again on focus.
+    account = 'acct-b';
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(waitingLine()).toBeNull();
+    await logPair();
+    const posted = logPostCalls(fetchMock);
+    expect(posted).toHaveLength(2);
+    expect(posted[1].made_by_account_id).toBe('acct-b');
+    expect(posted[1].request_key).not.toBe(posted[0].request_key);
+  });
+
+  it('a log refused while a kept finish waits behind it is said in the page\'s list: the console goes once the finish lands', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    const { onSettled } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        return jsonResponse({ items: [] });
+      },
+      patch: (body) => jsonResponse({ run: { ...liveRun(), run_state: body.run_state, ended_at: 'x' } }),
+    });
+    await openLog();
+    await logPair();
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await wait(RESEND_MS);
+    expect(reads).toBeGreaterThan(1);
+    const alert = within(screen.getByRole('alert'));
+    expect(alert.getByText(FAILED_WORDS)).toBeInTheDocument();
+    expect(alert.getByText(/^Intervention log: Round-3 endurance block: /)).toBeInTheDocument();
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('a no-shows tap refused while a kept finish waits behind it is said in the page\'s list', async () => {
+    jest.useFakeTimers();
+    let marks = 0;
+    const tied = liveRun({ class_id: 'class-youth' });
+    await renderKept(tied, {
+      patch: (body) => {
+        if (body.action === 'finish') return jsonResponse({ run: { ...tied, run_state: body.run_state, ended_at: 'x' } });
+        marks += 1;
+        return marks === 1 ? lost() : jsonResponse({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, false, 409);
+      },
+      runsGet: () => jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 } }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await wait(0);
+    await tap('Mark all 2 Absent');
+    await tap('Record as completed');
+    await wait(RESEND_MS);
+    expect(screen.getByText('Mark the no-shows Absent: Not yet.')).toBeInTheDocument();
   });
 
   it('a log refused as another\'s key forgets only its own key: a newer tap\'s key stays the pair\'s while that tap waits', async () => {
