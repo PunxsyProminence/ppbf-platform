@@ -205,6 +205,13 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
     expect(exports).toHaveLength(1);
     expect(exports[0].startsWith('export async function listStoppedComing(')).toBe(true);
+    // And anywhere on a line: the word appears only on the two exported interfaces and that function.
+    const exportLines = lines.filter((line) => /\bexport\b/.test(line)).map((line) => line.trim());
+    expect(exportLines).toHaveLength(3);
+    expect(exportLines.filter((line) => /^export interface \w+ \{$/.test(line))).toHaveLength(2);
+    // The doc line that names the table sits in the header, before the first import.
+    expect(lines.findIndex((line) => NAMES_A_TABLE.test(line) && line.trim().startsWith('* ')))
+      .toBeLessThan(lines.findIndex((line) => /^import /.test(line)));
     expect(text).toMatch(
       /export async function listStoppedComing\(actor: ActorIdentity, today: string\): Promise<StoppedComingList> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
     );
