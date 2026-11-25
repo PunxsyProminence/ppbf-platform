@@ -1,14 +1,20 @@
-// Real PostgreSQL-backed test for the email alert's staff event sources (lane
-// W4-1, EM-4a; plan on #2159, section 6). Each source must name exactly the
-// people the app shows the event to. The test asks the pages' own reads, as
-// each signed-in person would make them, and compares, person by person:
+// Real PostgreSQL-backed test for the email alert's event sources (lane W4-1,
+// EM-4a and EM-4b; plan on #2159, section 6). Each source must name exactly
+// the people the app shows the event to. The test asks the pages' own reads,
+// as each signed-in person would make them, and compares, person by person:
 //   - safety_escalation: app/api/pilot/escalations/route.ts -- listEscalations
 //     with athleteIdsForCoach and excludeAthleteVoice for a coach, unscoped
 //     for an admin or organization admin, nothing for any other role;
 //   - parent_reply: app/api/pilot/coach/family-message-replies/route.ts --
 //     requireRole(coach, organization_admin, admin), assertActorCanAccessAthlete,
-//     then listRepliesForStaff.
-// Someone whose membership is off cannot sign in, so reads nothing.
+//     then listRepliesForStaff;
+//   - gym_notice: listLiveAnnouncements for every placement the role may read
+//     (mayReadLivePlacement), for roles with an email user type;
+//   - coach_message: app/api/pilot/athlete/coach-messages/route.ts --
+//     assertActorCanAccessAthlete for the linked athlete, then
+//     listAthleteCoachMessages.
+// Each also asks the send-time check for every person and event. Someone whose
+// membership is off cannot sign in, so reads nothing.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -745,6 +751,8 @@ describe('email alert staff event sources', () => {
     const retired = await notice(client, ORG, { active: false });
     // Posted two hours ago for a start five minutes ago: it counts from its start.
     const startedLately = await notice(client, ORG, { minutesAgo: 120, startsInMinutes: -5 });
+    // Posted now with a start five hours ago: it counts from its posting.
+    const backdated = await notice(client, ORG, { startsInMinutes: -300 });
     const notYetLive = await notice(client, ORG, { startsInMinutes: 60 });
     const ended = await notice(client, ORG, { endsInMinutes: -1 });
     const old = await notice(client, ORG, { minutesAgo: 120 });
@@ -753,15 +761,16 @@ describe('email alert staff event sources', () => {
     const { from, to } = await lastHour(client);
     const source = reachOf(await gymNoticeSource.candidates(from, to), 'gym_notice', userTypeOf);
     const inWindow = new Set([
-      wall, parentsOnly, athletesOnly, coachesOnly, everywhere, motivation, retired, startedLately, notYetLive, ended, otherGym,
+      wall, parentsOnly, athletesOnly, coachesOnly, everywhere, motivation, retired, startedLately, backdated, notYetLive,
+      ended, otherGym,
     ]);
     const page = await noticesPageReach(inWindow);
 
     expect(sorted(source)).toEqual(sorted(page));
 
-    const forStaff = [wall, parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately].sort();
-    const forParents = [wall, parentsOnly, everywhere, startedLately].sort();
-    const forAthletes = [wall, athletesOnly, everywhere, startedLately].sort();
+    const forStaff = [wall, parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately, backdated].sort();
+    const forParents = [wall, parentsOnly, everywhere, startedLately, backdated].sort();
+    const forAthletes = [wall, athletesOnly, everywhere, startedLately, backdated].sort();
     expect(sorted(source)).toEqual(sorted(new Map([
       ...['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover', 'acct-ev-coach-expired',
         'acct-ev-coach-future', 'acct-ev-coach-none', 'acct-ev-home-admin'].map((id) => [`${ORG}|${id}`, forStaff] as [string, string[]]),
@@ -837,13 +846,17 @@ describe('email alert staff event sources', () => {
     await runEmailAlertSweep(dependencies); // sets the checkpoints
 
     const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    // Retired when it would have gone live, a quarter of an hour ago; restored
+    // below, outside the sweep's ten-minute overlap: it is never sent.
+    const restoredLater = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 15, active: false });
     const toBeRetired = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
     const message = await athleteMessage(client, ORG, ATH_A, { minutesAgo: JUST_NOW });
     for (const source of [gymNoticeSource, coachMessageSource]) await sweepEmailAlertSource(source);
     expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(7);
 
     await client.query('update pilot.announcements set active = false where announcement_id = $1', [toBeRetired]);
-    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 4, skipped: 3 });
+    await client.query('update pilot.announcements set active = true, updated_at = now() where announcement_id = $1', [restoredLater]);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 4, skipped: 3 });
     const { rows } = await client.query(
       `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_kind, event_id`,
     );
@@ -890,7 +903,10 @@ describe('email alert staff event sources', () => {
   });
 
   test('each source is an event on the shared list, read in a fixed order, with a send-time read rule', () => {
-    expect(EMAIL_ALERT_EVENT_SOURCES).toEqual([safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource]);
+    expect(EMAIL_ALERT_EVENT_SOURCES.map((source) => source.checkpointKey))
+      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message']);
+    expect([safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource].map((source) => source.checkpointKey))
+      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message']);
     const listed = Object.values(EMAIL_ALERT_EVENTS).flat() as string[];
     for (const source of EMAIL_ALERT_EVENT_SOURCES) {
       expect(listed).toContain(source.checkpointKey);

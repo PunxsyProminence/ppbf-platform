@@ -197,7 +197,12 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * athlete of the gym whose role may read the notice's placement
  * (mayReadLivePlacement, announcements.ts, the page's own rule), each under
  * the user type their role gives. A notice retired, or ended, by the send is
- * not sent; one switched back on later is not sent again.
+ * not sent. Its time is on the database clock, as the sweep's overlap needs:
+ * created_at, or a start time still to come when it was posted (by then the
+ * row has committed); a start time already past counts as the posting. So a
+ * notice that was retired when it would have gone live is sent if it is
+ * restored within the sweep's ten-minute overlap, and never if it is restored
+ * later; a notice already sent is not sent again when restored.
  */
 const NOTICE_READER_ROLES = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
 const NOTICE_LIVE_FROM = 'greatest(n.created_at, coalesce(n.starts_at, n.created_at))';
@@ -261,16 +266,16 @@ const GYM_NOTICE: AlertEvent = {
   },
 };
 
-const EVENTS: readonly AlertEvent[] = [
-  sqlEvent(SAFETY_ESCALATION),
-  sqlEvent(PARENT_REPLY),
-  GYM_NOTICE,
-  sqlEvent(COACH_MESSAGE),
-];
+const SAFETY_ESCALATION_EVENT = sqlEvent(SAFETY_ESCALATION);
+const PARENT_REPLY_EVENT = sqlEvent(PARENT_REPLY);
+const COACH_MESSAGE_EVENT = sqlEvent(COACH_MESSAGE);
 
-export const [safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource] = EVENTS.map(
-  (event) => event.source,
-);
+const EVENTS: readonly AlertEvent[] = [SAFETY_ESCALATION_EVENT, PARENT_REPLY_EVENT, GYM_NOTICE, COACH_MESSAGE_EVENT];
+
+export const safetyEscalationSource = SAFETY_ESCALATION_EVENT.source;
+export const parentReplySource = PARENT_REPLY_EVENT.source;
+export const gymNoticeSource = GYM_NOTICE.source;
+export const coachMessageSource = COACH_MESSAGE_EVENT.source;
 
 /** The sources the sweep reads, in this order (EM-4c adds the parent's new message). */
 export const EMAIL_ALERT_EVENT_SOURCES: readonly EmailAlertSource[] = EVENTS.map((event) => event.source);
