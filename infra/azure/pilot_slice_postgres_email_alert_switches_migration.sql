@@ -42,9 +42,9 @@
 --     a confirmed address without its time, or the reverse; a negative try
 --     count.
 --
--- DELETION (Overwatch GO on #2159, condition 4). Both keys cascade, so a row
--- goes when its gym's pilot.organizations row is deleted, or when its
--- pilot.accounts row is deleted. Which accounts are ever deleted
+-- DELETION (Overwatch GO on #2159, condition 4). All three keys cascade, so a
+-- row goes when its gym's pilot.organizations row, its pilot.accounts row or
+-- the person's pilot.organization_memberships row for that gym is deleted. Which accounts are ever deleted
 -- (scripts/pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md Method 1):
 --   * a parent account is hard-deleted by the purge -> its row goes;
 --   * an athlete login is NOT deleted: the purge keeps it, retired, and clears
@@ -86,6 +86,11 @@ create table if not exists pilot.email_alert_switches (
   confirmed_address        text null,
   confirmed_at             timestamptz null,
   primary key (organization_id, account_id),
+  -- The person's membership of this gym (Codex P1 on #2168): a switch can only
+  -- name an account in a gym it belongs to. The coach_development pattern.
+  constraint pilot_email_alert_switch_membership_fk
+    foreign key (account_id, organization_id)
+    references pilot.organization_memberships(account_id, organization_id) on delete cascade,
   constraint pilot_email_alert_switch_athlete_confirmed_check
     check (user_type <> 'adult_athlete' or not switched_on or confirmed_address is not null),
   constraint pilot_email_alert_switch_address_athlete_only_check

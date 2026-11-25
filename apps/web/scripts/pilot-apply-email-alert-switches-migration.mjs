@@ -22,9 +22,9 @@ function sslConfig() {
 // and no others, each compared IN FULL against the text Postgres stores
 // (emailAlertSwitchesMigration.pg.test.ts drives this runner against a real
 // database, so a deparse mismatch fails there first), the two-column primary
-// key in order, both foreign keys by column, target and delete rule (both
-// cascade), and the partial index the sender reads through, by its full
-// definition.
+// key in order, the three foreign keys by column, target and delete rule (gym,
+// account, and the person's membership of that gym; all cascade), and the
+// partial index the sender reads through, by its full definition.
 export const EXPECTED_CHECKS = {
   pilot_email_alert_switch_user_type_check:
     "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))",
@@ -111,6 +111,19 @@ const READINESS_QUERY = `
     ) as primary_key_ready,
     ${foreignKeyReady('organization_id', 'pilot.organizations')} as organization_fk_ready,
     ${foreignKeyReady('account_id', 'pilot.accounts')} as account_fk_ready,
+    exists (
+      select 1 from pg_constraint c
+      where c.conrelid = ${TABLE} and c.contype = 'f' and c.conname = 'pilot_email_alert_switch_membership_fk'
+        and c.convalidated and c.confrelid = to_regclass('pilot.organization_memberships') and c.confdeltype = 'c'
+        and (select array_agg(a.attname::text order by k.ord)
+               from unnest(c.conkey) with ordinality k(attnum, ord)
+               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+            = array['account_id', 'organization_id']
+        and (select array_agg(a.attname::text order by k.ord)
+               from unnest(c.confkey) with ordinality k(attnum, ord)
+               join pg_attribute a on a.attrelid = c.confrelid and a.attnum = k.attnum)
+            = array['account_id', 'organization_id']
+    ) as membership_fk_ready,
     exists (
       select 1 from pg_indexes
       where schemaname = 'pilot' and tablename = 'email_alert_switches'
