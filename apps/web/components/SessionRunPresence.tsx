@@ -479,21 +479,24 @@ export default function SessionRunPresence({
           // It asserts no hold and blocks nothing, so it is no new warning (Jason's L1 rule).
           const hold = holdAnswer(answer?.hold_warning) ?? (registerUnknown && present ? 'unknown' : null);
           // This list gone, or going with a kept finish: what the coach must still check goes to the
-          // page's list, unnamed, under "Saved, with something to check" (round 12, A and B).
+          // page's list, under "Saved, with something to check" (round 12, A and B), naming the athlete
+          // (OVERWATCH 7170005958: the page's list has the named alert's protection, and unnamed lines
+          // could not tell staff who is on a Training Hold). Waiting and refusal lines stay unnamed.
           // The run gone (refused as such, the check then finding the tap landed): this list goes too.
           const runGone = refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND';
           if (!onPage.current || isFinishWaiting?.() || runGone) {
             const skippedWhy = NOT_ADDED[answer?.register?.reason ?? ''] ?? 'it could not be added';
+            const who = athlete.full_name;
             const checks = [
-              effect === 'register_newer' ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
-              effect === 'kept' ? 'the class register mark had been changed since the athlete was marked here, so the take-back left it as it is; check the class register' : '',
-              effect === 'skipped' ? `this tap did not put the athlete on the class register, as ${skippedWhy}` : '',
-              registerUnknown && present ? 'whether the class register has the athlete Present is not known; check the class register' : '',
-              registerUnknown && !present ? 'whether the class register still has the athlete Present is not known; check the class register' : '',
-              hold === 'held' ? 'the athlete has an active Training Hold; the mark was NOT blocked' : '',
-              hold === 'unknown' ? 'whether the athlete is on a Training Hold could not be read' : '',
+              effect === 'register_newer' ? `the class register kept a mark set there after the tap; change it on the register if ${who} is here` : '',
+              effect === 'kept' ? `the class register mark had been changed since ${who} was marked here, so the take-back left it as it is; check the class register` : '',
+              effect === 'skipped' ? `this tap did not put ${who} on the class register, as ${skippedWhy}` : '',
+              registerUnknown && present ? `whether the class register has ${who} Present is not known; check the class register` : '',
+              registerUnknown && !present ? `whether the class register still has ${who} Present is not known; check the class register` : '',
+              hold === 'held' ? `${who} has an active Training Hold; the mark was NOT blocked` : '',
+              hold === 'unknown' ? `whether ${who} is on a Training Hold could not be read` : '',
             ].filter((words) => words !== '');
-            return checks.length > 0 ? `saved, but ${checks.join('. And ')}.` : undefined;
+            return checks.length > 0 ? `saved for ${who}, but ${checks.join('. And ')}.` : undefined;
           }
           // What the coach must still check stays named in the list's alert, one line each, so a burst of
           // landing taps never overwrites it (R11-S1; round 12, A and B): until OK, this athlete's next
@@ -526,9 +529,10 @@ export default function SessionRunPresence({
           if (runGone) onRunNotLive?.();
           if (!onPage.current || isFinishWaiting?.() || runGone) {
             if (landed !== null) return refusalText(refusalCode);
-            return unknownOffPage(runGone
-              ? 'Check the class register, and who was marked here under Finished sessions.'
-              : 'Check who is marked here on the class screen.');
+            // An untied session writes no class register (round 15, reviewer B).
+            return unknownOffPage(!runGone
+              ? 'Check who is marked here on the class screen.'
+              : tied ? 'Check the class register, and who was marked here under Finished sessions.' : 'Check who was marked here under Finished sessions.');
           }
           // Named, as it can come back long after the tap. Not known: said, with the list as last read (a
           // read again that fails would hide the words).
