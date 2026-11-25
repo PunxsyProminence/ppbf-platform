@@ -274,3 +274,48 @@ describe('POST', () => {
     await expect(refused.json()).resolves.toMatchObject({ code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' });
   });
 });
+
+// W4 item 7, the offline save queue, and Overwatch condition 1 on #2158 (OD-2026-10-21-004 ruling 1,
+// "a later register change still wins"): a tap kept in the open page and sent late says how long
+// ago it was made, and the module is told the tap's time on the SERVER's clock. Without it, as before.
+describe('POST tapped_ms_ago', () => {
+  const NOW = Date.parse('2026-11-25T03:00:00.000Z');
+  let clock: jest.SpyInstance;
+  beforeEach(() => {
+    clock = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+  });
+  afterEach(() => clock.mockRestore());
+
+  it('hands the module the tap time: the server clock less the milliseconds sent', async () => {
+    const response = await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 90_000 });
+
+    expect(response.status).toBe(200);
+    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ath-1', present: true, tappedAt: '2026-11-25T02:58:30.000Z' }));
+  });
+
+  it('a tap sent without it reaches the module with no tap time, exactly as before', async () => {
+    await post({ athlete_id: 'ath-1', present: true });
+    expect(mockSet.mock.calls[0][0]).not.toHaveProperty('tappedAt');
+  });
+
+  it('accepts 0 and a full day', async () => {
+    expect((await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 0 })).status).toBe(200);
+    expect((await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 86_400_000 })).status).toBe(200);
+    expect(mockSet.mock.calls[0][0].tappedAt).toBe('2026-11-25T03:00:00.000Z');
+    expect(mockSet.mock.calls[1][0].tappedAt).toBe('2026-11-24T03:00:00.000Z');
+  });
+
+  it.each([
+    ['negative', -1],
+    ['a fraction', 1.5],
+    ['over a day', 86_400_001],
+    ['text', '90000'],
+    ['null', null],
+    ['not finite', 'Infinity'],
+  ])('refuses a tapped_ms_ago that is %s, and marks nothing', async (_label, value) => {
+    const response = await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'tapped_ms_ago' });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+});

@@ -85,7 +85,7 @@ describe('a note on a run', () => {
   it('POST with run_id writes through the run writer, for the session actor, never one named in the body', async () => {
     const response = await post({ run_id: ' ssrun_1 ', athlete_id: 'ath-1', note: 'Good feet.', author_account_id: 'acct-someone-else', organization_id: 'org-9' });
 
-    expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.' });
+    expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.', requestKey: null });
     expect(mockCreateSession).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f' });
@@ -96,7 +96,7 @@ describe('a note on a run', () => {
     await post({ session_id: 'sess-1', athlete_id: 'ath-1', note: 'As before.' });
 
     expect(mockListSession).toHaveBeenCalledWith(ACTOR, 'sess-1', 'ath-1');
-    expect(mockCreateSession).toHaveBeenCalledWith({ actor: ACTOR, sessionId: 'sess-1', athleteId: 'ath-1', note: 'As before.' });
+    expect(mockCreateSession).toHaveBeenCalledWith({ actor: ACTOR, sessionId: 'sess-1', athleteId: 'ath-1', note: 'As before.', requestKey: null });
     expect(mockListRun).not.toHaveBeenCalled();
     expect(mockCreateRun).not.toHaveBeenCalled();
   });
@@ -138,5 +138,76 @@ describe('a note on a run', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' });
+  });
+});
+
+// W4 item 7, the offline save queue (OD-2026-11-21-006; Overwatch conditions on #2158): a note
+// kept in the open page is resent with the request key it was first sent with, and names the
+// account that made it. Both are optional: without them the add is exactly as before (above).
+describe('a note resent from the open page', () => {
+  const KEY = 'b1f0c6d2-0a4e-4c55-9a1e-3e1f2d4c5b6a';
+
+  it('hands the request key down as sent, and says when the note was one the key had already added', async () => {
+    mockCreateRun.mockResolvedValue({ note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f', replayed: true });
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY });
+
+    expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.', requestKey: KEY });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, note_id: '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f', replayed: true });
+  });
+
+  it.each([
+    ['blank', ''],
+    ['all spaces', '   '],
+    ['over 200 characters', 'k'.repeat(201)],
+    ['a NUL', `key${String.fromCharCode(0)}`],
+    ['a number', 42],
+  ])('refuses a request key that is %s, and adds nothing', async (_label, requestKey) => {
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: requestKey });
+
+    expect(response.status).toBe(400);
+    expect(mockCreateRun).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps a 200-character key as sent, untrimmed', async () => {
+    const key = ` ${'k'.repeat(198)} `;
+    await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: key });
+    expect(mockCreateRun).toHaveBeenCalledWith(expect.objectContaining({ requestKey: key }));
+  });
+
+  it('passes the module\'s "key already used for another note" refusal through as 409', async () => {
+    mockCreateRun.mockRejectedValue(new ConflictError('This request was already used to add a different note.', 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED'));
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED' });
+  });
+
+  it.each([
+    ['a run note', { run_id: 'ssrun_1' }],
+    ['a session note', { session_id: 'sess-1' }],
+  ])('refuses %s made by another account than the one signed in now, and writes nothing', async (_label, subject) => {
+    const response = await post({ ...subject, athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY, made_by_account_id: 'acct-before' });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: 'SAVE_MADE_BY_ANOTHER_ACCOUNT' });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('adds a note made by the account signed in now', async () => {
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', request_key: KEY, made_by_account_id: 'acct-coach' });
+    expect(response.status).toBe(200);
+    expect(mockCreateRun).toHaveBeenCalledWith({ actor: ACTOR, runId: 'ssrun_1', athleteId: 'ath-1', note: 'Good feet.', requestKey: KEY });
+  });
+
+  it.each([
+    ['blank', ''],
+    ['a number', 7],
+    ['an object', { id: 'acct-coach' }],
+  ])('refuses a made_by_account_id that is %s, and writes nothing', async (_label, madeBy) => {
+    const response = await post({ run_id: 'ssrun_1', athlete_id: 'ath-1', note: 'Good feet.', made_by_account_id: madeBy });
+    expect(response.status).toBe(400);
+    expect(mockCreateRun).not.toHaveBeenCalled();
   });
 });
