@@ -851,8 +851,8 @@ export async function writeSessionRegisterPresent(
   // late): an Absent or Excused set on the register after it is a later register change, and it
   // wins ('register_newer').
   tappedAt?: string,
-  // The tapping run. An Absent that run's own no-shows tap wrote, untouched since (still Absent, and
-  // still at that tap's time: every register write sets updated_at), is never a later register
+  // The tapping run. An Absent that run's own no-shows tap wrote, untouched since (on that tap's
+  // class, still Absent, and still at that tap's time: every register write sets updated_at), is never a later register
   // change: the page sends its
   // kept saves one at a time in tap order, so a here tap landing after it was tapped after it, and
   // here wins (OD-2026-10-21-004 ruling 1). Two times worked out from two requests are each off by
@@ -881,6 +881,7 @@ export async function writeSessionRegisterPresent(
                  select 1 from pilot.audit_events e
                   where e.organization_id = a.organization_id and e.entity_type = 'session_script_run'
                     and e.entity_id = $5 and e.details->>'action' = 'mark_no_shows'
+                    and e.details->>'class_id' = a.class_id
                     and e.details->'marked_athlete_ids' ? a.athlete_id
                     and (e.details->>'marked_at')::timestamptz = a.updated_at
                     and a.status = 'absent')) as newer

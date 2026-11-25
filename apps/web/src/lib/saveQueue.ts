@@ -47,6 +47,9 @@ import { readGymTabletSignedOutAt } from '@/src/lib/gymTabletMark';
  * a newer change made on the other: a run action, or a here tap or take-back, which on a session
  * tied to a class also writes or removes that class's register mark. What still holds: a register
  * change made after a tap wins (condition 1), and each screen reads back what the server holds.
+ * One exception, in the direction of "here wins": an Absent the run's own no-shows tap wrote,
+ * untouched since, is flipped by a here tap of that run that lands after it, even one tapped before
+ * it on the coach's other device (schedulerDb.ts writeSessionRegisterPresent; #2178 round 13).
  *
  * Known limit, within one page: a send given up on after ANSWER_WAIT_MS is aborted, which stops it
  * on the network, but not work the server had already started on it. If the server took a request
