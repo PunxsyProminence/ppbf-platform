@@ -173,7 +173,7 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 - Stated but not carried, so blank or unchanged (only a step's own whole minutes fill the column; App Overwatch on #2162):
   - Conditioning session A, step 1's typed line gives its parts ("5 min easy", "5 × 20 s", "60 s easy", "2 × 5 s"), inside its own 15 minutes;
   - Conditioning session A, step 4 (Record): `details.time` is "—"; "7 s, 17 s, 27 s" are reading points in each rep, not a duration;
-  - Conditioning session A, steps 5 and 6 (the owner's checks, D-PK73-3): their timing places them ("at the end of the warm-up, before the main set"; "straight after the main set, before the cool-down") and states no minutes;
+  - Conditioning session A, steps 5 and 6 (the owner's checks, D-PK73-3): their timing places them ("at the end of the warm-up, before the main set"; "straight after the main set, before the cool-down") and states no minutes; their `within_item_id` places step 5 inside step 1 (so inside its 15 minutes) and step 6 inside step 2 (the main set), so neither adds time;
   - Conditioning session A, step 2 (Main set; linked before this lane, an owner item): "20–24 min" is a range;
   - Phase 1, steps 1, 4, 5 and 6 already carry the template's own durations (12, 20, 8, 10), unchanged; their plan items' inner times (for example "General (3 min)", "5 × 3 min with 1 min rest", "8 × 20 s hard / 10 s easy", "2 min diaphragmatic breathing") are parts of those;
   - Phase 1, step 7 (Evaluate → Reset): no time of its own; it sits inside the cool-down's 10 minutes (D-OQ57).
