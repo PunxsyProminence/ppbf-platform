@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
+import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 
 // Staff notes on one athlete's session (OD-2026-10-06-025 ruling 4): the
 // athlete's own note stays theirs, and a coach or organization admin adds a
@@ -33,6 +35,12 @@ import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime'
 // route's own refusals (400, 401, 403, 404, 409, 422) say the note was not
 // saved. Anything else, or no answer, says it is not known, and the list is
 // read again so the coach can see.
+//
+// KEPT ON THE LIVE FLOOR (W4 item 7, OQ-4; OW27-35 A). Only where the live session's "Who is here"
+// list mounts this panel (keptOnThisPage), a write whose answer is lost is kept on the open page and
+// sent again until it goes through: a new note with one request key and the account that made it, so
+// it is written once however often it is sent. Every other mount keeps today's behaviour (Overwatch
+// condition 4).
 
 interface NoteRow {
   note_id: string;
@@ -71,9 +79,11 @@ export default function SessionStaffNotesPanel(
     /** The closed button's words, when "on this session" is not enough (several athletes on one screen).
      *  The open panel's heading says the same words (F-173), so the button and the panel name one thing. */
     buttonLabel?: string;
+    /** The live floor only: writes are kept on the open page and sent again until they go through. */
+    keptOnThisPage?: boolean;
   },
 ) {
-  const { athleteId, buttonLabel } = props;
+  const { athleteId, buttonLabel, keptOnThisPage = false } = props;
   const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
   const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
@@ -90,6 +100,27 @@ export default function SessionStaffNotesPanel(
   // read started, is dropped -- so a panel never reopens itself.
   const latestRead = useRef(0);
   const isOpen = useRef(false);
+  // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
+  // page (a sign-out drop tells this panel nothing otherwise).
+  const [waitingWrites, setWaitingWrites] = useState(0);
+  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
+  const nothingWaiting = saves.waiting.length === 0 && saves.checking === 0;
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        const state = readSaveQueue();
+        if (state.waiting.length === 0 && state.checking === 0) setWaitingWrites(0);
+      }),
+    [],
+  );
+  // While this panel is on the page; a refusal after it has gone gives its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
 
   const read = useCallback(async () => {
     const ticket = latestRead.current + 1;
@@ -121,6 +152,26 @@ export default function SessionStaffNotesPanel(
     }
   }, [athleteId, subjectId, subjectKey]);
 
+  // The notes as the server has them now, for a kept write's landed check: null when they cannot be read.
+  const readNotes = useCallback(
+    async (signal: AbortSignal): Promise<NoteRow[] | null> => {
+      try {
+        const response = await fetch(
+          `${apiBase()}${ROUTE}?${subjectKey}=${encodeURIComponent(subjectId)}&athlete_id=${encodeURIComponent(athleteId)}`,
+          { method: 'GET', credentials: 'include', signal },
+        );
+        const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+        if (!response.ok || !payload || payload.ok !== true || !Array.isArray(payload.notes) || !payload.notes.every(isNoteRow)) {
+          return null;
+        }
+        return payload.notes as NoteRow[];
+      } catch {
+        return null;
+      }
+    },
+    [athleteId, subjectId, subjectKey],
+  );
+
   const toggle = useCallback(() => {
     setEditing(null);
     setRemoving(null);
@@ -138,16 +189,103 @@ export default function SessionStaffNotesPanel(
   // One write path for add, change and remove. `done` runs only on the
   // server's own yes; the list is then re-read (unless the coach closed the
   // panel meanwhile -- a write must never reopen what the coach closed).
+  const keptWrite = useCallback(
+    (
+      kind: 'add' | 'change' | 'remove',
+      request: { url: string; method: string; body?: unknown },
+      failed: { heading: string; verb: string },
+      what: { noteId?: string; text: string; before: ReadonlySet<string> | null },
+      resolved: { done: boolean; counted: boolean },
+    ): KeptSave => {
+      let reason = '';
+      // No note text and no name: the line can outlive this panel on a shared floor screen.
+      const label = kind === 'add' ? 'Staff note' : kind === 'change' ? 'Staff note change' : 'Staff note removal';
+      const settle = () => {
+        resolved.done = true;
+        if (!resolved.counted) return;
+        resolved.counted = false;
+        setWaitingWrites((count) => Math.max(0, count - 1));
+      };
+      return {
+        label,
+        send: ({ signal, requestKey, madeByAccountId }) =>
+          fetch(`${apiBase()}${request.url}`, {
+            method: request.method,
+            credentials: 'include',
+            ...(request.body === undefined
+              ? {}
+              : {
+                headers: { 'content-type': 'application/json' },
+                // A new note carries its key and the account that made it (OQ-1); a change or removal is
+                // the author's own note, which the server already checks.
+                body: JSON.stringify(kind === 'add'
+                  ? { ...(request.body as Record<string, unknown>), request_key: requestKey, made_by_account_id: madeByAccountId }
+                  : request.body),
+              }),
+            signal,
+          }),
+        // A yes is a yes (as today); the route's own refusals are a no; anything else proves nothing.
+        answerOf: async (response) => {
+          if (response.ok) return 'saved';
+          if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
+          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown } | null;
+          reason = typeof payload?.error === 'string' && payload.error ? payload.error : `The note was not ${failed.verb} (${response.status}).`;
+          return 'refused';
+        },
+        // A refused resend: do the notes now show what this write asked?
+        checkLanded: async (signal) => {
+          const notes = await readNotes(signal);
+          if (notes === null) return null;
+          const text = what.text.trim();
+          if (kind === 'remove') return !notes.some((row) => row.note_id === what.noteId);
+          if (kind === 'change') return notes.some((row) => row.note_id === what.noteId && row.note === text);
+          if (what.before === null) return null;
+          const before = what.before;
+          return notes.some((row) => row.own && !before.has(row.note_id) && row.note === text);
+        },
+        onSaved: () => {
+          settle();
+          if (onPage.current && isOpen.current) void read();
+        },
+        // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the draft.
+        onRefused: (_response, landed) => {
+          settle();
+          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+          if (kind === 'add') setDraft((current) => (current === '' ? what.text : current));
+          setRefusal(landed === null ? { heading: 'NOT KNOWN', text: unknownOutcomeWords(label) } : { heading: failed.heading, text: reason });
+          if (isOpen.current) void read();
+          return undefined;
+        },
+      };
+    },
+    [read, readNotes],
+  );
+
   const write = useCallback(
     async (
       kind: 'add' | 'change' | 'remove',
       request: { url: string; method: string; body?: unknown },
       failed: { heading: string; verb: string },
       done: () => void,
+      what: { noteId?: string; text: string } = { text: '' },
     ) => {
       setRefusal(null);
       setBusy(kind);
       try {
+        if (keptOnThisPage) {
+          // Kept: done at once (the draft clears), so a second tap is a new write, not this one twice.
+          // Not kept (the page does not know who is signed in): sent once, as before.
+          const before = reading.state === 'loaded' ? new Set(reading.notes.map((row) => row.note_id)) : null;
+          const resolved = { done: false, counted: false };
+          if ((await keepSave(keptWrite(kind, request, failed, { ...what, before }, resolved))) === 'kept') {
+            if (!resolved.done) {
+              resolved.counted = true;
+              setWaitingWrites((count) => count + 1);
+            }
+            done();
+            return;
+          }
+        }
         const response = await fetch(`${apiBase()}${request.url}`, {
           method: request.method,
           credentials: 'include',
@@ -191,7 +329,7 @@ export default function SessionStaffNotesPanel(
         setBusy(null);
       }
     },
-    [read],
+    [keptOnThisPage, keptWrite, read, reading],
   );
 
   const add = () => write(
@@ -199,6 +337,7 @@ export default function SessionStaffNotesPanel(
     { url: ROUTE, method: 'POST', body: { [subjectKey]: subjectId, athlete_id: athleteId, note: draft } },
     { heading: 'NOT SAVED', verb: 'saved' },
     () => setDraft(''),
+    { text: draft },
   );
 
   const saveEdit = (noteId: string, text: string) => write(
@@ -206,6 +345,7 @@ export default function SessionStaffNotesPanel(
     { url: ROUTE, method: 'PATCH', body: { note_id: noteId, note: text } },
     { heading: 'NOT CHANGED', verb: 'changed' },
     () => setEditing(null),
+    { noteId, text },
   );
 
   const remove = (noteId: string) => write(
@@ -213,6 +353,7 @@ export default function SessionStaffNotesPanel(
     { url: `${ROUTE}?note_id=${encodeURIComponent(noteId)}`, method: 'DELETE' },
     { heading: 'NOT REMOVED', verb: 'removed' },
     () => setRemoving(null),
+    { noteId, text: '' },
   );
 
   const open = reading.state !== 'closed';
@@ -352,6 +493,14 @@ export default function SessionStaffNotesPanel(
                   </ul>
                 )}
               </div>
+
+              {waitingWrites > 0 && !nothingWaiting ? (
+                <p className="t-body mt-[var(--s3)] font-semibold" role="status">
+                  {waitingWrites === 1
+                    ? 'One change to these notes is not saved yet. This page keeps sending it while it stays open.'
+                    : `${waitingWrites} changes to these notes are not saved yet. This page keeps sending them while it stays open.`}
+                </p>
+              ) : null}
 
               {refusal ? (
                 <div className="mt-[var(--s3)]" role="alert">

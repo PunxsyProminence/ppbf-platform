@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
+import { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
+import { emptySaveQueueState, keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -161,6 +163,9 @@ function refusalText(code: unknown): string {
 }
 
 // Brass and bone: an ordinary message, not the medical stop colour.
+// No here tap waits on the page.
+const NO_ASKED: ReadonlyMap<string, boolean> = new Map();
+
 const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
 export default function SessionRunPresence({
@@ -268,6 +273,127 @@ export default function SessionRunPresence({
     void readRegister();
   }, [readRegister]);
 
+  // HERE TAPS KEPT ON THE OPEN PAGE (W4 item 7, OQ-4; OW27-34 A, OW27-35 A). A tap whose answer is
+  // lost is kept and sent again until it goes through, with the milliseconds since the tap, so a late
+  // one never undoes an Absent or Excused set after it (Overwatch condition 1, OQ-1's server half).
+  // What each waiting tap asked, by athlete: shown only while the page holds a kept save, and cleared
+  // once nothing kept waits (a sign-out drop tells this list nothing otherwise).
+  const [askedHere, setAskedHere] = useState<ReadonlyMap<string, boolean>>(NO_ASKED);
+  const saves = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
+  const asked = saves.waiting.length === 0 && saves.checking === 0 ? NO_ASKED : askedHere;
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        const state = readSaveQueue();
+        if (state.waiting.length === 0 && state.checking === 0) setAskedHere(NO_ASKED);
+      }),
+    [],
+  );
+  // While this list is on the page; a refusal after it has gone gives its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
+
+  // Who is marked here, for a kept tap's landed check: null when it cannot be read.
+  const readPresent = useCallback(
+    async (signal: AbortSignal): Promise<Set<string> | null> => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
+          method: 'GET',
+          credentials: 'include',
+          signal,
+        });
+        const payload = (await response.json().catch(() => null)) as { present?: unknown } | null;
+        if (!response.ok || !payload || !Array.isArray(payload.present) || !payload.present.every(isAthlete)) return null;
+        return new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id));
+      } catch {
+        return null;
+      }
+    },
+    [runId],
+  );
+
+  const keptTap = useCallback(
+    (athlete: Athlete, present: boolean, resolved: { done: boolean }): KeptSave => {
+      let refusalCode: unknown;
+      const label = present ? 'Mark an athlete here' : 'Unmark an athlete here';
+      // What this tap asked stops showing once it is answered, unless a later tap of the same athlete asks again.
+      const release = () => {
+        resolved.done = true;
+        setAskedHere((current) => {
+          if (current.get(athlete.athlete_id) !== present) return current;
+          const next = new Map(current);
+          next.delete(athlete.athlete_id);
+          return next;
+        });
+      };
+      const showMark = () => {
+        setReading((current) => {
+          if (!current || current.runId !== runId || current.state !== 'loaded') return current;
+          const next = new Set(current.present);
+          if (present) next.add(athlete.athlete_id);
+          else next.delete(athlete.athlete_id);
+          return { ...current, present: next };
+        });
+        void readRegister();
+      };
+      return {
+        // No name: the line can outlive this list on a shared floor screen. The row names the athlete.
+        label,
+        send: ({ signal, msSinceMade }) =>
+          fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade }),
+            signal,
+          }),
+        // A yes is a yes, whatever its body (as today); the route's own refusals are a no; anything else proves nothing.
+        answerOf: async (response) => {
+          if (response.ok) return 'saved';
+          if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
+          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
+          refusalCode = payload?.code ?? payload?.error;
+          return 'refused';
+        },
+        // A refused resend: is the mark what this tap asked? (Each tap sets a state, so a repeat changes nothing.)
+        checkLanded: async (signal) => {
+          const now = await readPresent(signal);
+          return now === null ? null : now.has(athlete.athlete_id) === present;
+        },
+        onSaved: (response) => {
+          release();
+          if (!onPage.current) return;
+          void (async () => {
+            const answer = response
+              ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null)
+              : null;
+            setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, holdAnswer(answer?.hold_warning)) });
+            showMark();
+          })();
+        },
+        // Refused: said in this list, where the coach tapped.
+        onRefused: (_response, landed) => {
+          release();
+          if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
+          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : refusalText(refusalCode);
+          if (landed === null) {
+            setMessage(unknownOutcomeWords(`${present ? 'Mark' : 'Unmark'} ${athlete.full_name} here`));
+            void read();
+          } else {
+            setMessage(refusalText(refusalCode));
+          }
+          return undefined;
+        },
+      };
+    },
+    [onRunNotLive, read, readPresent, readRegister, runId],
+  );
+
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
   useEffect(() => {
     onPresentCount?.(presentCount);
@@ -282,6 +408,13 @@ export default function SessionRunPresence({
       // A read already on its way was asked before this tap: its answer must not paint over this one.
       latestRead.current += 1;
       try {
+        // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in): sent
+        // once, as before. What it asks shows once kept, unless it was answered first.
+        const resolved = { done: false };
+        if ((await keepSave(keptTap(athlete, present, resolved))) === 'kept') {
+          if (!resolved.done) setAskedHere((current) => new Map(current).set(athlete.athlete_id, present));
+          return;
+        }
         let response: Response;
         try {
           response = await fetch(
@@ -327,7 +460,7 @@ export default function SessionRunPresence({
         setBusy(null);
       }
     },
-    [busy, onRunNotLive, read, readRegister, runId],
+    [busy, keptTap, onRunNotLive, read, readRegister, runId],
   );
 
   const needle = filter.trim().toLowerCase();
@@ -453,7 +586,10 @@ export default function SessionRunPresence({
               ) : (
                 <ul className="mt-[var(--s3)] space-y-[var(--s3)]" aria-label="Athletes of this gym">
                   {shown.map((athlete) => {
-                    const here = reading.present.has(athlete.athlete_id);
+                    const askedNow = asked.get(athlete.athlete_id);
+                    // The button follows what was asked; the words under it say it is not saved yet.
+                    const here = askedNow ?? reading.present.has(athlete.athlete_id);
+                    const waiting = askedNow !== undefined && askedNow !== reading.present.has(athlete.athlete_id);
                     const fromRegister = registerOnly.named.has(athlete.athlete_id);
                     const registerSource = fromRegister ? onRegister?.get(athlete.athlete_id) ?? null : null;
                     return (
@@ -472,6 +608,11 @@ export default function SessionRunPresence({
                             <span className="sr-only">{athlete.full_name}</span>
                           </button>
                         </div>
+                        {waiting ? (
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">
+                            {`${here ? 'Marked here' : 'Unmarked here'}: not saved yet. This page keeps sending it while it stays open.`}
+                          </p>
+                        ) : null}
                         {fromRegister ? (
                           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]">
                             {`Present on the class register${registerSource ? `, via ${registerSource}` : ''}. Not marked here yet.`}
@@ -480,12 +621,14 @@ export default function SessionRunPresence({
                         {note && note.athleteId === athlete.athlete_id && note.text ? (
                           <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
                         ) : null}
-                        {here ? (
+                        {/* The server's mark, as today: a note is taken only for an athlete marked here. */}
+                        {reading.present.has(athlete.athlete_id) ? (
                           <>
                             <SessionStaffNotesPanel
                               runId={runId}
                               athleteId={athlete.athlete_id}
                               buttonLabel={`Staff notes on ${athlete.full_name}`}
+                              keptOnThisPage
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                           </>
