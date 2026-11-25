@@ -1376,6 +1376,7 @@ export default function SessionScriptLiveDelivery({
         classId={run.class_id ?? null}
         onPresentCount={presentFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
+        finishWaiting={finishKept}
       />
 
       {/* Logging an intervention against THIS run. A protocol run once here is

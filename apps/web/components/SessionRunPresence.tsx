@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
-import { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
+import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
@@ -174,6 +174,7 @@ export default function SessionRunPresence({
   classId = null,
   onPresentCount,
   onRunNotLive,
+  finishWaiting = false,
 }: {
   runId: string;
   /** The session is tied to a class (D4): marks here also go on its register. */
@@ -184,6 +185,8 @@ export default function SessionRunPresence({
   onPresentCount?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
   onRunNotLive?: () => void;
+  /** A finish is kept and waiting: once it lands this list goes, so a refusal is said in the page's list. */
+  finishWaiting?: boolean;
 }) {
   const [readingState, setReading] = useState<Reading | null>(null);
   const [filter, setFilter] = useState('');
@@ -289,7 +292,12 @@ export default function SessionRunPresence({
       }),
     [],
   );
-  // While this list is on the page; a refusal after it has gone gives its words to the page's list.
+  // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const toPageList = useRef(finishWaiting);
+  useEffect(() => {
+    toPageList.current = finishWaiting;
+  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -375,18 +383,16 @@ export default function SessionRunPresence({
         onRefused: (_response, landed) => {
           release();
           if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
-          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : refusalText(refusalCode);
-          if (landed === null) {
-            setMessage(unknownOutcomeWords(`${present ? 'Mark' : 'Unmark'} ${athlete.full_name} here`));
-            void read();
-          } else {
-            setMessage(refusalText(refusalCode));
+          if (!onPage.current || toPageList.current) {
+            return landed === null ? unknownOffPage('Check who is marked here on the class screen.') : refusalText(refusalCode);
           }
+          // Not known: said, with the list as last read (a read again that fails would hide the words).
+          setMessage(landed === null ? unknownOutcomeWords(`${present ? 'Mark' : 'Unmark'} ${athlete.full_name} here`) : refusalText(refusalCode));
           return undefined;
         },
       };
     },
-    [onRunNotLive, read, readPresent, readRegister, runId],
+    [onRunNotLive, readPresent, readRegister, runId],
   );
 
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
@@ -624,6 +630,7 @@ export default function SessionRunPresence({
                               athleteId={athlete.athlete_id}
                               buttonLabel={`Staff notes on ${athlete.full_name}`}
                               keptOnThisPage
+                              finishWaiting={finishWaiting}
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                           </>
