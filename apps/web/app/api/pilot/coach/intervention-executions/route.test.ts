@@ -378,3 +378,50 @@ describe('POST request_key (F-135)', () => {
     expect(mockStart).toHaveBeenLastCalledWith(expect.objectContaining({ requestKey: key }));
   });
 });
+
+// W4 item 7, the offline save queue (OD-2026-11-21-006, OW27-34 A: a kept save is "tied to the
+// account that made it"; Overwatch Q3 A on #2158). A log resent from the open page names the
+// account that made it; another account signed in now is refused and nothing is written.
+describe('POST made_by_account_id (W4 item 7)', () => {
+  const STARTED = { execution_id: 'ex-1', protocol_id: 'p-1', protocol_version: 1, athlete_id: 'ath-1', decision_id: null };
+
+  test('without it, a log starts exactly as before', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue(STARTED);
+
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: 'tap-1' }));
+    expect(response.status).toBe(200);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test('made by the account signed in now, it starts as usual', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockStart.mockResolvedValue(STARTED);
+
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: 'tap-1', made_by_account_id: 'acct-1' }));
+    expect(response.status).toBe(200);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+  });
+
+  test('made by another account, it is refused with 409 before anything is read or written', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-next' }));
+
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', request_key: 'tap-1', made_by_account_id: 'acct-1' }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: 'SAVE_MADE_BY_ANOTHER_ACCOUNT' });
+    expect(mockAccess).not.toHaveBeenCalled();
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['blank', ''],
+    ['a number', 1],
+  ])('a made_by_account_id that is %s is refused with 400 and nothing is written', async (_label, madeBy) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    const response = await POST(bodyRequest('POST', { athlete_id: 'ath-1', protocol_id: 'p-1', made_by_account_id: madeBy }));
+    expect(response.status).toBe(400);
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+});
