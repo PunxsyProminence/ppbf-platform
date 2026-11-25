@@ -3085,7 +3085,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
       patch: (body) => {
         if (body.action === 'finish') return jsonResponse({ run: { ...tied, run_state: body.run_state, ended_at: 'x' } });
         marks += 1;
-        return marks === 1 ? lost() : jsonResponse({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, false, 409);
+        // Refused after the key lookup: known not landed (a name still listed would not prove that).
+        return marks === 1 ? lost() : jsonResponse({ error: 'SESSION_CLASS_NOT_STARTED', message: 'Not yet.' }, false, 409);
       },
       runsGet: () => jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2, no_show_ids: ['ath-1', 'ath-2'] } }),
     });

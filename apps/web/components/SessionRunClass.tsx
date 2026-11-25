@@ -216,7 +216,10 @@ export default function SessionRunClass({
         // The run gone, or no longer this line's: said in the page's list, as the console says only
         // that the session ended (and nothing once it settled here), never that this was not saved.
         if (gone || !forThisRun()) {
-          if (landed === null) return unknownOffPage('Check which class the session is tied to before tying it again.');
+          // The session has ended: its class is read under Finished sessions, not on this line.
+          if (landed === null) {
+            return unknownOffPage(gone ? 'Check the class shown for this session under Finished sessions.' : 'Check which class the session is tied to before tying it again.');
+          }
           return gone ? `The class was not changed: ${goneWords(refusal.error as string)}.` : refusal.message ?? 'The class could not be changed.';
         }
         const reason = refusal.message ?? 'The class could not be changed.';

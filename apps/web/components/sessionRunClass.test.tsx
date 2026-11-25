@@ -290,7 +290,7 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     });
     expect(onRunNotLive).toHaveBeenCalledTimes(1);
     expect(readSaveQueue().failed).toEqual([
-      { label: 'Untie the session from its class', words: expect.stringMatching(/could not be checked/), known: false },
+      { label: 'Untie the session from its class', words: expect.stringMatching(/could not be checked\. Check the class shown for this session under Finished sessions\.$/), known: false },
     ]);
   });
 

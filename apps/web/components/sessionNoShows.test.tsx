@@ -226,14 +226,17 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('None of the athletes this tap named is still listed as a no-show.')).toBeTruthy();
   });
 
-  test('a refused resend while a name it sent is still a no-show is not read as landed: its words are said here', async () => {
+  // Round 15, reviewer A: a name can stay listed after a tap that landed (a mark taken off since, a
+  // sign-up cancelled and made again), so a refusal given before the key lookup is not known then.
+  test('a refused resend while a name it sent is still a no-show is not known, never read as not saved', async () => {
     jest.useFakeTimers();
     serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
     await tapMark();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
-    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+    expect(screen.getByRole('alert').textContent).toMatch(/^Mark the no-shows Absent: .*not known whether it was saved/);
+    expect(screen.queryByText('Not yet.')).toBeNull();
   });
 
   test.each(['SESSION_CLASS_CANCELLED', 'SESSION_CLASS_NOT_STARTED', 'SESSION_CLASS_NOT_YOURS', 'SESSION_RUN_NOT_TIED', 'SESSION_NO_SHOWS_CLASS_CHANGED'])(
@@ -425,8 +428,8 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
 
   test('a refusal after the offer has gone from the page is said in the page\'s list, after the save\'s name', async () => {
     jest.useFakeTimers();
-    // This run, with a name the tap sent still a no-show: not landed, so the server's words are said.
-    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
+    // A refusal given after the key lookup: known not landed, so the server's words are said.
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'SESSION_CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? ['ath-2'] : 2));
     await tapMark();
     cleanup();
     await act(async () => {
