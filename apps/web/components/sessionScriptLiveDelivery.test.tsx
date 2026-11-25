@@ -1271,6 +1271,48 @@ describe('a write whose answer proves nothing is checked against the server (aud
       expect(screen.getAllByText('logged')).toHaveLength(1);
     });
 
+    it('a retry of a tap whose first write landed late, into the retry\'s before picture, is found by its key: logged, never "not shown yet"', async () => {
+      let reads = 0;
+      let key: unknown;
+      await renderLive(liveRun(), {
+        logPost: (body) => {
+          key = body.request_key;
+          return dropped();
+        },
+        // Read 1: the first try's before picture; 2: its recovery read (its write has not committed
+        // yet); 3 and 4: the retry's before picture and recovery read, both holding the first write.
+        logGet: () => {
+          reads += 1;
+          return jsonResponse({ items: reads <= 2 ? [] : [{ ...execution('exec-late'), request_key: key }] });
+        },
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server does not show the intervention yet. Try again -- it will not be logged twice.');
+      await press('Log intervention');
+      expect(await screen.findByText(/the server shows the intervention was logged\./)).toBeInTheDocument();
+      expect(reads).toBe(4);
+      expect(screen.getAllByText('logged')).toHaveLength(1);
+    });
+
+    it('a log found under this tap\'s own key needs no before picture: logged, not "could not be checked"', async () => {
+      let reads = 0;
+      let key: unknown;
+      await renderLive(liveRun(), {
+        logPost: (body) => {
+          key = body.request_key;
+          return dropped();
+        },
+        logGet: () => {
+          reads += 1;
+          // The before picture cannot be read; the recovery read shows this tap's own log.
+          return reads === 1 ? jsonResponse({}, false, 500) : jsonResponse({ items: [{ ...execution('exec-mine'), request_key: key }] });
+        },
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was logged.');
+      expect(screen.getAllByText('logged')).toHaveLength(1);
+    });
+
     it('(c) a yes with no execution in it is checked, not read as a refusal', async () => {
       let committed = false;
       await renderLive(liveRun(), {
@@ -2825,6 +2867,24 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     await logPair();
     await wait(RESEND_MS);
     expect(screen.getByRole('alert').textContent).toContain('Intervention log: Round-3 endurance block: the server refused it when it was sent again and could not be checked');
+    expect(screen.queryByText('logged')).toBeNull();
+  });
+
+  it('a ledger that names keys, holding only keyless older logs, reads a refused RESEND as not logged (not as not known)', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'This protocol changed since it was loaded.', code: 'RECORD_CHANGED' }, false, 409);
+      },
+      logGet: () => jsonResponse({ items: [{ execution_id: 'exec-old', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', recorded_by_account_id: 'acct-a', version: 1, request_key: null }] }),
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert')).toHaveTextContent('This protocol changed since it was loaded.');
+    expect(screen.getByRole('alert').textContent).not.toContain('could not be checked');
     expect(screen.queryByText('logged')).toBeNull();
   });
 
