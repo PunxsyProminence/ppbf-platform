@@ -60,6 +60,7 @@ OD-2026-11-21-006 is RECONSTRUCTED: copied by script from Backbone's card file
 | OD-2026-10-11-007 | Jason: "lets make it coaches to whole gym". Overwatch's reading ("his words govern"): "a coach of a gym can read and act on every athlete of that gym ... nothing changes for athletes, parents, the platform owner or any other role" | `OWNER_DECISIONS.md:7924`, `:7926` |
 | Kernel floor | "Minors' privacy, role gates and organization boundaries are untouched. Nothing false ships: ... an unknown value never looks complete or zero." | `AGENT_KERNEL.md:104-107` |
 | L1 rule (this brief; W4_SIZING) | No new warnings, gates or disclaimers for minors | `W4_SIZING.md:134-135` |
+| RULES section 1 (the Backbone's build rule as the sizing quotes it, not a ruling on these items) | "Do not add new restrictions, warnings or gates unless the owner directs it." | `W4_SIZING.md:136-143` |
 
 Other rulings that bear on the line:
 
@@ -141,7 +142,8 @@ case as its own condition and serves staff only until FN-2 opens its parent
 and athlete branches, and FN-2 and FN-3, the first PRs that show the line,
 ship after he has answered (section 4). Two temporary narrowings hold
 until he answers: FN-1's staff branch leaves cancelled-class marks out until
-FN0-Q1 is answered, and three homes get no line until FN0-Q3 is answered,
+FN0-Q1 is answered (in the read only; no screen shows the line before
+FN-3), and three homes get no line until FN0-Q3 is answered,
 a narrowing of Q12 A if "every home" reaches them (section 4). OD-2026-10-10-007 records his complaint about questions
 that "slowly adds constrainsts" (`OWNER_DECISIONS.md:8034`); each of the
 three is put once, each with the option that builds C as chosen. Narrower words are an option put to him, not a recommendation
@@ -248,8 +250,8 @@ file on the floor line.
   athlete lists", `OWNER_DECISIONS.md:5975`), with `status`, `method`,
   `checked_in_by_role` and `checked_in_at`, leaving out only the marking
   account and the note (`scheduler/route.ts:569-582`, applied at `:749`;
-  scoped at `:678-697`). A search of `apps/web/components` found no screen
-  that shows `checked_in_by_role`. OBSERVED.
+  scoped at `:678-697`). A search of `apps/web/components` and of the pages
+  under `apps/web/app` found no screen that shows `checked_in_by_role`. OBSERVED.
 - **The public wall reads this source only** (not run marks), as
   `count(distinct athlete_id)` of present marks whose `checked_in_at` falls in
   the gym day, leaving out deleted athletes and cancelled classes
@@ -261,13 +263,13 @@ file on the floor line.
 |---|---|---|---|
 | Public wall `/api/pilot/wall` | anyone, no sign-in | today's classes; a head count per class and in total; no person, no initials, no key | `apps/web/app/api/pilot/wall/route.ts:20-35`; `apps/web/src/server/pilot/wallDisplay.ts:462-485` |
 | Paired gym TV `/api/pilot/tv/session` | a TV paired with a code (the route and its gate as the code's comments describe them, `wallDisplay.ts:444-449`; the route file was not read) | initials (or a consented name) of today's present marks, newest first, up to 18, and session milestones (`marquee`, `wallDisplay.ts:458`) | `wallDisplay.ts:444-460`, `:545-558`; `ON_FLOOR_MAX` `:491` |
-| Coach "Who is marked on the floor today" (`attendance-today/route.ts:13`) | coach, organization admin, admin | one reconciled status per athlete for today across the gym's live roster, from CT-13's reconciled view, which reads no mark on a cancelled class (`attendancePrecedence.ts:118-133`; `ATTENDANCE_PRECEDENCE.md:162`) | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
+| Coach "Who is marked on the floor today" (`attendance-today/route.ts:13`) | coach, organization admin, admin | one reconciled status per athlete for today across the gym's live roster, from CT-13's reconciled view, which reads no mark on a cancelled class (`apps/web/src/server/pilot/attendancePrecedence.ts:118-133`; `ATTENDANCE_PRECEDENCE.md:162`) | `apps/web/app/api/pilot/coach/attendance-today/route.ts:12-13`, `:17-21`, `:49-53`, `:90-92` |
 | A run's marks by run id | coach, organization admin, admin | the names marked on that run, for the gym's live athletes | `runs/[runId]/athletes/route.ts:63-79` |
 | Finished runs | coach, organization admin, admin | who was marked on each settled run | `apps/web/app/api/pilot/session-scripts/runs/route.ts:69-72` |
 | Coach home live panel | the coach running the run | "Session in progress" and "Athletes Present" for their own run | `apps/web/components/CoachWorkspace.tsx:1325-1326`, `:3296` |
 | Parent Hub attendance list | parent, own linked minor children | each register mark for the child on screen, dated by the class | `apps/web/components/ParentHub.tsx:1276-1298`; family read `scheduler/route.ts:569-582`, `:678-686` |
 | `/schedule`, family view | parent and athlete, own marks | each register mark with its class, its status, "via" the method (parent, coach, admin, walk-in or self check-in, `apps/web/src/shared/attendanceMethodWords.ts:8-14`) and the time of the mark; "Records could not be loaded just now." on a failed read | `apps/web/app/schedule/page.tsx:1554-1558`, `:1591-1597` |
-| Athlete "I'm here" | the athlete | their own check-in for today's class | `AthleteWorkspace.tsx:3270-3275`; `scheduler/route.ts:688-697` |
+| Athlete "I'm here" | the athlete | their own check-in for today's class, and "Your coach marked you [absent or excused] for this class." when staff did (`AthleteImHere.tsx:366`) | `AthleteWorkspace.tsx:3270-3275`; `scheduler/route.ts:688-697` |
 
 A search of `ParentHub.tsx` and `AthleteWorkspace.tsx` for "on the floor",
 "floor now" and "here now" found no live line on either home. The matches are
@@ -329,8 +331,8 @@ attendance figure, report, board or grant figure changes"
   table, except the one floor-line read. Its audience pattern
   (`sessionRunPresenceStaffOnly.convention.test.ts:161`) keeps `wall` and
   `kiosk` and should add `tv`: `/api/pilot/tv/session` does not match it
-  today, and the paired TV is held to initials (OD-2026-10-07-008 ruling 1,
-  `OWNER_DECISIONS.md:8713`). The floor-line read should be shown to
+  today, and the paired TV keeps "showing only who is present, by initials"
+  (OD-2026-10-17-008 ruling 1, `OWNER_DECISIONS.md:6997`). The floor-line read should be shown to
   return only the yes/no to a family and nothing at all to a board,
   platform-owner, staff-role or volunteer caller (any count Jason rules under
   FN0-Q3 comes from its own read) ("Do not
@@ -371,8 +373,7 @@ volunteer accounts see. Their limits today:
   (`privacyTiers.ts:81-87`); the scheduler read refuses the board outright
   (`scheduler/route.ts:707-709`); but the wall of names is open to every
   signed-in role, the board included (`apps/web/app/api/pilot/wall-of-names/route.ts:27`,
-  `:35-42`), and by its route's comment gives every live athlete's initials
-  and years, which depends on a deploy setting not checked here (`:29-32`);
+  `:35-42`), and by its route's comment gives athletes' initials and years, which depends on a deploy setting not checked here (`:29-32`);
 - platform owner: no athlete ids, no names, across organizations
   (`privacyTiers.ts:73-79`), and "never an individual athlete's file"
   (OD-2026-09-28-005); taken off the session-script runs routes
@@ -600,8 +601,8 @@ present, and by what method, is safeguarding evidence"
 (`ATTENDANCE_PRECEDENCE.md:100-101`). For register marks the family read
 already sends the marker's role and the method (2.2), and the family view of
 `/schedule` shows the method ("via" parent, coach, admin, walk-in or self check-in)
-and the time of each mark (2.3); a search of `apps/web/components` found no
-component that shows the role. The run's marker is staff only (2.1).
+and the time of each mark (2.3); a search of `apps/web/components` and of the
+pages under `apps/web/app` found no screen that shows the role. The run's marker is staff only (2.1).
 OBSERVED. So keeping "who marked" off the family line is a choice about the
 line's words, not an existing boundary: it repeats nothing the family
 already sees elsewhere and leaves the run's marker staff only. For the
@@ -715,7 +716,7 @@ Jason before FN-2 is FN0-Q4.
 **F15. A failed read must not look like "nobody".** The kernel floor says
 "an unknown value never looks complete or zero" (`AGENT_KERNEL.md:106-107`).
 The line joins two sources, and the idle close hides its own failure (2.1).
-OBSERVED. If a read fails, "Nobody is marked ..." on the coach line, or no
+OBSERVED. If a read fails, "Nobody is counted ..." on the coach line, or no
 line to a parent, would read as "not on the floor"; and a list built from one
 source when the other failed would look complete. The same holds while the
 read is still in progress. INFERRED. The coach home
@@ -828,7 +829,7 @@ register-only mark (FN0-Q2).
 Never: a deleted athlete; another organization's athlete or run; an absent or
 excused mark; a run mark taken back; a settled run; a register mark for a
 class on another day. The same rule feeds the coach line, the parent's line,
-the athlete's line and any count (FN0-Q3), except for a cancelled class,
+the athlete's line and any count FN0-Q3 rules (from the sources it rules), except for a cancelled class,
 which FN0-Q1 splits by reader.
 
 | Role (home) | May show | Must never show |
@@ -913,7 +914,10 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    request that names an athlete or an organization gets the same answer as
    one that names none.
 9. The line raises no push or email event. If W4 item 2 adds a service worker,
-   it does not cache the line's route. INFERRED (no finding here; a guard on
+   it does not cache the line's route. Any audit row FN-1 writes sets
+   `shadow_mirror: false`, as the run-mark module does, because a mirrored
+   event is readable by the athlete and their guardians
+   (`sessionRunAthletes.ts:48-51`; `apps/web/src/server/pilot/audit.ts:45`). INFERRED (no finding here; a guard on
    the one read, so the line cannot leave by another path).
 10. When either source fails, the whole read fails; the coach line says it
     could not be checked, never "Nobody ..."; families see what FN0-Q5 rules;
@@ -924,7 +928,8 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
     line says it is checking, as the coach home does ("Checking whether you
     have a session in progress...", `CoachWorkspace.tsx:1317-1318`), and
     families see what FN0-Q5 rules.
-11. The homes of the board and of staff-role and volunteer accounts show
+11. The homes of the board (`/board` and a board seat's page,
+    `pilotRoleRouting.ts:48-50`) and of staff-role and volunteer accounts show
     what FN0-Q3 rules (under its option A, the classes running now, title and
     times only, from one gym's guarded read); the platform owner's home shows
     nothing under option A; none shows a name (under option A, as far as class
@@ -982,7 +987,8 @@ counts", your option's text, `OWNER_DECISIONS.md:1264`; the recorded ruling,
 an application recorded in OD-2026-10-22-001 as one of Overwatch's
 applications of OD-2026-10-21-005, not words of yours, and this review sends every narrowing of your answers to you
 (section 1). The brief named App Overwatch for the words and the
-register-only case, a person with only a register mark and so no end time
+register-only case; the sizing defines that case, a person with only a
+register mark and so no end time, and leaves it to FN-0
 (`W4_SIZING.md:542-543`); a present mark on a cancelled class sits next to
 that case rather than inside it, but it is about which register marks count,
 as FN0-Q2 is, so it rides with it (section 1). The office can
@@ -1006,8 +1012,11 @@ on such a class still counts while its run is live (section 4).
   marked (section 4); for a coach who does not run that class, the mark is
   new: no coach read gives it today (F5).
 - **B: not shown to anyone, as the wall does.** Pros: one rule; matches the
-  wall. Cons: children marked present before a mid-class cancel drop off the
-  coach's head count.
+  wall. Cons: narrows your Q3.1 C for every reader; children marked present
+  before a mid-class cancel drop off every line, the coach's head count
+  included, and for a family that reads as "not on the floor" (F15), unless
+  a session tied to the class still has them marked; it is what FN-1's
+  staff branch serves until you answer (section 4).
 - **C: shown to everyone as any other mark.** Pros: Q3.1 C read literally.
   Cons: gives families a mark the family read withholds today; a parent may
   see a line for a class that never ran; for a coach who does not run that
@@ -1046,8 +1055,11 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
   there (INFERRED: the code lets staff mark any class that is not cancelled,
   at any hour, `scheduler/route.ts:1411-1413`, `:1497-1530`).
   - Coach line: "On the floor now: " and the names. With nobody counted:
-    "Nobody is marked on the floor right now." (the shape of the TV's
-    approved "Nobody is marked here yet today.", OW27-12 A). When the read
+    "Nobody is counted on the floor right now." (the shape of the TV's
+    approved "Nobody is marked here yet today.", OW27-12 A; "counted", not
+    "marked", because under A a family's mark before its class starts is not
+    counted, while the TV counts it from when it is written,
+    `apps/web/src/server/pilot/wallDisplayDb.ts:176-181`). When the read
     fails: "Who is on the floor could not be checked." (the coach home's
     existing "could not be checked" form, F15).
   - Parent: "[first name] is on the floor now." for each child who counts;
@@ -1070,8 +1082,10 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     class's start, on the coach's head count too, against Q3.3 A's "for
     safety and the head count"; a child's own tap for a class they never come to still
     shows them from its start (F2); a staff mark written early (a roster
-    marked at noon for an evening class) still shows those children from
-    when it is written; an athlete who taps "I'm here" in the morning for an
+    marked at noon for an evening class, or on an earlier day for today's
+    class) still shows those children from when it is written, or from the
+    start of the gym day; before a class starts the coach line counts fewer
+    than the TV, which counts a family's mark from when it is written; an athlete who taps "I'm here" in the morning for an
     evening class reads "You're not marked on the floor right now." while
     the check-in card says "You are marked here. Your coach can see it."
     (`apps/web/components/AthleteImHere.tsx:364`); a line before a class
@@ -1103,7 +1117,9 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
 - **Also asked: how often the line refreshes.** Recommended: when the page
   opens and when the reader refreshes it, not pushed live. Pros: limits the
   timing a guardian can read off the line (F14). Cons: an open page can be
-  out of date; the card calls it "the live line"
+  out of date, and for a family a stale page with no line looks like "not on
+  the floor" (F15), while an "as of" time on it would give back the timing
+  F14 limits; the card calls it "the live line"
   (`OWNER_DECISIONS.md:1258`).
 - Families get nothing from the read, and no screen shows the line, until
   you answer (section 4).
@@ -1149,8 +1165,12 @@ is still open, because each of these roles has limits on what it may see
   (OD-2026-08-27-001, a lane's transcription and an analogy, F3); a class list is rows, though of
   classes, not people; it opens a read to roles the scheduler read refuses
   today, against the kernel floor's "role gates ... untouched"
-  (`AGENT_KERNEL.md:104-105`), which only B leaves as it is; not an "on the
-  floor" line; leaving the platform
+  (`AGENT_KERNEL.md:104-105`), which only B leaves as it is, so choosing A
+  is your direction past that floor (RULES section 1, "unless the owner
+  directs it"); it is recommended because your Q12 A says "on every home"
+  and OD-2026-10-13-013 has what you chose built, and the widening is class
+  titles and times only, which every parent and the public wall already see
+  (F3); not an "on the floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
   it, as B's con says for all three; not sized.
 - **B: no line on those three homes.** Pros: no new access for any role; matches the sizing. Cons: narrows your Q12 A if
