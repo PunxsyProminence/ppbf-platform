@@ -20,8 +20,10 @@ export const dynamic = 'force-dynamic';
  * refused before anything is read. The organization comes from the session;
  * query fields are refused. Read-only.
  *
- * It reads the staff-only session presence record for open-gym marks, on this
- * page only (OW27-32 A); sessionRunPresenceStaffOnly.convention.test.ts pins
+ * It reads the staff-only session presence record for here marks the register
+ * does not hold (open gym, a tap that created no register mark, a cancelled
+ * class), on this page only (OW27-32 A; App Overwatch on #2172);
+ * sessionRunPresenceStaffOnly.convention.test.ts pins
  * this route and its module as that record's readers, with these three roles
  * (Overwatch, W4-6 GO, condition 1).
  */
