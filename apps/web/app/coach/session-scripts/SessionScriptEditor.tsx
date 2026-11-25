@@ -137,6 +137,16 @@ function writtenWords(text: string): string {
 
 const TEXT_FORM_OPEN = 'Add the text block you are writing, or close its form, before you save.';
 
+/**
+ * A title as the server will store it: trimmed and at most 200 UTF-16 units (cleanText counts
+ * .length), never ending in half a surrogate pair. A block added here starts with this title, so the
+ * title the coach sees is the title stored (Codex on #2203; reviewers F and G).
+ */
+export function storedTitle(text: string): string {
+  const cut = text.trim().slice(0, 200);
+  return (/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut).trimEnd();
+}
+
 function wholeMinutes(text: string): number | null {
   return /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
 }
@@ -269,17 +279,16 @@ export default function SessionScriptEditor({
     wantFocus.current = `${ref}:title`;
     setPanel(null);
   };
-  const addDrill = (drill: PickableDrill) => add(drill.name, { kind: 'drill', drill_id: drill.drill_id, drill_name: drill.name });
+  // The name as the server would store it; when that is not the name itself, block_label is sent.
+  const addDrill = (drill: PickableDrill) => add(storedTitle(drill.name), { kind: 'drill', drill_id: drill.drill_id, drill_name: drill.name });
   const addText = ({ block_label, ...written }: WrittenBlock) => {
     setError((shown) => (shown === TEXT_FORM_OPEN ? '' : shown));
     add(block_label, { kind: 'text', ...written });
   };
-  // The title the coach sees is the title sent (reviewer G): the source's as it was read, trimmed and
-  // cut to the server's 200, so a later rename of the source cannot change it at save.
+  // The title the coach sees is the title sent (reviewer G): the source's as it was read, as the server
+  // would store it (storedTitle), so a later rename of the source cannot change it at save.
   const addCopy = (copied: CopiedBlock) => {
-    // The server counts UTF-16 units (cleanText); the cut never splits a pair, so no half emoji is kept (reviewer F).
-    const cut = copied.block_label.trim().slice(0, 200);
-    const title = (/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut).trimEnd();
+    const title = storedTitle(copied.block_label);
     add(title, { kind: 'copy', ...copied, block_label: title });
   };
 
