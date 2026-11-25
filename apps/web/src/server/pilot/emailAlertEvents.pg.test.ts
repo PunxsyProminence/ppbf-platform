@@ -1375,6 +1375,41 @@ describe('email alert staff event sources', () => {
     ]);
   });
 
+  test('a person skipped before Graph on every restore is still offered the next one: skips alone do not use up the tries', async () => {
+    const client = await freshDatabase('emailevents_notice_skips_keep_tries');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-parent']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    // The parent's login is switched off: the source names them (an active
+    // membership), the switch is on, and the sender skips them as sign_in_off.
+    const login = (on: boolean) =>
+      client.query(`update pilot.accounts set active_flag = $1 where account_id = 'acct-ev-parent'`, [on]);
+    await login(false);
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 0, skipped: 1 });
+    const restore = async () => {
+      for (const active of [false, true]) {
+        await setAnnouncementActive({ organizationId: ORG, announcementId: live, active, onlyAuthorAccountId: null });
+        await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+      }
+    };
+    // Five restores, each skipped before Graph: more claims than the five tries.
+    for (let round = 0; round < 5; round += 1) {
+      await restore();
+      expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 0, skipped: 1 });
+    }
+    // Signed in again and restored once more: sent, once.
+    await login(true);
+    await restore();
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 1, sent: 1 });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(sent.map((m) => m.to)).toEqual(['acct-ev-parent@example.com']);
+    const { rows } = await client.query(`select status, tries from pilot.email_alert_sends`);
+    expect(rows).toEqual([{ status: 'sent', tries: 1 }]);
+  });
+
   test('a candidate named twice queues once and fails nothing; a retire between the source read and the queueing offers nothing again', async () => {
     const client = await freshDatabase('emailevents_notice_reoffer_edges');
     activeClient = client;

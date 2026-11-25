@@ -63,13 +63,15 @@ export interface EmailAlertSource {
  * not had when no try of it can have reached the person:
  *   - skipped (the notice retired before it went out, or the person switched
  *     off at the time, say) with no status or error from any earlier try: every
- *     claim of it ended in a skip, before Graph. A row with one has had a try
- *     that may have reached Graph (a 5xx or timeout after Graph took the mail,
- *     or a lease that ran out mid-send), so it is not offered again;
+ *     claim of it ended in a skip, before Graph. A row with one cannot be shown
+ *     undelivered, since it keeps only its last status and error: an earlier
+ *     try may have reached Graph (a 5xx or timeout after Graph took the mail,
+ *     or a lease that ran out mid-send). So it is not offered again;
  *   - failed on its first and only try, which a failed row with one try can
  *     only have done by a final refusal (a Graph 4xx other than 429, a
  *     malformed address, an empty message: emailAlertSender.ts). A row failed
- *     after retries is not offered again, for the same reason as above.
+ *     after retries cannot be shown undelivered either, and is not offered
+ *     again.
  * It is offered again only while the notice is active and was changed after
  * the row became due (updated_at after next_try_at; setAnnouncementActive is
  * the only write that stamps updated_at, on a retire as on a restore, and a
@@ -83,8 +85,12 @@ export interface EmailAlertSource {
  * unchanged (a minor's login the source names and the sender refuses) stays
  * skipped, rather than being queued and skipped again on every tick.
  *
- * The row keeps its tries (at most 5 in all, plan 5.4) and its last status and
- * error. The re-offer is its own UPDATE, not an ON CONFLICT DO UPDATE, so a
+ * A failed row keeps its tries (at most 5 in all, plan 5.4) and its last status
+ * and error. A skipped row starts its tries again from 0: every claim of it
+ * ended in a skip before Graph, so the five tries still count only tries that
+ * could reach the person, and a person skipped on every restore is not
+ * dropped from the next one when the skips alone would have used them up
+ * (reviewer A on #2193). The re-offer is its own UPDATE, not an ON CONFLICT DO UPDATE, so a
  * candidate named twice cannot fail the statement and it locks only the rows
  * it changes. The sender asks every check again. Returns how many rows were
  * written or queued again.
@@ -115,12 +121,12 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
      offered_again as (
        update pilot.email_alert_sends r
           set status = 'queued', skip_reason = null, finished_at = null,
+              tries = case when r.status = 'skipped' then 0 else r.tries end,
               next_try_at = clock_timestamp(), user_type = c.user_type
          from c
         where r.organization_id = c.organization_id and r.account_id = c.account_id
           and r.event_kind = c.event_kind and r.event_id = c.event_id
           and r.event_kind = 'gym_notice'
-          and r.tries < $6
           and ((r.status = 'skipped' and r.last_status_code is null and r.last_error_code is null)
                or (r.status = 'failed' and r.tries = 1))
           and exists (select 1 from pilot.announcements n
@@ -137,7 +143,6 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
       column((candidate) => candidate.userType),
       column((candidate) => candidate.eventKind),
       column((candidate) => candidate.eventId),
-      EMAIL_ALERT_MAX_TRIES,
     ],
   );
   return result?.written ?? 0;
