@@ -9790,6 +9790,87 @@
     }
   },
   {
+    "id": "app/api/pilot/parent/family-threads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/parent/family-threads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that reads the threads (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns; only threads the caller opened (familyThreads.ts listOwnFamilyThreads)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The threads this guardian opened about children linked to them now, with the staff replies in them and which replies this guardian has not yet seen (W4 item 4, OW27-24 A). A co-guardian's thread is never listed (OD-2026-10-12-024). Staff account ids stay on the server; staff are named by getStaffAuthorName.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-threads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-threads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that writes (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, rolled back for an adult; on the child (new thread) or on the thread's child for its opener (writing again), in familyThreads.ts",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A guardian opens a thread about a child linked to them on this request (403 otherwise), or writes again in a thread they opened (Overwatch Q2 A on #2161; anyone else's thread or an ended link is the same 404). Append-only table with a database guard that also requires a live guardian of the child (migration family-threads). No audit row, no SHADOW event, nothing sent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/parent/family-thread-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/parent/family-thread-reads",
+    "gate": "requirePrincipal + requireRole(parent) + guardianLinkedPredicateSql in the one statement that records the read (link, live child, live account, active parent membership, active gym) and guardianLinkEnded on the date of birth it returns, on the post's child, the post a staff reply in a thread the caller opened (familyThreads.ts recordFamilyThreadReadByGuardian)",
+    "rolesAdmitted": [
+      "parent"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The guardian who opened a thread records the first time they saw a staff reply in it (half on screen, the FC-05 rule). Anything else is the same 404; written on conflict do nothing, so the first time stays.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/parent/family-goals/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/parent/family-goals",

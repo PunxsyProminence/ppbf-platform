@@ -377,21 +377,12 @@ POST-SESSION WATCH: Check for delayed injury signs. Document incidents. Note ath
 {{PPBF_ORG_ID}},wti_5cc664619c48f3,wtp_456e418b1741b8,5,warmup,drl_39ec154e04cb95,,,,none,"Lateral Line Hops:
 - 1–3 inches height
 - Fast rhythm",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
-{{PPBF_ORG_ID}},wti_c26f2e49250ffa,wtp_456e418b1741b8,6,warmup,,"Contrast Work:
-- Split squat hold → jump lunges (3–5)
-- Push-up hold → explosive push-ups
-- Punch hold → fast burst",,,none,,,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
-{{PPBF_ORG_ID}},wti_0813502c3392c0,wtp_456e418b1741b8,7,footwork,,"Split stance pogo:
-- Stay in stance, small bounce",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
-{{PPBF_ORG_ID}},wti_bb2b0abe258599,wtp_456e418b1741b8,8,footwork,,"Shuffle → Stick:
-- Shuffle then stop hard
-- No wobble",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
-{{PPBF_ORG_ID}},wti_a11434a43adc13,wtp_456e418b1741b8,9,footwork,,"Forward/back step:
-- Quick feet, no crossing",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
-{{PPBF_ORG_ID}},wti_41c625e25d2f35,wtp_456e418b1741b8,10,footwork,,"Pivot hop:
-- Turn on ball of foot",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
-{{PPBF_ORG_ID}},wti_2e7a01495dda5b,wtp_456e418b1741b8,11,footwork,,"Slip → step:
-- Head then feet",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_c26f2e49250ffa,wtp_456e418b1741b8,6,warmup,drl_e42cab40dfabdd,,,,none,,,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_0813502c3392c0,wtp_456e418b1741b8,7,footwork,drl_a7f630616234a0,,,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_bb2b0abe258599,wtp_456e418b1741b8,8,footwork,drl_a62e2a39fb784b,,,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_a11434a43adc13,wtp_456e418b1741b8,9,footwork,drl_7aa21f53d3f8dd,,,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_41c625e25d2f35,wtp_456e418b1741b8,10,footwork,drl_3b4912298fcc7d,,,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_2e7a01495dda5b,wtp_456e418b1741b8,11,footwork,drl_c4f3dd04a9b692,,,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
 {{PPBF_ORG_ID}},wti_1263a503ee9e2a,wtp_456e418b1741b8,12,power,drl_45e8895039a8cd,,,,none,"Split squat iso → jump lunges:
 - Same depth as iso
 - Jump straight up
@@ -401,24 +392,13 @@ POST-SESSION WATCH: Check for delayed injury signs. Document incidents. Note ath
 {{PPBF_ORG_ID}},wti_2a8f9075fc10de,wtp_456e418b1741b8,14,power,drl_85a93f6757497a,,,,none,"Punch iso → burst:
 - 3–5 fast punches
 - Snap back to guard",,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
-{{PPBF_ORG_ID}},wti_2917206d521fb3,wtp_456e418b1741b8,15,power,,"Run 3 rounds, rest 45–60 sec",,,none,,,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
-{{PPBF_ORG_ID}},wti_0b129344cf2cd8,wtp_456e418b1741b8,16,applied_rounds,,"Round 1: Power transfer
-- Pause then explode punches",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
-{{PPBF_ORG_ID}},wti_7f63e61ab6c339,wtp_456e418b1741b8,17,applied_rounds,,"Round 2: Reactive
-- Coach calls: slip, step, fire",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
-{{PPBF_ORG_ID}},wti_770ea73c4b30b9,wtp_456e418b1741b8,18,applied_rounds,,"Round 3: Controlled
-- 70% power, clean technique",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
-{{PPBF_ORG_ID}},wti_225fe1384aefc9,wtp_456e418b1741b8,19,conditioning,,"Option A:
-- Pogos x20
-- Fast punches 20 sec
-- Rest 20 sec",,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
-{{PPBF_ORG_ID}},wti_aee314f3ed659a,wtp_456e418b1741b8,20,conditioning,,"Option B:
-- 30 sec punch out
-- 30 sec bounce
-- 30 sec rest",,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
-{{PPBF_ORG_ID}},wti_ac4ab08a82ecb0,wtp_456e418b1741b8,21,cooldown,,"Light bounce
-Deep breathing
-Relax arms/legs",,,none,,,"{""block_time"":""58:00–60:00"",""block_title"":""58:00–60:00 Reset""}"
+{{PPBF_ORG_ID}},wti_2917206d521fb3,wtp_456e418b1741b8,15,power,drl_d549ae9b6275f1,,,,none,,,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
+{{PPBF_ORG_ID}},wti_0b129344cf2cd8,wtp_456e418b1741b8,16,applied_rounds,drl_7a54d70d866802,,,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_7f63e61ab6c339,wtp_456e418b1741b8,17,applied_rounds,drl_f320ba29ee851f,,,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_770ea73c4b30b9,wtp_456e418b1741b8,18,applied_rounds,drl_4f2ac372a75483,,,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_225fe1384aefc9,wtp_456e418b1741b8,19,conditioning,drl_5ab30784188e04,,,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
+{{PPBF_ORG_ID}},wti_aee314f3ed659a,wtp_456e418b1741b8,20,conditioning,drl_3891ec6a6a49f6,,,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
+{{PPBF_ORG_ID}},wti_ac4ab08a82ecb0,wtp_456e418b1741b8,21,cooldown,drl_15ebfe7736b8eb,,2,,none,,,"{""block_time"":""58:00–60:00"",""block_title"":""58:00–60:00 Reset""}"
 {{PPBF_ORG_ID}},wti_a22fc036566395,wtp_4b192f174699bc,1,technical,,Mirror awareness,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
 {{PPBF_ORG_ID}},wti_3a31a44a12c4eb,wtp_4b192f174699bc,2,technical,,Mirror movement,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
 {{PPBF_ORG_ID}},wti_a00c2b3898001f,wtp_4b192f174699bc,3,technical,,Shadowboxing application,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
@@ -894,29 +874,14 @@ The end of a recovery session should feel like the body is being taught to relax
 {{PPBF_ORG_ID}},wti_4319c9e7535b1a,wtp_9e9710b7ff5736,5,warmup,,"The first movements of the session, at low intensity",,,none,,,"{""phase"":""5. Task-specific"",""time"":""2 min""}"
 {{PPBF_ORG_ID}},wti_590da0aae76086,wtp_9e9710b7ff5736,6,warmup,,"Movement activation restores stance, stepping, pivots, and balance.",,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
 {{PPBF_ORG_ID}},wti_54b35fbc483d1f,wtp_9e9710b7ff5736,7,warmup,,Decision activation uses light cues or partner interaction to wake up recognition without adding stress.,,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
-{{PPBF_ORG_ID}},wti_07f082f0ca5d4b,wtp_9fbf7f8edf5016,1,warmup,,"Say:
-""Today is about seeing before moving. No guessing. Stay calm and balanced.""
-Watch: attention, spacing
-Fix: ""Eyes here."" / ""Two steps back.""",,,none,,,"{""block_time"":""4:00–4:02"",""block_title"":""Set Tone (4:00–4:02)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_67513d4fc316b5,wtp_9fbf7f8edf5016,2,warmup,,"Say:
-""Small steps. Forward, back, left, right.""
-Non-negotiables: knees bent, hands up, feet do not cross
-Fix: ""Smaller steps."" / ""Hands home.""",,,none,,,"{""block_time"":""4:02–4:04"",""block_title"":""Movement in Stance (4:02–4:04)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_58703758cf0215,wtp_9fbf7f8edf5016,3,warmup,,"Say:
-""Jab and keep moving.""
-Fix: ""Punch then reset."" / ""Don’t lean.""",,,none,,,"{""block_time"":""4:04–4:06"",""block_title"":""Add Jab (4:04–4:06)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_0cc0da513649d6,wtp_9fbf7f8edf5016,4,warmup,,"Say:
-""Slip is small. Head first.""
-Fix: ""Smaller."" / ""See it first.""",,,none,,,"{""block_time"":""4:06–4:08"",""block_title"":""Slip on Visual Cue (4:06–4:08)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_07f082f0ca5d4b,wtp_9fbf7f8edf5016,1,warmup,drl_26a97e355c0e0a,,2,,none,,,"{""block_time"":""4:00–4:02"",""block_title"":""Set Tone (4:00–4:02)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_67513d4fc316b5,wtp_9fbf7f8edf5016,2,warmup,drl_c7e4c5ae475b65,,2,,none,,,"{""block_time"":""4:02–4:04"",""block_title"":""Movement in Stance (4:02–4:04)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_58703758cf0215,wtp_9fbf7f8edf5016,3,warmup,drl_1d6dcdeb8b8013,,2,,none,,,"{""block_time"":""4:04–4:06"",""block_title"":""Add Jab (4:04–4:06)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_0cc0da513649d6,wtp_9fbf7f8edf5016,4,warmup,drl_bae413a2338d17,,2,,none,,,"{""block_time"":""4:06–4:08"",""block_title"":""Slip on Visual Cue (4:06–4:08)"",""phase"":""4:00–5:00 Non-Contact""}"
 {{PPBF_ORG_ID}},wti_4d6f294ac59cec,wtp_9fbf7f8edf5016,5,primary_drill,drl_83832de7d460cd,,,,none,,,"{""block_time"":""4:08–4:20"",""block_title"":""Drill 1: Slip → Pause → Jab (4:08–4:20)"",""phase"":""Drill 1: Slip → Pause → Jab (4:08–4:20)""}"
-{{PPBF_ORG_ID}},wti_433b3c478e58c6,wtp_9fbf7f8edf5016,6,sparring,,"Round 1: Jab only
-Round 2: Jab + cross
-Round 3: Open but controlled",,,controlled_sparring,,,"{""block_title"":""Technical Spar"",""phase"":""5:00–6:00 Contact""}"
-{{PPBF_ORG_ID}},wti_7cf7c77b002620,wtp_9fbf7f8edf5016,7,sparring,,"Defense before score
-Ropes escape first
-Higher pace finish",,,controlled_sparring,,,"{""block_title"":""Situational Spar"",""phase"":""5:00–6:00 Contact""}"
-{{PPBF_ORG_ID}},wti_f9e2cb14abb626,wtp_9fbf7f8edf5016,8,finish_block,,"Technique while tired
-Defense before offense always",,,none,,,"{""block_title"":""Conditioning Finish"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_433b3c478e58c6,wtp_9fbf7f8edf5016,6,sparring,drl_13242d8acf3944,,,,controlled_sparring,,,"{""block_title"":""Technical Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_7cf7c77b002620,wtp_9fbf7f8edf5016,7,sparring,drl_0126497cf4649f,,,,controlled_sparring,,,"{""block_title"":""Situational Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_f9e2cb14abb626,wtp_9fbf7f8edf5016,8,finish_block,drl_558fc9e8f7ddc3,,,,none,,,"{""block_title"":""Conditioning Finish"",""phase"":""5:00–6:00 Contact""}"
 {{PPBF_ORG_ID}},wti_96cdce5f6e9280,wtp_b314d9a0582d20,1,warmup,,isometrics all planes + pre-activation cue drill,,,light_technical,,,"{""phase"":""Cervical""}"
 {{PPBF_ORG_ID}},wti_dab66ca0bc9cd4,wtp_b314d9a0582d20,2,warmup,,"band external rotation × 12, prone Y × 10, face pull × 12",,,none,,,"{""phase"":""Shoulder""}"
 {{PPBF_ORG_ID}},wti_8ec1e743f8f629,wtp_b314d9a0582d20,3,warmup,,"open book × 6/side, thread the needle × 6/side",,,none,,,"{""phase"":""Thoracic""}"

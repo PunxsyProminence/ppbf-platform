@@ -161,6 +161,8 @@ describe('the promoted denylists are pinned exactly', () => {
       'pilot.athlete_pathway_minor_allowances',
       // A coach's free-text note beside a stage placement (map item 17).
       'pilot.athlete_pathway_stages',
+      // Who reached out to an athlete on the stopped-coming list, and when (lane W4-6). Staff only.
+      'pilot.athlete_reached_out_marks',
       // Days a coach marked a child as resting or away (lane R6-b1). Staff only.
       'pilot.athlete_rest_marks',
       // A coach's report of what a child did in a drill, and why (lane L49). Staff only.

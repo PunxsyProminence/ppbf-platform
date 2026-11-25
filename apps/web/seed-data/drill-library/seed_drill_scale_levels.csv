@@ -1646,3 +1646,63 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_fe7d7fcc6abfd1,drl_5093325d1b6985,A,false,The coach asks one of the three questions.,One question.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_67123301205083,drl_5093325d1b6985,B,true,"The three questions and the closing line, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_61665b1347b0a4,drl_5093325d1b6985,C,false,An athlete asks the questions and the coach closes.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_50cf835323077e,drl_26a97e355c0e0a,A,false,The coach places athletes in their spots before speaking.,Coach-placed.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6ac7296aab3744,drl_26a97e355c0e0a,B,true,"The Say line, then watch and fix, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6ceefb0a97f4a4,drl_26a97e355c0e0a,C,false,Athletes space themselves and settle with no fix needed.,No fix.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7aeffee81e8b77,drl_c7e4c5ae475b65,A,false,Forward and back only.,Two directions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6e4b56ccdd97aa,drl_c7e4c5ae475b65,B,true,"Four directions, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f5de8f13349506,drl_c7e4c5ae475b65,C,false,Direction changes on the coach's call.,Called directions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_40c35d75b0d12e,drl_1d6dcdeb8b8013,A,false,Jab and keep moving at a slow walking pace.,Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_efb0c6e375cb36,drl_1d6dcdeb8b8013,B,true,"Jab and keep moving, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f19763cc8d3069,drl_1d6dcdeb8b8013,C,false,Double jab and keep moving.,Double jab.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a6ca4e0e2d61b7,drl_bae413a2338d17,A,false,"A slow, clear cue to one side only.",One side.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_af45a6756ce0c0,drl_bae413a2338d17,B,true,"Slip on the visual cue, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f7b418bed4ea88,drl_bae413a2338d17,C,false,The coach varies the side and timing of the cue.,Varied cue.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9aacf78722ce88,drl_13242d8acf3944,A,false,All three rounds jab only.,Jab only.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3a636f2e0e05ed,drl_13242d8acf3944,B,true,"Jab only, jab and cross, open but controlled, as written.",,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f6862c7e62d799,drl_13242d8acf3944,C,false,In round 3 the coach calls the tools mid-round (jab only / jab and cross / open but controlled); one coaching focus per round; contact stays controlled sparring.,Tools called mid-round.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2d32c5f73d3cb6,drl_0126497cf4649f,A,false,"Defense before score only, for every round.",One situation.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6d417bdba99cea,drl_0126497cf4649f,B,true,"The three situations, as written.",,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7a8758ea002cca,drl_0126497cf4649f,C,false,"The coach calls the next situation mid-round, not only at the bell (a ropes situation starts at the bell or after a stop); contact stays controlled sparring.",Called mid-round.,controlled_sparring,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_927bdcd1742cef,drl_558fc9e8f7ddc3,A,false,Shorter work periods with longer rests.,More rest.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f27f460f3b4c3c,drl_558fc9e8f7ddc3,B,true,The finish as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_27c7b460ea9915,drl_558fc9e8f7ddc3,C,false,"Longer work periods, defense before offense in every one.",Longer work.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ffa9e2823cbd2f,drl_e42cab40dfabdd,A,false,Each pair at its own drill's level A: low-amplitude jump lunges with a stick on each landing; push-ups with the hands staying on or only just off the floor; a burst of 3 punches.,Low amplitude.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9dbcde37770111,drl_e42cab40dfabdd,B,true,The three pairs as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_aa23f51bf5cde9,drl_e42cab40dfabdd,C,false,"Each explosive move at high intent and reactive, from the position its hold built.","High intent, reactive.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_bc10d53f022e83,drl_a7f630616234a0,A,false,"Fewer, lower bounces, checking the stance after each.","Low amplitude, stance checked.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_80a59513ca3b3c,drl_a7f630616234a0,B,true,"Small bounces in stance, then reset stance, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_148306193b21f7,drl_a7f630616234a0,C,false,"Bounces at high intent and reactive, the bounce still small.","High intent, still small.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_62f76d148cbeb4,drl_a62e2a39fb784b,A,false,"Short, slower lateral shuffles, stopping and holding still before the next.",Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e8bf40d9742f55,drl_a62e2a39fb784b,B,true,"Shuffle, then stop hard, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0b6f6a98930326,drl_a62e2a39fb784b,C,false,"Lateral shuffle, stick, then explode out of the stick.","Stick, then explode.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b8af118af94a93,drl_7aa21f53d3f8dd,A,false,"Slower steps, checking the stance after each.",Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6708cec75bcda2,drl_7aa21f53d3f8dd,B,true,"Quick forward and back steps, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_11aa4c5494f195,drl_7aa21f53d3f8dd,C,false,"Forward and backward reactive step hops, the feet still never crossing.",Reactive step hops.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_233491b35a9fc1,drl_3b4912298fcc7d,A,false,"A slow rear-foot pivot, checking the stance on the return before the next.",Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ed7309dec48677,drl_3b4912298fcc7d,B,true,"The pivot hop as written: rear-foot pivot, quick return.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e93f5217f0fda1,drl_3b4912298fcc7d,C,false,"Pivot hops on the coach's call, the return still quick.",On the call.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_bd76762e8b93b7,drl_c4f3dd04a9b692,A,false,"Slip, pause, then step, checking the order.",Paused.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7e38a7b8b7373f,drl_c4f3dd04a9b692,B,true,"Slip then step, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f3e597da8a6e50,drl_c4f3dd04a9b692,C,false,Slip + hop: the slip goes straight into a reactive step hop.,Slip into a hop.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_82809ee93ed8b1,drl_d549ae9b6275f1,A,false,"Three rounds in all with the longer rest (60 seconds), the plyos at low amplitude; the coach may cut a round.","Longer rest, low amplitude.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5da626e9e58bb6,drl_d549ae9b6275f1,B,true,"Three rounds, 45–60 seconds rest, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8d1297f72bdade,drl_d549ae9b6275f1,C,false,"Three rounds in all with the shorter rest (45 seconds), the plyos at high intent and reactive.","Shorter rest, high intent.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_83ffee42e5627d,drl_7a54d70d866802,A,false,"Fewer punches after each pause, checking that each snaps back to the guard.",Fewer punches.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_738a01fffe9e0e,drl_7a54d70d866802,B,true,"Pause, then explode punches, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_aca493af041364,drl_7a54d70d866802,C,false,"Shorter pauses, each burst explosive.",Shorter pauses.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_52656c705b643d,drl_f320ba29ee851f,A,false,"One call at a time, slowly, with a reset between.",Slower calls.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_1c8947d3eee346,drl_f320ba29ee851f,B,true,"Coach calls slip, step, fire, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_eebd1061474f59,drl_f320ba29ee851f,C,false,"Faster calls, the order mixed.","Faster, mixed.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0e803489f41d18,drl_4f2ac372a75483,A,false,"Single punches at 70%, checking each.",Single punches.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f57ddbe4bc24d2,drl_4f2ac372a75483,B,true,"70% power, clean technique, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_175ed52a4c6ed9,drl_4f2ac372a75483,C,false,"Combinations at 70%, every punch clean.",Combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3e3d645d33e8f8,drl_5ab30784188e04,A,false,Pogos at low amplitude and punches at a controlled pace.,"Low amplitude, controlled pace.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_c1003a99517e6b,drl_5ab30784188e04,B,true,Option A as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8033e9f51776f4,drl_5ab30784188e04,C,false,Fast reactive pogos and full-speed punches.,"High intent, reactive.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e9446fe8587e2e,drl_3891ec6a6a49f6,A,false,"Punch out at a controlled pace, a light bounce.",Controlled pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8358d6fd2bff5c,drl_3891ec6a6a49f6,B,true,Option B as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5fbcf156afc8e2,drl_3891ec6a6a49f6,C,false,"The bounce at high intent and reactive, the punches still snapping back.",Reactive bounce.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_3fd79a16978db8,drl_15ebfe7736b8eb,A,false,"Standing still, deep breathing and relaxing the arms and legs.",No bounce.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_df0f4e1bc3f1e7,drl_15ebfe7736b8eb,B,true,"Light bounce, deep breathing, relax arms and legs, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_321779313bcf3a,drl_15ebfe7736b8eb,C,false,"The athlete leads their own reset, breathing slowing throughout.",Self-led.,none,,scaffold_needs_coach_review
