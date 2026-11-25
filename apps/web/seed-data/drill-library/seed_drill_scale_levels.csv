@@ -1535,3 +1535,51 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_2be2e9664f8544,drl_35aac3b481205b,A,false,Both hands on the wall and a smaller rise; the same reps.,Smaller rise.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_6860c90675206b,drl_35aac3b481205b,B,true,"The drill as written, at your band's amount (U12: 2 × 10 · 12–17: 3 × 12 · Adult: 3 × 15 · rest 30 s).",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_c4f525693f265e,drl_35aac3b481205b,C,false,"One foot at a time, a hand on the wall; the same reps each foot.",One foot.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8733dbbcaf04c4,drl_dce3452a913583,A,false,Rhythm and alternating feet only; a phantom rope (no rope) if the rope keeps catching.,No high-knee stage.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d1e834109e7d63,drl_dce3452a913583,B,true,"The three stages as written: rhythm, alternating feet, high knees.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0078fac54898b9,drl_dce3452a913583,C,false,A longer high-knee stage with the same clean rhythm.,More time on high knees.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_41afd886a3c162,drl_40f93d01bd4b69,A,false,"A smaller range and slower, with a hand on the wall for balance if needed.",Smaller range.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d0ec1b3a9471dc,drl_40f93d01bd4b69,B,true,"Hips, thoracic rotation and shoulders as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_faf360f77219b2,drl_40f93d01bd4b69,C,false,"Full comfortable range, finishing each part in boxing stance.",Finish in stance.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2394b794f0a224,drl_2bd1d0742ece8d,A,false,"Fewer, slower actions, each called by the coach.",Coach-called actions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b2b489dbcb18d4,drl_2bd1d0742ece8d,B,true,The round as written: technical scoring only.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_048ef6a47de9fe,drl_2bd1d0742ece8d,C,false,"Athletes choose their own actions from the session's material, still scored on technique only.",Self-chosen actions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_14ac2d113a785c,drl_8c42877a38946f,A,false,Exit with one step back after each action.,One exit direction.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ebe3b2fb8d330b,drl_8c42877a38946f,B,true,Round 2 as written: technique plus a movement exit.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f1b8622f0e0af7,drl_8c42877a38946f,C,false,"Exit in the direction the coach calls: back, left or right.",Called direction.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6dbe6d857fecaa,drl_5927f2f35347c2,A,false,"Slow triggers, only between actions.","Slow, predictable triggers.",none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_dab31840e1d2b9,drl_5927f2f35347c2,B,true,Round 3 as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_60eb9fad771966,drl_5927f2f35347c2,C,false,"Triggers at unpredictable moments, including in the middle of a combination.",Unpredictable triggers.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_796af949584aa6,drl_0967cc300cfc5e,A,false,"A shorter count (in for 3, out for 4) if 4 and 6 feel too long.",Shorter count.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_874dbe5c60a022,drl_0967cc300cfc5e,B,true,"In for 4, out for 6, at the coach's count.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_fa15f6763fabc3,drl_0967cc300cfc5e,C,false,Athletes keep the 4 and 6 count on their own.,Self-counted.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5d0e7cc8b89623,drl_1e56dfc77428eb,A,false,The coach makes the link in one or two sentences.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ab7fa3b17c4453,drl_1e56dfc77428eb,B,true,A 2-minute talk as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6e279e4eea05c2,drl_1e56dfc77428eb,C,false,"An athlete makes the link, the coach closing.",Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e9f8fdc0f5c271,drl_6396e76abea2e0,A,false,"Five bursts at a steady pace, not fast.",Steady pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a5218027a1dff8,drl_6396e76abea2e0,B,true,5 x 20 s fast straight punch bursts.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_6124b9fcc61d26,drl_6396e76abea2e0,C,false,The same bursts with coach-called straight-punch combinations.,Called combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b7b4863dac8d94,drl_ba386c3e7d41e1,A,false,Slower: step and hold in stance.,Slower.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_87f9a3cc7f6ee9,drl_ba386c3e7d41e1,B,true,40 s of controlled footwork as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ef9fddec1fa000,drl_ba386c3e7d41e1,C,false,Footwork in the directions the coach calls.,Called directions.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_255072e9cbf5bc,drl_0ef91e6a066df9,A,false,The coach states the focus and gives the example.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_c54c48d2b6028e,drl_0ef91e6a066df9,B,true,"The focus as written, with one example from today's session.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8bae1e6f590c07,drl_0ef91e6a066df9,C,false,"Athletes give the examples themselves, the coach closing.",Athlete examples.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d7cb6d519f7d48,drl_4df0b9ab4b632c,A,false,"Four bursts at a steady pace, not fast.",Steady pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a7006437e11427,drl_4df0b9ab4b632c,B,true,4 x 30 s fast punch bursts.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_c338f8f64d0419,drl_4df0b9ab4b632c,C,false,The same bursts with coach-called combinations.,Called combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2d0bded1c328f8,drl_1508f028c4ce4e,A,false,The fourth round at a steady pace.,Steady pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2d993880896b19,drl_1508f028c4ce4e,B,true,"A fourth round as written, in Weeks 7-8.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a98660498cf7cd,drl_1508f028c4ce4e,C,false,The fourth round with coach-called combinations.,Called combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_4b58626471782f,drl_4cc1133e4158e8,A,false,The coach states the focus and gives the example.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d455f4511cd048,drl_4cc1133e4158e8,B,true,"The focus as written, with one example from today's session.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9866284c48382f,drl_4cc1133e4158e8,C,false,"Athletes give the examples themselves, the coach closing.",Athlete examples.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ba36daba1aad31,drl_273f6b1e785e96,A,false,"Five bursts at a steady pace, not fast.",Steady pace.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2ea9780dc3f19f,drl_273f6b1e785e96,B,true,5 x 30 s bursts as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_dfec0855756a09,drl_273f6b1e785e96,C,false,The same bursts with coach-called combinations.,Called combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_ca92ace10fbeb7,drl_7c236b9eb91129,A,false,The coach counts the last 10 seconds aloud.,Countdown called.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_545c94c05ce2b1,drl_7c236b9eb91129,B,true,Strict 1-minute rests as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_5e4781b160b6ee,drl_7c236b9eb91129,C,false,Athletes keep their own time and are in stance on the minute without a call.,Self-timed.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_28bdb04f8b502e,drl_b6903e7c2c7291,A,false,The coach states the focus and gives the example.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_dc9b5a5e606214,drl_b6903e7c2c7291,B,true,"The focus as written, with one example from today's session.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_d0c41870798d21,drl_b6903e7c2c7291,C,false,"Athletes give the examples themselves, the coach closing.",Athlete examples.,none,,scaffold_needs_coach_review

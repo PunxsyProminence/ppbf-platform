@@ -399,14 +399,16 @@ describe('the committed FT1 rows', () => {
     // (Overwatch Q1 A and Q4 A): blank stage_keys, AI-draft labels; so is the cue lane HW added to one drill (Q6).
     // hwContentPackage.test.ts checks them. Lane RS (#2008) gave three existing drills a cue taken word for word from a
     // committed source (OD-2026-11-15-011 ruling 3, a new version), labelled the same way; committedTemplateIssueSweep.test.ts
-    // checks what that changes.
+    // checks what that changes. Lane W4-8's drills for the typed steps of the mixed templates (OD-2026-11-19-030) are AI
+    // drafts off the stage map too, as lane HW's (#2162); typedLinesContent.test.ts checks them.
     const HW = '"draft":"AI draft, lane HW, 2026-11-19';
     const RS = '"draft":"AI selection, lane RS, 2026-11-20';
     const LANE_RS_CUE_DRILLS = ['drl_146f4afdc88839', 'drl_39ed71de8c14cd', 'drl_af8541eacc70e5'];
     const laneHw = (row: Record<string, string>) => (row.name ?? '').startsWith('PPBF Home Day ') || (row.content_class ?? '').startsWith('AI DRAFT - lane HW');
+    const laneW48 = (row: Record<string, string>) => (row.content_class ?? '').startsWith('AI DRAFT - lane W4-8');
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
-      const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row));
+      const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row) && !laneW48(row));
       expect(others.length).toBeGreaterThan(0);
       for (const row of others) {
         // The one existing drill lane HW gave a cue, and the three lane RS did, keep blank evidence and stage keys; their
