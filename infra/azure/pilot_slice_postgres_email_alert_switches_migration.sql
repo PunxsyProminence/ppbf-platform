@@ -91,9 +91,11 @@ create table if not exists pilot.email_alert_switches (
     check (pending_code_attempts >= 0)
 );
 
--- The sender (EM-3) reads the switched-on rows of one gym; the primary key
--- serves a person's own read. A partial index keeps the sender's read to the
--- rows that can receive anything.
+-- The sender (EM-3, not yet built) is to read the switched-on rows of one gym;
+-- the primary key serves a person's own read. The partial index holds only
+-- switched-on rows. A switched-on row is not proof the person may still
+-- receive: a role, age or membership can change after the switch was set, so
+-- the sender is to re-check each person before every send.
 create index if not exists idx_email_alert_switches_on
   on pilot.email_alert_switches (organization_id, account_id)
   where switched_on;
