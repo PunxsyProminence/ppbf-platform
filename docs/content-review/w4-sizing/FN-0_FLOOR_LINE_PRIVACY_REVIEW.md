@@ -97,7 +97,8 @@ on a cancelled class (FN0-Q1, which narrows Q3.1 C for families through an
 Overwatch application, not his words); the words of the line, including
 what a register-only mark is called and from when it counts (FN0-Q2),
 because "What a screen looks like and how it flows is decided by Jason with
-the lane doing the work" (`AGENT_KERNEL.md:87-88`, OD-2026-10-02-004), and
+the lane doing the work" (the kernel's own rule, `AGENT_KERNEL.md:87-88`, in
+its section headed with OD-2026-10-02-004, `:76`), and
 the start time narrows his C for a case his card did not show; what "every home" means
 (FN0-Q3, the record pointing both ways); the family's words when a check
 fails (FN0-Q5, a new line on minors' screens: the L1 rule bars new
@@ -114,7 +115,7 @@ brief, which says to propose the words of the line and the register-only case
 "as questions for App Overwatch". If App Overwatch holds the brief's routing,
 it may answer FN0-Q1 and FN0-Q2 itself in this PR, but only with an option
 that narrows none of Jason's answers (FN0-Q1 C; for FN0-Q2, the words with
-B's timing); a pick that narrows one goes to Jason. FN0-Q1 rides with FN0-Q2
+B's timing, the refresh rate staying with Jason); a pick that narrows one goes to Jason. FN0-Q1 rides with FN0-Q2
 because both are about which register marks count. INFERRED.
 
 **On OD-2026-10-13-013 ("asked once, ruled once").** It has a standing ruling
@@ -548,8 +549,8 @@ would be a new answer to Q3.1, not a build choice.
   the line shows, and each is carried by a ruling or a question: the class's
   gym day for a register mark (F2, CT-13's day rule); a register mark on a
   cancelled class for families, as the family read already does (FN0-Q1);
-  narrower words for a register-only mark, offered to Jason, not recommended
-  (FN0-Q2); which homes
+  a family's register mark counted from its class's start (F2, FN0-Q2 A),
+  with narrower words offered to Jason in option C, not recommended; which homes
   get a line (FN0-Q3); a stale run not
   counted as live (F13, the 3-hour ruling); a later Absent or Excused on a
   tied class (F16, FN0-Q6). INFERRED.
@@ -943,7 +944,8 @@ applications of OD-2026-10-21-005, not words of yours, and this review sends eve
 (section 1). The brief named App Overwatch for the words and the
 register-only case, a person with only a register mark and so no end time
 (`W4_SIZING.md:542-543`); a present mark on a cancelled class sits next to
-that case, not inside it. If App Overwatch holds the brief's routing, it may
+that case rather than inside it, but it is about which register marks count,
+as FN0-Q2 is, so it rides with it (section 1). If App Overwatch holds the brief's routing, it may
 answer this itself, but only with C; a pick of A or B goes to you (section
 1). The office can
 cancel a class after it starts (`apps/web/src/server/pilot/schedulerCancelRule.ts:78-79`;
@@ -988,7 +990,8 @@ line, "using the names already ruled" (OW27-11, OW27-12, `OWNER_DECISIONS.md:187
 Overwatch for these words and the register-only case, and the sizing leaves
 them to FN-0 (`W4_SIZING.md:542-543`); App Overwatch's check sees that this
 reaches you and is not already ruled. If App Overwatch holds the brief's
-routing, it may answer the words itself, with B's timing; a pick of A's
+routing, it may answer the words itself, with B's timing, leaving the refresh
+rate to you (F14); a pick of A's
 start time or of C goes to you (section 1).
 The case the card did not show: a family's register mark can say "on the
 floor now" before the child arrives. An "I'm here" tap marks one class (one
@@ -1096,7 +1099,8 @@ is still open, because each of these roles has limits on what it may see
   class list is new on the two homes that get it (the scheduler read admits
   only athlete, parent, coach, organization admin and admin,
   `scheduler/route.ts:723`), though the public wall shows the default gym's
-  classes to anyone and families already see every class title
+  classes to anyone and families already see the class titles (all but
+  cancelled classes that have ended, `scheduler/route.ts:610-614`)
   (`scheduler/route.ts:680-681`) (F3); a title is staff-written text and a
   class can have a capacity of 1
   (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:13-18`),
@@ -1214,7 +1218,8 @@ INFERRED. With no line at all, a failed read looks like "not on the floor"
   athlete-hold answer chose your own words over this shape.
 - **B: the chalkboard's form.** "Can't check the floor right now." on both
   homes. Pros: the same form as the chalkboard's "Can't read the board right
-  now." already on those two homes (F15). Cons: those words are a lane's, not
+  now." already on those two homes (F15;
+  `apps/web/components/Chalkboard.tsx:274`). Cons: those words are a lane's, not
   yours.
 - **C: nothing.** Pros: no new line on minors' screens. Cons: a failed read
   then looks like "not on the floor" (F15; kernel floor, "an unknown value
@@ -1272,6 +1277,6 @@ reaches the case and they disagree, so it is put to you. INFERRED.
 - Not read: `docs/AI_COLLABORATION.md`; the paired TV route's own file
   (`/api/pilot/tv/session`; its board is read from `wallDisplay.ts` and
   `wallDisplayDb.ts`); any screen, staging or production. Not run: any test.
-- Line numbers in `W4_SIZING.md` section 3 were read at `a4b420c`; some have
-  moved (for example the register copy, `sessionRunAthletes.ts:171` there, is
+- The sizing's own code cites (in `W4_SIZING.md` section 3) were made at
+  `a4b420c`; some have moved (for example the register copy, `sessionRunAthletes.ts:171` there, is
   `:206-211` here). This file cites `f8963ecb` throughout.
