@@ -66,6 +66,7 @@ describe('the cluster lines', () => {
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       '/coach/performance-analytics',
       '/coach/passbook-gaps',
+      '/coach/stopped-coming',
       '/coach/athlete-intelligence',
       '/coach/decision-loop',
     ]);

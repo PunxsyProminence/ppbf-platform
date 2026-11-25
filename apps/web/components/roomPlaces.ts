@@ -108,6 +108,8 @@ export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = 
     '/coach/athlete-intelligence', '/coach/progression-intelligence', '/coach/performance-analytics',
     '/coach/intervention-protocols', '/coach/intervention-executions', '/coach/intervention-review',
     '/coach/adult-pathway', '/coach/disciplines', '/coach/parent-resources', '/coach/mental-skills', '/coach/assessments',
+    // Lane W4-6, SC-2: Overwatch's W4-6 Q5 A, with four of the five other "Who needs you" pages.
+    '/coach/stopped-coming',
   ],
   book: [
     '/coach/passbook-gaps', '/coach/transfer-check', '/coach/credentials', '/coach/development-blocks',
