@@ -19,11 +19,13 @@
  *     null). A tied run's tap writes the register, and a later register change
  *     wins there (docs/current/ATTENDANCE_PRECEDENCE.md), so tied runs are left
  *     to the register. The later of the two is the last day they came.
- *     KNOWN EXCEPTIONS (open with Overwatch on #2172): a tap on a run tied to a
- *     class that is then cancelled, or tapped after the cancel, is in neither
- *     source (the view reads no cancelled class; sessionRunClass.ts skips the
- *     write), so that day does not count here; and the tie is read as it is
- *     now, so a run untied after a tap counts that tap as open gym.
+ *     KNOWN EXCEPTIONS (open with Overwatch on #2172). A tap on a tied run
+ *     reaches neither source, so that tap does not count here, when: the class
+ *     is cancelled after the tap (the view reads no cancelled class, while it
+ *     stays cancelled); the tap comes after the cancel (sessionRunClass.ts
+ *     skips the write, class_cancelled); or another coach has taken the class's
+ *     cover (skipped, not_your_class). And the tie is read as it is now, so a
+ *     run untied after a tap counts that tap as open gym.
  *   - Listed when today minus that day is the gym's number of days or more: no
  *     day they came among the last N gym days, today included.
  *
