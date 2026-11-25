@@ -1132,6 +1132,33 @@ describe('a late tap or take-back keeps its tap time on the session mark', () =>
     expect(await pointer(gym, runId, gym.ada)).toMatchObject({ removed: false });
   });
 
+  test('a late re-mark records its tap time too, and a take-back never reads earlier than the mark it takes back', async () => {
+    const gym = await newGym('late-remark');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await startedAnHourAgo(gym, runId);
+    await tap(gym.coach, runId, gym.ada);
+    const markedAt = (await markTimes(gym, runId, gym.ada)).marked_at;
+    // A take-back whose tap time reads before the mark (a slow first request): removed_at is the mark's time, not earlier.
+    await lateTap(gym.coach, runId, gym.ada, false, new Date(new Date(markedAt).getTime() - 5_000).toISOString());
+    expect((await markTimes(gym, runId, gym.ada)).removed_at).toEqual(markedAt);
+
+    const retappedAt = ago(10_000);
+    expect(await lateTap(gym.coach, runId, gym.ada, true, retappedAt)).toEqual({ outcome: 'marked' });
+    expect(new Date((await markTimes(gym, runId, gym.ada)).marked_at).toISOString()).toBe(retappedAt);
+    // Tied afterwards: an Absent set on the register after the re-tap stands (condition 1 on the re-mark path).
+    await staffMark(gym, gym.ada, 'absent');
+    await client.query(
+      `update pilot.scheduler_attendance set checked_in_at = $3::timestamptz, updated_at = $3::timestamptz
+        where organization_id = $1 and athlete_id = $2`,
+      [gym.organizationId, gym.ada, ago(5_000)],
+    );
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass)).toEqual({
+      class_id: gym.klass,
+      copied: [{ athlete_id: gym.ada, effect: 'register_newer', status: 'absent' }],
+      released: [],
+    });
+  });
+
   test('a tap time from before the run began is taken as the run\'s start', async () => {
     const gym = await newGym('late-before-start');
     const { run_id: runId } = await start(gym, gym.coach, null);

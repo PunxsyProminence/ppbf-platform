@@ -163,7 +163,7 @@ export async function setRunAthletePresent(input: {
       pointer = standing.rows[0] ?? null;
       const removed = await client.query(
         `update pilot.session_run_athletes
-            set removed_at = coalesce($5::timestamptz, clock_timestamp()), removed_by_account_id = $4,
+            set removed_at = greatest(coalesce($5::timestamptz, clock_timestamp()), marked_at), removed_by_account_id = $4,
                 register_class_id = null, register_written_at = null
           where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null`,
         [actor.organizationId, runId, athleteId, actor.accountId, tappedAt],
