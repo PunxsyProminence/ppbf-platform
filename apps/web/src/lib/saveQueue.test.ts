@@ -17,6 +17,7 @@ import {
   prepareSaveQueue,
   readSaveQueue,
   resetSaveQueueForTests,
+  saveQueueAccountConfirmed,
   type KeptSave,
   type SaveAnswer,
   type SendContext,
@@ -936,6 +937,35 @@ describe('nothing survives a sign-out or an account change', () => {
       notSent: 0,
       checking: 0,
     });
+  });
+
+  test('a resend\'s check asked before a re-check began never ends it: names stay hidden until a newer answer, and the save is sent once confirmed', async () => {
+    const kept = await waitingSave('Ada Reyes: here');
+    // The resend's own check is out, and slow.
+    sessionAccount = 'hang';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    const resendCheck = releaseSession;
+    // Someone signs in elsewhere (no mark) and comes to this tab: a re-check, its ask out too.
+    createPersistentRoleSession('coach');
+    await settle();
+    const recheckAsk = releaseSession;
+    expect(saveQueueAccountConfirmed()).toBe(false);
+    // The older answer names the last coach: it confirms nothing.
+    resendCheck?.('acct-a');
+    await settle();
+    expect(saveQueueAccountConfirmed()).toBe(false);
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 1 });
+    expect(kept.save.send).toHaveBeenCalledTimes(1);
+    // The re-check's own answer decides.
+    recheckAsk?.('acct-a');
+    await settle();
+    expect(saveQueueAccountConfirmed()).toBe(true);
+    expect(readSaveQueue().waiting).toEqual(['Ada Reyes: here']);
+    // The resend asked again after the re-check began; its answer sends the save.
+    releaseSession?.('acct-a');
+    await settle();
+    expect(kept.save.send).toHaveBeenCalledTimes(2);
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
   });
 
   test('a drop during the account check before a resend: the next person\'s first save goes at once, not 15 seconds later', async () => {

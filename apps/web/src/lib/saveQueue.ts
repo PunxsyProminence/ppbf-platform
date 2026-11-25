@@ -167,6 +167,8 @@ let learning: Promise<string | null> | null = null;
 let learnSeq = 0;
 /** The role session was written again and no answer has confirmed the account since. */
 let rechecking = false;
+/** How many re-checks have begun: an answer to an ask made before the latest one began never ends it. */
+let rechecks = 0;
 let recheckTimer: ReturnType<typeof setTimeout> | undefined;
 /**
  * Saves dropped unsent: how many, whose (null: made while the account was being checked again, so
@@ -238,6 +240,7 @@ function recheckLater(): void {
  */
 function recheck(): void {
   rechecking = true;
+  rechecks += 1;
   notify();
   void learnAccount(true);
 }
@@ -528,6 +531,7 @@ async function pump(): Promise<void> {
       if (seen !== generation) return;
     }
     if (earlier.length > 0 || head.sends > 0 || rechecking || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
+      const askedAt = rechecks;
       const now = await signedInAccount();
       if (seen !== generation) return;
       if (boundaryNewer()) {
@@ -542,6 +546,12 @@ async function pump(): Promise<void> {
         dropAll();
         // Another account signed in: confirmed now, so a count of saves made while checking reaches them.
         if (now !== null) confirmAccount(now);
+        return;
+      }
+      // Asked before a re-check that is still out (someone may have signed in since): this answer may be
+      // about the last person, so it confirms nothing. Asked again at once; a newer answer decides.
+      if (rechecking && rechecks !== askedAt) {
+        next = true;
         return;
       }
       confirmAccount(now);

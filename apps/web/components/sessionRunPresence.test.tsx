@@ -1391,6 +1391,10 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
     });
     expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    const ok = screen.getByRole('button', { name: 'OK' });
+    act(() => {
+      ok.focus();
+    });
     // A sign-in elsewhere writes no device mark: back on this tab, the check is out and not answered yet.
     account = () => new Promise<string>((resolve) => {
       answerCheck = resolve;
@@ -1401,8 +1405,14 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     });
     expect(screen.queryByText(ADA_SAID)).toBeNull();
     expect(screen.getByText('1 message about a save on this list shows again once the page has checked who is signed in.')).toBeTruthy();
-    // Nothing to dismiss unread.
-    expect(screen.queryByRole('button', { name: 'OK' })).toBeNull();
+    // The count is not announced (the lines are, once they return), and OK keeps its place and the focus
+    // but dismisses nothing unread.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'OK' })).toBe(ok);
+    expect(document.activeElement).toBe(ok);
+    expect(ok.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(ok);
+    expect(screen.getByText('1 message about a save on this list shows again once the page has checked who is signed in.')).toBeTruthy();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
@@ -1411,12 +1421,14 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
     });
-    // The same coach after all: named again, and the words come back when the notes are next opened.
+    // The same coach after all: named again, said once, and the words come back when the notes are next
+    // opened.
     await act(async () => {
       answerCheck('acct-a');
       await jest.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toMatch(ADA_SAID);
+    expect(screen.getByRole('button', { name: 'OK' }).getAttribute('aria-disabled')).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);

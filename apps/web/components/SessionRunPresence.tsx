@@ -352,7 +352,7 @@ export default function SessionRunPresence({
     () =>
       subscribeSaveQueue(() => {
         const state = readSaveQueue();
-        if (state.waiting.length === 0 && state.checking === 0) setAskedTaps([]);
+        if (state.waiting.length === 0 && state.checking === 0) setAskedTaps((taps) => (taps.length === 0 ? taps : []));
       }),
     [],
   );
@@ -578,19 +578,30 @@ export default function SessionRunPresence({
         </div>
       ) : null}
 
-      {/* Kept taps' refusals stay through a list that could not be read; OK clears them. */}
-      {keptRefusals.size > 0 && !accountConfirmed ? (
-        <div role="alert" className={ALERT}>
-          <p>
-            {keptRefusals.size === 1
-              ? '1 message about a save on this list shows again once the page has checked who is signed in.'
-              : `${keptRefusals.size} messages about saves on this list show again once the page has checked who is signed in.`}
-          </p>
-        </div>
-      ) : keptRefusals.size > 0 ? (
-        <div role="alert" className={ALERT}>
-          {[...keptRefusals].map(([athleteId, text]) => <p key={athleteId}>{text}</p>)}
-          <button type="button" className="btn btn--kiosk mt-[var(--s2)]" onClick={() => setKeptRefusals(NO_REFUSALS)}>
+      {/* Kept taps' refusals stay through a list that could not be read; OK clears them. While the page
+          checks again who is signed in: a count, not announced, and OK stays where it is (focus too) but
+          clears nothing, so the next person cannot dismiss what they may not read. */}
+      {keptRefusals.size > 0 ? (
+        <div className={ALERT}>
+          {accountConfirmed ? (
+            <div role="alert">
+              {[...keptRefusals].map(([athleteId, text]) => <p key={athleteId}>{text}</p>)}
+            </div>
+          ) : (
+            <p>
+              {keptRefusals.size === 1
+                ? '1 message about a save on this list shows again once the page has checked who is signed in.'
+                : `${keptRefusals.size} messages about saves on this list show again once the page has checked who is signed in.`}
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn--kiosk mt-[var(--s2)]"
+            aria-disabled={accountConfirmed ? undefined : true}
+            onClick={() => {
+              if (accountConfirmed) setKeptRefusals(NO_REFUSALS);
+            }}
+          >
             OK
           </button>
         </div>
