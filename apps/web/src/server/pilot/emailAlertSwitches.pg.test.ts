@@ -21,32 +21,43 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
-import { Client } from 'pg';
+import { Client, Pool } from 'pg';
 
 let activeClient: Client | null = null;
+// Set only by the concurrency test: each withTransaction then takes its own
+// connection from a real pool, so two saves can really run at once. Every
+// other test sends everything down one connection, which serialises them.
+let activePool: Pool | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const result = await activeClient.query(text, params);
+    const target = activePool ?? activeClient;
+    if (!target) throw new Error('test bug: no active embedded client');
+    const result = await target.query(text, params);
     return result.rows;
   }),
   queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const result = await activeClient.query(text, params);
+    const target = activePool ?? activeClient;
+    if (!target) throw new Error('test bug: no active embedded client');
+    const result = await target.query(text, params);
     return result.rows[0] ?? null;
   }),
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const client = activeClient;
-    await client.query('BEGIN');
+    const pooled = activePool ? await activePool.connect() : null;
+    const client = pooled ?? activeClient;
+    if (!client) throw new Error('test bug: no active embedded client');
     try {
-      const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw error;
+      await client.query('BEGIN');
+      try {
+        const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    } finally {
+      pooled?.release();
     }
   }),
 }));
@@ -256,8 +267,10 @@ beforeAll(async () => {
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
 });
 
-afterEach(() => {
+afterEach(async () => {
   activeClient = null;
+  if (activePool) await activePool.end().catch(() => {});
+  activePool = null;
   jest.restoreAllMocks();
 });
 
@@ -436,8 +449,10 @@ describe('emailAlertSwitches.ts on a real database', () => {
       // The coach account's row as if it had been saved while the account was an adult athlete.
       await client.query(
         `insert into pilot.email_alert_switches
-           (organization_id, account_id, user_type, switched_on, switched_on_at, pending_address, confirmed_address, confirmed_at)
-         values ($1, $2, 'adult_athlete', true, now(), 'typed@example.test', 'someone@example.test', now())`,
+           (organization_id, account_id, user_type, switched_on, switched_on_at, pending_address,
+            pending_code_hash, pending_code_expires_at, pending_code_attempts, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'typed@example.test',
+                 'code-hash', now() + interval '15 minutes', 2, 'someone@example.test', now())`,
         [ORG_ID, COACH_ID],
       );
       await expect(readEmailAlertSwitch(subject('coach'), NOW)).resolves.toEqual({
@@ -447,6 +462,13 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await switchRows(client)).toEqual([expect.objectContaining({
         account_id: COACH_ID, user_type: 'staff', switched_on: true, pending_address: null, confirmed_address: null,
       })]);
+      const code = await client.query(
+        `select pending_code_hash, pending_code_expires_at, pending_code_attempts, confirmed_at
+           from pilot.email_alert_switches`,
+      );
+      expect(code.rows).toEqual([{
+        pending_code_hash: null, pending_code_expires_at: null, pending_code_attempts: 0, confirmed_at: null,
+      }]);
       // The audit describes the row as stored: it was on, under another user type.
       expect((await auditRows(client))[0].details).toEqual({
         user_type: 'staff', switched_on: true, previous_switched_on: true, previous_user_type: 'adult_athlete',
@@ -504,6 +526,50 @@ describe('emailAlertSwitches.ts on a real database', () => {
         account_id: MINOR_ID, switched_on: false, confirmed_address: null,
       })]);
       expect((await auditRows(client)).map((row) => row.details.reason)).toEqual(['no_longer_offered']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a row saved on under another user type, then switched off: the off-time is stamped and the audit says it was on', async () => {
+    const client = await freshDatabase('emailsw_retype_off');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at)
+         values ($1, $2, 'parent', true, now())`,
+        [ORG_ID, COACH_ID],
+      );
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: false }, NOW);
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        user_type: 'staff', switched_on: false, has_on_at: true, has_off_at: true,
+      })]);
+      expect((await auditRows(client))[0].details).toEqual({
+        user_type: 'staff', switched_on: false, previous_switched_on: true, previous_user_type: 'parent',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('three first saves at once, on separate connections: all succeed, one row, and the audit chain is consistent', async () => {
+    const client = await freshDatabase('emailsw_concurrent');
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_concurrent'), max: 4 });
+    try {
+      const results = await Promise.allSettled([true, false, true].map((switchedOn) =>
+        setEmailAlertSwitch({ ...subject('parent'), switchedOn }, NOW)));
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+
+      const { rows } = await client.query('select count(*)::int as n from pilot.email_alert_switches');
+      expect(rows[0].n).toBe(1);
+      const chain = (await auditRows(client)).map((row) => row.details as { switched_on: boolean; previous_switched_on: boolean });
+      expect(chain).toHaveLength(3);
+      // Each save saw the one before it: the first started from off, and every
+      // later "previous" is the value the save before it wrote.
+      expect(chain[0].previous_switched_on).toBe(false);
+      for (let i = 1; i < chain.length; i += 1) {
+        expect(chain[i].previous_switched_on).toBe(chain[i - 1].switched_on);
+      }
     } finally {
       await client.end();
     }

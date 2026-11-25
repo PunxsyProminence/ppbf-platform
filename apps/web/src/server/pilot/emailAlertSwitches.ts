@@ -107,6 +107,15 @@ function stateFrom(userType: EmailAlertUserType, row: SwitchRow | null | undefin
  * eligibility again before every send whether or not this has run.
  */
 async function retireSwitchIfAny(subject: EmailAlertSwitchSubject): Promise<void> {
+  // Most people not offered a switch (every athlete under 18) never had one:
+  // one plain read, and no transaction or lock, unless there is something to do.
+  const leftover = await queryOne<{ found: boolean }>(
+    `select true as found from pilot.email_alert_switches
+      where organization_id = $1 and account_id = $2
+        and (switched_on or pending_address is not null or pending_code_hash is not null or confirmed_address is not null)`,
+    [subject.organizationId, subject.accountId],
+  );
+  if (!leftover) return;
   await withTransaction(async (client) => {
     await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
     const before = await client.query<SwitchRow>(
@@ -186,8 +195,11 @@ export async function setEmailAlertSwitch(
   return withTransaction(async (client) => {
     // Lock the person's own account row first: with no switch row yet there
     // is nothing for the select below to lock, and two first saves at once
-    // would both audit "previous: off". FOR NO KEY UPDATE, so rows that only
-    // reference the account are not held up (tabletIdlePolicy.ts's rule).
+    // would both take the INSERT branch, and the second would fail on the
+    // primary key (23505, a 500 to the person). With the lock the second waits,
+    // then reads the first's committed row and takes the UPDATE branch. FOR NO
+    // KEY UPDATE, so rows that only reference the account are not held up
+    // (tabletIdlePolicy.ts's rule).
     await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
     const before = await client.query<SwitchRow>(
       `select ${SWITCH_ROW_COLUMNS}

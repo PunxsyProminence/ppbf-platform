@@ -1,5 +1,5 @@
 import { emailAlertUserTypeFor, readEmailAlertSwitch } from './emailAlertSwitches';
-import { queryOne } from './db';
+import { queryOne, withTransaction } from './db';
 
 /*
  * The age rule in code (lane W4-1, EM-1). pilot.athletes.dob is NOT NULL in the
@@ -22,13 +22,16 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-it('an athlete whose date of birth reads as null is treated as a minor: no switch, and the date of birth is read once', async () => {
-  mockQueryOne.mockResolvedValueOnce({ dob: null });
+it('an athlete whose date of birth reads as null is treated as a minor: no switch, and with nothing left over no transaction is opened', async () => {
+  mockQueryOne.mockResolvedValueOnce({ dob: null }).mockResolvedValueOnce(null);
   await expect(readEmailAlertSwitch(athlete, NOW)).resolves.toEqual({ offered: false });
-  expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  expect(mockQueryOne).toHaveBeenCalledTimes(2);
   expect(mockQueryOne.mock.calls[0][0]).toMatch(/join pilot\.athletes/);
   // The account's own link is part of the read: the caller's athlete id alone is not trusted.
   expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'acct-a', 'ath-1']);
+  // The second read looks for a leftover switch; finding none, nothing is locked or written.
+  expect(mockQueryOne.mock.calls[1][0]).toMatch(/from pilot\.email_alert_switches/);
+  expect(withTransaction).not.toHaveBeenCalled();
 });
 
 it('an athlete with a date of birth 18 or more years back is a candidate adult athlete', async () => {
