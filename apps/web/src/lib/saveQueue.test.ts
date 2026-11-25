@@ -435,11 +435,12 @@ describe('the queue never stops while saves wait', () => {
     const older: KeptSave = { label: 'Ada Reyes: here', send: jest.fn(() => new Promise<Response>(() => {})), onSaved: jest.fn() };
     await keepSave(older);
     await settle();
+    // Set back while the request is on its way, before the drop measures the time it has left.
+    jest.setSystemTime(Date.now() - 60 * 60 * 1000);
     clearRoleSession();
     createPersistentRoleSession('coach');
     prepareSaveQueue();
     await settle();
-    jest.setSystemTime(Date.now() - 60 * 60 * 1000);
     const newer = scriptedSave('Ada Reyes: not here', [answer(200)]);
     await keepSave(newer.save);
     await settle();
