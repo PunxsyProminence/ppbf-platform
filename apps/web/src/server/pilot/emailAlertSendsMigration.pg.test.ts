@@ -357,6 +357,41 @@ describe('email alert sends migration', () => {
     ['a checkpoint with no update time', 'alter table pilot.email_alert_checkpoints alter column updated_at drop default'],
     ['an extra checkpoint index', 'create index idx_email_alert_checkpoints_extra on pilot.email_alert_checkpoints (swept_to)'],
     [
+      'a deferrable checkpoint key (the sweep upserts on it)',
+      `alter table pilot.email_alert_checkpoints
+         drop constraint email_alert_checkpoints_pkey,
+         add constraint email_alert_checkpoints_pkey primary key (event_kind) deferrable initially immediate`,
+    ],
+    [
+      'the primary key swapped for a unique index of the same name',
+      `alter table pilot.email_alert_sends drop constraint email_alert_sends_pkey;
+       create unique index email_alert_sends_pkey on pilot.email_alert_sends (send_id)`,
+    ],
+    [
+      'a membership key that cascades updates',
+      `alter table pilot.email_alert_sends
+         drop constraint pilot_email_alert_send_membership_fk,
+         add constraint pilot_email_alert_send_membership_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(account_id, organization_id) on delete cascade on update cascade`,
+    ],
+    [
+      'a trigger that drops every insert',
+      `create function pilot.email_alert_sends_drop() returns trigger language plpgsql as $$ begin return null; end $$;
+       create trigger email_alert_sends_drop before insert on pilot.email_alert_sends
+         for each row execute function pilot.email_alert_sends_drop()`,
+    ],
+    [
+      'a rule that drops every insert',
+      'create rule email_alert_sends_drop as on insert to pilot.email_alert_sends do instead nothing',
+    ],
+    ['an unlogged send log (emptied after a crash)', 'alter table pilot.email_alert_sends set unlogged'],
+    ['row security on the send log', 'alter table pilot.email_alert_sends enable row level security'],
+    [
+      'a table that inherits from the send log',
+      'create table pilot.email_alert_sends_more () inherits (pilot.email_alert_sends)',
+    ],
+    ['an unlogged checkpoint table', 'alter table pilot.email_alert_checkpoints set unlogged'],
+    [
       'a checkpoint of any kind',
       'alter table pilot.email_alert_checkpoints drop constraint pilot_email_alert_checkpoint_kind_check',
     ],

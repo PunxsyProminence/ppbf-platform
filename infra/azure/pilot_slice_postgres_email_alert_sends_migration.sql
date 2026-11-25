@@ -42,8 +42,10 @@
 --     that was not skipped; an HTTP status outside 100-599.
 -- One row per (gym, account, event kind, event id), so the sweep's overlap and
 -- a restart never make a second row. A send cut off after Graph took it but
--- before its row says sent is sent again when its lease runs out (EM-3b): the
--- one way a person can get a second email for one event.
+-- before its row says sent is sent again when its lease runs out, if it has a
+-- try left (EM-3b): the one way a person can get a second email for one event.
+-- Cut off on its fifth try, it is marked failed instead (a queued row must have
+-- a try left).
 --
 -- DELETION (Overwatch GO on #2159, condition 4). All three keys cascade, as on
 -- pilot.email_alert_switches: a row goes when its gym's row, its account row

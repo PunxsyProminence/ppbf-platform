@@ -78,9 +78,10 @@ describe('the events each user type can be sent (EM-5)', () => {
     const gymChoice = sql('pilot_slice_postgres_organization_email_alert_events_migration.sql');
     const types = sends.match(/check \(user_type in \(([^)]*)\)\)/);
     expect(types?.[1].split(',').map((part) => part.trim().replace(/'/g, ''))).toEqual([...EMAIL_ALERT_USER_TYPES]);
-    const kindShape = (text: string) => text.match(/check \(event_kind ~ '([^']+)'\)/)?.[1];
-    expect(kindShape(sends)).toBeDefined();
-    expect(kindShape(sends)).toBe(kindShape(gymChoice));
+    const kindShapes = (text: string) => [...text.matchAll(/check \(event_kind ~ '([^']+)'\)/g)].map((match) => match[1]);
+    // Two in the send log's file: the send log's and the checkpoints'.
+    expect(kindShapes(sends)).toEqual([kindShapes(gymChoice)[0], kindShapes(gymChoice)[0]]);
+    expect(kindShapes(gymChoice)).toHaveLength(1);
   });
 
   it('every key has the shape the table CHECK allows', () => {

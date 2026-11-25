@@ -17,19 +17,24 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts, for pilot.email_alert_sends: the exact column list with each
-// column's type, nullability, default and identity (so a new row starts
-// queued, with no tries, due now); exactly the CHECKs below and no others,
-// each compared IN FULL against the text Postgres stores
-// (emailAlertSendsMigration.pg.test.ts drives this runner against a real
-// database); the primary key; the one-row-per-event key by name and column
-// order, not deferrable (ON CONFLICT refuses a deferrable key); exactly three
-// foreign keys (gym, account, and the person's membership of that gym), each
-// by column, target and cascade, none deferrable; and every index on the table
-// by full definition, which also refuses any other unique key (each has an
-// index). For
-// pilot.email_alert_checkpoints: its columns, its one CHECK, its primary key
-// and its only index.
+// Asserts, for both tables: an ordinary logged table with no user trigger, no
+// rule, no row security and no inheritance (any of these could swallow or lose
+// rows without an error).
+//
+// For pilot.email_alert_sends: the exact column list with each column's type,
+// nullability, default and identity (so a new row starts queued, with no
+// tries, due now); exactly the CHECKs below and no others, each compared IN
+// FULL against the text Postgres stores, which says NOT VALID for a CHECK not
+// validated (emailAlertSendsMigration.pg.test.ts drives this runner against a
+// real database); the primary key, not deferrable; the one-row-per-event key
+// by name and column order, not deferrable (ON CONFLICT refuses a deferrable
+// key); exactly three foreign keys (gym, account, and the person's membership
+// of that gym), each by column, target, cascade and the default update rule,
+// none deferrable; and every index on the table by full definition, which also
+// refuses any other unique key (each has an index).
+//
+// For pilot.email_alert_checkpoints: its columns, its one CHECK, its primary
+// key (not deferrable: the sweep upserts on it) and its only index.
 export const EXPECTED_SEND_CHECKS = {
   pilot_email_alert_send_user_type_check:
     "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))",
@@ -133,11 +138,21 @@ function checksReady(rel, countParam, namesParam, defsParam) {
   return `(
       select count(*) = ${countParam} from pg_constraint c
       join unnest(${namesParam}::text[], ${defsParam}::text[]) as expected(conname, condef) on expected.conname = c.conname
-      where c.conrelid = ${rel} and c.contype = 'c' and c.convalidated
+      where c.conrelid = ${rel} and c.contype = 'c'
         and pg_get_constraintdef(c.oid) = expected.condef
     ) and (
       select count(*) = ${countParam} from pg_constraint c where c.conrelid = ${rel} and c.contype = 'c'
     )`;
+}
+
+function plainTable(rel) {
+  return `coalesce((
+      select c.relkind = 'r' and c.relpersistence = 'p' and not c.relrowsecurity
+        and not exists (select 1 from pg_trigger t where t.tgrelid = c.oid and not t.tgisinternal)
+        and not exists (select 1 from pg_rewrite r where r.ev_class = c.oid)
+        and not exists (select 1 from pg_inherits i where i.inhrelid = c.oid or i.inhparent = c.oid)
+      from pg_class c where c.oid = ${rel}
+    ), false)`;
 }
 
 function sendKeyReady(name, columns, target) {
@@ -145,6 +160,7 @@ function sendKeyReady(name, columns, target) {
       select 1 from pg_constraint c
       where c.conrelid = ${SENDS} and c.contype = 'f' and c.conname = '${name}' and c.convalidated
         and not c.condeferrable and c.confrelid = to_regclass('${target}') and c.confdeltype = 'c'
+        and c.confupdtype = 'a'
         and ${keyColumns('local')} = array[${columns}]
         and ${keyColumns('referenced')} = array[${columns}]
     )`;
@@ -153,11 +169,13 @@ function sendKeyReady(name, columns, target) {
 const READINESS_QUERY = `
   select
     ${SENDS} is not null as sends_table_ready,
+    ${plainTable(SENDS)} as sends_table_plain,
     ${columnsOf(SENDS)} = $1::text[] as send_columns_ready,
     ${checksReady(SENDS, '$2', '$3', '$4')} as send_checks_ready,
     exists (
       select 1 from pg_constraint c
-      where c.conrelid = ${SENDS} and c.contype = 'p' and ${keyColumns('local')} = array['send_id']
+      where c.conrelid = ${SENDS} and c.contype = 'p' and not c.condeferrable
+        and ${keyColumns('local')} = array['send_id']
     ) as send_primary_key_ready,
     exists (
       select 1 from pg_constraint c
@@ -173,11 +191,13 @@ const READINESS_QUERY = `
     ) as send_no_other_keys,
     ${indexesOf('email_alert_sends')} = $5::text[] as send_indexes_ready,
     ${CHECKPOINTS} is not null as checkpoints_table_ready,
+    ${plainTable(CHECKPOINTS)} as checkpoints_table_plain,
     ${columnsOf(CHECKPOINTS)} = $6::text[] as checkpoint_columns_ready,
     ${checksReady(CHECKPOINTS, '$7', '$8', '$9')} as checkpoint_checks_ready,
     exists (
       select 1 from pg_constraint c
-      where c.conrelid = ${CHECKPOINTS} and c.contype = 'p' and ${keyColumns('local')} = array['event_kind']
+      where c.conrelid = ${CHECKPOINTS} and c.contype = 'p' and not c.condeferrable
+        and ${keyColumns('local')} = array['event_kind']
     ) as checkpoint_primary_key_ready,
     ${indexesOf('email_alert_checkpoints')} = $10::text[] as checkpoint_indexes_ready
 `;
