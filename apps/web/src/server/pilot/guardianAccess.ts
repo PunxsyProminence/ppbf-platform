@@ -152,8 +152,8 @@ export async function isGuardianLinkedToAthlete(
  * guardianLinkEnded, this module's one rule (guardianAccess.test.ts fails a
  * file that calls this without it). The arguments are a qualified column
  * (alias.column) and a $n placeholder written in code, never caller input;
- * anything else throws, and so does a caller alias starting with g, the
- * prefix of the predicate's own aliases.
+ * anything else throws, and so does a caller alias of g followed only by
+ * letters, the shape of the predicate's own aliases (gl, gp, ga, gc, gm, gy).
  */
 const QUALIFIED_COLUMN = /^(?!g[a-z]*\.)[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
 export function guardianLinkedPredicateSql(organizationColumn: string, athleteColumn: string, accountParam: string): string {
