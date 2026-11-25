@@ -1168,6 +1168,70 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
 });
 
 
+test('on the live floor, a note refused with its panel closed is said named in the list\'s alert and outlasts a filter', async () => {
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  createPersistentRoleSession('coach');
+  resetSaveQueueForTests();
+  jest.useFakeTimers();
+  try {
+    let posts = 0;
+    const answer = (body: unknown, status = 200) => {
+      const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
+      return response as unknown as Response;
+    };
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: 'acct-a' });
+      if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
+        if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
+        posts += 1;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        return answer({ error: 'That athlete is not marked here.' }, 409);
+      }
+      if (url === URL_FOR) return answer({ present: [{ ...ADA, marked_at: 'x' }], gym: [ADA, BEN, CY] });
+      return answer({});
+    }) as unknown as typeof fetch;
+    prepareSaveQueue();
+    await act(async () => {
+      render(
+        <>
+          <SessionRunPresence runId="ssrun 1" />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText(/New note/), { target: { value: 'Wrist taped.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    const words = 'Ada Reyes: a new note was not saved: That athlete is not marked here. Its words: “Wrist taped.”';
+    expect(screen.getByText(words)).toBeTruthy();
+    // Filtered away and back: the row remounts; the words stay.
+    fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: 'Ben' } });
+    fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: '' } });
+    expect(screen.getByText(words)).toBeTruthy();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+  } finally {
+    act(() => {
+      resetSaveQueueForTests();
+    });
+    jest.useRealTimers();
+  }
+});
+
 test('on the live floor, a staff note on an athlete marked here is kept too, with its key and the account that made it', async () => {
   // Kept-save harness of the describe above, reused through its route answers.
   window.localStorage.clear();

@@ -525,9 +525,10 @@ export default function SessionRunPresence({
     return collapsed ? [...marked, ...fromRegister] : [...marked, ...fromRegister, ...rest];
   }, [asked, collapsed, needle, reading, registerOnly]);
   // How many athletes' taps are asked and not saved yet, for the list's own status line.
+  // With no list read, every asked tap is counted as waiting.
   const waitingCount = reading.state === 'loaded'
     ? [...asked].filter(([athleteId, present]) => present !== reading.present.has(athleteId)).length
-    : 0;
+    : asked.size;
 
   return (
     <section className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]" aria-labelledby={headingId}>
@@ -683,6 +684,7 @@ export default function SessionRunPresence({
                               buttonLabel={`Staff notes on ${athlete.full_name}`}
                               keptOnThisPage
                               isFinishWaiting={isFinishWaiting}
+                              onKeptRefused={(words) => setKeptRefusals((current) => new Map(current).set(`note ${athlete.athlete_id}`, `${athlete.full_name}: ${words}`))}
                             />
                             <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                           </>

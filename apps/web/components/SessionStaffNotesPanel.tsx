@@ -83,9 +83,14 @@ export default function SessionStaffNotesPanel(
     keptOnThisPage?: boolean;
     /** Whether a finish is kept and waiting now: once it lands this panel goes, so a refusal is said in the page's list. */
     isFinishWaiting?: () => boolean;
+    /**
+     * The live floor: a kept note refused while this panel is closed is handed to the list that mounts
+     * it, which names the athlete and keeps the words through a remount of this row.
+     */
+    onKeptRefused?: (words: string) => void;
   },
 ) {
-  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting } = props;
+  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting, onKeptRefused } = props;
   const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
   const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
@@ -107,8 +112,6 @@ export default function SessionStaffNotesPanel(
   useEffect(() => {
     listShown.current = reading.state === 'loaded';
   }, [reading.state]);
-  // A kept note refused while the panel is closed: said beside its button (the reason shows inside).
-  const [closedWords, setClosedWords] = useState('');
   // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
   // page (a sign-out drop tells this panel nothing otherwise).
   const [waitingWrites, setWaitingWrites] = useState(0);
@@ -158,7 +161,8 @@ export default function SessionStaffNotesPanel(
       setReading({ state: 'loaded', notes: payload.notes as NoteRow[], noteMax: payload.note_max });
     } catch {
       // Unknown is never shown as "no notes".
-      if (landed() && !quiet) setReading({ state: 'unavailable' });
+      // A quiet read keeps a loaded list; with none shown (a read already under way), it says so.
+      if (landed()) setReading((current) => (quiet && current.state === 'loaded' ? current : { state: 'unavailable' }));
     }
   }, [athleteId, subjectId, subjectKey]);
 
@@ -192,7 +196,6 @@ export default function SessionStaffNotesPanel(
       // the panel is still there to read when it is opened again.
       setRefusal(null);
     } else {
-      setClosedWords('');
       void read();
     }
   }, [read]);
@@ -262,28 +265,33 @@ export default function SessionStaffNotesPanel(
           settle();
           if (onPage.current && isOpen.current) void read(listShown.current);
         },
-        // Refused: said in this panel, where the coach wrote; a refused new note's words come back to the
-        // draft (a not-known one may have been written, so it does not).
+        // Refused: said in this panel, where the coach wrote, with the note's own words (the box may hold
+        // the next note by now); a refused note's words also go back into an empty box (a not-known one
+        // may have been written, so they do not).
         onRefused: (_response, landed) => {
           settle();
           if (landed === false) setDraft((current) => (current === '' ? what.text : current));
-          // Off the page, or while a kept finish waits: said in the page's list.
-          if (!onPage.current || isFinishWaiting?.()) {
+          const itsWords = ` Its words: “${what.text.trim()}”`;
+          // Off the page, or while a kept finish waits (or with no list to tell): said in the page's list.
+          if (!onPage.current || isFinishWaiting?.() || (!isOpen.current && !onKeptRefused)) {
             return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
           }
-          setRefusal(landed === null ? { heading: 'NOT KNOWN', text: unknownOutcomeWords(label) } : { heading: failed.heading, text: reason });
-          // The panel closed: said beside its button, so the coach knows whose notes to open.
+          setRefusal(landed === null
+            ? { heading: 'NOT KNOWN', text: `${unknownOutcomeWords(label)}${itsWords}` }
+            : { heading: failed.heading, text: `${reason}${itsWords}` });
+          // The panel closed: handed to the list, which names the athlete and keeps the words even if
+          // this row is filtered away and back.
           if (!isOpen.current) {
-            setClosedWords(landed === null
-              ? 'Whether a new note was saved is not known. Open the notes to check before writing it again.'
-              : 'A new note was not saved. Open the notes to see why; its words are back in the box.');
+            onKeptRefused?.(landed === null
+              ? `whether a new note was saved is not known. Check the notes before writing it again.${itsWords}`
+              : `a new note was not saved: ${reason}${itsWords}`);
           }
           // The list as last read stays (a read again that fails would hide the words).
           return undefined;
         },
       };
     },
-    [isFinishWaiting, read, readNotes],
+    [isFinishWaiting, onKeptRefused, read, readNotes],
   );
 
   const write = useCallback(
@@ -401,15 +409,12 @@ export default function SessionStaffNotesPanel(
         {open ? 'Hide staff notes' : subjectWords}
       </button>
       {/* Beside the button, open or closed, and mounted always, so a screen reader announces it when it fills. */}
-      <p className={waitingWrites > 0 || closedWords ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
-        {[
-          waitingWrites === 0
-            ? ''
-            : waitingWrites === 1
-              ? 'One new note is not saved yet. This page keeps sending it while it stays open.'
-              : `${waitingWrites} new notes are not saved yet. This page keeps sending them while it stays open.`,
-          closedWords,
-        ].filter(Boolean).join(' ')}
+      <p className={waitingWrites > 0 ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
+        {waitingWrites === 0
+          ? ''
+          : waitingWrites === 1
+            ? 'One new note is not saved yet. This page keeps sending it while it stays open.'
+            : `${waitingWrites} new notes are not saved yet. This page keeps sending them while it stays open.`}
       </p>
 
       {open ? (
