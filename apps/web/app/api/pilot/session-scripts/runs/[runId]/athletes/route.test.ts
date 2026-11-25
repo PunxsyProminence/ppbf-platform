@@ -197,10 +197,12 @@ describe('POST', () => {
   });
 
   // D4 (OD-2026-10-21-002): on a session tied to a class, what the tap did to the register.
-  it('answers what a tied tap did to the register, with the hold warning only when it wrote a mark', async () => {
+  it('answers what a tied tap did to the register, with the hold warning when it wrote a mark or the register kept a later change', async () => {
     const HOLD = { hold_id: 'hold-1', scope: 'contact', reason_category: 'medical', athlete_explanation: '', lift_condition_text: '', expires_at: null };
     mockHold.mockResolvedValue(HOLD);
-    for (const register of [{ effect: 'created' }, { effect: 'flipped', previous_status: 'absent' }]) {
+    // register_newer: a late kept tap marked the athlete here and the register kept a change made after
+    // it; the tap is the athlete's only check-in, so the warning still shows (OVERWATCH 7165860051).
+    for (const register of [{ effect: 'created' }, { effect: 'flipped', previous_status: 'absent' }, { effect: 'register_newer', status: 'excused' }]) {
       mockSet.mockResolvedValueOnce({ outcome: 'marked', register });
       const response = await post({ athlete_id: 'ath-1', present: true });
       await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, register, hold_warning: HOLD });

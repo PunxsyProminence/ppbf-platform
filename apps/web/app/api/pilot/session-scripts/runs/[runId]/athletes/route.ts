@@ -140,7 +140,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
       ...(pageId === undefined ? {} : { pageId }),
     });
-    const holdWarning = register?.effect === 'created' || register?.effect === 'flipped'
+    // The hold warning when the tap wrote a mark, and when a late kept tap marked the athlete here while
+    // the register kept a change made after it (register_newer): the tap is then the athlete's only
+    // check-in, and staff see the warning in both places (OD-2026-10-06-024 ruling 1; OVERWATCH
+    // 7165860051 on #2182: "Same ruled warning, same words; no new warning").
+    const holdWarning = register?.effect === 'created' || register?.effect === 'flipped' || register?.effect === 'register_newer'
       ? await readStaffHoldWarning(principal.role, principal.organizationId, athleteId)
       : null;
     return NextResponse.json({

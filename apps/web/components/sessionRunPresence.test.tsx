@@ -1036,7 +1036,9 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
     expect(sent[1].body).toMatchObject({ tapped_ms_ago: expect.any(Number) });
-    expect(screen.getAllByText(ADA_STAYS).length).toBeGreaterThan(0);
+    // Said once, in the list's alert: not also in the row's note or its live region (round 12).
+    expect(screen.getAllByText(ADA_STAYS)).toHaveLength(1);
+    expect(screen.getByText(ADA_STAYS).closest('[role="alert"]')).not.toBeNull();
   });
 
   // Reviewer B, round 11 (R11-S1): kept taps land in a burst when the connection returns. The row's
@@ -1182,6 +1184,27 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
 
   // Round 12, reviewers A and B: while a kept finish waits, this list goes when the finish lands, so
   // what the coach must still check after a saved tap is said in the page's list, unnamed, as saved.
+  // OVERWATCH 7165860051: a late kept tap the register answers register_newer carries the Training
+  // Hold warning too; both are named lines in the list's alert.
+  test('a kept tap answered register_newer with a Training Hold says both, each on its own line', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) return 'lost';
+        present = [ADA];
+        return answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'excused' }, hold_warning: { hold_id: 'h' } });
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(ADA_STAYS);
+    expect(alert.textContent).toContain('Ada Reyes has an active Training Hold; the mark was NOT blocked.');
+  });
+
   test('a kept tap saved while a finish waits, with the register kept as set after it, is listed as saved with something to check', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
@@ -1273,6 +1296,13 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await act(async () => {
       clearRoleSession();
     });
+    expect(screen.queryByText('Ada Reyes is Present on the class register.')).toBeNull();
+    // Gone, not only hidden while nobody is confirmed: the same coach signing in again does not bring it back.
+    await act(async () => {
+      createPersistentRoleSession('coach');
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await tapKept('Mark here Ben Ortiz');
     expect(screen.queryByText('Ada Reyes is Present on the class register.')).toBeNull();
   });
 
