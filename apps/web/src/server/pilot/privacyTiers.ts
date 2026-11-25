@@ -565,6 +565,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunClass.ts#setSessionRunClass',
       'sessionRunClass.ts#markSessionNoShowsAbsent',
       'sessionRunClass.ts#describeRunClass',
+      'stoppedComing.ts#listStoppedComing',
     ],
     note:
       'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
@@ -576,7 +577,12 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'attendance view or report (CT-13). A mark taken back keeps its row. On a session tied to a '
       + 'class (D4, OD-2026-10-21-002) the same tap also writes an ordinary class register mark '
       + '(sessionRunClass.ts), which the register\'s existing readers see as one; this list, its run '
-      + 'and who else was in it stay staff only.',
+      + 'and who else was in it stay staff only. One page-only exception (Jason OW27-32 A, '
+      + 'OD-2026-11-21-006): the stopped-coming list (stoppedComing.ts, lane W4-6) counts the day of a '
+      + 'standing mark the register does not hold (an untied run, a tap that created no register mark, or a cancelled '
+      + 'class) as coming, for coach and organization admin with a staff '
+      + 'membership here; it returns that day per athlete, never the run, the mark or who else was in it, '
+      + 'and no attendance figure reads it.',
   },
   'behaviour_keys.label': {
     tier: 'organization',
