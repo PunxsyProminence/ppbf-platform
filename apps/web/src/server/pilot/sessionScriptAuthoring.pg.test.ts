@@ -1506,25 +1506,25 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     expect(await lastAudit(gym)).toMatchObject({ outcome: 'updated', blocks_added: 1, blocks_removed: 0, order_changed: false });
   });
 
-  test('a block is removed and the rest moved, in place: the row is gone, the rest renumbered 1..n under the order constraint', async () => {
+  // Overwatch Q2 = A on #2191: no block row is ever deleted, so every removal is a new version.
+  test('a removal is a new version though nobody ran the plan: version 1 keeps every block, version 2 runs without it', async () => {
     const { gym, scriptId, jab, mirror, spar } = await plan('remove');
+    const v1Bytes = await storedBytes(gym, scriptId);
 
     const result = await edit(gym, scriptId, { remove: [mirror], order: [spar, jab] });
 
-    expect(result).toEqual({ outcome: 'updated', script_id: scriptId, version: 1 });
-    const after = await getSessionScriptWithDetail(gym.organizationId, scriptId);
-    expect(shape(after!.blocks)).toEqual([
-      [1, spar, 'Sparring Round', 11, 16],
-      [2, jab, 'Jab Drill', 0, 6],
+    expect(result).toMatchObject({ outcome: 'new_version', version: 2 });
+    expect(await storedBytes(gym, scriptId)).toBe(v1Bytes);
+    const v2 = await getSessionScriptWithDetail(gym.organizationId, result.script_id);
+    expect(v2!.blocks.map((block) => [block.block_order, block.block_label, block.start_offset_min, block.end_offset_min])).toEqual([
+      [1, 'Sparring Round', 11, 16],
+      [2, 'Jab Drill', 0, 6],
     ]);
-    const { rows } = await client.query(`select 1 from pilot.session_script_blocks where organization_id = $1 and block_id = $2`, [
-      gym.organizationId,
-      mirror,
-    ]);
-    expect(rows).toHaveLength(0);
-    // Contact first, then none: contact.
-    expect(after!.contact_structure).toBe('contact');
-    expect(await lastAudit(gym)).toMatchObject({ blocks_added: 0, blocks_removed: 1, order_changed: true });
+    // Contact first, then none: the label is raised to contact.
+    expect(v2!.contact_structure).toBe('contact');
+    expect(await lastAudit(gym)).toMatchObject({
+      outcome: 'new_version', blocks_added: 0, blocks_removed: 1, order_changed: true, new_version_because: 'a block was removed',
+    });
   });
 
   test('moving blocks only swaps their places; an order that changes nothing writes nothing', async () => {
@@ -1600,7 +1600,7 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     expect((await getSessionScriptWithDetail(gym.organizationId, removed.script_id))!.contact_structure).toBe('contact');
   });
 
-  test('a block a research claim names is never deleted: its removal is version 2 though nobody ran the plan (Q3 = A)', async () => {
+  test('a block a research claim names stays, with its claim, on the version it was written for (Q3 = A)', async () => {
     const { gym, scriptId, mirror } = await plan('claimed');
     await client.query(
       `insert into pilot.transfer_claims (organization_id, transfer_id, block_id, claim_kind, statement)
@@ -1619,14 +1619,6 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     expect(claim.rows).toEqual([{ block_id: mirror }]);
     const v2 = await getSessionScriptWithDetail(gym.organizationId, result.script_id);
     expect(v2!.blocks.map((block) => block.block_label)).toEqual(['Jab Drill', 'Sparring Round']);
-    expect(await lastAudit(gym)).toMatchObject({
-      outcome: 'new_version',
-      blocks_removed: 1,
-      new_version_because: 'a removed block is named elsewhere',
-    });
-    // Removing a block nothing names, from that new version, is in place again.
-    const v2Blocks = v2!.blocks.map((block) => block.block_id);
-    await expect(edit(gym, result.script_id, { remove: [v2Blocks[1]] })).resolves.toMatchObject({ outcome: 'updated', version: 2 });
   });
 
   test("refused and nothing written: another gym's drill, a replaced or withdrawn drill, an order that drops a block, another gym's plan", async () => {
@@ -1678,12 +1670,13 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     const { gym, scriptId, jab, mirror, spar } = await plan('empty');
     await libraryDrill(gym, 'ref-pads', 'Pad Round');
 
-    await expect(edit(gym, scriptId, { remove: [jab, mirror, spar] })).resolves.toMatchObject({ outcome: 'updated' });
-    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks).toEqual([]);
-    await expect(edit(gym, scriptId, { name: 'Renamed, still empty' })).resolves.toMatchObject({ outcome: 'updated' });
-    await edit(gym, scriptId, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-pads', start_offset_min: 0, end_offset_min: 5 }] });
-    const after = await getSessionScriptWithDetail(gym.organizationId, scriptId);
-    expect(after).toMatchObject({ name: 'Renamed, still empty', total_minutes: 45 });
+    const emptied = await edit(gym, scriptId, { remove: [jab, mirror, spar] });
+    expect(emptied).toMatchObject({ outcome: 'new_version', version: 2 });
+    expect((await getSessionScriptWithDetail(gym.organizationId, emptied.script_id))!.blocks).toEqual([]);
+    await expect(edit(gym, emptied.script_id, { name: 'Renamed, still empty' })).resolves.toMatchObject({ outcome: 'updated' });
+    await edit(gym, emptied.script_id, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-pads', start_offset_min: 0, end_offset_min: 5 }] });
+    const after = await getSessionScriptWithDetail(gym.organizationId, emptied.script_id);
+    expect(after).toMatchObject({ name: 'Renamed, still empty', total_minutes: 45, version: 2 });
     expect(after!.blocks.map((block) => [block.block_order, block.block_label])).toEqual([[1, 'Pad Round']]);
   });
 
@@ -1705,12 +1698,6 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
 
     await edit(gym, scriptId, { order: [mirror, jab, spar] });
     expect(await label()).toBe('contact');
-    // Add a contact drill, then take it out again: the plan ends as it began, and so does its label.
-    await edit(gym, scriptId, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-clinch', start_offset_min: 16, end_offset_min: 20 }] });
-    const added = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks.find((block) => block.drill_id === 'ref-clinch');
-    await edit(gym, scriptId, { remove: [added!.block_id] });
-    expect(await label()).toBe('contact');
-
     // observation_only, which no block can say, is kept while no block has contact, through a real save.
     await client.query(`update pilot.session_scripts set contact_structure = 'observation_only' where organization_id = $1 and script_id = $2`, [
       gym.organizationId,
@@ -1718,56 +1705,52 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     ]);
     await edit(gym, scriptId, { order: [jab, mirror, spar] });
     expect(await label()).toBe('observation_only');
+    await client.query(`update pilot.session_scripts set contact_structure = 'contact' where organization_id = $1 and script_id = $2`, [
+      gym.organizationId,
+      scriptId,
+    ]);
+
+    // Add a contact drill, then take it out again (version 2): the plan ends as it began, and so does its label.
+    await edit(gym, scriptId, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-clinch', start_offset_min: 16, end_offset_min: 20 }] });
+    const added = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks.find((block) => block.drill_id === 'ref-clinch');
+    const v2 = await edit(gym, scriptId, { remove: [added!.block_id] });
+    expect((await getSessionScriptWithDetail(gym.organizationId, v2.script_id))!.contact_structure).toBe('contact');
 
     // A plan whose contact block is removed keeps the contact it said (the floor errs on the safe side).
     const fresh = await plan('label-kept');
-    await edit(fresh.gym, fresh.scriptId, { remove: [fresh.spar] });
-    expect((await getSessionScriptWithDetail(fresh.gym.organizationId, fresh.scriptId))!.contact_structure).toBe('split_non_contact_then_contact');
+    const kept = await edit(fresh.gym, fresh.scriptId, { remove: [fresh.spar] });
+    expect((await getSessionScriptWithDetail(fresh.gym.organizationId, kept.script_id))!.contact_structure).toBe('split_non_contact_then_contact');
   });
 
-  // Reviewer A on #2191, findings 4 and 5: a behaviour window, report or intervention naming the block.
-  // Written with triggers and foreign keys off for this connection (session_replication_role), so the
-  // fixture needs no run, athlete or key; the CHECK constraints still hold. What is proven is the
-  // writer's own read: a block those rows name is never deleted.
-  test.each(['window', 'report', 'intervention'] as const)('a block a behaviour %s names is never deleted: its removal is a new version', async (kind) => {
-    const { gym, scriptId, mirror } = await plan(`named-${kind}`);
-    await client.query(`set session_replication_role = replica`);
+  // Reviewer A on #2191 (reproduced on main) and Overwatch on #2191: an edit that writes a new version
+  // copies the plan's blocks, and each copy's drill key is checked; the plan's linked drills are locked
+  // before the plan, as content import locks them, so the two queue instead of deadlocking.
+  test('a new version and an import holding a linked drill then the plan queue, never deadlock', async () => {
+    const { gym, scriptId, mirror } = await plan('version-lock');
+    const holder = new Client({ connectionString: activeConnectionString as string });
+    await holder.connect();
     try {
-      if (kind === 'window') {
-        await client.query(
-          `insert into pilot.behaviour_observations_windows
-             (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, opened_by_role)
-           values ($1, 'ath-1', 'key-1', 'run-elsewhere', 'block', $2, 'controlled', 'coach')`,
-          [gym.organizationId, mirror],
-        );
-      } else if (kind === 'intervention') {
-        await client.query(
-          `insert into pilot.intervention_executions
-             (organization_id, execution_id, lineage_id, version, athlete_id, protocol_id, protocol_version,
-              recorded_by_account_id, trained_task_context_key)
-           values ($1, 'exe-1', 'exe-1', 1, 'ath-1', 'protocol-1', 1, $3, 'block:' || $2)`,
-          [gym.organizationId, mirror, gym.coachId],
-        );
-      } else {
-        await client.query(
-          `insert into pilot.behaviour_observations
-             (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key, task_constraint,
-              polarity, attribution_target, attribution_certainty, source_type, source_quality, interpretation,
-              observer_account_id, author_role, note, observed_at)
-           values ($1, 'ath-1', 'key-1', 'ep:' || gen_random_uuid()::text, 'day:2026-11-20', 'block:' || $2, 'controlled', 'occurrence', 'athlete',
-                   'probable', 'coach_tag', 'moderate', 'human_observed', $3, 'coach', '', '2026-11-20T22:00:00.000Z')`,
-          [gym.organizationId, mirror, gym.coachId],
-        );
+      await holder.query('BEGIN');
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-jab' for update`, [gym.organizationId]);
+      const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const removing = edit(gym, scriptId, { remove: [mirror] }).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      );
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const blocked = await client.query(`select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))`, [rows[0].pid]);
+        if ((blocked.rowCount ?? 0) > 0 || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
+      await holder.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`, [gym.organizationId, scriptId]);
+      await holder.query('COMMIT');
+      const outcome = await removing;
+      expect(outcome.status).toBe('fulfilled');
+      expect((outcome as PromiseFulfilledResult<{ outcome: string }>).value.outcome).toBe('new_version');
     } finally {
-      await client.query(`set session_replication_role = origin`);
+      await holder.end();
     }
-    const v1Bytes = await storedBytes(gym, scriptId);
-
-    const result = await edit(gym, scriptId, { remove: [mirror] });
-
-    expect(result).toMatchObject({ outcome: 'new_version', version: 2 });
-    expect(await storedBytes(gym, scriptId)).toBe(v1Bytes);
   });
 
   // Reviewer A on #2191, finding 3: content import locks a drill, then the plan. An edit adding that
