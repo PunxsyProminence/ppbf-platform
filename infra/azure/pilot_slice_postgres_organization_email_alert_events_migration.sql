@@ -24,8 +24,10 @@
 -- row; on delete set null, so a departed admin does not delete the setting.
 -- The audit stream holds each change with the old and new value.
 --
--- NO PERSON DATA. A gym setting: which events, for which user type, and who
--- set it. No athlete, parent, address or event content is stored here.
+-- NO MEMBER DATA. A gym setting: which events, for which user type, and who
+-- set it. No athlete, parent or event content is stored here, and no address
+-- column. The setter is the admin's account id, which can itself be their
+-- sign-in address (see the email-alert-switches migration).
 --
 -- DELETION (Overwatch GO on #2159, condition 4). The gym key cascades: a
 -- deleted gym takes its rows with it. A deleted admin account leaves the rows
