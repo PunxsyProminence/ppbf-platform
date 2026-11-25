@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
@@ -11,6 +11,11 @@ import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills
 // ones only when include_retired is asked for, and it is not). A search box over
 // the names is the whole filter. Three states are said in words and never shown
 // as a list that looks complete: loading, could not be loaded, and loaded.
+//
+// Opened, it takes keyboard focus on its heading, as the plan page's own detail
+// heading does, because the button that opened it is gone (Codex on #2199). The
+// search never saves the plan around it, and while the plan saves no drill can be
+// picked, because a pick made then would be lost (Codex on #2199).
 
 export type PickableDrill = Pick<PilotDrill, 'drill_id' | 'name'>;
 
@@ -19,13 +24,21 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; drill
 export default function BlockDrillPicker({
   onPick,
   onClose,
+  disabled,
 }: {
   readonly onPick: (drill: PickableDrill) => void;
   readonly onClose: () => void;
+  /** True while the plan is being saved. */
+  readonly disabled: boolean;
 }) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [search, setSearch] = useState('');
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     let current = true;
@@ -54,13 +67,16 @@ export default function BlockDrillPicker({
     return wanted ? load.drills.filter((drill) => drill.name.toLowerCase().includes(wanted)) : load.drills;
   }, [load, search]);
 
-  const button = 'btn min-h-[var(--tap)] text-[length:var(--t-md)]';
+  const button = 'btn min-h-[var(--tap)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60';
 
   return (
     <section
-      aria-label="Add a drill from the library"
+      aria-labelledby="block-drill-picker-heading"
       className="flex flex-col gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
     >
+      <h3 id="block-drill-picker-heading" ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-md)]">
+        Add a drill from the library
+      </h3>
       {load.state === 'loading' && <p role="status" className="text-[length:var(--t-md)]">Loading the drill library…</p>}
       {load.state === 'failed' && (
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -68,6 +84,8 @@ export default function BlockDrillPicker({
             The drill library could not be loaded, so no drills are shown. Try again.
           </p>
           <button type="button" className={button} onClick={() => {
+              // This button leaves the page with the failure; the heading keeps the focus.
+              headingRef.current?.focus();
               setLoad({ state: 'loading' });
               setAttempt((count) => count + 1);
             }}>
@@ -84,6 +102,10 @@ export default function BlockDrillPicker({
               className="input input--kiosk min-h-[var(--tap)] text-[length:var(--t-md)]"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              // Enter in a field of the plan's form would save the plan; here it only searches.
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.preventDefault();
+              }}
             />
           </label>
           {load.drills.length === 0 ? (
@@ -97,6 +119,7 @@ export default function BlockDrillPicker({
                   <button
                     type="button"
                     className={`${button} btn--ghost w-full justify-start text-left`}
+                    disabled={disabled}
                     onClick={() => onPick(drill)}
                   >
                     {drill.name}

@@ -50,6 +50,7 @@ const FORBIDDEN_TABLES = [
   'pilot.session_staff_notes',
   'pilot.athlete_capacity_notes',
   'pilot.athlete_rest_marks',
+  'pilot.athlete_reached_out_marks',
   'pilot.sparring_exposure',
   'pilot.workout_issues',
   'pilot.workout_issue_steps',

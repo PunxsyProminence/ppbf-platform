@@ -467,7 +467,7 @@ export default function SessionScriptEditor({
         <p className="text-[length:var(--t-md)]">This plan has no blocks. Add a drill from the library, write a text block or copy a block.</p>
       )}
 
-      {panel === 'add' && <BlockDrillPicker onPick={addDrill} onClose={closePanel} />}
+      {panel === 'add' && <BlockDrillPicker disabled={busy} onPick={addDrill} onClose={closePanel} />}
       {panel === 'text' && <TextBlockForm onAdd={addText} onClose={closePanel} disabled={busy} />}
       {panel === 'copy' && <CopyBlockPicker currentScriptId={script.script_id} onPick={addCopy} onClose={closePanel} disabled={busy} />}
       {panel === null && (
