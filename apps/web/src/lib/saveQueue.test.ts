@@ -499,6 +499,24 @@ describe('nothing survives a sign-out or an account change', () => {
     expect(mine.contexts.map((context) => context.madeByAccountId)).toEqual(['acct-b']);
   });
 
+  test('an older answer naming another account, arriving after a newer one confirmed the same person, is never used', async () => {
+    // The newer answer drops nothing here, so only the ask's number can tell the old answer apart.
+    const kept = await waitingSave('Ada Reyes: here');
+    sessionAccount = 'hang';
+    createPersistentRoleSession('coach');
+    await settle();
+    const firstRelease = releaseSession;
+    sessionAnswers = ['acct-a'];
+    createPersistentRoleSession('coach');
+    await settle();
+    firstRelease?.('acct-b');
+    await settle();
+    expect(readSaveQueue().waiting).toEqual(['Ada Reyes: here']);
+    sessionAccount = 'acct-a';
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+    expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
+  });
+
   test('a sign-out or sign-in mark from another tab drops failed words too, not only waiting saves', async () => {
     await failedSave('Staff note on Ada Reyes');
     writeGymTabletSignedOutAt(Date.now());
