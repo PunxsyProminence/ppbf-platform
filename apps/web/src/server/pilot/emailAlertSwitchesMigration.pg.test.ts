@@ -141,6 +141,15 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
     );
   }
 
+  // Each account is a member of its own gym, as resolvePrincipal requires; the
+  // switch's membership key (pilot_email_alert_switch_membership_fk) needs it.
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     select account_id, organization_id, role, true from pilot.accounts where organization_id = $1
+     on conflict do nothing`,
+    [ORG_ID],
+  );
+
   if (preMigration) {
     await client.query('drop table if exists pilot.email_alert_switches cascade');
   } else {
@@ -242,6 +251,14 @@ describe('email alert switches migration', () => {
          add constraint email_alert_switches_account_id_fkey foreign key (account_id) references pilot.accounts(account_id)`,
     ],
     ['no partial index for the sender', 'drop index pilot.idx_email_alert_switches_on'],
+    ['no membership key', 'alter table pilot.email_alert_switches drop constraint pilot_email_alert_switch_membership_fk'],
+    [
+      'a membership key that no longer cascades',
+      `alter table pilot.email_alert_switches
+         drop constraint pilot_email_alert_switch_membership_fk,
+         add constraint pilot_email_alert_switch_membership_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(account_id, organization_id)`,
+    ],
     [
       'the sender\'s index on other columns',
       `drop index pilot.idx_email_alert_switches_on;
@@ -354,8 +371,13 @@ describe('email alert switches migration', () => {
   test('a deleted gym takes its switches with it', async () => {
     const client = await freshDatabase('emailsw_gym_cascade');
     try {
-      // OTHER_ORG_ID holds no accounts in this fixture, so its row in
-      // pilot.organizations can be deleted; the switch names it as its gym.
+      // OTHER_ORG_ID's only tie in this fixture is the parent's second
+      // membership, so its row in pilot.organizations can be deleted.
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ($1, $2, 'parent', true)`,
+        [PARENT_ID, OTHER_ORG_ID],
+      );
       await client.query(
         `insert into pilot.email_alert_switches (organization_id, account_id, user_type)
          values ($1, $2, 'parent'), ($3, $2, 'parent')`,
@@ -378,6 +400,45 @@ describe('email alert switches migration', () => {
       );
       const { rows } = await client.query('select switched_on, pending_code_attempts from pilot.email_alert_switches');
       expect(rows).toEqual([{ switched_on: false, pending_code_attempts: 0 }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a switch can only name an account in a gym it belongs to (Codex P1 on #2168)', async () => {
+    const client = await freshDatabase('emailsw_membership');
+    try {
+      // The parent is a member of ORG_ID only.
+      await expect(client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type) values ($1, $2, 'parent')`,
+        [OTHER_ORG_ID, PARENT_ID],
+      )).rejects.toMatchObject({ code: '23503', constraint: 'pilot_email_alert_switch_membership_fk' });
+      const { rows } = await client.query('select count(*)::int as n from pilot.email_alert_switches');
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a deleted membership takes that gym\'s switch with it; the account keeps its other gym\'s switch', async () => {
+    const client = await freshDatabase('emailsw_membership_cascade');
+    try {
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ($1, $2, 'parent', true)`,
+        [PARENT_ID, OTHER_ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type)
+         values ($1, $2, 'parent'), ($3, $2, 'parent')`,
+        [OTHER_ORG_ID, PARENT_ID, ORG_ID],
+      );
+      await client.query(
+        'delete from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+        [PARENT_ID, OTHER_ORG_ID],
+      );
+      const { rows } = await client.query('select organization_id from pilot.email_alert_switches');
+      expect(rows).toEqual([{ organization_id: ORG_ID }]);
     } finally {
       await client.end();
     }
