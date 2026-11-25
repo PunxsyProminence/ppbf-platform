@@ -345,9 +345,9 @@ describe('a session tied to a class', () => {
     [{ effect: 'flipped', previous_status: 'excused' }, 'Ada Reyes was marked Excused on the class register; now Present.'],
     [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here but not on the class register: the class was cancelled.'],
     [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here but not on the class register: you no longer run this class.'],
-    [{ effect: 'register_newer', status: 'absent' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so it kept Absent there. Change it on the register if Ada Reyes is here.'],
-    [{ effect: 'register_newer', status: 'excused' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so it kept Excused there. Change it on the register if Ada Reyes is here.'],
-    [{ effect: 'register_newer' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so it kept its mark there. Change it on the register if Ada Reyes is here.'],
+    [{ effect: 'register_newer', status: 'absent' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Absent there. Change it on the register if Ada Reyes is here.'],
+    [{ effect: 'register_newer', status: 'excused' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Excused there. Change it on the register if Ada Reyes is here.'],
+    [{ effect: 'register_newer' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed as marked there. Change it on the register if Ada Reyes is here.'],
   ])('a tap answered %j says so', async (register, words) => {
     serve(() => read([]), () => respond({ outcome: 'marked', register }));
     await show();
@@ -1044,7 +1044,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
   // Reviewer B, round 11 (R11-S1): kept taps land in a burst when the connection returns. The row's
   // one note is overwritten by the next tap's, so a register_newer answer is also kept in the list's
   // named alert, until OK, that athlete's next saved tap, or a drop of the queue.
-  const ADA_STAYS = 'Ada Reyes was marked here, but the class register had been changed after your tap, so it kept Excused there. Change it on the register if Ada Reyes is here.';
+  const ADA_STAYS = 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Excused there. Change it on the register if Ada Reyes is here.';
   function serveBurst() {
     let present: Array<typeof ADA> = [];
     let lost = true;
@@ -1182,6 +1182,114 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.queryByText(/Ada Reyes has an active Training Hold/)).toBeNull();
   });
 
+  // Round 13, reviewer A: every register answer that differs from the coach's tap is a named line in
+  // the alert, so a burst never overwrites it: kept (a take-back left the register's changed mark) and
+  // skipped (the register was not written), as register_newer.
+  function serveTwo(adaAnswer: (body: Record<string, unknown>) => Response, adaHere: boolean) {
+    let present: Array<typeof ADA> = adaHere ? [ADA] : [];
+    let lost = true;
+    serveKept({
+      tap: () => {
+        if (lost) {
+          lost = false;
+          return 'lost';
+        }
+        const body = sent[sent.length - 1].body;
+        const athlete = [ADA, BEN].find((one) => one.athlete_id === body.athlete_id) as typeof ADA;
+        present = present.filter((one) => one !== athlete);
+        if (body.present) present = [...present, athlete];
+        return athlete === ADA ? adaAnswer(body) : answer({ outcome: 'marked', register: { effect: 'created' } });
+      },
+      present: () => present,
+    });
+  }
+  const ADA_KEPT = "The class register was changed after your tap, so Ada Reyes's mark there was left as it is.";
+  const ADA_SKIPPED = 'Ada Reyes is marked here but not on the class register: you no longer run this class.';
+
+  test('a take-back the register answered kept, then another athlete\'s tap: the kept words stay named in the alert', async () => {
+    jest.useFakeTimers();
+    serveTwo(() => answer({ outcome: 'unmarked', register: { effect: 'kept' } }), true);
+    await showKept();
+    await tapKept('Here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(sent.map((call) => `${String(call.body.athlete_id)}:${String(call.body.present)}`)).toEqual(['ath-1:false', 'ath-1:false', 'ath-2:true']);
+    expect(screen.getAllByText('Ben Ortiz is Present on the class register.').length).toBeGreaterThan(0);
+    expect(screen.getByRole('alert').textContent).toContain(ADA_KEPT);
+  });
+
+  test('a mark the register answered skipped, then another athlete\'s tap: the skipped words stay named in the alert', async () => {
+    jest.useFakeTimers();
+    serveTwo(() => answer({ outcome: 'marked', register: { effect: 'skipped', reason: 'not_your_class' } }), false);
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain(ADA_SKIPPED);
+    expect(screen.getAllByText(ADA_SKIPPED)).toHaveLength(1);
+  });
+
+  test('a take-back answered kept while a finish waits is listed as saved with something to check', async () => {
+    jest.useFakeTimers();
+    serveTwo(() => answer({ outcome: 'unmarked', register: { effect: 'kept' } }), true);
+    await showKept({ finishWaiting: true });
+    await tapKept('Here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByText(
+      'Unmark an athlete here: saved, but the class register kept the mark the tap would have taken back, as it was changed after the tap; check the class register.',
+    )).toBeTruthy();
+  });
+
+  test('a mark answered skipped while a finish waits is listed as saved with something to check, with why', async () => {
+    jest.useFakeTimers();
+    serveTwo(() => answer({ outcome: 'marked', register: { effect: 'skipped', reason: 'class_cancelled' } }), false);
+    await showKept({ finishWaiting: true });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByText('Mark an athlete here: saved, but the athlete is not on the class register, as the class was cancelled.')).toBeTruthy();
+  });
+
+  test('on a tied list, a kept take-back that lands with no register answer says whether the register still has the athlete is not known', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [ADA];
+    serveKept({
+      tap: (send) => {
+        present = [];
+        return send === 1 ? 'lost' : answer({ outcome: 'unchanged' });
+      },
+      present: () => present,
+    });
+    await showKept({ tied: true });
+    await tapKept('Here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByText(
+      'Ada Reyes was unmarked here. Whether the class register still has Ada Reyes Present is not known: check the class register.',
+    ).closest('[role="alert"]')).not.toBeNull();
+  });
+
+  test('an athlete whose id reads like another athlete\'s alert key keeps their own line when that athlete\'s tap is saved', async () => {
+    jest.useFakeTimers();
+    const ODD = { athlete_id: 'hold ath-1', full_name: 'Odd Id' };
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: () => {
+        const body = sent[sent.length - 1].body;
+        if (body.athlete_id === ODD.athlete_id) return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
+        present = [ADA];
+        return answer({ outcome: 'marked', register: { effect: 'created' }, hold_warning: { hold_id: 'h' } });
+      },
+      present: () => present,
+      gym: [ADA, ODD],
+    });
+    await showKept();
+    await tapKept('Mark here Odd Id');
+    expect(screen.getByRole('alert').textContent).toContain('Odd Id: This account cannot mark that athlete here. Nothing was saved.');
+    await tapKept('Mark here Ada Reyes');
+    const alert = screen.getByRole('alert').textContent;
+    expect(alert).toContain('Odd Id: This account cannot mark that athlete here. Nothing was saved.');
+    expect(alert).toContain('Ada Reyes has an active Training Hold; the mark was NOT blocked.');
+  });
+
   // Round 12, reviewers A and B: while a kept finish waits, this list goes when the finish lands, so
   // what the coach must still check after a saved tap is said in the page's list, unnamed, as saved.
   // OVERWATCH 7165860051: a late kept tap the register answers register_newer carries the Training
@@ -1259,6 +1367,33 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByText(
       'Ada Reyes was marked here. Whether the class register has Ada Reyes Present is not known: check the class register.',
     ).closest('[role="alert"]')).not.toBeNull();
+    // The hold is read with the register's answer, which was lost: not known either (round 13, B).
+    expect(screen.getByText('Whether Ada Reyes is on a Training Hold could not be read.').closest('[role="alert"]')).not.toBeNull();
+  });
+
+  // Round 13, reviewer B: refused as no longer live, then found landed: the list goes with the run.
+  test('a kept tap found landed after a resend refused as no longer live says what to check in the page\'s list', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        return answer({ error: 'x', code: 'SESSION_RUN_NOT_LIVE' }, 409);
+      },
+      present: () => present,
+    });
+    const onRunNotLive = jest.fn();
+    await showKept({ tied: true, onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(onRunNotLive).toHaveBeenCalled();
+    expect(screen.getByText(SAVED_CHECK_WORDS)).toBeTruthy();
+    expect(screen.getByText(
+      'Mark an athlete here: saved, but whether the class register has the athlete Present is not known; check the class register. And whether the athlete is on a Training Hold could not be read.',
+    )).toBeTruthy();
   });
 
   test('on an untied list, a kept tap that lands with no register answer adds no register line', async () => {

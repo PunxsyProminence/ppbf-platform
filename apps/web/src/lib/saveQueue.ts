@@ -582,7 +582,7 @@ async function pump(): Promise<void> {
           requestKey: head.requestKey,
           madeByAccountId: head.accountId,
           msSinceMade: msSinceMade(head),
-          pageId: pageId(),
+          pageId: pageId(head.accountId),
           first: head.sends === 0,
         });
         const gone = answered.status === 401 || (await codeOf(answered)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT';
@@ -651,11 +651,15 @@ async function pump(): Promise<void> {
   }
 }
 
-let thisPage: string | null = null;
-/** This page's id, made once with the first send (a save is kept only where a key can be made). */
-function pageId(): string {
-  thisPage ??= newRequestKey() ?? 'page';
-  return thisPage;
+let thisPage: { id: string; account: string } | null = null;
+/**
+ * This page's id for the account a save belongs to: made with that account's first send, kept across a
+ * drop while the same account comes back (its order on this page still holds), and new for another
+ * account, so two people's saves on one tablet are never tied together (#2182 round 13, reviewer B).
+ */
+function pageId(account: string): string {
+  if (thisPage?.account !== account) thisPage = { id: newRequestKey() ?? 'page', account };
+  return thisPage.id;
 }
 
 /** A random request key, or null where the browser cannot make one (then the save is not kept). */
@@ -759,6 +763,7 @@ export function emptySaveQueueState(): SaveQueueState {
 /** Tests only: a fresh page. */
 export function resetSaveQueueForTests(): void {
   dropAll();
+  thisPage = null;
   notSent = [];
   pendingKeeps = 0;
   leftRunning = [];

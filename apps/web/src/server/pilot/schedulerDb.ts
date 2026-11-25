@@ -859,7 +859,10 @@ export async function writeSessionRegisterPresent(
   // their request's delay and are not compared (review of #2165; round 13 of #2178). Only from the
   // same page (pageId, recorded with the no-shows tap): each tab keeps its own queue, so a here tap
   // from the coach's other tab or device has no place in this page's order, and an Absent set after
-  // it still wins (condition 1; #2182 round 12, reviewer A). Without a page id, never.
+  // it still wins (condition 1; #2182 round 12, reviewer A). Without a page id, never. Known limit
+  // (saveQueue.ts, "a send given up on"): a here tap the page gave up on after 30 seconds while the
+  // server still worked on it can be written after a newer no-shows tap of the same page, and then
+  // flips that tap's Absent (#2182 round 13, reviewer A; it needs a server stall over 30 seconds).
   runId?: string,
   pageId?: string,
 ): Promise<SessionRegisterWrite> {

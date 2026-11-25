@@ -156,7 +156,7 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     unchanged: 'Only the mark here was taken back; the class register was not changed.',
     // A tap sent late, after the register was changed (OD-2026-10-21-004 ruling 1: the later change wins).
     // Said as what happened when the tap landed: the register may be changed again since (round 12, A).
-    register_newer: `${name} was marked here, but the class register had been changed after your tap, so it kept ${STAYS[register.status ?? ''] ?? 'its mark'} there. Change it on the register if ${name} is here.`,
+    register_newer: `${name} was marked here, but the class register had been changed after your tap, so ${name} stayed ${STAYS[register.status ?? ''] ?? 'as marked'} there. Change it on the register if ${name} is here.`,
   };
   return `${words[register.effect] ?? ''}${holdWords}`.trim();
 }
@@ -171,12 +171,15 @@ function refusalText(code: unknown): string {
 const NO_REFUSALS: ReadonlyMap<string, string> = new Map();
 
 /** The key of an athlete's register line in the list's alert, beside their refusal (keyed by id). */
+// The kind and the id are joined by NUL, which no athlete id holds (the routes refuse it and
+// PostgreSQL text cannot store it), so no athlete's id can be another athlete's key (round 13, A).
+const KEY_JOIN = String.fromCharCode(0);
 function registerAlertKey(athleteId: string): string {
-  return `register ${athleteId}`;
+  return `register${KEY_JOIN}${athleteId}`;
 }
 /** The key of an athlete's Training Hold line from a kept tap, in the same alert. */
 function holdAlertKey(athleteId: string): string {
-  return `hold ${athleteId}`;
+  return `hold${KEY_JOIN}${athleteId}`;
 }
 
 /** One kept here tap not yet answered: whom it marks, and how. */
@@ -342,7 +345,7 @@ export default function SessionRunPresence({
     // This list gone too: the panel says it in the page's list instead.
     if (!onPage.current) return false;
     noteRefusals.current += 1;
-    const key = `note ${athlete.athlete_id} ${noteRefusals.current}`;
+    const key = `note${KEY_JOIN}${athlete.athlete_id}${KEY_JOIN}${noteRefusals.current}`;
     setKeptRefusals((current) => new Map(current).set(key, `${athlete.full_name}: ${words}`));
     if (!noteText) return true;
     setNoteWords((current) => {
@@ -458,17 +461,29 @@ export default function SessionRunPresence({
             : null;
           // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
           if (saveQueueGeneration() !== seen) return undefined;
-          const hold = holdAnswer(answer?.hold_warning);
-          const newer = answer?.register?.effect === 'register_newer';
-          // On a tied session a mark here that came back with no register answer (its answer was lost
-          // and a resend changed nothing, or the check found it): what the register holds is not known.
-          const registerUnknown = present && tied && !answer?.register;
+          const effect = answer?.register?.effect;
+          // The register differs from what the coach tapped: it kept a change made after a late mark
+          // (register_newer), kept the mark a take-back would have removed (kept), or was not written
+          // (skipped). Said where a burst or a finish cannot lose it (round 13, A).
+          const registerDiffers = effect === 'register_newer' || effect === 'kept' || effect === 'skipped';
+          // On a tied session a tap that came back with no register answer (its answer was lost and a
+          // resend changed nothing, or the check found it): what the register holds is not known.
+          const registerUnknown = tied && !answer?.register;
+          // The hold is read with the register's answer: a mark here whose answer was lost cannot say
+          // whether the athlete is on a Training Hold, so it says that, in the existing words (round 13, B).
+          const hold = holdAnswer(answer?.hold_warning) ?? (registerUnknown && present ? 'unknown' : null);
           // This list gone, or going with a kept finish: what the coach must still check goes to the
           // page's list, unnamed, under "Saved, with something to check" (round 12, A and B).
-          if (!onPage.current || isFinishWaiting?.()) {
+          // The run gone (refused as such, the check then finding the tap landed): this list goes too.
+          const runGone = refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND';
+          if (!onPage.current || isFinishWaiting?.() || runGone) {
+            const skippedWhy = NOT_ADDED[answer?.register?.reason ?? ''] ?? 'it could not be added';
             const checks = [
-              newer ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
-              registerUnknown ? 'whether the class register has the athlete Present is not known; check the class register' : '',
+              effect === 'register_newer' ? 'the class register kept a mark set there after the tap; change it on the register if the athlete is here' : '',
+              effect === 'kept' ? 'the class register kept the mark the tap would have taken back, as it was changed after the tap; check the class register' : '',
+              effect === 'skipped' ? `the athlete is not on the class register, as ${skippedWhy}` : '',
+              registerUnknown && present ? 'whether the class register has the athlete Present is not known; check the class register' : '',
+              registerUnknown && !present ? 'whether the class register still has the athlete Present is not known; check the class register' : '',
               hold === 'held' ? 'the athlete has an active Training Hold; the mark was NOT blocked' : '',
               hold === 'unknown' ? 'whether the athlete is on a Training Hold could not be read' : '',
             ].filter((words) => words !== '');
@@ -478,9 +493,12 @@ export default function SessionRunPresence({
           // landing taps never overwrites it (R11-S1; round 12, A and B): until OK, this athlete's next
           // saved tap, or a drop. The row's note says only what the tap did to the register.
           const name = athlete.full_name;
-          const registerWords = newer
+          const registerWords = registerDiffers
             ? registerNote(name, answer?.register, null)
-            : registerUnknown ? `${name} was marked here. Whether the class register has ${name} Present is not known: check the class register.` : '';
+            : !registerUnknown ? ''
+              : present
+                ? `${name} was marked here. Whether the class register has ${name} Present is not known: check the class register.`
+                : `${name} was unmarked here. Whether the class register still has ${name} Present is not known: check the class register.`;
           const holdWords = registerNote(name, undefined, hold);
           if (registerWords || holdWords) {
             setKeptRefusals((current) => {
