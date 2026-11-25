@@ -16,8 +16,9 @@
  * only later (coverage granted afterwards) is not emailed for it. The source
  * names a membership whatever the account's sign-in; the sender's own
  * re-check refuses anyone who cannot sign in to that gym, and any account
- * linked to an athlete under 18. Times are the rows' created_at, set by now()
- * in the inserting transaction, as the sweep's overlap needs.
+ * linked to an athlete under 18. Times are on the database clock, as the
+ * sweep's overlap needs: each row's created_at, set by now() in the inserting
+ * transaction, or for gym_notice the moment it goes live (below).
  *
  * STAFF (EM-4a):
  *   - safety_escalation: every new row of pilot.safety_escalations, SHADOW
@@ -34,9 +35,10 @@
  *     (assertActorCanAccessAthlete).
  * FAMILY AND ATHLETE (EM-4b):
  *   - gym_notice: a notice (never the Chalkboard's 'motivation') as it goes
- *     live, to every coach, organization admin, admin, parent and athlete whose
- *     role may read its placement (mayReadLivePlacement, announcements.ts, the
- *     page's own rule), each under the user type their role gives.
+ *     live, to every coach, organization admin, admin, parent and athlete who
+ *     sees its placement once signed in (NOTICE_PLACEMENTS_EMAILED below; a
+ *     sign-in-page notice emails nobody), each under the user type their role
+ *     gives.
  *   - coach_message: a coach's or admin's message to an athlete, to that
  *     athlete's own account (athlete/coach-messages/route.ts); the sender sends
  *     only to an athlete 18 or over.
@@ -208,9 +210,12 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  */
 /** The roles a notice can be emailed to; a test holds NOTICE_PLACEMENTS_EMAILED to mayReadLivePlacement for each. */
 export const NOTICE_READER_ROLES: readonly string[] = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
-// The boards each user type sees once signed in (ParentHub.tsx reads
-// parent_hub, AthleteWorkspace.tsx athlete_workspace, each with everywhere;
-// staff see every board but the sign-in page's).
+// The placements each user type sees once signed in, each with everywhere:
+// ParentHub.tsx reads parent_hub, AthleteWorkspace.tsx athlete_workspace;
+// staff see coach_workspace on CoachWorkspace.tsx and every placement on
+// /notices. gym_notices, the sign-in page's, emails nobody, staff included,
+// although /notices lists it too (Overwatch on #2159, comment 7160013584:
+// "sign-in-page notices do not email anyone").
 export const NOTICE_PLACEMENTS_EMAILED: Readonly<Record<EmailAlertUserType, readonly string[]>> = {
   staff: ['coach_workspace', 'athlete_workspace', 'parent_hub', 'everywhere'],
   parent: ['parent_hub', 'everywhere'],
