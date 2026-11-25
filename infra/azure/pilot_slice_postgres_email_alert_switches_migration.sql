@@ -28,8 +28,12 @@
 -- the typed address and the hash of its code until then; confirmed_address is
 -- the only address the sender may use. EM-1 writes none of these columns;
 -- they are here so EM-2b needs no migration. Every other person's alerts go to
--- their sign-in address (pilot.accounts.login_email), which this table does
--- not copy.
+-- their sign-in address (pilot.accounts.login_email), which this table has no
+-- column for. BUT THE ACCOUNT ID CAN BE THAT ADDRESS: a staff member invited
+-- without an account id, and a parent login made by a guardian move, get their
+-- sign-in address as their account_id (staffProvisioning.ts, `|| loginEmail`;
+-- guardianLoginMove.ts inserts the email as account_id). For them this row's
+-- account_id is that address, as in every table keyed by account.
 --
 -- WHAT THE DATABASE REFUSES (each a named CHECK, compared in full by the
 -- runner):
@@ -51,11 +55,13 @@
 --   * an athlete login is NOT deleted: the purge keeps it, retired, and clears
 --     its email, PIN and password by UPDATE, so the cascade never fires and
 --     the switch row, and from EM-2b an adult athlete's confirmed address,
---     would stay. EM-1 writes no address. Removing the row in the purge's
---     athlete branch is put to Overwatch on #2168 (the purge already deletes
---     such a login's SHADOW memory corrections there for the same reason);
+--     would stay. EM-1 writes no address. Overwatch's answer A on #2168 puts
+--     the removal of the row, in the purge's athlete branch, into EM-2b (the
+--     purge already deletes such a login's SHADOW memory corrections there for
+--     the same reason);
 --   * a staff account (coach, admin) is never hard-deleted: its row stays,
---     holding only on/off and times (no address can be stored on it).
+--     with no address column filled (a CHECK forbids it), holding its
+--     account_id (which can be the sign-in address, above), on/off and times.
 -- A soft-deleted account (accounts.deleted_at set, Method 2), or a membership
 -- switched off (the app switches memberships off, it does not delete them),
 -- keeps its row. So the sender (EM-3, not yet built) is to send only to an
@@ -64,7 +70,8 @@
 -- The retention period is not ruled (docs/DATA_RETENTION.md row).
 --
 -- AUDIT. Every change of the switch writes an audit row (on/off, before and
--- after). No address is ever written to the audit stream.
+-- after). No address column is ever written to the audit stream; the audit row
+-- names the account by its account_id, which can be the address (above).
 --
 -- No `begin;`/`commit;` here on purpose: the runner
 -- (apps/web/scripts/pilot-apply-email-alert-switches-migration.mjs) opens the
