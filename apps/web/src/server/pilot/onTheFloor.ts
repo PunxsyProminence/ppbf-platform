@@ -23,8 +23,9 @@
  *     this staff line (FN0-Q1 A, App Overwatch on #2160).
  * Never: a deleted athlete (the roster below), another gym's athlete or run, a
  * mark taken back, a settled run, an absent or excused register mark, a
- * register mark on another day's class. No other record is read: not
- * pilot.attendance_reconciled, pilot.activity_log or the legacy table (F9).
+ * register mark on another day's class. No other record is read: not the
+ * reconciled attendance view, the activity log, the legacy attendance table or
+ * a wellness check-in (F9; the convention test pins that this file names none).
  * THIS IS NOT ATTENDANCE (the OW27-19 card; CT-13): no attendance figure,
  * report, board or grant figure reads it.
  *
@@ -126,7 +127,11 @@ async function presentOnTodaysRegister(
   return rows.map((row) => row.athlete_id);
 }
 
-/** `now` is passed in so tests are fixed; the route passes the request's moment. */
+/**
+ * `now` is passed in so tests are fixed. It must be the current moment: it also drives the idle
+ * close, which settles runs, so a later time would settle live runs early. Its one caller, the route,
+ * passes `new Date()`, and sessionRunPresenceStaffOnly.convention.test.ts pins that.
+ */
 export async function listOnTheFloorForStaff(actor: ActorIdentity, now: Date): Promise<OnTheFloorStaffLine> {
   if (!(await staffNoteRoleInOrganization(actor))) {
     throw new ForbiddenError('Forbidden: only a coach or the gym admin of this gym reads who is on the floor');

@@ -243,6 +243,17 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     // Defined once, at the start of a line (not in a comment), as exactly the three staff roles.
     expect(Array.from(text.matchAll(/^const ON_THE_FLOOR_READ_ROLES = (.*)$/gm), (match) => match[1]))
       .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
+    // Nothing runs before the role gate: the session is resolved, then the gate is the very next
+    // statement, so no branch (a family one included) can answer ahead of it.
+    expect(text).toMatch(
+      /export async function GET\(request: NextRequest\) \{\n  try \{\n    const principal = await requirePrincipal\(request\);\n    requireRole\(principal, \[\.\.\.ON_THE_FLOOR_READ_ROLES\]\);\n/,
+    );
+    // The route reaches the presence record through its own module's read only: no other pinned read
+    // (isSessionRunningForAthleteToday, which FN-0 F13 rules out for this line, included).
+    const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
+    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
+    // The read is asked for the current moment: that moment also drives the idle close, which writes.
+    expect(Array.from(text.matchAll(/listOnTheFloorForStaff\(([^)]*\)?)\)/g), (match) => match[1])).toEqual(['principal, new Date()']);
   });
 
   // The exemption for onTheFloor.ts (TABLE_FILES above) is for one read only: which athletes stand
@@ -276,6 +287,11 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(text).toMatch(
       /export async function listOnTheFloorForStaff\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorStaffLine> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
     );
+    // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or
+    // check-in record, named anywhere in the file.
+    const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
+    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
+    expect(text).not.toMatch(/\b(attendance_reconciled|activity_log|athlete_check_ins)\b|pilot\.attendance(?![\w_])/);
   });
 
   it('no route, page, component or other module names either table in its own text', () => {
