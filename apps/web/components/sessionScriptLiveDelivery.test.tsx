@@ -2133,9 +2133,13 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
 
   it('the same pair logged twice while the first waits carries the same key: one log, never two (F-135)', async () => {
     jest.useFakeTimers();
+    let posts = 0;
     const { fetchMock } = await renderKept(liveRun(), {
       logPost: () => {
-        throw new TypeError('Failed to fetch');
+        posts += 1;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        // The server answers every send of one key with the record that key wrote.
+        return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
@@ -2147,8 +2151,40 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     }
     await wait(RESEND_MS);
     const keys = new Set(logPostCalls(fetchMock).map((body) => body.request_key));
-    expect(logPostCalls(fetchMock).length).toBeGreaterThan(1);
+    // Both saves were sent (the first, resent, then the second), under one key.
+    expect(logPostCalls(fetchMock)).toHaveLength(3);
     expect(keys.size).toBe(1);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
+  it('once this console has settled the run, a kept save refused as no longer live says nothing: the page\'s words stand', async () => {
+    jest.useFakeTimers();
+    let settled = false;
+    let finishes = 0;
+    const tied = liveRun({ class_id: 'class-youth' });
+    const { onSettled, onRunGone } = await renderKept(tied, {
+      patch: (body) => {
+        if (body.action === 'finish') {
+          finishes += 1;
+          if (finishes === 1) throw new TypeError('Failed to fetch');
+          settled = true;
+          return jsonResponse({ run: { ...tied, run_state: 'completed', ended_at: 'x' } });
+        }
+        // The no-shows tap, sent after the finish landed.
+        return jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409);
+      },
+      runsGet: () => (settled
+        ? jsonResponse({ run: null })
+        : jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 } })),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await wait(0);
+    await tap('Mark all 2 Absent');
+    await wait(RESEND_MS);
+    await wait(0);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onRunGone).not.toHaveBeenCalled();
   });
 
   it('a refused log RESEND that the ledger shows had landed reads as logged (condition 2), read with the queue\'s signal', async () => {

@@ -180,6 +180,16 @@ describe('kept on a flaky connection (W4 item 7, OQ-3)', () => {
     expect(screen.getByText('The class register now shows no no-shows.')).toBeTruthy();
   });
 
+  test('a refused resend when the coach\'s live run is another run is not read as landed: its words are said here', async () => {
+    jest.useFakeTimers();
+    serveKept((send) => (send === 1 ? 'throw' : json({ error: 'CLASS_NOT_STARTED', message: 'Not yet.' }, 409)), (sends) => (sends > 0 ? 0 : 2), 'run-2');
+    await tapMark();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByRole('alert').textContent).toBe('Not yet.');
+  });
+
   test('a tap refused because the session is no longer live hands that to the console, as today', async () => {
     jest.useFakeTimers();
     serveKept(() => json({ error: 'SESSION_RUN_NOT_LIVE' }, 409), () => 2);

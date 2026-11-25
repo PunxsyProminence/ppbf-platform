@@ -8,7 +8,6 @@ import GymTvPanel from '@/components/GymTvPanel';
 import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
 import PainReportsPanel from '@/components/PainReportsPanel';
 import SaveQueueNotice from '@/components/SaveQueueNotice';
-import { prepareSaveQueue } from '@/src/lib/saveQueue';
 import SessionScriptLiveDelivery, { RUN_GONE } from '@/components/SessionScriptLiveDelivery';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
@@ -49,10 +48,6 @@ function LiveSessionPainRead({ children }: { children: (read: PainReportsRead) =
 }
 
 function ClassScreen() {
-  // The page keeps its live-floor saves (W4 item 7): it learns who is signed in when it opens.
-  useEffect(() => {
-    prepareSaveQueue();
-  }, []);
   const params = useSearchParams();
   const wantedClass = params.get('class');
   // Session Plans and the coach home send ?restored=1 when the start they made found a session

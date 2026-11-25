@@ -550,10 +550,11 @@ export default function SessionScriptLiveDelivery({
       };
       const showLogged = (item: { execution_id: string; created_at: string }) => {
         forgetPairKey();
-        setLoggedInterventions((items) => [
+        // A second tap of the same pair is answered with the same record: listed once.
+        setLoggedInterventions((items) => (items.some((logged) => logged.execution_id === item.execution_id) ? items : [
           { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
           ...items,
-        ]);
+        ]));
       };
       return {
         // No athlete name: the line can outlive the log panel on a shared floor screen.
