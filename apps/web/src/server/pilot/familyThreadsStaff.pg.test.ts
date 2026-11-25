@@ -726,6 +726,14 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     await cover(SIBLING, '-1 hour', '1 hour');
     await same('a cover running');
     expect((await athleteIdsForCoach(ORG, SECOND_COACH)).sort()).toEqual([SIBLING]);
+    // A running cover of the other gym's child with the same athlete id: not this gym's child.
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+      [OTHER_ORG, CHILD, SECOND_COACH, OTHER_GYM_COACH],
+    );
+    await same('a running cover in another gym');
+    expect((await athleteIdsForCoach(ORG, SECOND_COACH)).sort()).toEqual([SIBLING]);
     await client.query(`update pilot.athletes set coach_id = $3 where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, SECOND_COACH]);
     await same('the child moved to the second coach');
     await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, SIBLING]);

@@ -138,6 +138,8 @@ describe('FamilyThreadsForStaff', () => {
     });
     expect(await screen.findByText(/not sent; it is still in the box\. A message is at most 2000 characters\./)).toBeInTheDocument();
     expect(box).toHaveValue('Long words');
+    // On the same athlete: no word of "another athlete".
+    expect(screen.queryByText(/for another athlete/)).toBeNull();
 
     status = 500;
     await act(async () => {
@@ -199,15 +201,21 @@ describe('FamilyThreadsForStaff', () => {
     rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
     expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
     await act(async () => release(jsonResponse({ error: 'down' }, false, 500)));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Your reply to First Guardian, for the athlete you were on before, was not sent. Go back to them; it is still in its box.',
-    );
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('A reply you wrote for another athlete was not sent. It is still in its box under their messages.');
+    // No name from the other athlete's thread on this athlete's screen.
+    expect(notice).not.toHaveTextContent('First Guardian');
 
     // Back on that athlete, the words are in the box and the failure is under its thread.
     rerender(<FamilyThreadsForStaff athleteId="ath-1" />);
     expect(await screen.findByLabelText('Reply to First Guardian')).toHaveValue('See you then.');
     expect(screen.getByText('Your reply was not sent; it is still in the box.')).toBeInTheDocument();
-    expect(screen.queryByText(/for the athlete you were on before/)).toBeNull();
+    expect(screen.queryByText(/for another athlete/)).toBeNull();
+
+    // Seen there, the notice is done: moving away again does not bring it back.
+    rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
+    expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/for another athlete/)).toBeNull();
   });
 
   test("after a switch, the last child's messages are not shown while the next child's are read; an unsent reply is kept", async () => {
@@ -437,11 +445,22 @@ describe('FamilyThreadsUnread', () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  test('reads again when the chosen athlete changes', async () => {
-    const fetchMock = installUnread(() => jsonResponse({ ok: true, items: [] }));
+  test('reads again when the chosen athlete changes, keeping what it showed until the answer (no "Checking" flash)', async () => {
+    let calls = 0;
+    let release: (response: Response) => void = () => {};
+    const fetchMock = installUnread(() => {
+      calls += 1;
+      return calls === 1
+        ? jsonResponse({ ok: true, items: [{ athlete_id: 'ath-1', unseen: 1 }] })
+        : (new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response);
+    });
     const { rerender } = render(<FamilyThreadsUnread athletes={ROSTER} refreshKey="" onChoose={jest.fn()} />);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('button', { name: 'Athlete One (1 new)' })).toBeInTheDocument();
     rerender(<FamilyThreadsUnread athletes={ROSTER} refreshKey="ath-1" onChoose={jest.fn()} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Athlete One (1 new)' })).toBeInTheDocument();
+    expect(screen.queryByText('Checking for new messages from families…')).toBeNull();
+    await act(async () => release(jsonResponse({ ok: true, items: [] })));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Athlete One (1 new)' })).toBeNull());
   });
 });

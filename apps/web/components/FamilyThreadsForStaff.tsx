@@ -170,14 +170,15 @@ export default function FamilyThreadsForStaff({
     return () => observer.disconnect();
   }, [read, athleteId]);
 
-  async function sendReply(threadId: string, guardianName: string) {
+  async function sendReply(threadId: string) {
     const sentFor = athleteId;
     const failed = (message: string) => {
       setReplyErrors((held) => ({ ...held, [threadId]: message }));
       if (onScreen.current !== sentFor) {
         setElsewhere({
           athleteId: sentFor,
-          text: `Your reply to ${guardianName}, for the athlete you were on before, was not sent. Go back to them; it is still in its box.`,
+          // No name, as the page's own notice for a late failure: another athlete's people stay off this one's screen.
+          text: 'A reply you wrote for another athlete was not sent. It is still in its box under their messages.',
         });
       }
     };
@@ -260,7 +261,7 @@ export default function FamilyThreadsForStaff({
                 className="mt-[var(--s3)] space-y-[var(--s2)]"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void sendReply(thread.thread_id, thread.guardian_name);
+                  void sendReply(thread.thread_id);
                 }}
               >
                 <label className="field block">
