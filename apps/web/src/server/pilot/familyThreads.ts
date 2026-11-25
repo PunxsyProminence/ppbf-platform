@@ -330,6 +330,22 @@ async function reachOrNotHere(staff: FamilyThreadStaff, athleteId: string): Prom
   }
 }
 
+// The opener's name for staff (Q4 A), as listRepliesForStaff finds it: their parent record linked to
+// this child in this gym, else any record of theirs in this gym. Subject-scoped (by the thread's child
+// and author), never by the reader; a literal of its own, apart from the reader's own reads below,
+// because guardianAccess.test.ts's sweep reads one SQL literal at a time.
+const OPENER_NAME_SQL = `coalesce(
+              (select min(pa.full_name)
+                 from pilot.parents pa
+                 join pilot.guardian_links gl
+                   on gl.organization_id = pa.organization_id and gl.parent_id = pa.parent_id
+                  and gl.athlete_id = o.athlete_id
+                where pa.organization_id = o.organization_id and pa.account_id = o.author_account_id),
+              (select min(pa.full_name)
+                 from pilot.parents pa
+                where pa.organization_id = o.organization_id and pa.account_id = o.author_account_id)
+            )`;
+
 /**
  * Every thread on one athlete, for the gym's staff: newest first, each with
  * the opener's name and every post oldest first. Gated here too, not only in
@@ -352,17 +368,7 @@ export async function listFamilyThreadsForStaff(staff: FamilyThreadStaff, athlet
   }>(
     `select o.post_id::text as thread_id, o.athlete_id,
             to_char(o.created_at at time zone 'UTC', ${ISO_UTC}) as thread_created_at,
-            coalesce(
-              (select min(pa.full_name)
-                 from pilot.parents pa
-                 join pilot.guardian_links gl
-                   on gl.organization_id = pa.organization_id and gl.parent_id = pa.parent_id
-                  and gl.athlete_id = o.athlete_id
-                where pa.organization_id = o.organization_id and pa.account_id = o.author_account_id),
-              (select min(pa.full_name)
-                 from pilot.parents pa
-                where pa.organization_id = o.organization_id and pa.account_id = o.author_account_id)
-            ) as guardian_name,
+            ${OPENER_NAME_SQL} as guardian_name,
             p.post_id::text as post_id, p.author_role,
             case when p.author_role = 'parent' then null else p.author_account_id end as author_account_id,
             p.post_text,
