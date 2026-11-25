@@ -10,18 +10,29 @@
 --
 -- WHO AND WHEN, NOTHING ELSE, FOR ANY AGE. The card's con was "a new record
 -- about minors", so there is no free-text column: no note, channel or reason.
--- The only words are the role list below, and the two account columns must
--- name a real account (foreign keys), so they cannot hold a sentence either.
+-- The only words are two fixed lists below, the role and how a mark stopped
+-- being current (cleared_kind), and the two account columns must name a real
+-- account (foreign keys), so they cannot hold a sentence either.
 -- reachedOutMarksSchemaOwnership.test.ts pins the column list so a text column
 -- cannot be added quietly.
 --
--- ONE CURRENT MARK PER ATHLETE, EVERY TAKE-BACK KEPT. Each mark is its own row
+-- ONE CURRENT MARK PER ATHLETE, EVERY ENDED MARK KEPT. Each mark is its own row
 -- (mark_id). The partial unique index below allows one uncleared mark per
--- athlete; a take-back sets cleared_at on that row and leaves it, and a later
--- mark is a new row. The audit stream (written by reachedOutMarks.ts, SC-3a-2)
--- records each change as well. The page shows the current mark only while it
--- is newer than the athlete's last day they came, so an athlete who came back
--- and stopped again starts clean without a write.
+-- athlete. A mark stops being current in one of two ways, and its row stays:
+-- cleared_at, who ended it (cleared_by_account_id) and how (cleared_kind).
+--   'taken_back': a coach or admin took the mark back (Q4 A).
+--   'replaced':   the athlete came back and then stopped again, so the mark
+--                 was for an earlier absence; a coach marking the new absence
+--                 ends it and inserts the new mark in the same transaction
+--                 (reachedOutMarks.ts, SC-3a-2, decides that a mark is stale:
+--                 not newer than the athlete's last day they came, the page
+--                 rule in the plan, #2163 section 4). The new row names who.
+-- Without the second way the stale mark would stay current and this index
+-- would refuse the new absence's mark (Codex, #2176). The athlete pathway ends
+-- a placement the same way (end_reason 'replaced'). The audit stream (written
+-- by reachedOutMarks.ts, SC-3a-2) records each change as well. This file does
+-- not check that a 'replaced' mark was in fact stale or followed by a new one:
+-- the database cannot see the athlete's last day they came; the module can.
 --
 -- AN ACCOUNT'S PURGE CLEARS ITS ID HERE. A staff account id is often the
 -- person's email address. Both account columns reference pilot.accounts ON
@@ -32,10 +43,10 @@
 --
 -- THE GUARD (trg_athlete_reached_out_marks_guard) holds the ruling at the
 -- database, not only in the module: a new mark names who made it, starts
--- current, and takes the database's time; the one change a mark takes is a
--- take-back, once, naming who, at the database's time; nothing undoes a
--- take-back; and a mark is not deleted on its own (it goes with its athlete or
--- gym). The account foreign keys' own SET NULL is the one other update. The
+-- current, and takes the database's time; the one change a mark takes is its
+-- end (a take-back or a replacement), once, naming who and how, at the
+-- database's time; nothing undoes or relabels an end; and a mark is not
+-- deleted on its own (it goes with its athlete or gym). The account foreign keys' own SET NULL is the one other update. The
 -- runner refuses any other trigger or rule on the table. TRUNCATE, a
 -- statement-level command, is not guarded (as on the behaviour windows): pg
 -- suites truncate pilot.organizations and pilot.accounts with cascade, and no
@@ -60,11 +71,14 @@ create table if not exists pilot.athlete_reached_out_marks (
   marked_at              timestamptz not null default clock_timestamp(),
   cleared_at             timestamptz null,
   cleared_by_account_id  text null,
+  cleared_kind           text null
+    constraint pilot_athlete_reached_out_marks_cleared_kind_check check (cleared_kind in ('taken_back', 'replaced')),
   primary key (organization_id, mark_id),
-  -- Only a take-back names who took it back (and that name, too, goes when
-  -- the account is deleted).
+  -- Only an ended mark names who ended it (and that name, too, goes when the
+  -- account is deleted), and an ended mark, and only an ended mark, says how.
   constraint pilot_athlete_reached_out_marks_clear_check
-    check (cleared_by_account_id is null or cleared_at is not null),
+    check ((cleared_by_account_id is null or cleared_at is not null)
+           and (cleared_at is null) = (cleared_kind is null)),
   constraint pilot_athlete_reached_out_marks_athlete_fk
     foreign key (organization_id, athlete_id)
     references pilot.athletes(organization_id, athlete_id)
@@ -117,11 +131,13 @@ begin
          = to_jsonb(old) - array['marked_by_account_id', 'cleared_by_account_id'] then
       return new;
     end if;
-    -- (2) The take-back, once, naming who, at the database's time; nothing
-    -- else moves.
+    -- (2) The end (a take-back or a replacement), once, naming who and how,
+    -- at the database's time; nothing else moves. The kind's CHECK refuses any
+    -- other word.
     if old.cleared_at is null and new.cleared_at is not null and new.cleared_by_account_id is not null
-       and to_jsonb(new) - array['cleared_at', 'cleared_by_account_id']
-         = to_jsonb(old) - array['cleared_at', 'cleared_by_account_id'] then
+       and new.cleared_kind is not null
+       and to_jsonb(new) - array['cleared_at', 'cleared_by_account_id', 'cleared_kind']
+         = to_jsonb(old) - array['cleared_at', 'cleared_by_account_id', 'cleared_kind'] then
       new.cleared_at := greatest(clock_timestamp(), old.marked_at);
       return new;
     end if;
@@ -133,7 +149,7 @@ begin
     raise exception 'REACHED_OUT_MARK_NAMES_WHO'
       using errcode = '23514', constraint = 'pilot_athlete_reached_out_marks_names_who';
   end if;
-  if new.cleared_at is not null or new.cleared_by_account_id is not null then
+  if new.cleared_at is not null or new.cleared_by_account_id is not null or new.cleared_kind is not null then
     raise exception 'REACHED_OUT_MARK_STARTS_CURRENT'
       using errcode = '23514', constraint = 'pilot_athlete_reached_out_marks_starts_current';
   end if;
@@ -148,4 +164,4 @@ create trigger trg_athlete_reached_out_marks_guard
   for each row execute function pilot.athlete_reached_out_marks_guard();
 
 comment on table pilot.athlete_reached_out_marks is
-  'Who on the staff marked that they reached out to an athlete on the stopped-coming list, and when (OW27-33 B; Overwatch W4-6 Q4 A). One current mark per athlete; a take-back keeps its row (cleared_at), and a later mark is a new row. No note or free text for any age. An account''s delete clears its id here. Staff only. Lane W4-6, SC-3a-1.';
+  'Who on the staff marked that they reached out to an athlete on the stopped-coming list, and when (OW27-33 B; Overwatch W4-6 Q4 A). One current mark per athlete; a mark ends by a take-back or, once the athlete has come back and stopped again, by being replaced (cleared_at, cleared_kind), keeps its row, and a later mark is a new row. No note or free text for any age. An account''s delete clears its id here. Staff only. Lane W4-6, SC-3a-1.';

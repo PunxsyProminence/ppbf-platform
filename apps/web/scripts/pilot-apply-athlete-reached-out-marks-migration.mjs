@@ -9,7 +9,8 @@ import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mj
 // Applies the athlete-reached-out-marks migration (lane W4-6, SC-3a-1;
 // OW27-33 B: the stopped-coming page gets a "reached out" mark; Overwatch W4-6
 // Q4 A: who and when only, one current mark per athlete, a take-back keeps the
-// row) inside one transaction. The operator names the host and database they
+// row; a mark for an earlier absence is ended as 'replaced', #2176) inside one
+// transaction. The operator names the host and database they
 // believe they are pointing at (PPBF_EXPECTED_POSTGRES_HOSTNAME / _DATABASE); a
 // mismatch refuses before connecting.
 
@@ -20,7 +21,7 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt, each piece looked up ON
 // pilot.athlete_reached_out_marks and reported by name: the table; the exact
-// column list; each column by type, nullability and default; exactly two
+// column list; each column by type, nullability and default; exactly three
 // CHECKs, validated and compared IN FULL against the text Postgres stores; the
 // primary key on (organization_id, mark_id), not deferrable; exactly one other
 // unique index, the current-mark index on (organization_id, athlete_id) WHERE
@@ -36,8 +37,10 @@ function sslConfig() {
 const EXPECTED_CHECKS = {
   pilot_athlete_reached_out_marks_role_check:
     "CHECK ((marked_by_role = ANY (ARRAY['coach'::text, 'organization_admin'::text, 'admin'::text])))",
+  pilot_athlete_reached_out_marks_cleared_kind_check:
+    "CHECK ((cleared_kind = ANY (ARRAY['taken_back'::text, 'replaced'::text])))",
   pilot_athlete_reached_out_marks_clear_check:
-    'CHECK (((cleared_by_account_id IS NULL) OR (cleared_at IS NOT NULL)))',
+    'CHECK ((((cleared_by_account_id IS NULL) OR (cleared_at IS NOT NULL)) AND ((cleared_at IS NULL) = (cleared_kind IS NULL))))',
 };
 
 export const EXPECTED_COLUMNS = [
@@ -49,6 +52,7 @@ export const EXPECTED_COLUMNS = [
   'marked_at',
   'cleared_at',
   'cleared_by_account_id',
+  'cleared_kind',
 ];
 
 const OWN = 'pilot.athlete_reached_out_marks';
@@ -97,6 +101,7 @@ const READINESS_QUERY = `
     ${column('marked_at', 'timestamptz', true, 'clock_timestamp()')},
     ${column('cleared_at', 'timestamptz', false)},
     ${column('cleared_by_account_id', 'text', false)},
+    ${column('cleared_kind', 'text', false)},
     (select count(*) from con where contype = 'c') = $4
       and (
         select count(*) from con

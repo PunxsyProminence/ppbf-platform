@@ -144,12 +144,25 @@ async function mark(
   );
 }
 
-async function takeBack(client: Client, athleteId: string, account: string | null = COACH_ID) {
+async function takeBack(client: Client, athleteId: string, account: string | null = COACH_ID, kind: string | null = 'taken_back') {
   await client.query(
-    `update ${T} set cleared_at = clock_timestamp(), cleared_by_account_id = $3
+    `update ${T} set cleared_at = clock_timestamp(), cleared_by_account_id = $3, cleared_kind = $4
       where organization_id = $1 and athlete_id = $2 and cleared_at is null`,
-    [ORG_ID, athleteId, account],
+    [ORG_ID, athleteId, account, kind],
   );
+}
+
+/** What SC-3a-2 does when the athlete came back and stopped again: end the stale mark, then mark anew, in one transaction. */
+async function replace(client: Client, athleteId: string, account: string = COACH_ID) {
+  await client.query('BEGIN');
+  try {
+    await takeBack(client, athleteId, account, 'replaced');
+    await mark(client, athleteId, { account });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
 }
 
 // Each foreign key, re-added under its own name with one thing wrong.
@@ -299,7 +312,8 @@ describe('athlete reached-out marks migration', () => {
   // With no table, every piece that looks at the table fails with it.
   const NO_TABLE = [
     'table_ready', 'columns_ready', 'organization_id_ready', 'mark_id_ready', 'athlete_id_ready', 'marked_by_account_id_ready',
-    'marked_by_role_ready', 'marked_at_ready', 'cleared_at_ready', 'cleared_by_account_id_ready', 'checks_ready', 'primary_key_ready',
+    'marked_by_role_ready', 'marked_at_ready', 'cleared_at_ready', 'cleared_by_account_id_ready', 'cleared_kind_ready', 'checks_ready',
+    'primary_key_ready',
     'current_mark_index_ready', 'foreign_key_count_ready', 'organization_fk_ready', 'athlete_fk_ready', 'marked_by_fk_ready',
     'cleared_by_fk_ready', 'guard_ready',
   ];
@@ -320,16 +334,26 @@ describe('athlete reached-out marks migration', () => {
     ['marked_at_ready', 'marked_at nullable', `alter table ${T} alter column marked_at drop not null`],
     ['cleared_at_ready', 'cleared_at not null', `alter table ${T} alter column cleared_at set default now(), alter column cleared_at set not null`],
     ['cleared_by_account_id_ready', 'cleared_by_account_id with a default', `alter table ${T} alter column cleared_by_account_id set default 'x'`],
+    ['cleared_kind_ready', 'cleared_kind with a default', `alter table ${T} alter column cleared_kind set default 'taken_back'`],
+    ['cleared_kind_ready', 'cleared_kind as a varchar', `alter table ${T} alter column cleared_kind type varchar(20)`, ['cleared_kind_ready', 'checks_ready']],
     ['checks_ready', 'a role list that is not the answered one',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_role_check,
          add constraint pilot_athlete_reached_out_marks_role_check check (marked_by_role in ('coach', 'organization_admin', 'admin', 'parent'))`],
     ['checks_ready', 'the take-back rule loosened',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_clear_check,
-         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_by_account_id is null or cleared_at is not null or marked_by_role = 'admin')`],
+         add constraint pilot_athlete_reached_out_marks_clear_check check ((cleared_by_account_id is null or cleared_at is not null or marked_by_role = 'admin')
+           and (cleared_at is null) = (cleared_kind is null))`],
+    ['checks_ready', 'a third way for a mark to end',
+      `alter table ${T} drop constraint pilot_athlete_reached_out_marks_cleared_kind_check,
+         add constraint pilot_athlete_reached_out_marks_cleared_kind_check check (cleared_kind in ('taken_back', 'replaced', 'expired'))`],
+    ['checks_ready', 'an ended mark that need not say how',
+      `alter table ${T} drop constraint pilot_athlete_reached_out_marks_clear_check,
+         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_by_account_id is null or cleared_at is not null)`],
     ['checks_ready', 'a CHECK not validated',
       `alter table ${T} drop constraint pilot_athlete_reached_out_marks_clear_check,
-         add constraint pilot_athlete_reached_out_marks_clear_check check (cleared_by_account_id is null or cleared_at is not null) not valid`],
-    ['checks_ready', 'a third CHECK', `alter table ${T} add constraint zz_extra check (marked_by_role <> '')`],
+         add constraint pilot_athlete_reached_out_marks_clear_check check ((cleared_by_account_id is null or cleared_at is not null)
+           and (cleared_at is null) = (cleared_kind is null)) not valid`],
+    ['checks_ready', 'a fourth CHECK', `alter table ${T} add constraint zz_extra check (marked_by_role <> '')`],
     ['primary_key_ready', 'no primary key', `alter table ${T} drop constraint athlete_reached_out_marks_pkey`],
     ['primary_key_ready', 'the primary key deferrable (an upsert could not use it)',
       `alter table ${T} drop constraint athlete_reached_out_marks_pkey, add primary key (organization_id, mark_id) deferrable`],
@@ -439,6 +463,45 @@ describe('athlete reached-out marks migration', () => {
     }
   });
 
+  // Codex's P1 on #2176: the athlete came back and then stopped again. The old mark is for the
+  // earlier absence; while it stays current, the index refuses the new absence's mark.
+  test('a mark for an earlier absence is replaced: ended as \'replaced\', naming who, and the new mark is current, in one transaction', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await mark(client, 'ada', { account: LEAVER_ID });
+      // The problem: a second mark is refused while the stale one is current.
+      await expect(mark(client, 'ada')).rejects.toMatchObject({ code: '23505', constraint: 'uq_athlete_reached_out_marks_current' });
+      // The order is fixed: the new mark cannot go in first, and a refused replacement leaves the old mark as it was.
+      await client.query('BEGIN');
+      await expect(mark(client, 'ada')).rejects.toMatchObject({ code: '23505', constraint: 'uq_athlete_reached_out_marks_current' });
+      await client.query('ROLLBACK');
+      await replace(client, 'ada');
+      // A second return and stop: replaced again; the earlier ends keep their kind.
+      await replace(client, 'ada', LEAVER_ID);
+      // A take-back is still a take-back.
+      await takeBack(client, 'ada');
+      const { rows } = await client.query(
+        `select marked_by_account_id, cleared_by_account_id, cleared_kind, cleared_at is not null as ended,
+                cleared_at is null or cleared_at >= marked_at as in_order
+           from ${T} where athlete_id = 'ada' order by marked_at`,
+      );
+      expect(rows).toEqual([
+        { marked_by_account_id: LEAVER_ID, cleared_by_account_id: COACH_ID, cleared_kind: 'replaced', ended: true, in_order: true },
+        { marked_by_account_id: COACH_ID, cleared_by_account_id: LEAVER_ID, cleared_kind: 'replaced', ended: true, in_order: true },
+        { marked_by_account_id: LEAVER_ID, cleared_by_account_id: COACH_ID, cleared_kind: 'taken_back', ended: true, in_order: true },
+      ]);
+      // Each replacement's new mark is made after (or as) the old one ended: the database's own times.
+      const { rows: gaps } = await client.query(
+        `select bool_and(next_marked_at >= cleared_at) as new_after_old from (
+           select cleared_at, lead(marked_at) over (order by marked_at) as next_marked_at from ${T} where athlete_id = 'ada'
+         ) x where cleared_at is not null and next_marked_at is not null`,
+      );
+      expect(gaps).toEqual([{ new_after_old: true }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('an account\'s delete (as the purge deletes a guardian\'s account) clears its id from every mark and take-back, and keeps the marks', async () => {
     const { client } = await freshDatabase();
     try {
@@ -450,13 +513,16 @@ describe('athlete reached-out marks migration', () => {
       await client.query('delete from pilot.accounts where account_id = $1', [LEAVER_ID]);
       const { rows } = await client.query(
         `select athlete_id, marked_by_account_id, marked_by_role, marked_at is not null as has_time,
-                cleared_by_account_id, cleared_at is not null as cleared
+                cleared_by_account_id, cleared_at is not null as cleared, cleared_kind
            from ${T} order by athlete_id, marked_at`,
       );
       expect(rows).toEqual([
-        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true },
-        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: false },
-        { athlete_id: 'ben', marked_by_account_id: COACH_ID, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true },
+        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true,
+          cleared_kind: 'taken_back' },
+        { athlete_id: 'ada', marked_by_account_id: null, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: false,
+          cleared_kind: null },
+        { athlete_id: 'ben', marked_by_account_id: COACH_ID, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true,
+          cleared_kind: 'taken_back' },
       ]);
       expect(JSON.stringify((await client.query(`select * from ${T}`)).rows)).not.toContain(LEAVER_ID);
     } finally {
@@ -472,6 +538,11 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(
         `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role, cleared_at, cleared_by_account_id)
          values ($1, gen_random_uuid(), 'ada', $2, 'coach', now(), $2)`,
+        [ORG_ID, COACH_ID],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_starts_current' });
+      await expect(client.query(
+        `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role, cleared_kind)
+         values ($1, gen_random_uuid(), 'ada', $2, 'coach', 'replaced')`,
         [ORG_ID, COACH_ID],
       )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_starts_current' });
       await client.query(
@@ -498,8 +569,17 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(`update ${T} set athlete_id = 'ben' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       // Only an account's delete (the foreign key's own SET NULL, deeper than 1) may clear a name.
       await expect(client.query(`update ${T} set marked_by_account_id = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      // An end that does not say how it ended, or says it in another word, is refused.
+      await expect(client.query(`update ${T} set cleared_at = now(), cleared_by_account_id = $1 where athlete_id = 'ada'`, [COACH_ID]))
+        .rejects.toMatchObject(refused);
+      await expect(client.query(
+        `update ${T} set cleared_at = now(), cleared_by_account_id = $1, cleared_kind = 'phoned, no answer' where athlete_id = 'ada'`,
+        [COACH_ID],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_cleared_kind_check' });
+      // A kind with no end is refused too: only an ended mark says how.
+      await expect(client.query(`update ${T} set cleared_kind = 'taken_back' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       await client.query(
-        `update ${T} set cleared_at = '2000-01-01T00:00:00Z', cleared_by_account_id = $1 where athlete_id = 'ada'`,
+        `update ${T} set cleared_at = '2000-01-01T00:00:00Z', cleared_by_account_id = $1, cleared_kind = 'taken_back' where athlete_id = 'ada'`,
         [COACH_ID],
       );
       const taken = await client.query(`select cleared_at >= marked_at as after_mark, cleared_at > now() - interval '1 minute' as now_ish from ${T}`);
@@ -509,6 +589,9 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(`update ${T} set cleared_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
         .rejects.toMatchObject(refused);
       await expect(client.query(`update ${T} set cleared_by_account_id = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      // Nothing relabels an end: a take-back does not become a replacement afterwards, or lose its kind.
+      await expect(client.query(`update ${T} set cleared_kind = 'replaced' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set cleared_kind = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       await expect(client.query(`delete from ${T} where athlete_id = 'ada'`))
         .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_no_delete' });
       expect((await client.query(`select count(*)::int as n from ${T} where cleared_at is not null`)).rows[0].n).toBe(1);

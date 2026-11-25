@@ -29,6 +29,7 @@ const COLUMNS = [
   'marked_at',
   'cleared_at',
   'cleared_by_account_id',
+  'cleared_kind',
 ];
 const COLUMN_ITEM = /^([a-z_]+)\s+(text|uuid|timestamptz)\s+(not )?null\b/;
 const CONSTRAINT_ITEM = /^(constraint [a-z_]+ (check|foreign key) \(|primary key \()/;
@@ -74,6 +75,10 @@ describe('athlete reached-out marks schema ownership', () => {
       /create unique index if not exists uq_athlete_reached_out_marks_current\s+on pilot\.athlete_reached_out_marks\(organization_id, athlete_id\)\s+where cleared_at is null;/,
     );
     expect(code(migration)).toMatch(/check \(marked_by_role in \('coach', 'organization_admin', 'admin'\)\)/);
+    // A mark ends one of two ways, and the row says which (Codex's P1 on #2176: a mark for an
+    // earlier absence is replaced, not left current and not passed off as a take-back).
+    expect(code(migration)).toMatch(/cleared_kind\s+text null\s+constraint pilot_athlete_reached_out_marks_cleared_kind_check check \(cleared_kind in \('taken_back', 'replaced'\)\)/);
+    expect(code(migration)).toMatch(/and \(cleared_at is null\) = \(cleared_kind is null\)\)/);
   });
 
   test('the guard trigger runs before every insert, update and delete, row by row', () => {
