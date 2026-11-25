@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
-import { type RunClassView, fetchLiveRunClass, fetchRunClass, UNKNOWN_OUTCOME, unknownOutcomeWords } from './SessionRunClass';
+import { type RunClassView, fetchLiveRunClass, fetchRunClass, unknownOffPage, unknownOutcomeWords } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
 // it (Rec.)"): one tap marks Absent everyone signed up for the class who has no mark. Never
@@ -22,12 +22,15 @@ export default function SessionNoShows({
   classId,
   presentCount,
   onRunNotLive,
+  finishWaiting = false,
 }: {
   readonly runId: string;
   readonly classId: string;
   /** The marks here, as last read: a change reads the count again. */
   readonly presentCount: number | null;
   readonly onRunNotLive: () => void;
+  /** A finish is kept and waiting: once it lands this screen goes, so a refusal is said in the page's list. */
+  readonly finishWaiting?: boolean;
 }) {
   const [read, setRead] = useState<Read>({ state: 'loading' });
   const [busy, setBusy] = useState(false);
@@ -68,7 +71,12 @@ export default function SessionNoShows({
       }),
     [],
   );
-  // While this offer is on the page; a refusal after it has gone gives its words to the page's list.
+  // While this offer is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const toPageList = useRef(finishWaiting);
+  useEffect(() => {
+    toPageList.current = finishWaiting;
+  }, [finishWaiting]);
   const onPage = useRef(true);
   useEffect(() => {
     onPage.current = true;
@@ -133,7 +141,9 @@ export default function SessionNoShows({
         }
         const reason = refusal.message ?? 'Nobody was marked Absent.';
         // Off the page, the page's list says it, after the save's own name.
-        if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+        if (!onPage.current || toPageList.current) {
+          return landed === null ? unknownOffPage('Check the class register before marking them again.') : reason;
+        }
         setMessage(landed === null ? unknownOutcomeWords(label) : reason);
         return undefined;
       },

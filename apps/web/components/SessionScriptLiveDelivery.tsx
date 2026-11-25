@@ -13,12 +13,13 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
-import SessionRunClass, { UNKNOWN_OUTCOME, unknownOutcomeWords } from '@/components/SessionRunClass';
+import SessionRunClass, { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import {
   keepSave,
   prepareSaveQueue,
   readSaveQueue,
+  saveQueueGeneration,
   subscribeSaveQueue,
   type KeptSave,
 } from '@/src/lib/saveQueue';
@@ -424,6 +425,12 @@ export default function SessionScriptLiveDelivery({
   // action queued behind it would only be refused once the session has ended.
   const finishKept = askedRuns.some((entry) => entry.finish);
   const controlsLocked = actionBusy !== null || finishKept;
+  // Once a kept finish lands this console goes, so a refusal said here meanwhile would go unread:
+  // it is said in the page's list instead.
+  const finishKeptNow = useRef(finishKept);
+  useEffect(() => {
+    finishKeptNow.current = finishKept;
+  }, [finishKept]);
   // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
   // the badge, the block and the switch's state as saved are the server's.
   const askedNotSaved = [
@@ -530,6 +537,18 @@ export default function SessionScriptLiveDelivery({
   // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
   // whose key could not be made (no randomUUID); then none is sent, as before.
   const logRequestKeys = useRef(new Map<string, string | null>());
+  // A drop (another account, a sign-out) forgets every pair's key: the server answers a repeated key
+  // within the organization, so a key carried into the next person's tap would replay the last
+  // person's log as theirs.
+  useEffect(() => {
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      const now = saveQueueGeneration();
+      if (now === seen) return;
+      seen = now;
+      logRequestKeys.current.clear();
+    });
+  }, []);
 
   // A protocol authored for one specific athlete never applies to another --
   // the server enforces this too (startExecution), but narrowing the list
@@ -640,7 +659,9 @@ export default function SessionScriptLiveDelivery({
           if (refusal.code === 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED') forgetPairKey();
           const reason = refusalWords({ error: refusal.error, status: response.status }, {}, 'The intervention was not logged.');
           // Off the page, the page's list says it, after the save's own name.
-          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+          if (!onPage.current || finishKeptNow.current) {
+            return landed === null ? unknownOffPage('Check The Work before logging it again.') : reason;
+          }
           setLogError(landed === null ? unknownOutcomeWords(label) : reason);
           return undefined;
         },
@@ -925,7 +946,10 @@ export default function SessionScriptLiveDelivery({
           // A refused resend that could not be checked: whether an earlier send landed is not known.
           const reason = describeRunError(refusal.error, response.status);
           // Off the page, the page's list says it, after the save's own name.
-          if (!onPage.current) return landed === null ? UNKNOWN_OUTCOME : reason;
+          // The finish's own refusal is said here: the console stays.
+          if (!onPage.current || (finishKeptNow.current && body.action !== 'finish')) {
+            return landed === null ? unknownOffPage('Check the session on the class screen before doing it again.') : reason;
+          }
           setActionError(landed === null ? unknownOutcomeWords(label) : reason);
           return undefined;
         },
@@ -1191,6 +1215,7 @@ export default function SessionScriptLiveDelivery({
         onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
         onRunNotLive={() => void resyncAfterNotLive()}
         onClassCancelled={setClassCancelled}
+        finishWaiting={finishKept}
       />
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
@@ -1480,6 +1505,7 @@ export default function SessionScriptLiveDelivery({
                 classId={run.class_id}
                 presentCount={athletesPresentMarks}
                 onRunNotLive={() => void resyncAfterNotLive()}
+                finishWaiting={finishKept}
               />
             )}
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
