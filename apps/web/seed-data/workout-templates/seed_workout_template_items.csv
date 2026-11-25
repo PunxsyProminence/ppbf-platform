@@ -894,29 +894,14 @@ The end of a recovery session should feel like the body is being taught to relax
 {{PPBF_ORG_ID}},wti_4319c9e7535b1a,wtp_9e9710b7ff5736,5,warmup,,"The first movements of the session, at low intensity",,,none,,,"{""phase"":""5. Task-specific"",""time"":""2 min""}"
 {{PPBF_ORG_ID}},wti_590da0aae76086,wtp_9e9710b7ff5736,6,warmup,,"Movement activation restores stance, stepping, pivots, and balance.",,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
 {{PPBF_ORG_ID}},wti_54b35fbc483d1f,wtp_9e9710b7ff5736,7,warmup,,Decision activation uses light cues or partner interaction to wake up recognition without adding stress.,,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
-{{PPBF_ORG_ID}},wti_07f082f0ca5d4b,wtp_9fbf7f8edf5016,1,warmup,,"Say:
-""Today is about seeing before moving. No guessing. Stay calm and balanced.""
-Watch: attention, spacing
-Fix: ""Eyes here."" / ""Two steps back.""",,,none,,,"{""block_time"":""4:00–4:02"",""block_title"":""Set Tone (4:00–4:02)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_67513d4fc316b5,wtp_9fbf7f8edf5016,2,warmup,,"Say:
-""Small steps. Forward, back, left, right.""
-Non-negotiables: knees bent, hands up, feet do not cross
-Fix: ""Smaller steps."" / ""Hands home.""",,,none,,,"{""block_time"":""4:02–4:04"",""block_title"":""Movement in Stance (4:02–4:04)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_58703758cf0215,wtp_9fbf7f8edf5016,3,warmup,,"Say:
-""Jab and keep moving.""
-Fix: ""Punch then reset."" / ""Don’t lean.""",,,none,,,"{""block_time"":""4:04–4:06"",""block_title"":""Add Jab (4:04–4:06)"",""phase"":""4:00–5:00 Non-Contact""}"
-{{PPBF_ORG_ID}},wti_0cc0da513649d6,wtp_9fbf7f8edf5016,4,warmup,,"Say:
-""Slip is small. Head first.""
-Fix: ""Smaller."" / ""See it first.""",,,none,,,"{""block_time"":""4:06–4:08"",""block_title"":""Slip on Visual Cue (4:06–4:08)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_07f082f0ca5d4b,wtp_9fbf7f8edf5016,1,warmup,drl_26a97e355c0e0a,,,,none,,,"{""block_time"":""4:00–4:02"",""block_title"":""Set Tone (4:00–4:02)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_67513d4fc316b5,wtp_9fbf7f8edf5016,2,warmup,drl_c7e4c5ae475b65,,,,none,,,"{""block_time"":""4:02–4:04"",""block_title"":""Movement in Stance (4:02–4:04)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_58703758cf0215,wtp_9fbf7f8edf5016,3,warmup,drl_1d6dcdeb8b8013,,,,none,,,"{""block_time"":""4:04–4:06"",""block_title"":""Add Jab (4:04–4:06)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_0cc0da513649d6,wtp_9fbf7f8edf5016,4,warmup,drl_bae413a2338d17,,,,none,,,"{""block_time"":""4:06–4:08"",""block_title"":""Slip on Visual Cue (4:06–4:08)"",""phase"":""4:00–5:00 Non-Contact""}"
 {{PPBF_ORG_ID}},wti_4d6f294ac59cec,wtp_9fbf7f8edf5016,5,primary_drill,drl_83832de7d460cd,,,,none,,,"{""block_time"":""4:08–4:20"",""block_title"":""Drill 1: Slip → Pause → Jab (4:08–4:20)"",""phase"":""Drill 1: Slip → Pause → Jab (4:08–4:20)""}"
-{{PPBF_ORG_ID}},wti_433b3c478e58c6,wtp_9fbf7f8edf5016,6,sparring,,"Round 1: Jab only
-Round 2: Jab + cross
-Round 3: Open but controlled",,,controlled_sparring,,,"{""block_title"":""Technical Spar"",""phase"":""5:00–6:00 Contact""}"
-{{PPBF_ORG_ID}},wti_7cf7c77b002620,wtp_9fbf7f8edf5016,7,sparring,,"Defense before score
-Ropes escape first
-Higher pace finish",,,controlled_sparring,,,"{""block_title"":""Situational Spar"",""phase"":""5:00–6:00 Contact""}"
-{{PPBF_ORG_ID}},wti_f9e2cb14abb626,wtp_9fbf7f8edf5016,8,finish_block,,"Technique while tired
-Defense before offense always",,,none,,,"{""block_title"":""Conditioning Finish"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_433b3c478e58c6,wtp_9fbf7f8edf5016,6,sparring,drl_13242d8acf3944,,,,controlled_sparring,,,"{""block_title"":""Technical Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_7cf7c77b002620,wtp_9fbf7f8edf5016,7,sparring,drl_0126497cf4649f,,,,controlled_sparring,,,"{""block_title"":""Situational Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_f9e2cb14abb626,wtp_9fbf7f8edf5016,8,finish_block,drl_558fc9e8f7ddc3,,,,none,,,"{""block_title"":""Conditioning Finish"",""phase"":""5:00–6:00 Contact""}"
 {{PPBF_ORG_ID}},wti_96cdce5f6e9280,wtp_b314d9a0582d20,1,warmup,,isometrics all planes + pre-activation cue drill,,,light_technical,,,"{""phase"":""Cervical""}"
 {{PPBF_ORG_ID}},wti_dab66ca0bc9cd4,wtp_b314d9a0582d20,2,warmup,,"band external rotation × 12, prone Y × 10, face pull × 12",,,none,,,"{""phase"":""Shoulder""}"
 {{PPBF_ORG_ID}},wti_8ec1e743f8f629,wtp_b314d9a0582d20,3,warmup,,"open book × 6/side, thread the needle × 6/side",,,none,,,"{""phase"":""Thoracic""}"

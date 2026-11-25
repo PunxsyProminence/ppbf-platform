@@ -51,6 +51,7 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_900c0a3fd4422a: '76781c9612b5ad2c1e003308dafa24cf78438f64140c99b5ffaa2180ff21f03e', // Scripted 60-Minute Class (TL-2; at d9514532)
   wtp_1ad3c846b03ecc: '8bfaffbfcb34d4f272ca36e03e104c4cd51954e5e1b65be5f83638c29105298d', // Friday Sparring Coach Sheet (TL-3a; at 746bc1a5)
   wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 746bc1a5)
+  wtp_9fbf7f8edf5016: '444687bba7a13750b9447cf569728336345eac5c5dbb1cedeaedc048b190eee8', // Wednesday Gold Standard Coach Script (TL-3b; at b9cab351)
 };
 
 /** The lane-linked steps that carry their own stated time as their duration (#2177); a step PR adds its templates here. */
