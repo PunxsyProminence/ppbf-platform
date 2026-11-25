@@ -65,6 +65,7 @@ it.each([
     query: jest.fn()
       .mockResolvedValueOnce({ rows: [] }) // the account lock
       .mockResolvedValueOnce({ rows: [] }) // no switch row yet
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] }) // the gym, read under its share lock
       .mockResolvedValueOnce({ rows: [{ role: 'coach' }] }) // the membership, read again under the lock
       .mockRejectedValueOnce(dbError), // the insert
   };
@@ -73,6 +74,6 @@ it.each([
   const attempt = setEmailAlertSwitch({ ...coach, switchedOn: true }, NOW);
   await expect(attempt).rejects.toBe(dbError);
   await expect(attempt).rejects.not.toBeInstanceOf(ForbiddenError);
-  expect(client.query).toHaveBeenCalledTimes(4);
-  expect(client.query.mock.calls[3][0]).toMatch(/insert into pilot\.email_alert_switches/);
+  expect(client.query).toHaveBeenCalledTimes(5);
+  expect(client.query.mock.calls[4][0]).toMatch(/insert into pilot\.email_alert_switches/);
 });

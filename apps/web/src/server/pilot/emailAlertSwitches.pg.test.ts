@@ -656,6 +656,11 @@ describe('emailAlertSwitches.ts on a real database', () => {
     const client = await freshDatabase('emailsw_member_race');
     activeClient = client;
     activePool = new Pool({ connectionString: connectionStringFor('emailsw_member_race'), max: 4 });
+    // An active coach membership in the other gym too: only this gym's counts.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+      [COACH_ID, OTHER_ORG_ID],
+    );
     const office = await activePool.connect();
     try {
       await office.query('BEGIN');
@@ -681,6 +686,103 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await switchRows(client)).toEqual([]);
     } finally {
       office.release(true);
+      await client.end();
+    }
+  });
+
+  /** Holds `change` open on a second connection until `step` is waiting on a lock, then commits it. */
+  async function whileHeld(client: Client, change: [string, unknown[]], step: () => Promise<unknown>) {
+    const office = await activePool!.connect();
+    try {
+      await office.query('BEGIN');
+      await office.query(change[0], change[1]);
+      let settled = false;
+      const result = step();
+      result.then(() => { settled = true; }, () => { settled = true; });
+      let waited = false;
+      for (let i = 0; i < 200 && !settled; i += 1) {
+        const { rows } = await client.query(
+          `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if (rows[0].n > 0) {
+          waited = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(waited).toBe(true);
+      await office.query('COMMIT');
+      return result;
+    } finally {
+      office.release(true);
+    }
+  }
+
+  test('the gym suspended while a save waits on its row is seen inside the save: 403, never switched on, and nothing cleared', async () => {
+    const client = await freshDatabase('emailsw_gym_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_gym_race'), max: 4 });
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      const save = whileHeld(client, [`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG_ID]],
+        () => setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW));
+      await expect(save).rejects.toMatchObject({ status: 403 });
+      // Refused, but the person is still offered: their confirmed address stays.
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: ADULT_ID, switched_on: false, confirmed_address: 'someone@example.test',
+      })]);
+      expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the retire decides again under its own locks: an athlete corrected back to 18 or over while it waits keeps the row and address', async () => {
+    const client = await freshDatabase('emailsw_retire_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_retire_race'), max: 4 });
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      // The record reads under 18 (a mistaken correction) when the read starts.
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+      // The office puts it right while the read's retire waits on the athlete row.
+      const read = whileHeld(client, [`update pilot.athletes set dob = '2000-03-14' where athlete_id = $1`, [ADULT_ATHLETE]],
+        () => readEmailAlertSwitch(subject('adult'), NOW));
+      await expect(read).resolves.toEqual({ offered: false });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: ADULT_ID, switched_on: true, confirmed_address: 'someone@example.test',
+      })]);
+      expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the confirmed address is read under the switch row lock: an address cleared while the save waits gives the 409', async () => {
+    const client = await freshDatabase('emailsw_address_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_address_race'), max: 4 });
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      const save = whileHeld(client,
+        ['update pilot.email_alert_switches set confirmed_address = null, confirmed_at = null where account_id = $1', [ADULT_ID]],
+        () => setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW));
+      await expect(save).rejects.toMatchObject({ status: 409 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false, confirmed_address: null })]);
+    } finally {
       await client.end();
     }
   });

@@ -116,6 +116,63 @@ async function lockSwitchRow(client: PoolClient, subject: EmailAlertSwitchSubjec
   return before.rows[0];
 }
 
+/**
+ * EVERY CHECK A WRITE RESTS ON, MADE UNDER THE WRITE'S OWN LOCKS (Overwatch and
+ * Codex on #2169). Locks this person's rows in the order every other writer
+ * takes them -- the athlete row first (FOR SHARE, for an athlete), then the
+ * account, then the switch row -- and answers, under those locks, the user type
+ * they may switch under now (null if none) and their switch row as stored.
+ * Every writer of an account's state or memberships takes the account row
+ * first, role upserts included (auth.ts setAccountActiveStatus and its
+ * membership upserts, activation.ts, staffProvisioning.ts, dataDeletion.ts,
+ * guardianLoginMove.ts), and every writer of an athlete row locks it before
+ * the account (deleteAthleteRecord, the guardian-retirement trigger), so
+ * nothing this answer rests on can change until the caller commits:
+ *   - the login is active and not deleted;
+ *   - its membership in this gym is active, and its role still gives the user
+ *     type the session's role gives;
+ *   - for an athlete, the record linked to this very account is live and 18
+ *     or over (the same read as emailAlertUserTypeFor).
+ * The gym's own status is answered apart (gymActive), as sign-in reads it: the
+ * organization row FOR SHARE after the account lock, as parentPasswordSignIn.ts
+ * does (setOrganizationStatus is its only writer and holds no account row). A
+ * gym not active refuses a save, but is no reason to clear anyone's switch.
+ */
+async function lockPerson(
+  client: PoolClient,
+  subject: EmailAlertSwitchSubject,
+  now: Date,
+): Promise<{ userType: EmailAlertUserType | null; gymActive: boolean; stored: SwitchRow | undefined }> {
+  const candidate = emailAlertCandidateUserType(subject.role);
+  const athleteId = subject.athleteId?.trim() || null;
+  if (candidate === 'adult_athlete' && athleteId) {
+    await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for share', [
+      subject.organizationId, athleteId,
+    ]);
+  }
+  const stored = await lockSwitchRow(client, subject);
+  const gym = await client.query<{ status: string }>(
+    'select o.status from pilot.organizations o where o.organization_id = $1 for share',
+    [subject.organizationId],
+  );
+  const member = await client.query<{ role: string }>(
+    `select m.role
+       from pilot.accounts a
+       join pilot.organization_memberships m
+         on m.account_id = a.account_id and m.organization_id = $2 and m.active_flag
+      where a.account_id = $1 and a.active_flag and not ${accountDeletedSql('a')}`,
+    [subject.accountId, subject.organizationId],
+  );
+  let userType = member.rows[0] && emailAlertCandidateUserType(member.rows[0].role) === candidate ? candidate : null;
+  if (userType === 'adult_athlete') {
+    const athlete = athleteId
+      ? await client.query<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, athleteId])
+      : { rows: [] };
+    if (!athlete.rows[0] || isMinor(athlete.rows[0].dob, now)) userType = null;
+  }
+  return { userType, gymActive: gym.rows[0]?.status === 'active', stored };
+}
+
 function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Record<string, unknown>) {
   return writePilotAuditEvent({
     event_type: 'update',
@@ -134,9 +191,11 @@ function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Re
  * Someone no longer offered a switch (date of birth corrected to under 18,
  * record deleted) keeps none that is on and no address: cleared quietly at
  * their next own read or write, the lazy clean-up the escalations read does for
- * ended holds. The sender (EM-3) re-checks every person before every send anyway.
+ * ended holds. Whether they are offered is decided again under the retire's own
+ * locks (lockPerson), so a person offered again by then keeps their row. The
+ * sender (EM-3) re-checks every person before every send anyway.
  */
-async function retireSwitchIfAny(subject: EmailAlertSwitchSubject): Promise<void> {
+async function retireSwitchIfAny(subject: EmailAlertSwitchSubject, now: Date): Promise<void> {
   // Most never had a row (every athlete under 18): one read, no lock.
   const leftover = await queryOne<{ found: boolean }>(
     `select true as found from pilot.email_alert_switches
@@ -145,7 +204,8 @@ async function retireSwitchIfAny(subject: EmailAlertSwitchSubject): Promise<void
   );
   if (!leftover) return;
   await withTransaction(async (client) => {
-    const row = await lockSwitchRow(client, subject);
+    const { userType, stored: row } = await lockPerson(client, subject, now);
+    if (userType !== null) return;
     if (!row || (!row.switched_on && !row.holds_address)) return;
     await client.query(
       `update pilot.email_alert_switches s set
@@ -172,7 +232,7 @@ export async function readEmailAlertSwitch(
 ): Promise<EmailAlertSwitchState> {
   const userType = await emailAlertUserTypeFor(subject, now);
   if (!userType) {
-    await retireSwitchIfAny(subject);
+    await retireSwitchIfAny(subject, now);
     return { offered: false };
   }
   const row = await queryOne<SwitchRow>(
@@ -193,45 +253,15 @@ export async function setEmailAlertSwitch(
   const switchedOn = subject.switchedOn;
   const userType = await emailAlertUserTypeFor(subject, now);
   if (!userType) {
-    await retireSwitchIfAny(subject);
+    await retireSwitchIfAny(subject, now);
     throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
   }
 
   const saved = await withTransaction(async (client) => {
-    // An athlete's row is held first (FOR SHARE, until this commits), then the
-    // account: the order deleteAthleteRecord (dataDeletion.ts) and the
-    // guardian-retirement trigger take, so a save and a deletion never deadlock.
-    if (userType === 'adult_athlete') {
-      await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for share', [
-        subject.organizationId, subject.athleteId?.trim(),
-      ]);
-    }
-    const stored = await lockSwitchRow(client, subject);
-    // The person again, now the account row is locked: every writer of an
-    // account's state or memberships takes the account row first
-    // (auth.ts setAccountActiveStatus, dataDeletion.ts, guardianLoginMove.ts),
-    // so a login or membership switched off since sign-in is seen here, and
-    // none can change until this commits (Codex on #2169).
-    const member = await client.query<{ role: string }>(
-      `select m.role
-         from pilot.accounts a
-         join pilot.organization_memberships m
-           on m.account_id = a.account_id and m.organization_id = $2 and m.active_flag
-        where a.account_id = $1 and a.active_flag and not ${accountDeletedSql('a')}`,
-      [subject.accountId, subject.organizationId],
-    );
-    if (!member.rows[0] || emailAlertCandidateUserType(member.rows[0].role) !== userType) return null;
-    // The age again, inside the save: the account row is locked (a re-link
-    // waits) and the athlete row is held, so a date of birth corrected to under
-    // 18 or a record deleted since the read above is seen here (Codex on
-    // #2169). Nothing is written before it.
-    if (userType === 'adult_athlete') {
-      const athlete = await client.query<{ dob: string | null }>(
-        LINKED_ATHLETE_DOB_SQL,
-        [subject.organizationId, subject.accountId, subject.athleteId?.trim()],
-      );
-      if (!athlete.rows[0] || isMinor(athlete.rows[0].dob, now)) return null;
-    }
+    // Everything the save rests on, again under its own locks (lockPerson):
+    // nothing is written unless the person is still offered this user type.
+    const { userType: underLock, gymActive, stored } = await lockPerson(client, subject, now);
+    if (underLock !== userType || !gymActive) return null;
     try {
       return await saveSwitch(client, subject, userType, switchedOn, stored);
     } catch (error) {
@@ -246,7 +276,7 @@ export async function setEmailAlertSwitch(
     }
   });
   if (saved) return saved;
-  await retireSwitchIfAny(subject);
+  await retireSwitchIfAny(subject, now);
   throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
 }
 
