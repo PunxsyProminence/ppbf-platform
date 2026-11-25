@@ -266,7 +266,8 @@ export async function PATCH(request: NextRequest) {
       scriptId: record.script_id.trim(),
       name: record.name,
       blocks: record.blocks as SessionScriptBlockEdit[] | undefined,
-      add: record.add_blocks as SessionScriptBlockAdd[] | undefined,
+      // Trimmed as POST trims template_id.
+      add: (record.add_blocks as SessionScriptBlockAdd[] | undefined)?.map((add) => ({ ...add, drill_id: add.drill_id.trim() })),
       remove: record.remove_block_ids as string[] | undefined,
       order: record.order as string[] | undefined,
       expectedUpdatedAt: record.expected_updated_at,

@@ -237,8 +237,8 @@ export async function createSessionScriptFromTemplate(
   const { template, items } = detail;
   // The two refusals issueWorkoutTemplate makes of a template, under its codes:
   // one withdrawn or replaced by a newer version (the list read leaves those
-  // out), and one with no steps -- blocks cannot be added afterwards, so a
-  // script made from none could never be delivered.
+  // out), and one with no steps -- a plan made from it would start with
+  // nothing to deliver.
   if (!template.active || template.superseded_at !== null) {
     throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_NOT_CURRENT', 409);
   }
@@ -393,20 +393,28 @@ export function runningOrderAfter(
   if (order.length !== expected.size || new Set(order).size !== order.length || order.some((id) => !expected.has(id))) {
     refuse('SESSION_SCRIPT_ORDER_INVALID');
   }
-  // A plan with no blocks could never be delivered (createSessionScriptFromTemplate refuses one too).
-  if (order.length === 0) refuse('SESSION_SCRIPT_NO_BLOCKS');
+  // An order may be empty: a plan with no blocks is kept, shown ("This plan has no blocks yet") and
+  // not started (sessionScriptRuns.ts) until blocks are added to it.
   return [...order];
 }
 
+/** How much contact a plan label says. observation_only and non_contact both say none. */
+const CONTACT_RANK: Readonly<Record<string, number>> = { non_contact: 0, observation_only: 0, split_non_contact_then_contact: 1, contact: 2 };
+
 /**
- * The plan's contact label once its blocks change, read from them in running order
- * (contactStructure). observation_only is the one label blocks cannot say: an author's is kept
- * while every block is still without contact, and gives way once one has contact, so the label
- * never reads less contact than the blocks carry. Pure.
+ * The plan's contact label once its blocks change. Pure. A label that is what the blocks said
+ * before follows them. One the author set apart from them (an import names it in its own column,
+ * and a block imported with no contact level reads 'none') is a floor the blocks raise, never
+ * lower: a plan never reads less contact than it is (Overwatch Q1 on #2189).
  */
-export function contactStructureAfter(stored: string, blocks: readonly { contact_level: string }[]): string {
-  const read = contactStructure(blocks);
-  return stored === 'observation_only' && read === 'non_contact' ? stored : read;
+export function contactStructureAfter(
+  stored: string,
+  before: readonly { contact_level: string }[],
+  after: readonly { contact_level: string }[],
+): string {
+  const read = contactStructure(after);
+  if (stored === contactStructure(before)) return read;
+  return (CONTACT_RANK[read] ?? 0) > (CONTACT_RANK[stored] ?? 0) ? read : stored;
 }
 
 function cleanBlockEdits(edits: readonly SessionScriptBlockEdit[]): Map<string, SessionScriptBlockEdit> {
@@ -476,10 +484,9 @@ interface DrillForBlock {
 }
 
 /**
- * The drills new blocks link, read FOR SHARE: a drill revised or withdrawn while this edit runs is
- * either seen as replaced here, or waits for this edit (drillLibraryEdit.ts locks its row FOR UPDATE
- * before it checks the steps that run it, drill_contact_below_steps). Only a current drill of this
- * gym is linked -- the browse list's rule: active and not superseded (drillLibraryV3.ts).
+ * The drills new blocks link, read FOR SHARE, so a drill revised mid-edit is seen as replaced or
+ * waits for this edit (drillLibraryEdit.ts locks it FOR UPDATE before drill_contact_below_steps).
+ * Only a current drill of this gym: active and not superseded, the browse list's rule.
  */
 async function drillsForNewBlocks(
   client: PoolClient,
@@ -505,21 +512,26 @@ async function drillsForNewBlocks(
 }
 
 /**
- * Whether anything outside the plan names one of these blocks: a research transfer claim (content
- * import), a behaviour window, or a run's cursor. Such a block is never deleted (Overwatch Q3 = A on
- * #2189: "Never delete a claim"); the edit that removes it is written as a new version instead.
+ * Whether a research claim, a behaviour window, or a behaviour report or intervention naming
+ * `block:<id>` (behaviourObservations.ts) names one of these blocks. Such a block is never deleted
+ * (Overwatch Q3 = A on #2189); the edit is a new version. A run's cursor names only its own run's
+ * plan, which is a new version anyway. Not locked: a window or report written after this read
+ * is not seen (neither table locks the block it names).
  */
 async function blocksNamedElsewhere(client: PoolClient, organizationId: string, blockIds: readonly string[]): Promise<boolean> {
   if (blockIds.length === 0) return false;
+  const keys = blockIds.map((id) => `block:${id}`);
   const named = await client.query(
     `select 1 from pilot.transfer_claims where organization_id = $1 and block_id = any($2::text[])
      union all
      select 1 from pilot.behaviour_observations_windows
       where organization_id = $1 and context_kind = 'block' and context_id = any($2::text[])
      union all
-     select 1 from pilot.session_script_runs where organization_id = $1 and current_block_id = any($2::text[])
+     select 1 from pilot.behaviour_observations where organization_id = $1 and task_context_key = any($3::text[])
+     union all
+     select 1 from pilot.intervention_executions where organization_id = $1 and trained_task_context_key = any($3::text[])
      limit 1`,
-    [organizationId, [...blockIds]],
+    [organizationId, [...blockIds], keys],
   );
   return (named.rowCount ?? 0) > 0;
 }
@@ -528,20 +540,15 @@ async function blocksNamedElsewhere(client: PoolClient, organizationId: string, 
 type PlannedBlock = Omit<SessionScriptBlockRow, 'organization_id' | 'script_id' | 'block_id'> & { block_id: string | null };
 
 /**
- * Change a script: its name; its blocks' titles and minutes (a block the edit does not name keeps
- * what it has); and, lane W4-5 SP-1a, its blocks themselves -- a library drill added, a block
- * removed, the running order (runningOrderAfter). Minutes are stored as sent: the editor proposes
- * them (Overwatch Q2 = A on #2189). A coach-format rendering made from the blocks is re-rendered
- * from the result; every other rendering stays as written.
+ * Change a script: its name, its blocks' titles and minutes (a block not named keeps what it has),
+ * and (lane W4-5) its blocks: a library drill added, a block removed, the running order. Minutes
+ * are stored as sent; the editor proposes them (Q2 = A on #2189). A new drill block carries its
+ * drill's own contact level (Q1 = C) and an Explain line naming the drill (FROM_DRILL). When the
+ * blocks change, the contact label is read again (contactStructureAfter). A plan may be left with
+ * no blocks. Coach renderings made from the blocks are re-rendered; the rest stay as written.
  *
- * When the blocks change, the plan's contact label is read again from them (contactStructureAfter)
- * and its stated length kept no shorter than they run. A new drill block carries its drill's own
- * contact level (Q1 = C on #2189), the most step_contact_above_drill allows, and says which drill it
- * was made from (FROM_DRILL), the way a template step says which template.
- *
- * A plan with a run gets a new version, as before. So does a plan whose edit removes a block
- * something else names (blocksNamedElsewhere): that block stays, with what names it, on the version
- * it was written for. When the blocks change in place their running order is renumbered 1..n.
+ * A plan with a run, or whose edit removes a block something else names (blocksNamedElsewhere),
+ * gets a new version. Otherwise in place, the running order renumbered 1..n when blocks change.
  */
 export async function editSessionScript(
   params: Actor & {
@@ -566,6 +573,9 @@ export async function editSessionScript(
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
 
   return withTransaction(async (client) => {
+    // The drills first, then the plan: content import locks drill rows before plan rows, so taking
+    // them the other way round here could deadlock against it.
+    const drills = await drillsForNewBlocks(client, params.organizationId, adds.map((add) => add.drill_id));
     const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -585,7 +595,6 @@ export async function editSessionScript(
       refs: adds.map((add) => add.ref),
       order: params.order,
     });
-    const drills = await drillsForNewBlocks(client, params.organizationId, adds.map((add) => add.drill_id));
     const addByRef = new Map(adds.map((add) => [add.ref, add]));
 
     const keptBefore = storedIds.filter((id) => order.includes(id));
@@ -639,10 +648,10 @@ export async function editSessionScript(
     if (!structural && changed.length === 0 && name === script.name) {
       return { outcome: 'unchanged', script_id: script.script_id, version: script.version };
     }
-    const totalMinutes = minutesChanged || structural
-      ? statedLength(script.total_minutes, Math.max(...blocks.map((block) => block.end_offset_min)))
+    const totalMinutes = minutesChanged
+      ? statedLength(script.total_minutes, blocks.reduce((last, block) => Math.max(last, block.end_offset_min), 0))
       : script.total_minutes;
-    const contact = structural ? contactStructureAfter(script.contact_structure, blocks) : script.contact_structure;
+    const contact = structural ? contactStructureAfter(script.contact_structure, stored.rows, blocks) : script.contact_structure;
 
     const run = await client.query(
       `select 1 from pilot.session_script_runs
@@ -685,7 +694,7 @@ export async function editSessionScript(
         );
         // pilot_ssb_order_uq is checked row by row and is not deferrable: every kept block is first
         // lifted clear of 1..n, so no block is moved onto a place another still holds.
-        const lift = Math.max(blocks.length, ...stored.rows.map((block) => block.block_order));
+        const lift = stored.rows.reduce((most, block) => Math.max(most, block.block_order), blocks.length);
         await client.query(
           `update pilot.session_script_blocks set block_order = block_order + $3
             where organization_id = $1 and script_id = $2`,

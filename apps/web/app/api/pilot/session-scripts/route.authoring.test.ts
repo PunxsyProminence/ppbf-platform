@@ -307,6 +307,11 @@ describe('PATCH /api/pilot/session-scripts adding, removing and moving blocks', 
     expect(mockEdit).not.toHaveBeenCalled();
   });
 
+  it("trims a drill id, as POST trims a template id", async () => {
+    await patch({ ...EDIT, add_blocks: [{ ...ADD, drill_id: '  drl-1 ' }] });
+    expect(mockEdit).toHaveBeenCalledWith(expect.objectContaining({ add: [ADD] }));
+  });
+
   it('400s a removal or an order that is not a list of ids', async () => {
     for (const [key, value] of [
       ['remove_block_ids', 'blk-1'],
@@ -338,7 +343,7 @@ describe('PATCH /api/pilot/session-scripts adding, removing and moving blocks', 
       ['SESSION_SCRIPT_ORDER_INVALID', 422],
       ['SESSION_SCRIPT_DRILL_NOT_FOUND', 422],
       ['SESSION_SCRIPT_DRILL_NOT_CURRENT', 409],
-      ['SESSION_SCRIPT_NO_BLOCKS', 422],
+      ['SESSION_SCRIPT_BLOCK_REF_INVALID', 422],
     ] as const) {
       mockEdit.mockRejectedValueOnce(new SessionScriptAuthoringError(code, status));
       const response = await patch({ ...EDIT, add_blocks: [ADD] });

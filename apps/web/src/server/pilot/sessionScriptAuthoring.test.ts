@@ -172,23 +172,34 @@ describe('runningOrderAfter', () => {
     expect(refusal({ ...none, refs: ['b2'] })).toBe('SESSION_SCRIPT_BLOCK_REF_INVALID');
   });
 
-  it('refuses an edit that would leave the plan with no blocks', () => {
-    expect(refusal({ ...none, remove: STORED })).toBe('SESSION_SCRIPT_NO_BLOCKS');
+  it('allows an edit that leaves the plan with no blocks: an empty plan is kept and shown, and not started', () => {
+    expect(runningOrderAfter(STORED, { ...none, remove: STORED })).toEqual([]);
+    expect(runningOrderAfter([], { ...none, refs: ['n1'] })).toEqual(['n1']);
   });
 });
 
 describe('contactStructureAfter', () => {
   const blocks = (...levels: string[]) => levels.map((contact_level) => ({ contact_level }));
+  const SPLIT = blocks('none', 'controlled_sparring');
 
-  it('reads the label from the blocks in their new order', () => {
-    expect(contactStructureAfter('non_contact', blocks('none', 'controlled_sparring'))).toBe('split_non_contact_then_contact');
-    expect(contactStructureAfter('split_non_contact_then_contact', blocks('controlled_sparring', 'none'))).toBe('contact');
-    expect(contactStructureAfter('contact', blocks('none', 'none'))).toBe('non_contact');
+  it('a label that is what the blocks said follows them, up or down', () => {
+    expect(contactStructureAfter('split_non_contact_then_contact', SPLIT, blocks('controlled_sparring', 'none'))).toBe('contact');
+    expect(contactStructureAfter('split_non_contact_then_contact', SPLIT, blocks('none'))).toBe('non_contact');
+    expect(contactStructureAfter('non_contact', blocks('none'), blocks('none', 'controlled_sparring'))).toBe('split_non_contact_then_contact');
+    expect(contactStructureAfter('non_contact', [], blocks('none'))).toBe('non_contact');
   });
 
-  it("keeps an author's observation_only while no block has contact, and never reads less contact than the blocks carry", () => {
-    expect(contactStructureAfter('observation_only', blocks('none', 'none'))).toBe('observation_only');
-    expect(contactStructureAfter('observation_only', blocks('none', 'controlled_sparring'))).toBe('split_non_contact_then_contact');
-    expect(contactStructureAfter('observation_only', blocks('controlled_sparring'))).toBe('contact');
+  it("a label the author set apart from the blocks is a floor: blocks raise it, never lower it", () => {
+    // Imported: labelled contact, its blocks' levels left blank (read 'none').
+    expect(contactStructureAfter('contact', blocks('none', 'none'), blocks('none', 'none'))).toBe('contact');
+    expect(contactStructureAfter('contact', SPLIT, blocks('controlled_sparring', 'none', 'controlled_sparring'))).toBe('contact');
+    expect(contactStructureAfter('contact', SPLIT, blocks('none'))).toBe('contact');
+    expect(contactStructureAfter('split_non_contact_then_contact', blocks('none'), blocks('controlled_sparring', 'none'))).toBe('contact');
+  });
+
+  it("keeps an author's observation_only while no block has contact, and gives way once one has", () => {
+    expect(contactStructureAfter('observation_only', blocks('none'), blocks('none', 'none'))).toBe('observation_only');
+    expect(contactStructureAfter('observation_only', blocks('none'), SPLIT)).toBe('split_non_contact_then_contact');
+    expect(contactStructureAfter('observation_only', blocks('none'), blocks('controlled_sparring'))).toBe('contact');
   });
 });
