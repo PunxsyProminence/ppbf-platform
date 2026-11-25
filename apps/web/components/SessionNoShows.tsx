@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
-import { type RunClassView, fetchLiveRunClass, fetchRunClass, unknownOffPage, unknownOutcomeWords } from './SessionRunClass';
+import { type RunClassView, fetchLiveRunClass, fetchRunClass, goneWords, unknownOffPage, unknownOutcomeWords } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
 // it (Rec.)"): one tap marks Absent everyone signed up for the class who has no mark. Never
@@ -21,6 +21,7 @@ const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
 const REFUSED_AFTER_KEY = new Set([
   'SESSION_RUN_NOT_LIVE',
   'SESSION_RUN_NOT_TIED',
+  'SESSION_NO_SHOWS_CLASS_CHANGED',
   'SESSION_CLASS_CANCELLED',
   'SESSION_CLASS_NOT_YOURS',
   'SESSION_CLASS_NOT_STARTED',
@@ -67,9 +68,9 @@ export default function SessionNoShows({
   // done: how many this tap marked; null when the server shows it landed without saying how many.
   const showMarked = useCallback((done: number | null) => {
     setResult(done === null
-      ? 'Everyone this tap named now has a mark on the class register.'
+      ? 'None of the athletes this tap named is still listed as a no-show.'
       : done === 0
-        ? 'Nobody needed marking: everyone this tap named already has a mark.'
+        ? 'Nobody this tap named needed marking.'
         : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
     setAttempt((count) => count + 1);
   }, []);
@@ -103,17 +104,22 @@ export default function SessionNoShows({
     const label = 'Mark the no-shows Absent';
     return {
       label,
-      // With its tap time: the marks are made as of the tap, so a here tap made after it still wins.
-      send: ({ signal, requestKey, msSinceMade }) =>
+      // With the class they were shown for: a session tied to another class since marks nobody.
+      send: ({ signal, requestKey }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, request_key: requestKey, tapped_ms_ago: msSinceMade }),
+          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, class_id: classId, request_key: requestKey }),
           signal,
         }),
       answerOf: async (response) => {
-        if (response.ok) return 'saved';
+        // A yes that does not say whom it marked proves nothing: sent again, it is answered with the
+        // first send's answer.
+        if (response.ok) {
+          const body = (await response.clone().json().catch(() => null)) as { marked?: unknown } | null;
+          return Array.isArray(body?.marked) ? 'saved' : 'unknown';
+        }
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
@@ -145,7 +151,11 @@ export default function SessionNoShows({
         setWaiting(false);
         if (refusal.error && RUN_GONE.has(refusal.error)) {
           onRunNotLive();
-          return undefined;
+          // Also named in the page's list: the console says the session has ended (and nothing once
+          // it settled here), never that this tap was not saved, as for a tap kept behind a finish.
+          return landed === null
+            ? unknownOffPage('Check the class register before marking them again.')
+            : `Nobody was marked Absent: ${goneWords(refusal.error)}.`;
         }
         const reason = refusal.message ?? 'Nobody was marked Absent.';
         // Off the page, the page's list says it, after the save's own name.
@@ -177,7 +187,7 @@ export default function SessionNoShows({
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named }),
+        body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, class_id: classId }),
       });
       const payload = (await response.json().catch(() => ({}))) as { marked?: string[]; error?: string; message?: string };
       if (!response.ok) {
@@ -195,7 +205,7 @@ export default function SessionNoShows({
       inFlight.current = false;
       setBusy(false);
     }
-  }, [keptNoShows, onRunNotLive, runId, showMarked]);
+  }, [classId, keptNoShows, onRunNotLive, runId, showMarked]);
 
   // Only this class's count: never one read before a retie.
   const view = read.state === 'loaded' && read.view?.class_id === classId ? read.view : null;

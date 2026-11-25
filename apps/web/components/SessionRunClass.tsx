@@ -33,6 +33,12 @@ type Copied = { athlete_id: string; effect: string; previous_status?: string };
 export function unknownOffPage(check: string): string {
   return `the server refused it when it was sent again, and whether it was saved could not be checked. ${check}`;
 }
+/** Why a kept save refused as the run gone was not saved, for the page's list (the tie and the no-shows tap). */
+export function goneWords(code: string): string {
+  return code === 'SESSION_RUN_NOT_LIVE'
+    ? 'the session had already ended when it reached the server'
+    : 'the session could not be found for this account';
+}
 export function unknownOutcomeWords(label: string): string {
   return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
 }
@@ -203,10 +209,13 @@ export default function SessionRunClass({
       onRefused: (_response, landed) => {
         resolved.done = true;
         setWaitingWords('');
-        if (!forThisRun()) return undefined;
-        if (refusal.error && RUN_GONE.has(refusal.error)) {
-          onRunNotLive();
-          return undefined;
+        const gone = refusal.error !== undefined && RUN_GONE.has(refusal.error);
+        if (gone && forThisRun()) onRunNotLive();
+        // The run gone, or no longer this line's: said in the page's list, as the console says only
+        // that the session ended (and nothing once it settled here), never that this was not saved.
+        if (gone || !forThisRun()) {
+          if (landed === null) return unknownOffPage('Check which class the session is tied to before tying it again.');
+          return gone ? `The class was not changed: ${goneWords(refusal.error as string)}.` : refusal.message ?? 'The class could not be changed.';
         }
         const reason = refusal.message ?? 'The class could not be changed.';
         // Off the page, the page's list says it, after the save's own name.

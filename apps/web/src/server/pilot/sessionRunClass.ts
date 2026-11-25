@@ -63,6 +63,7 @@ export const SESSION_CLASS_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['SESSION_CLASS_NOT_STARTED', 'This class has not started yet, so nobody is a no-show.'],
   ['SESSION_CLASS_ALREADY_LIVE', 'Another live session is already running this class. Start without a class, or ask that coach to end theirs.'],
   ['SESSION_NO_SHOWS_KEY_REUSED', 'This tap was already sent for other athletes. Nothing more was marked.'],
+  ['SESSION_NO_SHOWS_CLASS_CHANGED', 'This session is now tied to another class, so nobody was marked Absent.'],
 ]);
 
 type Tier = Pick<ActorIdentity, 'organizationId' | 'accountId' | 'role'>;
@@ -139,6 +140,9 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, 
     },
     new Date().toISOString(),
     tappedAt,
+    // An Absent this run's own no-shows tap wrote, untouched since, is never a later register
+    // change: on one page the tap came first (writeSessionRegisterPresent).
+    tap.runId,
   );
   if (written.effect === 'created') {
     await client.query(
@@ -300,13 +304,8 @@ export interface NoShowsTap {
   athleteIds: readonly string[];
   /** The tap's key, the same on every resend; null when the page sent none (it is then sent once). */
   requestKey: string | null;
-  /**
-   * When the coach tapped, for a tap kept in the open page and sent late; without it, now. The marks
-   * are made as of then (never before the class started), as a late here tap's are, so a here tap
-   * made after this tap still wins on the register when it lands after it (OD-2026-10-21-004
-   * ruling 1; Overwatch condition 1 on #2158).
-   */
-  tappedAt?: string;
+  /** The class the screen showed them for: a run tied to another class since is refused, marking nobody. */
+  classId: string;
 }
 
 /**
@@ -321,10 +320,17 @@ export interface NoShowsTap {
  * writes nothing. The key is looked up under the run's lock, so a resend that overtakes a slow first
  * send waits for it, and before the run is required to be live, so a send that landed before the
  * session ended still reads as saved. The same key with other names is refused.
+ *
+ * The marks are made when the tap lands, and the tap records that time (marked_at): a here tap of
+ * this run that lands after it flips such a mark, while untouched, whatever the two requests' delays
+ * (writeSessionRegisterPresent; OD-2026-10-21-004 ruling 1; Overwatch condition 1 on #2158).
  */
 export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: string, tap: NoShowsTap): Promise<{ marked: string[] }> {
   const named = [...new Set(tap.athleteIds)].sort();
   return withTransaction(async (client) => {
+    // READ COMMITTED, set here and not assumed (withTransaction sends a plain BEGIN): the key lookup
+    // below, made once the run's lock is held, must see a first send committed while this one waited.
+    await client.query('set transaction isolation level read committed');
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
     const run = await lockOwnRun(client, actor, runId);
@@ -347,6 +353,9 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
     if (run.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
     const classId = run.class_id;
     if (!classId) throw new SessionRunClassError('SESSION_RUN_NOT_TIED', 409);
+    // Tied to another class since the screen showed these names (from another device): nobody here
+    // was seen by the coach for that class.
+    if (classId !== tap.classId) throw new SessionRunClassError('SESSION_NO_SHOWS_CLASS_CHANGED', 409);
     const item = await lockSchedulerClass(client, actor.organizationId, classId);
     if (!item || item.status === 'cancelled') throw new SessionRunClassError('SESSION_CLASS_CANCELLED', 409);
     if (!isOrganizationAdminRole(role) && !actorRunsClass(actor, item)) throw new SessionRunClassError('SESSION_CLASS_NOT_YOURS', 403);
@@ -357,10 +366,8 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
       actor.organizationId,
       item.start_at,
     );
-    // As of the tap, never before the class started (exact to the microsecond, so in SQL).
-    const markedAt = tap.tappedAt === undefined
-      ? new Date().toISOString()
-      : (await client.query<{ at: string }>('select greatest($1::timestamptz, $2::timestamptz)::text as at', [tap.tappedAt, item.start_at])).rows[0].at;
+    // Whole milliseconds, recorded on the tap's audit event exactly as written to the register.
+    const markedAt = new Date().toISOString();
     const marked = await markClassNoShowsAbsent(
       client,
       actor.organizationId,
@@ -386,7 +393,10 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
         organization_id: actor.organizationId,
         entity_type: 'session_script_run',
         entity_id: runId,
-        details: { run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey, athlete_ids: named, marked_athlete_ids: marked },
+        details: {
+          run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey,
+          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt,
+        },
         shadow_mirror: false,
       },
       client,

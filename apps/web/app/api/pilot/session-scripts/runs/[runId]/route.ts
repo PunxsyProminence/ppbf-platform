@@ -53,18 +53,19 @@ function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
 
-// The no-shows tap names its athletes and may carry a request key (W4 item 7, OVERWATCH
-// 7160191377): text of 1 to 200 characters, never blank, with no NUL (PostgreSQL cannot store one
-// in the audit record), at most NO_SHOWS_MAX names (a class is created with a capacity of at most
-// 200; the limit leaves room). A kept tap sent late also carries tapped_ms_ago, as a here tap does
-// (athletes/route.ts, the same limit): its marks are made as of the tap.
+// The no-shows tap names its athletes and their class, and may carry a request key (W4 item 7,
+// OVERWATCH 7160191377): text of 1 to 200 characters, never blank, with no NUL and no unpaired
+// surrogate (PostgreSQL's jsonb cannot store either in the audit record, and the refused write would
+// read as a server fault and be sent again), at most NO_SHOWS_MAX names (a class is created with a
+// capacity of at most 200; the limit leaves room).
 const NO_SHOWS_MAX = 500;
 const TEXT_MAX = 200;
-const TAPPED_MS_AGO_MAX = 24 * 60 * 60 * 1000;
 const NUL = String.fromCharCode(0);
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 function isIdText(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== '' && value.length <= TEXT_MAX && !value.includes(NUL);
+  return typeof value === 'string' && value.trim() !== '' && value.length <= TEXT_MAX && !value.includes(NUL)
+    && !LONE_SURROGATE.test(value);
 }
 
 function optionalNonNegativeInt(value: unknown): number | null | 'INVALID' {
@@ -168,7 +169,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       case 'mark_no_shows': {
-        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'request_key', 'tapped_ms_ago'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'class_id', 'request_key'].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
@@ -178,26 +179,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (!Array.isArray(athleteIds) || athleteIds.length === 0 || athleteIds.length > NO_SHOWS_MAX || !athleteIds.every(isIdText)) {
           return badRequest(`athlete_ids:expected 1 to ${NO_SHOWS_MAX} athlete ids`);
         }
+        // The class the screen showed them for.
+        if (!isIdText(record.class_id)) {
+          return badRequest(`class_id:expected text of 1 to ${TEXT_MAX} characters`);
+        }
         if (record.request_key !== undefined && !isIdText(record.request_key)) {
           return badRequest(`request_key:expected text of 1 to ${TEXT_MAX} characters`);
-        }
-        // null is "not sent", as for a here tap.
-        const tappedMsAgo = record.tapped_ms_ago ?? undefined;
-        if (
-          tappedMsAgo !== undefined
-          && (typeof tappedMsAgo !== 'number' || !Number.isSafeInteger(tappedMsAgo) || tappedMsAgo < 0 || tappedMsAgo > TAPPED_MS_AGO_MAX)
-        ) {
-          return badRequest('tapped_ms_ago');
         }
         const result = await markSessionNoShowsAbsent(
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
-          {
-            athleteIds,
-            requestKey: record.request_key ?? null,
-            // The server's clock less the page's count since the tap; no clock on the tablet is read.
-            ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
-          },
+          { athleteIds, classId: record.class_id, requestKey: record.request_key ?? null },
         );
         return NextResponse.json(result);
       }

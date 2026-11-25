@@ -8,7 +8,7 @@ import SessionClassPicker from './SessionClassPicker';
 import SessionRunClass, { tieSummary, unknownOffPage } from './SessionRunClass';
 import SaveQueueNotice, { UNKNOWN_WORDS } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { RESEND_MS, prepareSaveQueue, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 // D4 (OD-2026-10-21-002): the class picker and the live screen's class line. The rules are the
 // server's (sessionRunClass.pg.test.ts); this proves what the screen sends and says.
@@ -253,6 +253,92 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     });
     expect(onClassChange).not.toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toBe('That class cannot be tied now.');
+  });
+
+  // Round 13, reviewer A: a tie kept behind a finish is refused as no longer live once the finish lands.
+  // The console says only that the session ended (nothing once it settled on this page), so the page's
+  // list names the tie as not saved.
+  test('a tie refused as no longer live is handed to the console and named as not saved in the page\'s list', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    serveTie('run-1', [], () => null);
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return json({ error: 'SESSION_RUN_NOT_LIVE' }, 409);
+      }
+      return base(input, init);
+    });
+    prepareSaveQueue();
+    const onRunNotLive = jest.fn();
+    await act(async () => {
+      render(<SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={onRunNotLive} />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tie to a class...' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Tie to this class' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(readSaveQueue().failed).toEqual([
+      { label: 'Tie the session to Youth boxing', words: 'The class was not changed: the session had already ended when it reached the server.', known: true },
+    ]);
+  });
+
+  test('a tie refused after the console moved to another run is named in the page\'s list, not on the new run\'s line', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    let release: ((response: Response) => void) | undefined;
+    serveTie('run-2', [], () => null);
+    const base = fetchSpy.getMockImplementation() as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        sends += 1;
+        if (sends === 1) {
+          return new Promise<Response>((resolve) => {
+            release = resolve;
+          });
+        }
+      }
+      return base(input, init);
+    });
+    prepareSaveQueue();
+    const onRunNotLive = jest.fn();
+    let rerender: (ui: React.ReactElement) => void = () => {};
+    await act(async () => {
+      ({ rerender } = render(<SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={onRunNotLive} />));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tie to a class...' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Tie to this class' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      rerender(<SessionRunClass runId="run-2" classId={null} onClassChange={jest.fn()} onRunNotLive={onRunNotLive} />);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      release?.(json({ error: 'CLASS_NOT_TIEABLE', message: 'That class cannot be tied now.' }, 409));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(onRunNotLive).not.toHaveBeenCalled();
+    expect(screen.queryByText('That class cannot be tied now.')).toBeNull();
+    expect(readSaveQueue().failed).toEqual([
+      { label: 'Tie the session to Youth boxing', words: 'That class cannot be tied now.', known: true },
+    ]);
   });
 
   test('a tie refused while a kept finish waits is said in the page\'s list: the console goes once the finish lands', async () => {
