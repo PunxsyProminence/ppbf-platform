@@ -18,12 +18,13 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the table, its exact column list, ticked NOT NULL with no default
-// (every row is a choice somebody made), exactly the CHECKs below and no
-// others, each compared IN FULL against the text Postgres stores
+// Asserts the table, its exact column list with each column's type and
+// nullability, ticked with no default (every row is a choice somebody made),
+// exactly the CHECKs below and no others, each compared IN FULL against the text Postgres stores
 // (organizationEmailAlertEventsMigration.pg.test.ts drives this runner against
-// a real database), the three-column primary key in order, the gym key
-// (cascade) and the setter key (set null) by column, target and delete rule.
+// a real database), the three-column primary key in order, and exactly two
+// foreign keys: the gym key (cascade) and the setter key (set null), each by
+// column, target and delete rule.
 export const EXPECTED_CHECKS = {
   pilot_org_email_alert_event_user_type_check:
     "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))",
@@ -31,13 +32,14 @@ export const EXPECTED_CHECKS = {
     "CHECK ((event_kind ~ '^[a-z][a-z_]{0,62}$'::text))",
 };
 
+// name:type:nullable, in column order.
 export const EXPECTED_COLUMNS = [
-  'organization_id',
-  'user_type',
-  'event_kind',
-  'ticked',
-  'set_by_account_id',
-  'set_at',
+  'organization_id:text:NO',
+  'user_type:text:NO',
+  'event_kind:text:NO',
+  'ticked:boolean:NO',
+  'set_by_account_id:text:YES',
+  'set_at:timestamp with time zone:NO',
 ];
 
 const TABLE = `to_regclass('pilot.organization_email_alert_events')`;
@@ -58,7 +60,7 @@ const READINESS_QUERY = `
   select
     ${TABLE} is not null as table_ready,
     (
-      select array_agg(column_name::text order by ordinal_position)
+      select array_agg(column_name::text || ':' || data_type::text || ':' || is_nullable::text order by ordinal_position)
       from information_schema.columns
       where table_schema = 'pilot' and table_name = 'organization_email_alert_events'
     ) = $4::text[] as columns_ready,
@@ -87,7 +89,11 @@ const READINESS_QUERY = `
             = array['organization_id', 'user_type', 'event_kind']
     ) as primary_key_ready,
     ${foreignKeyReady('organization_id', 'pilot.organizations', 'c')} as organization_fk_ready,
-    ${foreignKeyReady('set_by_account_id', 'pilot.accounts', 'n')} as set_by_fk_ready
+    ${foreignKeyReady('set_by_account_id', 'pilot.accounts', 'n')} as set_by_fk_ready,
+    (
+      select count(*) = 2 from pg_constraint c
+      where c.conrelid = ${TABLE} and c.contype = 'f'
+    ) as no_other_keys
 `;
 const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKS).length,
