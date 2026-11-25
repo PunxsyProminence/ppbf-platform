@@ -353,6 +353,38 @@ describe('PATCH /api/pilot/session-scripts adding, removing and moving blocks', 
   });
 });
 
+// Lane W4-5, SP-1b: a text block (its contact level picked by the coach, Q1 = C on #2189) and a copy.
+describe('PATCH /api/pilot/session-scripts adding text blocks and copies', () => {
+  const PLACE = { start_offset_min: 30, end_offset_min: 35 };
+  const TEXT = { ref: 't', kind: 'text', block_kind: 'teaching_minute', block_label: 'Guard talk', text: 'Hands home.', contact_level: 'none', ...PLACE };
+  const COPY = { ref: 'c', kind: 'copy', block_id: 'blk-9', ...PLACE };
+
+  it('passes a text block and a copy to the module, the copied block id trimmed', async () => {
+    await patch({ ...EDIT, add_blocks: [TEXT, { ...COPY, block_id: ' blk-9 ', block_label: 'Again' }] });
+    expect(mockEdit).toHaveBeenCalledWith(expect.objectContaining({ add: [TEXT, { ...COPY, block_label: 'Again' }] }));
+  });
+
+  it('400s a text block without its contact level (there is no default), and either shape carrying a field of another', async () => {
+    const noContact: Record<string, unknown> = { ...TEXT };
+    delete noContact.contact_level;
+    for (const add of [
+      noContact,
+      { ...TEXT, contact_level: 2 },
+      { ...TEXT, drill_id: 'drl-1' },
+      { ...TEXT, block_label: undefined },
+      { ...COPY, contact_level: 'none' },
+      { ...COPY, what_to_say: 'x' },
+      { ...COPY, block_id: ' ' },
+      { ...COPY, kind: 'toString' },
+    ]) {
+      const response = await patch({ ...EDIT, add_blocks: [add] });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'add_blocks' });
+    }
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+});
+
 describe('PATCH /api/pilot/session-scripts with `retired`', () => {
   beforeEach(() => {
     mockRetire.mockResolvedValue({ outcome: 'retired', script_id: 'scr-1', version: 1 });

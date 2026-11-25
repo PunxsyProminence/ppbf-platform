@@ -33,6 +33,10 @@
 //    in place they are renumbered without tripping the order constraint, the
 //    contact label is read again, and a removed block's row is gone; a block
 //    something else names is never deleted -- that edit is a new version.
+// 11. LANE W4-5, SP-1b. A text block carries the contact level the coach
+//    picked; a copy carries everything its source says, from any plan of the
+//    gym; both raise the label like any block, and a copy's drill is locked
+//    before the plan.
 //
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
@@ -1824,5 +1828,116 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     const sheet = after!.renderings.find((rendering) => rendering.format === 'cheat_sheet');
     expect(sheet!.body).toBe(renderingFromBlocks(after!.name, after!.blocks));
     expect(sheet!.body.indexOf('Sparring Round')).toBeLessThan(sheet!.body.indexOf('Jab Drill'));
+  });
+});
+
+// Lane W4-5, SP-1b (Overwatch GO on #2189: Q1 = C, a text block's contact level is the coach's pick,
+// required; a copied block carries its source's).
+describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
+  async function plan(label: string) {
+    const gym = await newGym(label);
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const before = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    const [jab, mirror, spar] = before!.blocks.map((block) => block.block_id);
+    return { gym, scriptId: created.script_id, jab, mirror, spar };
+  }
+  const place = { start_offset_min: 16, end_offset_min: 20 };
+  const text = (overrides: Record<string, unknown> = {}) => ({
+    ref: 't', kind: 'text' as const, block_kind: 'teaching_minute', block_label: 'Guard talk', text: '  Hands home after every punch. ',
+    contact_level: 'none', ...place, ...overrides,
+  });
+
+  test('a text block carries its kind, title, words and the contact level the coach picked, and raises the label', async () => {
+    const { gym, scriptId, jab, mirror, spar } = await plan('text');
+
+    await edit(gym, scriptId, { add: [text({ contact_level: 'controlled_sparring' })], order: ['t', jab, mirror, spar] });
+
+    const after = await getSessionScriptWithDetail(gym.organizationId, scriptId);
+    expect(after!.blocks[0]).toMatchObject({
+      block_order: 1, block_kind: 'teaching_minute', block_label: 'Guard talk', what_to_say: 'Hands home after every punch.',
+      what_to_explain: null, what_to_watch: null, what_to_fix: null, drill_id: null, scale_level: null, contact_level: 'controlled_sparring',
+    });
+    // Contact, then none, none, contact: the split label is raised to contact.
+    expect(after!.contact_structure).toBe('contact');
+  });
+
+  test('a transition, arrival or close may hold no words; no other kind may, and none holds more than a coach note', async () => {
+    const { gym, scriptId } = await plan('text-rules');
+    await edit(gym, scriptId, { add: [text({ block_kind: 'transition', text: '  ' })] });
+    const added = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3];
+    expect(added).toMatchObject({ block_kind: 'transition', what_to_say: null, contact_level: 'none' });
+
+    const bytes = await storedBytes(gym, scriptId);
+    await expectRefused(edit(gym, scriptId, { add: [text({ text: '' })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    await expectRefused(edit(gym, scriptId, { add: [text({ text: 'x'.repeat(1001) })] }), 'SESSION_SCRIPT_BLOCK_TEXT_INVALID', 422);
+    await expectRefused(edit(gym, scriptId, { add: [text({ block_kind: 'drill_round' })] }), 'SESSION_SCRIPT_BLOCK_KIND_INVALID', 422);
+    await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: 'full_contact' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
+    await expectRefused(edit(gym, scriptId, { add: [text({ contact_level: '' })] }), 'SESSION_SCRIPT_BLOCK_CONTACT_INVALID', 422);
+    expect(await storedBytes(gym, scriptId)).toBe(bytes);
+  });
+
+  test("a copy from another plan of the gym carries everything its source says, its contact level included, under a new id", async () => {
+    const { gym, scriptId, jab } = await plan('copy');
+    const other = await create(gym, 'Another plan');
+    const source = (await getSessionScriptWithDetail(gym.organizationId, other.script_id))!.blocks[2];
+    const sourceBytes = await storedBytes(gym, other.script_id);
+
+    await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: source.block_id, ...place }] });
+    await edit(gym, scriptId, { add: [{ ref: 'd', kind: 'copy', block_id: jab, block_label: 'Jab again', start_offset_min: 20, end_offset_min: 26 }] });
+
+    const blocks = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks;
+    const carried = ({ block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level }: typeof source) =>
+      ({ block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level });
+    expect(carried(blocks[3])).toEqual(carried(source));
+    expect(blocks[3]).toMatchObject({ block_order: 4, start_offset_min: 16, end_offset_min: 20, contact_level: 'controlled_sparring' });
+    expect(blocks[3].block_id).not.toBe(source.block_id);
+    // A block of the same plan can be copied too, retitled.
+    expect(blocks[4]).toMatchObject({ block_label: 'Jab again', drill_id: 'ref-jab', scale_level: 'A', what_to_say: 'Hands up.' });
+    expect(await storedBytes(gym, other.script_id)).toBe(sourceBytes);
+  });
+
+  test("a copy keeps the drill version its source links, even a replaced one; another gym's block is not found and nothing is written", async () => {
+    const { gym, scriptId, jab } = await plan('copy-version');
+    await client.query(`update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-jab'`, [
+      gym.organizationId,
+    ]);
+    await edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: jab, ...place }] });
+    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks[3].drill_id).toBe('ref-jab');
+
+    const theirs = await plan('copy-theirs');
+    const bytes = await storedBytes(gym, scriptId);
+    await expectRefused(
+      edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: theirs.jab, ...place }] }),
+      'SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND',
+      422,
+    );
+    expect(await storedBytes(gym, scriptId)).toBe(bytes);
+  });
+
+  test("a copy's drill is locked before the plan, so an import holding that drill then the plan queues with it", async () => {
+    const { gym, scriptId, spar } = await plan('copy-lock');
+    const holder = new Client({ connectionString: activeConnectionString as string });
+    await holder.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(`select 1 from pilot.drill_library where organization_id = $1 and drill_id = 'ref-spar' for update`, [gym.organizationId]);
+      const { rows } = await holder.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const copying = edit(gym, scriptId, { add: [{ ref: 'c', kind: 'copy', block_id: spar, ...place }] }).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      );
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const blocked = await client.query(`select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))`, [rows[0].pid]);
+        if ((blocked.rowCount ?? 0) > 0 || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await holder.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`, [gym.organizationId, scriptId]);
+      await holder.query('COMMIT');
+      expect((await copying).status).toBe('fulfilled');
+    } finally {
+      await holder.end();
+    }
   });
 });
