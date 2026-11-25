@@ -497,6 +497,11 @@ export const BUILDING: readonly Door[] = [
      as keywords so the door is still found by them. */
   { href: '/coach/environment/intake-router', label: 'Coach Workspace', room: 'floor',
     roles: ['coach'], keywords: 'home dashboard intake router routing new athlete triage' },
+  /* W4 item 6 (lane W4-6, SC-2; app scrub CF-14): the page that answers "who has stopped
+     coming" (OW27-30 to OW27-33). Its Room Map room is the Coach's Office (Overwatch, W4-6 Q5 A). */
+  { href: '/coach/stopped-coming', label: 'Stopped Coming', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'stopped coming absent not seen away missing gone retention reach out who needs you',
+    hint: 'Athletes who have come before and not for the gym\u2019s number of days, longest gone first.' },
   { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook gap retention absent last seen queue triage book athlete record',
     hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },

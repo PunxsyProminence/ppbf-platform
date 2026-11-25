@@ -173,7 +173,8 @@ describe('/admin/athletes', () => {
 
     const page = (document.body.textContent ?? '').replace(/\s+/g, ' ');
     expect(page).toContain(
-      "Two things it does not do: it does not switch off their sign-in, and it does not take them off their coach's lists. "
+      "Two things it does not do: it does not switch off their sign-in, and it does not take them off their coach's lists, "
+      + 'except Stopped Coming, which leaves out anyone marked as left. '
       + 'To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns it back on.',
     );
     // The sentence that stopped being true, and the older wording before it.
