@@ -297,7 +297,7 @@ afterAll(async () => {
 
 describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
   test("a coach reads every thread on a child they reach, newest first, with the guardian's name and no account id", async () => {
-    await freshDatabase('fts_list');
+    const client = await freshDatabase('fts_list');
     const first = await open(GUARDIAN);
     const second = await open(CO_GUARDIAN);
     await open(GUARDIAN, SIBLING);
@@ -324,6 +324,13 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     // The other gym's coach, asking about the same athlete id, reads only their own gym's thread.
     const elsewhere = await threads.listFamilyThreadsForStaff(staff(OTHER_GYM_COACH, 'coach', OTHER_ORG), CHILD);
     expect(elsewhere.map((thread) => thread.guardian_name)).toEqual(['Other Gym Guardian']);
+
+    // Once the opener is no longer linked to this child, their name comes from a record of theirs
+    // in this gym, never from the other gym's record.
+    await client.query(`delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+      [ORG, `parent-${GUARDIAN}`, CHILD]);
+    const unlinked = await threads.listFamilyThreadsForStaff(staff(COACH), CHILD);
+    expect(unlinked.find((thread) => thread.thread_id === first.thread_id)?.guardian_name).toBe('Aab Unlinked Record');
   });
 
   test('a reply writes one audit row with no words in it, and nothing to the SHADOW feed or telemetry', async () => {
