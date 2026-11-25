@@ -51,11 +51,39 @@ it('a coach is decided by role alone: no date of birth is read', async () => {
 });
 
 /*
- * Only the membership key's 23503 becomes the plain 403 (a membership row
- * deleted mid-save; emailAlertSwitches.pg.test.ts proves that case on a real
- * database). Any other database error on the save stays an error, so a wider
- * catch cannot quietly turn a real fault into "not offered".
+ * Only the membership key's 23503 becomes the plain 403. Since the one pass on
+ * #2169 the membership is read again under the save's locks, so a membership
+ * row deleted before the save is refused by that read (the pg suite's "a
+ * membership removed between sign-in and the save"), and the insert's key is
+ * reached only by a delete that lands between that read and the insert. That
+ * last case cannot be timed on a real database, so it is held here: the
+ * membership key's 23503 is the 403, and any other database error on the save
+ * stays an error, so a wider catch cannot quietly turn a real fault into "not
+ * offered".
  */
+it('the membership key refusing the insert is the plain 403, not a raw error', async () => {
+  const membershipGone = Object.assign(new Error('database error'), {
+    code: '23503',
+    constraint: 'pilot_email_alert_switch_membership_fk',
+  });
+  const client = {
+    query: jest.fn()
+      .mockResolvedValueOnce({ rows: [] }) // the account lock
+      .mockResolvedValueOnce({ rows: [] }) // no switch row yet
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] }) // the gym, read under its share lock
+      .mockResolvedValueOnce({ rows: [{ role: 'coach' }] }) // the membership, read again under the lock
+      .mockRejectedValueOnce(membershipGone), // the insert
+  };
+  (withTransaction as jest.Mock).mockImplementation((work: (c: typeof client) => unknown) => work(client));
+  const coach = { organizationId: 'org-1', accountId: 'acct-c', role: 'coach' as const, athleteId: null };
+  const attempt = setEmailAlertSwitch({ ...coach, switchedOn: true }, NOW);
+  await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+  await expect(attempt).rejects.toThrow('Forbidden: email alerts are not offered to this account');
+  await expect(attempt).rejects.not.toBe(membershipGone);
+  expect(client.query).toHaveBeenCalledTimes(5);
+  expect(client.query.mock.calls[4][0]).toMatch(/insert into pilot\.email_alert_switches/);
+});
+
 it.each([
   ['a 23503 from another key', { code: '23503', constraint: 'email_alert_switches_account_id_fkey' }],
   ['another code on the membership key', { code: '23514', constraint: 'pilot_email_alert_switch_membership_fk' }],
