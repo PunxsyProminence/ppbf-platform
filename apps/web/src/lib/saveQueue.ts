@@ -126,10 +126,11 @@ const EMPTY: SaveQueueState = { waiting: [], failed: [], notSent: 0 };
 
 let entries: Entry[] = [];
 let failed: FailedSave[] = [];
-/** The account this page last confirmed, since the role session last changed; null when not known. */
+/**
+ * The account this page last confirmed; null before the first answer and after a drop. Everything
+ * the page holds is that account's: a drop empties it all before another account is confirmed.
+ */
 let accountId: string | null = null;
-/** The account whose saves and words this page holds; nothing is shown unless it is confirmed now. */
-let heldAccount: string | null = null;
 /**
  * Whether this page holds anything for an account (since its first confirmation after the last
  * drop), and the device's sign-out / sign-in mark as it read then. Any other mark seen later means a
@@ -154,17 +155,10 @@ let snapshot: SaveQueueState = EMPTY;
 const listeners = new Set<() => void>();
 
 function notify(): void {
-  // Shown only while the account that holds them is the one confirmed signed in now: between a
-  // change of role session and the next confirmation, nothing of anyone's saves is on screen.
-  const confirmed = accountId !== null && accountId === heldAccount;
   const dropped = notSent && accountId !== null && notSent.accountId === accountId ? notSent.count : 0;
-  snapshot = (!confirmed || (entries.length === 0 && failed.length === 0)) && dropped === 0
+  snapshot = entries.length === 0 && failed.length === 0 && dropped === 0
     ? EMPTY
-    : {
-      waiting: confirmed ? entries.map((entry) => entry.save.label) : [],
-      failed: confirmed ? [...failed] : [],
-      notSent: dropped,
-    };
+    : { waiting: entries.map((entry) => entry.save.label), failed: [...failed], notSent: dropped };
   for (const listener of listeners) {
     try {
       listener();
@@ -198,7 +192,6 @@ function dropAll(): void {
   entries = [];
   failed = [];
   accountId = null;
-  heldAccount = null;
   holding = false;
   markAtHold = null;
   learning = null;
@@ -248,9 +241,8 @@ function boundaryNewer(): boolean {
 
 /** The account signed in now. Saves and words held for another account go first. */
 function confirmAccount(answer: string): void {
-  if (heldAccount !== null && heldAccount !== answer) dropAll();
+  if (accountId !== null && accountId !== answer) dropAll();
   accountId = answer;
-  heldAccount = answer;
   rechecking = false;
   if (!holding) {
     holding = true;
