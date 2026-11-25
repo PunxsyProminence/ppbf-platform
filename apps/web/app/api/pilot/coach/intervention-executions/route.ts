@@ -5,6 +5,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { refuseSaveMadeByAnotherAccount } from '@/src/server/pilot/queuedSaveAccount';
 import {
   adherenceError,
   closeExecution,
@@ -111,6 +112,9 @@ export async function POST(request: NextRequest) {
     requireRole(principal, [...EXECUTION_ROLES]);
 
     const body = (await request.json()) as Record<string, unknown>;
+    // A kept log resent from the open page is refused when another account is signed in now
+    // (W4 item 7); without made_by_account_id, as before.
+    refuseSaveMadeByAnotherAccount(body, principal);
     const athleteId = optionalString(body.athlete_id)?.trim();
     const protocolId = optionalString(body.protocol_id)?.trim();
     if (!athleteId) throw new ValidationError('Missing athlete_id.');
