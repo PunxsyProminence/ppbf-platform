@@ -6,11 +6,14 @@
  * on the stopped-coming page only.
  *
  * WHO IS LISTED, by ruling:
- *   - Active members seen at least once (OW27-31 A, OD-2026-11-21-006): a live
- *     athlete of this gym who is not marked as left the gym
- *     (pilot.athletes.active_flag; Overwatch, W4-6 Q3: the card's own words,
- *     "Skips people who signed up and never came, or have left"), and who has
- *     come at least once.
+ *   - Active members seen at least once (OW27-31 A, OD-2026-11-21-006: "Active
+ *     membership and present at least once before"): a live athlete of this gym
+ *     who is not marked as left the gym (pilot.athletes.active_flag) AND, when
+ *     the gym records program memberships for that athlete, holds at least one
+ *     that is active; lapsed or ended only means not listed. An athlete with no
+ *     program membership recorded is decided by active_flag alone, so a gym that
+ *     does not use memberships still gets a list (Overwatch on #2172, correcting
+ *     its W4-6 Q3 answer). And who has come at least once.
  *   - "Came" (OW27-32 A, "Yes, on this page only"; Overwatch, W4-6 Q2 A and
  *     the answer on #2172): a present day in the class register
  *     (pilot.attendance_reconciled, through getAttendanceLast28Days, whose last
@@ -49,7 +52,9 @@
  * condition 1).
  *
  * What leaves this module: athlete id, name, the last day they came and the
- * days since. No date of birth, membership, mark, run or count.
+ * days since. No date of birth, membership, mark, run or count. Membership
+ * records stay admin-only (programMemberships.ts): the one membership read
+ * returns ids to leave off, and no status, program or date leaves it.
  */
 
 import { GYM_TIME_ZONE } from '../../lib/gymTime';
@@ -82,6 +87,28 @@ export interface StoppedComingList {
 
 function dayNumber(isoDay: string): number {
   return Math.round(Date.parse(`${isoDay}T00:00:00Z`) / 86_400_000);
+}
+
+/**
+ * Of these athletes, those the gym records program memberships for, none of
+ * them active (lapsed or ended only): they are not listed. An athlete with no
+ * membership row in this gym is not returned. Ids only.
+ */
+async function athletesWithNoActiveMembership(
+  organizationId: string,
+  athleteIds: readonly string[],
+): Promise<Set<string>> {
+  if (athleteIds.length === 0) return new Set();
+  const rows = await query<{ athlete_id: string }>(
+    `select pm.athlete_id
+       from pilot.program_memberships pm
+      where pm.organization_id = $1
+        and pm.athlete_id = any($2::text[])
+      group by pm.athlete_id
+     having not bool_or(pm.status = 'active')`,
+    [organizationId, [...athleteIds]],
+  );
+  return new Set(rows.map((row) => row.athlete_id));
 }
 
 /**
@@ -120,7 +147,12 @@ export async function listStoppedComing(actor: ActorIdentity, today: string): Pr
   }
   const organizationId = actor.organizationId;
   const policy = await readStoppedComingPolicy(organizationId);
-  const active = (await organizationActionableRoster(organizationId)).filter((athlete) => athlete.active_flag === true);
+  const notLeft = (await organizationActionableRoster(organizationId)).filter((athlete) => athlete.active_flag === true);
+  const noActiveMembership = await athletesWithNoActiveMembership(
+    organizationId,
+    notLeft.map((athlete) => athlete.athlete_id),
+  );
+  const active = notLeft.filter((athlete) => !noActiveMembership.has(athlete.athlete_id));
   const ids = active.map((athlete) => athlete.athlete_id);
 
   const [register, openGym] = await Promise.all([
