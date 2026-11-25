@@ -104,6 +104,7 @@ const ATH_A = 'ath-ev-a';
 const ATH_B = 'ath-ev-b';
 const ATH_GONE = 'ath-ev-gone';
 const ATH_GONE_COVERED = 'ath-ev-gone-covered';
+const ATH_C = 'ath-ev-c'; // coach-own's second athlete
 // One athlete id names a different child in each gym (deletedAthletes.ts):
 // the other gym's live athlete has the id of this gym's deleted one, and the
 // other gym also has a live ATH_B, coached on record by this gym's coach-none.
@@ -165,6 +166,7 @@ async function freshDatabase(name: string): Promise<Client> {
   }
   const athletes: Array<[string, string, string, boolean]> = [
     [ATH_A, ORG, 'acct-ev-coach-own', false],
+    [ATH_C, ORG, 'acct-ev-coach-own', false],
     [ATH_B, ORG, 'acct-ev-coach-off', false],
     [ATH_GONE, ORG, 'acct-ev-coach-own', true],
     [ATH_GONE_COVERED, ORG, 'acct-ev-coach-none', true],
@@ -182,18 +184,21 @@ async function freshDatabase(name: string): Promise<Client> {
       [org, athleteId, coachId, deleted],
     );
   }
-  const coverage: Array<[string, string, string, string]> = [
-    [ATH_B, 'acct-ev-coach-cover', '1 hour', '1 hour'],
-    [ATH_GONE_COVERED, 'acct-ev-coach-cover', '1 hour', '1 hour'],
-    [ATH_A, 'acct-ev-coach-expired', '3 hours', '-1 hour'],
-    [ATH_A, 'acct-ev-coach-future', '-1 hour', '3 hours'],
+  // gym, athlete, covering coach, started this long ago, ends in this long
+  const coverage: Array<[string, string, string, string, string]> = [
+    [ORG, ATH_B, 'acct-ev-coach-cover', '1 hour', '1 hour'],
+    [ORG, ATH_GONE_COVERED, 'acct-ev-coach-cover', '1 hour', '1 hour'],
+    [ORG, ATH_A, 'acct-ev-coach-expired', '3 hours', '-1 hour'],
+    [ORG, ATH_A, 'acct-ev-coach-future', '-1 hour', '3 hours'],
+    // The other gym's live ATH_B, covered now by this gym's coach-expired.
+    [OTHER_ORG, ATH_B, 'acct-ev-coach-expired', '1 hour', '1 hour'],
   ];
-  for (const [athleteId, coachId, startedAgo, endsIn] of coverage) {
+  for (const [org, athleteId, coachId, startedAgo, endsIn] of coverage) {
     await client.query(
       `insert into pilot.coach_coverage
          (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
-       values ($1, $2, $3, 'acct-ev-admin', now() - $4::interval, now() + $5::interval)`,
-      [ORG, athleteId, coachId, startedAgo, endsIn],
+       values ($1, $2, $3, $6, now() - $4::interval, now() + $5::interval)`,
+      [org, athleteId, coachId, startedAgo, endsIn, org === ORG ? 'acct-ev-admin' : 'acct-ev-other-admin'],
     );
   }
   return client;
@@ -310,6 +315,22 @@ async function repliesPageReach(athleteIds: readonly string[], inWindow: Readonl
     if (ids.length) reach.set(`${org}|${accountId}`, ids.sort());
   }
   return reach;
+}
+
+/**
+ * The send-time check (emailAlertEventStillReadable) agrees with the page for
+ * every person and every event in the window: yes exactly where the page shows it.
+ */
+async function expectStillReadableAsPage(page: Reach, events: ReadonlySet<string>, eventKind: string) {
+  for (const [accountId, org] of PEOPLE) {
+    const shown = page.get(`${org}|${accountId}`) ?? [];
+    for (const eventId of events) {
+      const reads = await emailAlertEventStillReadable({
+        organization_id: org, account_id: accountId, user_type: 'staff', event_kind: eventKind, event_id: eventId,
+      });
+      expect({ accountId, eventId, reads }).toEqual({ accountId, eventId, reads: shown.includes(eventId) });
+    }
+  }
 }
 
 function sorted(reach: Reach): Array<[string, string[]]> {
@@ -440,6 +461,7 @@ describe('email alert staff event sources', () => {
     ])));
     expect([...source.values()].flat()).not.toContain(old);
     expect([...source.values()].flat()).not.toContain(resolvedOnGone);
+    await expectStillReadableAsPage(page, inWindow, 'safety_escalation');
   });
 
   test('parent_reply names exactly the staff the family-message-replies route shows each new reply to', async () => {
@@ -480,6 +502,7 @@ describe('email alert staff event sources', () => {
       [`${OTHER_ORG}|acct-ev-other-coach`, [otherGym]],
     ])));
     expect([...source.values()].flat()).not.toContain(old);
+    await expectStillReadableAsPage(page, inWindow, 'parent_reply');
   });
 
   test('the tick reads these sources: "open the app" goes once to each switched-on reader of a new escalation or reply, and to nobody else', async () => {
@@ -538,27 +561,28 @@ describe('email alert staff event sources', () => {
     const voiceOnA = await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: JUST_NOW });
     const nearMissOnA = await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
     const painOnB = await escalation(client, ORG, ATH_B, 'pain_report', { minutesAgo: JUST_NOW });
+    const nearMissOnC = await escalation(client, ORG, ATH_C, 'near_miss', { minutesAgo: JUST_NOW });
     const replyOnA = await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, JUST_NOW);
     const replyOnB = await reply(client, ORG, await parentMessage(client, ORG, ATH_B, 'acct-ev-coach-own'), ATH_B, JUST_NOW);
     const label = new Map([
-      [voiceOnA, 'voiceOnA'], [nearMissOnA, 'nearMissOnA'], [painOnB, 'painOnB'],
+      [voiceOnA, 'voiceOnA'], [nearMissOnA, 'nearMissOnA'], [painOnB, 'painOnB'], [nearMissOnC, 'nearMissOnC'],
       [replyOnA, 'replyOnA'], [replyOnB, 'replyOnB'],
     ]);
 
     // Queued while everyone can read them...
     for (const source of EMAIL_ALERT_EVENT_SOURCES) await sweepEmailAlertSource(source);
-    expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(16);
+    expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(19);
 
     // ...then, before the send: the organization admin becomes a coach of no
-    // one, ATH_A moves to another coach, the cover of ATH_B ends, and ATH_B is
-    // deleted.
+    // one, ATH_A moves to another coach (coach-own keeps ATH_C), the cover of
+    // ATH_B ends, and ATH_B is deleted.
     await client.query(`update pilot.accounts set role = 'coach' where account_id = 'acct-ev-orgadmin'`);
     await client.query(`update pilot.organization_memberships set role = 'coach' where account_id = 'acct-ev-orgadmin'`);
     await client.query(`update pilot.athletes set coach_id = 'acct-ev-coach-none' where organization_id = $1 and athlete_id = $2`, [ORG, ATH_A]);
     await client.query(`update pilot.coach_coverage set expires_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ATH_B]);
     await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ATH_B]);
 
-    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 7, skipped: 9 });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 9, skipped: 10 });
     const { rows } = await client.query(
       `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_id`,
     );
@@ -568,14 +592,18 @@ describe('email alert staff event sources', () => {
       .sort();
     // An admin still sees an open row about a deleted athlete; nobody reads a deleted athlete's replies.
     expect(outcome('acct-ev-admin')).toEqual([
-      'nearMissOnA sent', 'painOnB sent', 'replyOnA sent', 'replyOnB not_offered', 'voiceOnA sent',
+      'nearMissOnA sent', 'nearMissOnC sent', 'painOnB sent', 'replyOnA sent', 'replyOnB not_offered', 'voiceOnA sent',
     ]);
     expect(outcome('acct-ev-orgadmin')).toEqual([
-      'nearMissOnA not_offered', 'painOnB not_offered', 'replyOnA sent', 'replyOnB not_offered', 'voiceOnA not_offered',
+      'nearMissOnA not_offered', 'nearMissOnC not_offered', 'painOnB not_offered', 'replyOnA sent', 'replyOnB not_offered',
+      'voiceOnA not_offered',
     ]);
-    expect(outcome('acct-ev-coach-own')).toEqual(['nearMissOnA not_offered', 'replyOnA sent', 'replyOnB not_offered']);
+    // Still the coach of ATH_C: that row is sent, ATH_A's is not.
+    expect(outcome('acct-ev-coach-own')).toEqual([
+      'nearMissOnA not_offered', 'nearMissOnC sent', 'replyOnA sent', 'replyOnB not_offered',
+    ]);
     expect(outcome('acct-ev-coach-cover')).toEqual(['painOnB not_offered', 'replyOnA sent', 'replyOnB not_offered']);
-    expect(sent).toHaveLength(7);
+    expect(sent).toHaveLength(9);
 
     // An event kind no source knows, or a user type other than staff, reads as no.
     const adminReads = { organization_id: ORG, account_id: 'acct-ev-admin', event_id: nearMissOnA };
