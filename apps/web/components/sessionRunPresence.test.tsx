@@ -713,6 +713,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
   interface SentCall { body: Record<string, unknown>; signal: unknown }
   let sent: SentCall[];
   let presentReads: unknown[];
+  let noteWrites: Array<Record<string, unknown>>;
   const answer = (body: unknown, status = 200) => {
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
@@ -739,10 +740,17 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
   }) {
     sent = [];
     presentReads = [];
+    noteWrites = [];
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/pilot/auth/session')) {
         return handlers.session ? handlers.session() : answer({ authenticated: true, account_id: 'acct-a' });
+      }
+      // The staff notes of an athlete marked here: none yet, and a new one's send is lost.
+      if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
+        if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
+        noteWrites.push(JSON.parse(String(init?.body)));
+        throw new TypeError('Failed to fetch');
       }
       if (url === URL_FOR && init?.method === 'POST') {
         sent.push({ body: JSON.parse(String(init.body)), signal: init.signal });
@@ -977,4 +985,59 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByText('Mark an athlete here: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
     expect(screen.queryByText('This account cannot mark that athlete here. Nothing was saved.')).toBeNull();
   });
+});
+
+
+test('on the live floor, a staff note on an athlete marked here is kept too, with its key and the account that made it', async () => {
+  // Kept-save harness of the describe above, reused through its route answers.
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  createPersistentRoleSession('coach');
+  resetSaveQueueForTests();
+  jest.useFakeTimers();
+  try {
+    const writes: Array<Record<string, unknown>> = [];
+    const answer = (body: unknown, status = 200) => {
+      const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
+      return response as unknown as Response;
+    };
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/pilot/auth/session')) return answer({ authenticated: true, account_id: 'acct-a' });
+      if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
+        if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
+        writes.push(JSON.parse(String(init?.body)));
+        throw new TypeError('Failed to fetch');
+      }
+      if (url === URL_FOR) return answer({ present: [{ ...ADA, marked_at: 'x' }], gym: [ADA, BEN, CY] });
+      return answer({});
+    }) as unknown as typeof fetch;
+    prepareSaveQueue();
+    await act(async () => {
+      render(
+        <>
+          <SessionRunPresence runId="ssrun 1" />
+          <SaveQueueNotice />
+        </>,
+      );
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.change(screen.getByLabelText(/New note/), { target: { value: 'Wrist taped.' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(writes[0]).toEqual({ run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Wrist taped.', request_key: expect.any(String), made_by_account_id: 'acct-a' });
+    const waiting = screen.getByText(WAITING_WORDS).closest('[role="status"]') as HTMLElement;
+    expect(within(waiting).getByText('Staff note')).toBeTruthy();
+  } finally {
+    act(() => {
+      resetSaveQueueForTests();
+    });
+    jest.useRealTimers();
+  }
 });
