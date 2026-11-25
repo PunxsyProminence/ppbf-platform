@@ -43,12 +43,12 @@ jest.mock('./db', () => ({
 
 import {
   claimDueEmailAlertSends,
-  deliverEmailAlertSend,
   enqueueEmailAlertSends,
-  recoverExpiredEmailAlertLeases,
-  runEmailAlertSweep,
-  sweepEmailAlertSource,
   type EmailAlertCandidate,
+} from './emailAlertQueue';
+import {
+  deliverEmailAlertSend,
+  runEmailAlertSweep,
   type EmailAlertSenderDependencies,
 } from './emailAlertSender';
 import { MailSendError, type OutboundMessage } from './graphMailer';
@@ -78,7 +78,6 @@ const ADULT_ADDRESS = 'adult@example.com';
 
 const EVENT_1 = '00000000-0000-4000-8000-000000000001';
 const EVENT_2 = '00000000-0000-4000-8000-000000000002';
-const EVENT_3 = '00000000-0000-4000-8000-000000000003';
 const NOW = new Date('2026-11-25T17:00:00Z');
 
 let PG_PORT: number;
@@ -248,67 +247,6 @@ afterAll(async () => {
 });
 
 describe('email alert sender', () => {
-  test('queues only people switched on under that user type whose gym has the event ticked; a second pass adds nothing', async () => {
-    const client = await freshDatabase('emailsender_enqueue');
-    activeClient = client;
-    try {
-      await client.query(
-        `insert into pilot.organization_email_alert_events (organization_id, user_type, event_kind, ticked)
-         values ($1, 'staff', 'gym_notice', false)`,
-        [ORG_ID],
-      );
-      const candidates = [
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
-        candidate(ADMIN_ID, 'staff', 'safety_escalation', EVENT_1), // switched off
-        candidate(COACH_ID, 'staff', 'gym_notice', EVENT_2), // gym unticked it for staff
-        candidate(PARENT_ID, 'parent', 'family_note', EVENT_3),
-        candidate(PARENT_ID, 'parent', 'safety_escalation', EVENT_1), // not on the parent list
-        candidate(PARENT_ID, 'staff', 'parent_reply', EVENT_2), // switch set under another user type
-        candidate(COACH_ID, 'staff', 'parent_reply', 'not-a-uuid'),
-      ];
-      expect(await enqueueEmailAlertSends(candidates)).toBe(2);
-      expect(await enqueueEmailAlertSends(candidates)).toBe(0);
-      expect((await sendRows(client)).map((row) => [row.account_id, row.event_kind, row.status])).toEqual([
-        [COACH_ID, 'safety_escalation', 'queued'],
-        [PARENT_ID, 'family_note', 'queued'],
-      ]);
-    } finally {
-      await client.end();
-    }
-  });
-
-  test("a source's first sweep only sets its checkpoint; later sweeps read from it less ten minutes, and it only moves forward", async () => {
-    const client = await freshDatabase('emailsender_sweep');
-    activeClient = client;
-    try {
-      const reads: Array<[Date, Date]> = [];
-      const source = {
-        checkpointKey: 'safety_escalation',
-        candidates: async (from: Date, to: Date) => {
-          reads.push([from, to]);
-          return [candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)];
-        },
-      };
-      expect(await sweepEmailAlertSource(source)).toBe(0);
-      expect(reads).toEqual([]);
-      const first = (await client.query('select swept_to from pilot.email_alert_checkpoints')).rows[0].swept_to as Date;
-
-      expect(await sweepEmailAlertSource(source)).toBe(1);
-      expect(reads).toHaveLength(1);
-      expect(first.getTime() - reads[0][0].getTime()).toBe(10 * 60 * 1000);
-      const second = (await client.query('select swept_to from pilot.email_alert_checkpoints')).rows[0].swept_to as Date;
-      expect(second.getTime()).toBeGreaterThanOrEqual(first.getTime());
-
-      const ahead = new Date(second.getTime() + 60 * 60 * 1000);
-      await client.query('update pilot.email_alert_checkpoints set swept_to = $1', [ahead]);
-      expect(await sweepEmailAlertSource(source)).toBe(0); // the overlap re-read finds the same event: no second row
-      const kept = (await client.query('select swept_to from pilot.email_alert_checkpoints')).rows[0].swept_to as Date;
-      expect(kept.getTime()).toBe(ahead.getTime());
-    } finally {
-      await client.end();
-    }
-  });
-
   test('a due send goes once, to the sign-in address, saying only "open the app"; the row holds no address', async () => {
     const client = await freshDatabase('emailsender_send');
     activeClient = client;
@@ -453,90 +391,6 @@ describe('email alert sender', () => {
       const { dependencies } = recorder(() => error);
       await runEmailAlertSweep(dependencies, []);
       expect(await sendRows(client)).toMatchObject([{ status, tries: 1, last_error_code: code }]);
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('a send whose lease ran out goes back to the queue, or fails if it was on its fifth try', async () => {
-    const client = await freshDatabase('emailsender_lease');
-    activeClient = client;
-    try {
-      await client.query(
-        `insert into pilot.email_alert_sends
-           (organization_id, account_id, user_type, event_kind, event_id, status, tries, lease_token, lease_expires_at)
-         values ($1, $2, 'staff', 'safety_escalation', $3, 'sending', 2, gen_random_uuid(), now() - interval '1 minute'),
-                ($1, $2, 'staff', 'safety_escalation', $4, 'sending', 5, gen_random_uuid(), now() - interval '1 minute'),
-                ($1, $2, 'staff', 'safety_escalation', $5, 'sending', 1, gen_random_uuid(), now() + interval '1 minute')`,
-        [ORG_ID, COACH_ID, EVENT_1, EVENT_2, EVENT_3],
-      );
-      expect(await recoverExpiredEmailAlertLeases()).toBe(2);
-      expect((await sendRows(client)).map((row) => [row.event_id, row.status, row.last_error_code])).toEqual([
-        [EVENT_1, 'queued', 'LEASE_EXPIRED'],
-        [EVENT_2, 'failed', 'LEASE_EXPIRED'],
-        [EVENT_3, 'sending', null],
-      ]);
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('a send is not claimed before its next try is due', async () => {
-    const client = await freshDatabase('emailsender_not_due');
-    activeClient = client;
-    try {
-      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
-      await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp() + interval '1 minute'`);
-      expect(await claimDueEmailAlertSends(10)).toEqual([]);
-      await client.query(`update pilot.email_alert_sends set next_try_at = clock_timestamp()`);
-      expect(await claimDueEmailAlertSends(10)).toHaveLength(1);
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('a claim passes over a send another replica holds, without waiting for it', async () => {
-    const client = await freshDatabase('emailsender_skip_locked');
-    activeClient = client;
-    const other = new Client({ connectionString: connectionStringFor('emailsender_skip_locked') });
-    await other.connect();
-    try {
-      await enqueueEmailAlertSends([
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
-        candidate(PARENT_ID, 'parent', 'family_note', EVENT_2),
-      ]);
-      // The other replica is part-way through claiming the coach's send.
-      await other.query('begin');
-      await other.query(`select 1 from pilot.email_alert_sends where account_id = $1 for update`, [COACH_ID]);
-      const claimed = await Promise.race([
-        claimDueEmailAlertSends(10),
-        new Promise<'waited'>((resolve) => { setTimeout(() => resolve('waited'), 5_000); }),
-      ]);
-      expect(claimed).not.toBe('waited');
-      expect((claimed as Array<{ account_id: string }>).map((row) => row.account_id)).toEqual([PARENT_ID]);
-      await other.query('rollback');
-    } finally {
-      await other.end();
-      await client.end();
-    }
-  });
-
-  test('two claims at once, on separate connections, never take the same send', async () => {
-    const client = await freshDatabase('emailsender_claim');
-    activeClient = client;
-    try {
-      await enqueueEmailAlertSends([
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_2),
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_3),
-        candidate(PARENT_ID, 'parent', 'family_note', EVENT_1),
-      ]);
-      activePool = new Pool({ connectionString: connectionStringFor('emailsender_claim'), max: 4 });
-      const claims = await Promise.all([claimDueEmailAlertSends(3), claimDueEmailAlertSends(3)]);
-      const ids = claims.flat().map((row) => row.send_id);
-      expect(new Set(ids).size).toBe(ids.length);
-      expect(ids).toHaveLength(4);
-      expect(await claimDueEmailAlertSends(10)).toEqual([]);
     } finally {
       await client.end();
     }
