@@ -482,6 +482,26 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     }
   });
 
+  test("only this gym's link keeps the thread: not the same login's record in another gym, nor a parent id there equal to the co-guardian's here", async () => {
+    const client = await freshDatabase('ftg_two_gyms');
+    await start(GUARDIAN, CHILD);
+    // In the other gym this login guards that gym's child of the same id, under a parent id equal to the co-guardian's here.
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Thread Guardian')`,
+      [OTHER_ORG, `parent-${CO_GUARDIAN}`, GUARDIAN],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'guardian')`,
+      [OTHER_ORG, `parent-${CO_GUARDIAN}`, CHILD],
+    );
+    expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
+    await client.query(
+      `delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+      [ORG, `parent-${GUARDIAN}`, CHILD],
+    );
+    expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toEqual([]);
+  });
+
   test('a message needs words, up to 2000 characters', async () => {
     const client = await freshDatabase('ftg_text');
     for (const text of ['', '   ', 'x'.repeat(2001), null, 42, 'hi\u0000there']) {
