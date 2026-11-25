@@ -331,11 +331,11 @@ describe('runOn with a first block that is not a whole number', () => {
 });
 
 describe('adding, removing and moving blocks', () => {
-  const drillList = () => answer(200, { ok: true, items: [{ drill_id: 'drl-1', name: 'Slip and counter' }, { drill_id: 'drl-2', name: 'Footwork ladder' }] });
+  const drillList = () => answer(200, { drills: [{ drill_id: 'drl-1', name: 'Slip and counter' }, { drill_id: 'drl-2', name: 'Footwork ladder' }] });
 
   function setupRouted(patch: Response = answer(200, { outcome: 'updated', script: SCRIPT })) {
     const fetchMock = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'PATCH' ? patch : String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {}));
+      init?.method === 'PATCH' ? patch : String(url).includes('/api/pilot/drill-library') ? drillList() : answer(404, {}));
     global.fetch = fetchMock as unknown as typeof fetch;
     const onSaved = jest.fn();
     render(<SessionScriptEditor script={SCRIPT} onSaved={onSaved} onCancel={jest.fn()} />);
@@ -445,7 +445,7 @@ describe('adding, removing and moving blocks', () => {
     const fetchMock = jest.fn((url: RequestInfo | URL, init?: RequestInit) =>
       init?.method === 'PATCH'
         ? new Promise<Response>((resolve) => { finish = resolve; })
-        : Promise.resolve(String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {})));
+        : Promise.resolve(String(url).includes('/api/pilot/drill-library') ? drillList() : answer(404, {})));
     global.fetch = fetchMock as unknown as typeof fetch;
     const onSaved = jest.fn();
     render(<SessionScriptEditor script={SCRIPT} onSaved={onSaved} onCancel={jest.fn()} />);
@@ -471,7 +471,7 @@ describe('adding, removing and moving blocks', () => {
     const fetchMock = jest.fn((url: RequestInfo | URL, init?: RequestInit) =>
       init?.method === 'PATCH'
         ? new Promise<Response>((resolve) => { finish = resolve; })
-        : Promise.resolve(String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {})));
+        : Promise.resolve(String(url).includes('/api/pilot/drill-library') ? drillList() : answer(404, {})));
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
     await addDrill('Slip and counter');
@@ -564,7 +564,7 @@ describe('adding, removing and moving blocks', () => {
 
   function setupWith(script: SessionScriptWithDetail) {
     const fetchMock = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'PATCH' ? answer(200, { outcome: 'updated', script }) : String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {}));
+      init?.method === 'PATCH' ? answer(200, { outcome: 'updated', script }) : String(url).includes('/api/pilot/drill-library') ? drillList() : answer(404, {}));
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<SessionScriptEditor script={script} onSaved={jest.fn()} onCancel={jest.fn()} />);
     return { sent: () => JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === 'PATCH')?.[1]?.body)) as Record<string, unknown> };
