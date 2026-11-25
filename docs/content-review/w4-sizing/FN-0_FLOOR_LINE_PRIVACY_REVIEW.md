@@ -32,12 +32,38 @@ questions for App Overwatch in section 6.
 | Not attendance | The card: "a run-presence mark is not attendance (CT-13, ATTENDANCE_PRECEDENCE.md); this line is not an attendance figure" | `:1218`; `docs/current/ATTENDANCE_PRECEDENCE.md:146-160` |
 | OD-2026-10-07-008, ruling 1 | "checked-in athletes' initials and session milestones go only to a gym TV paired with a code. The public no-sign-in address shows today's classes and a head count only." | `OWNER_DECISIONS.md:8673` |
 | OD-2026-10-07-008, ruling 3 | "A guardian link goes dormant automatically when the athlete reaches 18, for every read and every consent change." | `:8675` |
-| OD-2026-10-04-010 | "an athlete with no date of birth on file is treated as a minor" | `:10606-10609` |
+| OD-2026-10-04-010 | "an athlete with no date of birth on file is treated as a minor" (an adult-pathway ruling; the app applies the same rule everywhere, `apps/web/src/lib/minorAge.ts:47-54`) | `:10606-10609` |
 | OD-2026-10-11-007 | "a coach of a gym can read and act on every athlete of that gym ... nothing changes for athletes, parents, the platform owner or any other role" | `:7886` |
 | Kernel floor | "Minors' privacy, role gates and organization boundaries are untouched. Nothing false ships: ... an unknown value never looks complete or zero." | `AGENT_KERNEL.md:104-107` |
 | L1 rule (this brief; W4_SIZING) | No new warnings, gates or disclaimers for minors | `W4_SIZING.md:134-135` |
 
-<!-- RULINGS-SWEEP: rows added from the rulings sweep go here -->
+Other rulings that bear on the line:
+
+| Ruling | What it says | Where |
+|---|---|---|
+| OD-2026-10-12-006 | "an athlete or parent can check in as Present on the day of the class only. A self check-in never replaces a coach or admin mark. Absent and Excused are staff only." | `:7758` |
+| OD-2026-10-21-004, rulings 1 and 2 | A "here" tap flips an Absent or Excused register mark to Present; untapping removes the register mark the tap created "only if nobody changed it since" | `:5995-5996` |
+| OD-2026-10-22-001 (Overwatch's application, not Jason's words) | "a cancelled class's attendance stops counting (rows kept, staff still see them)" | `:5934` |
+| OD-2026-10-12-024 | "a guardian sees the coach's notes and their own replies and not the other guardian's replies" | `:7500` |
+| OD-2026-10-06-024, ruling 1 | "An active hold blocks nothing at check-in or drill assignment; staff see a warning in both places." | `:8917` |
+| OD-2026-10-17-014 | "the app has no age rule on staff roles (coach, staff, volunteer, admin)" | `:6859` |
+| OD-2026-09-28-005 | the platform account sees "de-identified, aggregate data across gyms and never an individual athlete's file" (option A, chosen) | `:16014-16017` |
+| OD-2026-11-20-001, OW27-12 A | Approved TV words: "Nobody is marked here yet today." ("it counts I'm here and the coach's register") | `:1857`, `:1860` |
+| OD-2026-11-21-006, OW27-34 A | Failed saves are held "In the open page; dropped at sign-out"; its pro: "Nothing left on a shared tablet"; "Offline storage on the device stays parked" | `:1421`, `:1425-1426` |
+| OD-2026-11-23-006 | "no pain-report notes on the class screen; coaches read them on the coach home" | `:823` |
+| OD-2026-10-17-008, ruling 1 | "the gym TV keeps showing only who is present, by initials" | `:6957` |
+| OD-2026-09-30-003, G8 | "overwatch answers technical, how-to and scope questions; product intent, design, safety, minors' privacy and spending go to Jason" | `:15030-15032` |
+
+**On G8 and Q3.5 B.** G8 sends minors'-privacy questions to Jason. Q3.5 B is
+later and names FN-0: "FN-0 is signed off by Overwatch ... Jason does not read
+it first" (`:1275`). I read Q3.5 B as governing this review and its
+questions (section 6). If App Overwatch reads any of them as product intent
+under G8, that one is asked of Jason in this PR. INFERRED.
+
+**Not read:** the research finding `findings/2026-11-19-online-gym-as-a-room.md`,
+which OD-2026-11-19-007 cites for the line (`OWNER_DECISIONS.md:2625`). A
+search of this repository found no copy; `docs/research/` holds no file on the
+floor line.
 
 ## 2. The two sources, as the code has them
 
@@ -89,8 +115,8 @@ questions for App Overwatch in section 6.
   coach marking last week's class today writes today's time. OBSERVED.
 - **An athlete or a parent may also write it**, for a class the athlete is
   registered to, on the class's own gym day, `present` only
-  (`scheduler/route.ts:1396-1436`), and it never overwrites a staff mark
-  (`schedulerDb.ts:692-730`). The athlete does this from the "I'm here" card on
+  (`scheduler/route.ts:1396-1436`; OD-2026-10-12-006), and it never
+  overwrites a staff mark (`schedulerDb.ts:692-730`). The athlete does this from the "I'm here" card on
   Today (`apps/web/components/AthleteWorkspace.tsx:3270-3275`). OBSERVED. So a
   present mark can be written in the morning for an evening class, before the
   athlete has left home. INFERRED from the same-day rule, which checks the day
@@ -166,7 +192,8 @@ board, the platform owner, staff or volunteers see. Their tiers today:
   (`privacyTiers.ts:81-87`); the scheduler read refuses the board outright
   (`scheduler/route.ts:707-709`);
 - platform owner: no athlete ids, no names, across organizations
-  (`privacyTiers.ts:73-79`);
+  (`privacyTiers.ts:73-79`), and "never an individual athlete's file"
+  (OD-2026-09-28-005);
 - staff and volunteers: "hold no athlete-scoped or administrative surface"
   (`pilotRoleRouting.ts:51-52`); the run read admits only coach,
   organization admin and admin (`apps/web/src/server/pilot/sessionStaffNotes.ts:74`, `:121-131`).
@@ -245,7 +272,26 @@ answer to Q3.1, not a build choice.
 - A shared gym tablet: the athlete line shows only the signed-in athlete; the
   coach line shows names, which is Q3.3's accepted con; the tablet signs out
   after 1 hour idle (OD-2026-11-19-009 Q5, `OWNER_DECISIONS.md:2493`).
-  OBSERVED (the record), INFERRED (the effect).
+  Nothing from the line is kept on the device ("Nothing left on a shared
+  tablet", OW27-34 A; offline storage parked). OBSERVED (the record),
+  INFERRED (the effect).
+- A coach may be under 18 (OD-2026-10-17-014), and under Q3.3 A sees every
+  name on the floor, as they already see the roster. Information; no action.
+
+**F11. Who marked a child stays with staff.** "Who marked a child present,
+and by what method, is safeguarding evidence"
+(`docs/current/ATTENDANCE_PRECEDENCE.md:100-101`). Both guardians of a child
+would see the child's line, and the record keeps one guardian's replies from
+the other (OD-2026-10-12-024). OBSERVED. So the family line never says who
+marked the child or how: not "your coach", not "checked in by a parent", not
+"self". INFERRED from both; recommendation.
+
+**F12. A hold does not keep a child off the line, and the line shows no
+hold.** A hold blocks nothing at check-in (OD-2026-10-06-024 ruling 1), so an
+athlete on a hold can be on the floor. OBSERVED. The line carries presence
+only, for every role, and never uses the medical-stop mark `--locked`
+(`AGENT_KERNEL.md:97-98`). Jason keeps sensitive detail off the shared floor
+screen (OD-2026-11-23-006). Recommendation.
 
 ## 4. What the line may show, and must never show, by role
 
@@ -255,8 +301,8 @@ answer changes the rows it names.
 | Role (home) | May show | Must never show |
 |---|---|---|
 | Coach, organization admin, admin (coach home, admin home) | The names of every live athlete of this gym on the floor now, from either source (Q3.3 A). Staff gate as F5. | Anything from another organization. A deleted athlete. A mark taken back. A mark on a cancelled class. Absent or excused as "not here" (F4). Health, hold, readiness, pain, injury or behaviour detail on the line itself (the line is presence only; staff read those elsewhere). |
-| Parent (Parent Hub) | For each of their own children who is on the floor now, a line saying so (Q3.2 A). Scope as F6. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the coach, the run, the room (Q3.2 B not chosen). A child who is 18 or over, unlinked, or deleted. Who marked the child, the method, or any staff note. "Not here" or "absent" (F4). |
-| Athlete (athlete home) | Their own status: on the floor now (Q3.4 A). | Anyone else: no name, no count (Q3.4 B not chosen), no id. The run, the coach, who else is in the session. Who marked them or how. |
+| Parent (Parent Hub) | For each of their own children who is on the floor now, a line saying so (Q3.2 A). Scope as F6. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the coach, the run, the room (Q3.2 B not chosen). A child who is 18 or over, unlinked, or deleted. Who marked the child, the method, or any staff note (F11). A hold, pain, readiness or injury state (F12). "Not here" or "absent" (F4). |
+| Athlete (athlete home) | Their own status: on the floor now (Q3.4 A). | Anyone else: no name, no count (Q3.4 B not chosen), no id. The run, the coach, who else is in the session. Who marked them or how (F11). A hold or health state (F12). |
 | Board, platform owner, staff, volunteer | Nothing (recommended, FN0-Q3). | Names, initials, ids or a live count (F3). |
 | Signed out: public wall, paired TV | Unchanged: classes and counts on the public address, initials on a paired TV (OD-2026-10-07-008 ruling 1). | Any part of the line. |
 
@@ -264,7 +310,8 @@ answer changes the rows it names.
 nothing gym-wide reaches a family browser to be filtered there. The
 organization comes from the signed-in principal, never the request (the wall
 route's rule, `wall/route.ts:30-32`). The response is `no-store`, as the wall
-and the staff read are (`wall/route.ts:56`; `attendance-today/route.ts:90-92`).
+and the staff read are (`wall/route.ts:56`; `attendance-today/route.ts:90-92`),
+and the page keeps none of it in device storage (F10).
 No athlete name goes to a log line (the wall logs only an event and a message,
 `wall/route.ts:63`). Recommendations.
 
@@ -289,6 +336,16 @@ Each guard below should be seen to fail when broken (the kernel's
 6. The register-only case behaves as FN0-Q1 rules.
 7. `privacyTiers.ts` and `sessionRunAthletes.ts` say who now reads a derived
    run-mark fact (F1).
+8. A family response says nothing about who marked the child or how (F11),
+   and no line carries a hold, pain, readiness or injury state (F12).
+
+One existing guard FN-1 meets: the CT-13 test lets only listed files read
+`pilot.scheduler_attendance` directly; "Anything new goes through
+pilot.attendance_reconciled" (`apps/web/src/server/pilot/attendancePrecedence.test.ts:21-23`,
+list at `:63`). The line is not attendance (Q3.1 card), so whether FN-1
+reuses an existing reader or is added to the list with a reason is FN-1's
+design choice; it should not count the line as attendance either way.
+INFERRED.
 
 ## 6. Questions for App Overwatch
 
@@ -318,12 +375,13 @@ show a person on the floor?**
 
 **FN0-Q2. What are the words of the line?**
 - **A (recommended):** staff: "On the floor now: " and the names; with no
-  marks, "No one is marked on the floor yet." Parent: "[child's first name] is
-  on the floor now." for each child who is, and nothing for a child who is
-  not. Athlete: "You're on the floor now.", and nothing when not marked.
-  Pros: plain; never claims absence (F4); does not reuse the wall's count
-  (F8). Cons: a parent or athlete with no line cannot tell "not marked" from
-  "nothing to show".
+  marks, "Nobody is marked on the floor right now." (the shape of the TV's
+  approved "Nobody is marked here yet today.", OW27-12 A). Parent: "[child's
+  first name] is on the floor now." for each child who is, and nothing for a
+  child who is not. Athlete: "You're on the floor now.", and nothing when not
+  marked. Pros: plain; never claims absence (F4); does not reuse the wall's
+  count (F8); says nothing about who marked (F11). Cons: a parent or athlete
+  with no line cannot tell "not marked" from "nothing to show".
 - **B:** as A, plus "Not marked on the floor right now." for a parent's child
   and the athlete when there is no mark. Pros: the family always sees a line.
   Cons: more text; "not marked" can read as "not here".
@@ -342,11 +400,15 @@ show a person on the floor?**
 
 ## 7. Sources read, and what was not
 
-- Read at `348e126d`: the files cited above; `docs/current/OWNER_DECISIONS.md`
-  entries OD-2026-11-21-006 (Q3.1 to Q3.5), OD-2026-11-19-009,
-  OD-2026-10-07-008, OD-2026-10-04-010, OD-2026-10-11-007, OD-2026-10-10-003,
-  OD-2026-10-21-001 and -002; `docs/current/ATTENDANCE_PRECEDENCE.md`;
-  `W4_SIZING.md` section 3.
+- Read at `348e126d`: the files cited above; in
+  `docs/current/OWNER_DECISIONS.md`, the entries named in section 1 (each at
+  the lines cited) and OD-2026-10-10-003, OD-2026-10-21-001 and -002;
+  `docs/current/ATTENDANCE_PRECEDENCE.md`; `W4_SIZING.md` section 3.
+- Searched (a search, not a full read): `OWNER_DECISIONS.md`, `docs/research/`,
+  `docs/current/ACTIVE_WORK.md`, `ORGANIZATION_ROLE_MODEL.md` and
+  `AUTH_CONTRACT.md`, for presence, check-in, wall, minors, guardian, shared
+  tablet, board, staff and volunteer terms. No ruling found contradicts Q3.1
+  to Q3.5.
 - Not read: `docs/AI_COLLABORATION.md`; the paired TV route's own file
   (`/api/pilot/tv/session`; its board is read from `wallDisplay.ts` and
   `wallDisplayDb.ts`); any screen, staging or production. Not run: any test.
