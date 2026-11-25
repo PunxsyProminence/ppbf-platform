@@ -64,6 +64,7 @@ const GUARDIAN = 'acct-ftg-guardian';
 const CO_GUARDIAN = 'acct-ftg-coguardian';
 const OTHER_GYM_GUARDIAN = 'acct-ftg-other-guardian';
 const COACH = 'acct-ftg-coach';
+const SECOND_COACH = 'acct-ftg-coach-b';
 const CHILD = 'ATH-FTG-CHILD';
 const SIBLING = 'ATH-FTG-SIBLING';
 const UNLINKED = 'ATH-FTG-UNLINKED';
@@ -122,6 +123,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [GUARDIAN, 'parent', ORG],
     [CO_GUARDIAN, 'parent', ORG],
     [COACH, 'coach', ORG],
+    [SECOND_COACH, 'coach', ORG],
     [OTHER_GYM_GUARDIAN, 'parent', OTHER_ORG],
   ];
   for (const [account, role, org] of accounts) {
@@ -172,13 +174,13 @@ async function freshDatabase(name: string): Promise<Client> {
   return client;
 }
 
-async function staffReply(client: Client, threadId: string, athleteId = CHILD): Promise<string> {
+async function staffReply(client: Client, threadId: string, athleteId = CHILD, author = COACH): Promise<string> {
   const result = await client.query(
     `insert into pilot.family_thread_posts
        (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
      values ($1, gen_random_uuid(), $2::uuid, $3, $4, 'coach', 'Yes, see you Saturday.')
      returning post_id::text as post_id`,
-    [ORG, threadId, athleteId, COACH],
+    [ORG, threadId, athleteId, author],
   );
   return result.rows[0].post_id;
 }
@@ -318,6 +320,63 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     expect(reads.rows[0].n).toBe(0);
   });
 
+  test("the store's own checks hold with the database guards switched off", async () => {
+    // The database refuses these too (migration family-threads). Switched off here, so each 404
+    // below is the store's own check (familyThreads.ts), not the trigger's (OD-2026-10-12-024, Q2 A).
+    const client = await freshDatabase('ftg_store_checks');
+    const opened = await start(GUARDIAN, CHILD);
+    const reply = await staffReply(client, opened.thread_id);
+    await client.query(`alter table pilot.family_thread_posts disable trigger trg_family_thread_posts_guard;
+      alter table pilot.family_thread_reads disable trigger trg_family_thread_reads_guard`);
+    await expect(
+      threads.writeAgainInFamilyThread({ organizationId: ORG, accountId: CO_GUARDIAN, threadId: opened.thread_id, text: 'Me too.' }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: CO_GUARDIAN, postId: reply }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: opened.post_id }),
+    ).rejects.toMatchObject({ status: 404 });
+    const left = await client.query(
+      `select (select count(*)::int from pilot.family_thread_posts) as posts, (select count(*)::int from pilot.family_thread_reads) as reads`,
+    );
+    expect(left.rows[0]).toEqual({ posts: 2, reads: 0 });
+  });
+
+  test("another gym's guardian, in their own gym, reaches nothing of this gym's thread", async () => {
+    const client = await freshDatabase('ftg_other_gym');
+    const opened = await start(GUARDIAN, CHILD);
+    const reply = await staffReply(client, opened.thread_id);
+    // Their session is in their own gym; the ids are this gym's.
+    await expect(
+      threads.writeAgainInFamilyThread({ organizationId: OTHER_ORG, accountId: OTHER_GYM_GUARDIAN, threadId: opened.thread_id, text: 'Hi' }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      threads.recordFamilyThreadReadByGuardian({ organizationId: OTHER_ORG, accountId: OTHER_GYM_GUARDIAN, postId: reply }),
+    ).rejects.toMatchObject({ status: 404 });
+    // Their own child of the same id is theirs; this gym's thread is not in their list.
+    const theirs = await threads.startFamilyThread({ organizationId: OTHER_ORG, accountId: OTHER_GYM_GUARDIAN, athleteId: CHILD, text: 'Hello' });
+    expect((await threads.listOwnFamilyThreads(OTHER_ORG, OTHER_GYM_GUARDIAN)).map((thread) => thread.thread_id)).toEqual([theirs.thread_id]);
+
+    // One login with guardian records in both gyms, linked to the child of the same id in each:
+    // signed in to the other gym, this gym's thread is not theirs to write in or read from there.
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Thread Guardian')`,
+      [OTHER_ORG, `parent-${GUARDIAN}`, GUARDIAN],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'guardian')`,
+      [OTHER_ORG, `parent-${GUARDIAN}`, CHILD],
+    );
+    await expect(
+      threads.writeAgainInFamilyThread({ organizationId: OTHER_ORG, accountId: GUARDIAN, threadId: opened.thread_id, text: 'Hi' }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      threads.recordFamilyThreadReadByGuardian({ organizationId: OTHER_ORG, accountId: GUARDIAN, postId: reply }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(await threads.listOwnFamilyThreads(OTHER_ORG, GUARDIAN)).toEqual([]);
+  });
+
   test('the opener sees the staff reply as new, writes again (Q2 A), and records the read once', async () => {
     const client = await freshDatabase('ftg_thread');
     const opened = await start(GUARDIAN, CHILD);
@@ -345,6 +404,12 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     const reads = await client.query('select count(*)::int as n from pilot.family_thread_reads');
     expect(reads.rows[0].n).toBe(1);
 
+    // A staff member whose account has since been removed: the reply stays, from staff, unnamed.
+    const gone = await staffReply(client, opened.thread_id, CHILD, SECOND_COACH);
+    await client.query('delete from pilot.accounts where account_id = $1', [SECOND_COACH]);
+    [thread] = await threads.listOwnFamilyThreads(ORG, GUARDIAN);
+    expect(thread.posts.find((item) => item.post_id === gone)).toMatchObject({ from: 'staff', staff_name: null, new_to_me: true });
+
     // Their own words are not a read; a forged id and a non-id are the same 404.
     for (const postId of [opened.post_id, '88888888-8888-4888-8888-888888888888', 'not-an-id']) {
       await expect(
@@ -358,6 +423,9 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     const opened = await start(GUARDIAN, CHILD);
     const reply = await staffReply(client, opened.thread_id);
     const sibling = await start(GUARDIAN, SIBLING);
+    // Newest thread first.
+    expect((await threads.listOwnFamilyThreads(ORG, GUARDIAN)).map((thread) => thread.thread_id))
+      .toEqual([sibling.thread_id, opened.thread_id]);
 
     // The child turns 18 (their date of birth corrected to an adult's).
     await client.query('update pilot.athletes set dob = $3 where organization_id = $1 and athlete_id = $2', [ORG, CHILD, ADULT_DOB]);
@@ -379,7 +447,7 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
 
   test('a message needs words, up to 2000 characters', async () => {
     const client = await freshDatabase('ftg_text');
-    for (const text of ['', '   ', 'x'.repeat(2001), null, 42]) {
+    for (const text of ['', '   ', 'x'.repeat(2001), null, 42, 'hi\u0000there']) {
       await expect(start(GUARDIAN, CHILD, text)).rejects.toMatchObject({ status: 400 });
     }
     await start(GUARDIAN, CHILD, `  ${'x'.repeat(2000)}  `);

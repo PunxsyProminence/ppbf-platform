@@ -33,7 +33,7 @@ const STORE_IMPORTERS: readonly string[] = [
 ];
 
 const TABLE = /\bfamily_thread_(?:posts|reads)\b/;
-const STORE_IMPORT = /from\s+['"](?:@\/src\/server\/pilot\/|\.{1,2}\/(?:[\w.-]+\/)*)familyThreads['"]/;
+const STORE_IMPORT = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)['"](?:@\/src\/server\/pilot\/|\.{1,2}\/(?:[\w.-]+\/)*)familyThreads['"]/;
 const WHOLE_ROW: readonly RegExp[] = [
   /select\s+(?:distinct\s+)?\*/i,
   /\b[a-z_]\w*\.\*(?![\w)])/i,
@@ -41,7 +41,7 @@ const WHOLE_ROW: readonly RegExp[] = [
   /\b(?:to_jsonb?|row_to_json|jsonb?_agg|jsonb?_populate_record)\s*\(\s*[a-z_]\w*\s*\)/i,
 ];
 
-const SCAN_ROOTS = ['apps/web/app', 'apps/web/components', 'apps/web/src', 'apps/web/scripts', 'apps/web/lib', 'infra', 'scripts'];
+const SCAN_ROOTS = ['apps/web/app', 'apps/web/components', 'apps/web/src', 'apps/web/scripts', 'apps/web/lib', 'apps/web/types', 'apps/research-bridge', 'packages', 'infra', 'scripts'];
 const CODE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|sql)$/;
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$|[\\/](?:__tests__|e2e)[\\/]/;
 
@@ -101,6 +101,8 @@ describe('family threads: every reader is in the diff (W4 item 4)', () => {
     expect(TABLE.test('-- nothing here')).toBe(false);
     expect(STORE_IMPORT.test("import { x } from '@/src/server/pilot/familyThreads';")).toBe(true);
     expect(STORE_IMPORT.test("import { x } from './familyThreads';")).toBe(true);
+    expect(STORE_IMPORT.test("await import('@/src/server/pilot/familyThreads')")).toBe(true);
+    expect(STORE_IMPORT.test("require('./familyThreads')")).toBe(true);
     for (const sample of ['select * from t', 'select p.* from t p', 'insert into t values (1) returning *', 'select to_jsonb(p) from t p']) {
       expect(WHOLE_ROW.some((pattern) => pattern.test(sample))).toBe(true);
     }

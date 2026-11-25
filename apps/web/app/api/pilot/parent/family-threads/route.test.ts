@@ -95,6 +95,7 @@ describe('POST /api/pilot/parent/family-threads (W4 item 4)', () => {
     ['both', { athlete_id: 'ath-1', thread_id: THREAD, text: 'Hi' }],
     ['blank ids', { athlete_id: '  ', thread_id: '', text: 'Hi' }],
     ['a non-string id', { athlete_id: 7, text: 'Hi' }],
+    ['a valid athlete id with a non-string thread id', { athlete_id: 'ath-1', thread_id: 7, text: 'Hi' }],
     ['an over-long athlete id', { athlete_id: 'a'.repeat(301), text: 'Hi' }],
     ['no body', 'not json'],
   ])('%s is 400 and writes nothing', async (_label, body) => {

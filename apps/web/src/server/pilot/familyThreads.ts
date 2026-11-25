@@ -61,6 +61,8 @@ export interface GuardianThread {
 function cleanText(raw: unknown): string {
   const text = typeof raw === 'string' ? raw.trim() : '';
   if (!text) throw new ValidationError('Write a message before sending.');
+  // PostgreSQL text cannot hold a NUL character; refuse it here rather than fail the write.
+  if (text.includes('\u0000')) throw new ValidationError('A message cannot contain a NUL character.');
   if (text.length > FAMILY_THREAD_POST_MAX_LENGTH) {
     throw new ValidationError(`A message is at most ${FAMILY_THREAD_POST_MAX_LENGTH} characters.`);
   }
