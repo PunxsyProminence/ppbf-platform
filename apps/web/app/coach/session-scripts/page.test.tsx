@@ -890,9 +890,22 @@ describe('a coach-made plan', () => {
     if (because === 'removal') expect(notice).not.toHaveTextContent(/delivered before/);
   });
 
+  it('a new version with no reason given says only what is true: saved as the next version, the earlier one kept', async () => {
+    const saved = detail({ script_id: 'scr-friday-v2', version: 2 });
+    editingFetch(() => jsonResponse({ outcome: 'new_version', script: saved }));
+    const form = await openAndEdit();
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('Your changes were saved as version 2. The earlier version is kept as it was.');
+    expect(notice).not.toHaveTextContent(/delivered before/);
+    expect(notice).not.toHaveTextContent(/removed/);
+  });
+
   it('a delivered plan is saved as a new version: the page says so, opens that version and starts it', async () => {
     const saved = detail({ script_id: 'scr-friday-v2', version: 2 });
-    const { urls } = editingFetch(() => jsonResponse({ outcome: 'new_version', script: saved }));
+    const { urls } = editingFetch(() => jsonResponse({ outcome: 'new_version', because: 'run', script: saved }));
     const form = await openAndEdit();
 
     fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));

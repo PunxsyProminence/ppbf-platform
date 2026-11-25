@@ -386,8 +386,10 @@ function CoachSessionScripts() {
         ? because === 'removal'
           ? `Because a block was removed, your changes were saved as version ${saved.version}. `
             + 'The earlier version is kept as it was.'
-          : `This plan has been delivered before, so your changes were saved as version ${saved.version}. `
-            + 'The sessions already delivered keep the version they ran.'
+          : because === 'run'
+            ? `This plan has been delivered before, so your changes were saved as version ${saved.version}. `
+              + 'The sessions already delivered keep the version they ran.'
+            : `Your changes were saved as version ${saved.version}. The earlier version is kept as it was.`
         : 'Saved.',
     );
     void load();

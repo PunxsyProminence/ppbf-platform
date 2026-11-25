@@ -322,6 +322,13 @@ describe('runOn: the blocks from the change point on run on', () => {
   });
 });
 
+describe('runOn with a first block that is not a whole number', () => {
+  it('leaves the minutes from the change on as typed', () => {
+    const rows = [{ start: '1.5', end: '6' }, { start: '6', end: '11' }];
+    expect(runOn(rows, 0, null)).toEqual(rows);
+  });
+});
+
 describe('adding, removing and moving blocks', () => {
   const drillList = () => answer(200, { ok: true, items: [{ drill_id: 'drl-1', name: 'Slip and counter' }, { drill_id: 'drl-2', name: 'Footwork ladder' }] });
 
@@ -373,7 +380,7 @@ describe('adding, removing and moving blocks', () => {
   it('removing a block sends remove_block_ids, re-times the rest, and sends the edited block only', async () => {
     const { sent } = setupRouted();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove block 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
 
     expect(block(1).getByLabelText('Title')).toHaveValue('Partner mirror');
     expect(block(1).getByLabelText('Starts at minute')).toHaveValue('0');
@@ -391,7 +398,7 @@ describe('adding, removing and moving blocks', () => {
   it('moving a block down sends the running order and the re-timed minutes', async () => {
     const { sent } = setupRouted();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move block 1 down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move down, block 1' }));
 
     expect(block(1).getByLabelText('Title')).toHaveValue('Partner mirror');
     expect(block(2).getByLabelText('Starts at minute')).toHaveValue('5');
@@ -411,10 +418,10 @@ describe('adding, removing and moving blocks', () => {
   it('moving a block and moving it back sends no order and nothing else; the ends of the list cannot move off it', async () => {
     const { sent } = setupRouted();
 
-    expect(screen.getByRole('button', { name: 'Move block 1 up' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Move block 2 down' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Move block 2 up' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Move block 2 up' }));
+    expect(screen.getByRole('button', { name: 'Move up, block 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move down, block 2' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Move up, block 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move up, block 2' }));
     await act(async () => save());
 
     expect(sent()).toEqual({ script_id: 'scr-1', expected_updated_at: READ_AT });
@@ -424,7 +431,7 @@ describe('adding, removing and moving blocks', () => {
     const { sent } = setupRouted();
 
     await addDrill('Slip and counter');
-    fireEvent.click(screen.getByRole('button', { name: 'Move block 3 up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move up, block 3' }));
     await act(async () => save());
 
     const body = sent() as { add_blocks: Array<{ ref: string }>; order: string[] };
@@ -439,6 +446,16 @@ describe('adding, removing and moving blocks', () => {
 
     expect(await screen.findByText(/could not be loaded, so no drills are shown/)).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Drills in the library' })).toBeNull();
+  });
+
+  it('each row button\'s accessible name starts with its visible text', () => {
+    setupRouted();
+
+    for (const [visible, name] of [['Move up', 'Move up, block 2'], ['Move down', 'Move down, block 1'], ['Remove', 'Remove, block 2']]) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveTextContent(visible);
+      expect(name.startsWith(visible)).toBe(true);
+    }
   });
 
   it('says it is loading while the library is read', () => {
@@ -460,7 +477,7 @@ describe('adding, removing and moving blocks', () => {
   ])('%s is put in plain words and nothing is saved', async (code, status, sentence) => {
     const { onSaved } = setupRouted(answer(status, { error: code }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove block 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 2' }));
     await act(async () => save());
 
     expect(screen.getByRole('alert')).toHaveTextContent(sentence);
@@ -470,9 +487,186 @@ describe('adding, removing and moving blocks', () => {
   it('hands up why a new version was made', async () => {
     const { onSaved } = setupRouted(answer(200, { outcome: 'new_version', because: 'removal', script: SCRIPT }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove block 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 2' }));
     await act(async () => save());
 
     expect(onSaved).toHaveBeenCalledWith('new_version', SCRIPT, 'removal');
+  });
+
+  const LATE = {
+    ...SCRIPT,
+    blocks: [
+      { block_id: 'blk-1', block_order: 1, block_label: 'Jab Drill', start_offset_min: 3, end_offset_min: 9 },
+      { block_id: 'blk-2', block_order: 2, block_label: 'Partner mirror', start_offset_min: 9, end_offset_min: 14 },
+      { block_id: 'blk-3', block_order: 3, block_label: 'Cool down', start_offset_min: 14, end_offset_min: 20 },
+    ],
+  } as unknown as SessionScriptWithDetail;
+
+  function setupWith(script: SessionScriptWithDetail) {
+    const fetchMock = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'PATCH' ? answer(200, { outcome: 'updated', script }) : String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {}));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<SessionScriptEditor script={script} onSaved={jest.fn()} onCancel={jest.fn()} />);
+    return { sent: () => JSON.parse(String(fetchMock.mock.calls.find((call) => call[1]?.method === 'PATCH')?.[1]?.body)) as Record<string, unknown> };
+  }
+
+  const starts = () => Array.from(document.querySelectorAll('ol[aria-label^="Blocks"] li')).map((li) => (within(li as HTMLElement).getByLabelText('Starts at minute') as HTMLInputElement).value);
+
+  it('removing the first block keeps the start the first block had (minute 3)', async () => {
+    const { sent } = setupWith(LATE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+
+    expect(starts()).toEqual(['3', '8']);
+    await act(async () => save());
+    expect(sent()).toEqual({
+      script_id: 'scr-1',
+      expected_updated_at: READ_AT,
+      blocks: [
+        { block_id: 'blk-2', block_label: 'Partner mirror', start_offset_min: 3, end_offset_min: 8 },
+        { block_id: 'blk-3', block_label: 'Cool down', start_offset_min: 8, end_offset_min: 14 },
+      ],
+      remove_block_ids: ['blk-1'],
+    });
+  });
+
+  it('moving a block to the top keeps the start the first block had (minute 3)', () => {
+    setupWith(LATE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move up, block 2' }));
+
+    expect(block(1).getByLabelText('Title')).toHaveValue('Partner mirror');
+    expect(starts()).toEqual(['3', '8', '14']);
+  });
+
+  it('removing two blocks sends both ids', async () => {
+    const { sent } = setupWith(LATE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+    await act(async () => save());
+
+    expect((sent().remove_block_ids as string[]).sort()).toEqual(['blk-1', 'blk-3']);
+  });
+
+  it('retitling an added block sends its block_label', async () => {
+    const { sent } = setupRouted();
+
+    await addDrill('Slip and counter');
+    type(block(3).getByLabelText('Title'), 'Slip, my way');
+    await act(async () => save());
+
+    expect((sent() as { add_blocks: unknown[] }).add_blocks).toEqual([
+      { ref: expect.any(String), kind: 'drill', drill_id: 'drl-1', block_label: 'Slip, my way', start_offset_min: 11, end_offset_min: 16 },
+    ]);
+  });
+
+  it.each([
+    ['whole minutes', 'Starts at minute', '2.5', /Block 3 needs whole minutes/],
+    ['an end not after the start', 'Ends at minute', '11', /Block 3 needs whole minutes, with its end after its start/],
+    ['an end past the last minute', 'Ends at minute', '1441', /Block 3 ends after minute 1440/],
+  ])('invalid minutes typed into an added block (%s) are named and nothing is sent', async (_case, field, value, sentence) => {
+    const { fetchMock } = setupRouted();
+
+    await addDrill('Slip and counter');
+    type(block(3).getByLabelText(field), value);
+    await act(async () => save());
+
+    expect(screen.getByRole('alert')).toHaveTextContent(sentence);
+    expect(fetchMock.mock.calls.some((call) => call[1]?.method === 'PATCH')).toBe(false);
+  });
+
+  it('an empty plan takes a drill as its first block, from minute 0 for 5 minutes', async () => {
+    const { sent } = setupWith({ ...SCRIPT, blocks: [] } as unknown as SessionScriptWithDetail);
+
+    expect(screen.getByText(/This plan has no blocks/)).toBeInTheDocument();
+    await addDrill('Footwork ladder');
+    expect(block(1).getByLabelText('Starts at minute')).toHaveValue('0');
+    expect(block(1).getByLabelText('Ends at minute')).toHaveValue('5');
+    expect(screen.queryByText(/This plan has no blocks/)).toBeNull();
+    await act(async () => save());
+
+    expect(sent()).toEqual({
+      script_id: 'scr-1',
+      expected_updated_at: READ_AT,
+      add_blocks: [{ ref: expect.any(String), kind: 'drill', drill_id: 'drl-2', start_offset_min: 0, end_offset_min: 5 }],
+    });
+  });
+
+  it('removing every block sends every id and says the plan has no blocks', async () => {
+    const { sent } = setupRouted();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+
+    expect(screen.getByText(/This plan has no blocks/)).toBeInTheDocument();
+    await act(async () => save());
+    expect(sent()).toEqual({ script_id: 'scr-1', expected_updated_at: READ_AT, remove_block_ids: ['blk-1', 'blk-2'] });
+  });
+
+  it('a first block whose start is not a whole number is not re-timed from 0', () => {
+    setupWith({
+      ...SCRIPT,
+      blocks: [
+        { block_id: 'blk-1', block_order: 1, block_label: 'A', start_offset_min: 0, end_offset_min: 6 },
+        { block_id: 'blk-2', block_order: 2, block_label: 'B', start_offset_min: 6, end_offset_min: 11 },
+      ],
+    } as unknown as SessionScriptWithDetail);
+
+    type(block(1).getByLabelText('Starts at minute'), '2.5');
+    fireEvent.click(screen.getByRole('button', { name: 'Move down, block 1' }));
+
+    expect(block(1).getByLabelText('Title')).toHaveValue('B');
+    expect(starts()).toEqual(['6', '2.5']);
+  });
+
+  describe('keyboard focus stays on a control that exists', () => {
+    it('after Move up or Move down, on the same button of the moved block', () => {
+      setupWith(LATE);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move down, block 1' }));
+      expect(screen.getByRole('button', { name: 'Move down, block 2' })).toHaveFocus();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move up, block 2' }));
+      expect(screen.getByRole('button', { name: 'Move up, block 1' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move down, block 1' })).toHaveFocus();
+    });
+
+    it('after a move to the top or the bottom, on the block\'s other move button', () => {
+      setupWith(LATE);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move up, block 2' }));
+      expect(screen.getByRole('button', { name: 'Move down, block 1' })).toHaveFocus();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Move down, block 2' }));
+      expect(screen.getByRole('button', { name: 'Move down, block 3' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move up, block 3' })).toHaveFocus();
+    });
+
+    it('after Remove, on the next row\'s Remove, else the previous row\'s, else Add a drill', () => {
+      setupWith(LATE);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove, block 2' }));
+      expect(screen.getByRole('button', { name: 'Remove, block 2' })).toHaveFocus();
+      expect(block(2).getByLabelText('Title')).toHaveValue('Cool down');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove, block 2' }));
+      expect(screen.getByRole('button', { name: 'Remove, block 1' })).toHaveFocus();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove, block 1' }));
+      expect(screen.getByRole('button', { name: 'Add a drill from the library' })).toHaveFocus();
+    });
+
+    it('after a drill is picked, in the new block\'s title; after the picker is closed, on Add a drill', async () => {
+      setupRouted();
+
+      await addDrill('Slip and counter');
+      expect(block(3).getByLabelText('Title')).toHaveFocus();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+      await screen.findByRole('button', { name: 'Footwork ladder' });
+      fireEvent.click(screen.getByRole('button', { name: 'Close the drill library' }));
+      expect(screen.getByRole('button', { name: 'Add a drill from the library' })).toHaveFocus();
+    });
   });
 });

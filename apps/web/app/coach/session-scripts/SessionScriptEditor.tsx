@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import BlockDrillPicker, { type PickableDrill } from './BlockDrillPicker';
 
@@ -103,11 +103,12 @@ function wholeMinutes(text: string): number | null {
 /**
  * Re-times the blocks from `from` on so each starts where the block before it
  * ends, keeping each block's own length (end - start). Blocks before `from` are
- * untouched; the block at index 0 starts at `firstStart`. A block whose minutes
+ * untouched; the block at index 0 starts at `firstStart` (null: it was not a
+ * whole number, so nothing from the change on is re-timed). A block whose minutes
  * are not whole or whose end is not after its start is left as typed (the save
  * names it), and the run continues from its end when that can be read.
  */
-export function runOn<T extends { start: string; end: string }>(blocks: readonly T[], from: number, firstStart = 0): T[] {
+export function runOn<T extends { start: string; end: string }>(blocks: readonly T[], from: number, firstStart: number | null = 0): T[] {
   const out = blocks.slice();
   let cursor: number | null = from <= 0 ? firstStart : wholeMinutes(out[from - 1].end);
   for (let index = Math.max(from, 0); index < out.length && cursor !== null; index += 1) {
@@ -160,17 +161,40 @@ export default function SessionScriptEditor({
     setBlocks((current) => current.map((block) => (block.block_id === blockId ? { ...block, [field]: value } : block)));
   };
 
-  // Where the first block starts now, so a move or a remove at the top keeps it.
-  const firstStart = () => (blocks.length > 0 ? wholeMinutes(blocks[0].start) ?? 0 : 0);
+  // Keyboard focus: a button that was pressed can become disabled or leave the
+  // page, so the handlers name where focus goes and it is moved once the new
+  // rows are on screen.
+  const [focusables] = useState(() => new Map<string, HTMLElement>());
+  const wantFocus = useRef<string | null>(null);
+  const hold = (key: string) => (element: HTMLElement | null) => {
+    if (element) focusables.set(key, element);
+    else focusables.delete(key);
+  };
+  useEffect(() => {
+    const key = wantFocus.current;
+    wantFocus.current = null;
+    if (key) focusables.get(key)?.focus();
+  });
+
+  // Where the first block starts now, so a move or a remove at the top keeps it;
+  // null when it is not a whole number, and then those minutes are left as typed.
+  const firstStart = () => (blocks.length > 0 ? wholeMinutes(blocks[0].start) : 0);
 
   const remove = (index: number) => {
-    setBlocks(runOn(blocks.filter((_, at) => at !== index), index, firstStart()));
+    const rest = blocks.filter((_, at) => at !== index);
+    const neighbour = rest[index] ?? rest[index - 1];
+    wantFocus.current = neighbour ? `${neighbour.block_id}:remove` : 'add';
+    setBlocks(runOn(rest, index, firstStart()));
   };
 
   const move = (index: number, by: -1 | 1) => {
     const next = blocks.slice();
     [next[index], next[index + by]] = [next[index + by], next[index]];
-    setBlocks(runOn(next, Math.min(index, index + by), firstStart()));
+    // The same button, unless the block is now at the end that button points to.
+    const now = index + by;
+    const sameDisabled = by === -1 ? now === 0 : now === next.length - 1;
+    wantFocus.current = `${blocks[index].block_id}:${(by === -1) !== sameDisabled ? 'up' : 'down'}`;
+    setBlocks(runOn(next, Math.min(index, now), firstStart()));
   };
 
   // A new block goes last, starting where the last block ends.
@@ -193,6 +217,12 @@ export default function SessionScriptEditor({
         added: { drill_id: drill.drill_id, drill_name: drill.name },
       },
     ]);
+    wantFocus.current = `${ref}:title`;
+    setPicking(false);
+  };
+
+  const closePicker = () => {
+    wantFocus.current = 'add';
     setPicking(false);
   };
 
@@ -340,6 +370,7 @@ export default function SessionScriptEditor({
               <label className="field min-w-[14rem] flex-1">
                 <span className="t-label">Title</span>
                 <input
+                  ref={hold(`${block.block_id}:title`)}
                   type="text"
                   className="input"
                   value={block.label}
@@ -368,13 +399,13 @@ export default function SessionScriptEditor({
                 />
               </label>
               <div className="flex w-full flex-wrap gap-[var(--s3)]">
-                <button type="button" disabled={busy || index === 0} aria-label={`Move block ${index + 1} up`} onClick={() => move(index, -1)} className={rowButton}>
+                <button type="button" ref={hold(`${block.block_id}:up`)} disabled={busy || index === 0} aria-label={`Move up, block ${index + 1}`} onClick={() => move(index, -1)} className={rowButton}>
                   Move up
                 </button>
-                <button type="button" disabled={busy || index === blocks.length - 1} aria-label={`Move block ${index + 1} down`} onClick={() => move(index, 1)} className={rowButton}>
+                <button type="button" ref={hold(`${block.block_id}:down`)} disabled={busy || index === blocks.length - 1} aria-label={`Move down, block ${index + 1}`} onClick={() => move(index, 1)} className={rowButton}>
                   Move down
                 </button>
-                <button type="button" disabled={busy} aria-label={`Remove block ${index + 1}`} onClick={() => remove(index)} className={rowButton}>
+                <button type="button" ref={hold(`${block.block_id}:remove`)} disabled={busy} aria-label={`Remove, block ${index + 1}`} onClick={() => remove(index)} className={rowButton}>
                   Remove
                 </button>
               </div>
@@ -385,10 +416,10 @@ export default function SessionScriptEditor({
       {blocks.length === 0 && <p className="text-[length:var(--t-md)]">This plan has no blocks. Add one from the drill library.</p>}
 
       {picking ? (
-        <BlockDrillPicker onPick={add} onClose={() => setPicking(false)} />
+        <BlockDrillPicker onPick={add} onClose={closePicker} />
       ) : (
         <div>
-          <button type="button" disabled={busy} onClick={() => setPicking(true)} className={rowButton}>
+          <button type="button" ref={hold('add')} disabled={busy} onClick={() => setPicking(true)} className={rowButton}>
             Add a drill from the library
           </button>
         </div>
