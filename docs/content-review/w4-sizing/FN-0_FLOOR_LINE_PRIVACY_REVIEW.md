@@ -46,7 +46,7 @@ OD-2026-11-21-006 is RECONSTRUCTED: copied by script from Backbone's card file
 
 | Ruling | What it says | Where |
 |---|---|---|
-| OD-2026-11-19-009, Q12 | "A: on every home; parents see only their own child"; affects "Navigation map; FUTURE lane with a privacy review". The entry itself says "Ruling: none by this entry" | `OWNER_DECISIONS.md:2538`, `:2571` |
+| OD-2026-11-19-009, Q12 (RECONSTRUCTED) | "A: on every home; parents see only their own child"; affects "Navigation map; FUTURE lane with a privacy review". The entry itself says "Ruling: none by this entry" | `OWNER_DECISIONS.md:2538`, `:2571` |
 | OD-2026-11-21-006, Q3.1 (OW27-19) | Jason: "C: Either one". The card's cons: B "May still show someone after they have gone home (INFERRED: the register has no end time)"; C "Has B's may-still-show problem". Backbone's note: "The card's con stands for the build to handle" | `:1263-1264`, `:1266`, `:1267` |
 | Q3.2 (OW27-20) | Jason: "A: Own child's line only (Recommended)"; option text "A line for each of their own children on the floor now; nothing about anyone else." Option B (class and start time) not chosen | `:1275`, `:1278` |
 | Q3.3 (OW27-21) | Jason: "A: Names of everyone on the floor (Recommended)"; option text "Names of all athletes on the floor now. Adds no new access." Con on the chosen option: "Names on a screen others may see over a shoulder" | `:1287`, `:1290` |
@@ -66,7 +66,7 @@ Other rulings that bear on the line:
 |---|---|---|
 | OD-2026-10-12-006 | "an athlete or parent can check in as Present on the day of the class only. A self check-in never replaces a coach or admin mark. Absent and Excused are staff only." | `OWNER_DECISIONS.md:7798` |
 | OD-2026-10-21-004, rulings 1 and 2 | A "here" tap flips an Absent or Excused register mark to Present; untapping removes the register mark the tap created "only if nobody changed it since" | `OWNER_DECISIONS.md:6035-6036` |
-| OD-2026-10-22-001 (Overwatch's application, not Jason's words) | "a cancelled class's attendance stops counting (rows kept, staff still see them)" | `OWNER_DECISIONS.md:5974` |
+| OD-2026-10-22-001 (Overwatch's application, not Jason's words; RECONSTRUCTED for the applications) | "a cancelled class's attendance stops counting (rows kept, staff still see them)" | `OWNER_DECISIONS.md:5974` |
 | OD-2026-10-12-024 | "a guardian sees the coach's notes and their own replies and not the other guardian's replies" | `OWNER_DECISIONS.md:7540` |
 | OD-2026-10-05-024, ruling 4 | "Co-guardians see each other's consent status only ..., nothing more." | `OWNER_DECISIONS.md:9398` |
 | OD-2026-11-17-009, ruling 3 (OW25-35 A; RECONSTRUCTED) | When a member's medical restriction cannot be read, "the member's screens and the parent's Safety page" show "one neutral line, "Medical restriction: could not be checked just now; your coach can see it", with no warning colour and nothing blocked ... This is the owner's direction that RULES s1 allows." The card put it to Jason because of "Your rule against new warnings" | `OWNER_DECISIONS.md:3328`; card `:3265-3272` |
@@ -83,7 +83,7 @@ Other rulings that bear on the line:
 | OD-2026-11-21-006, OW27-32 A | Jason: "A: Yes, on this page only (Recommended)"; the option text said counting open-gym marks on the stopped-coming page "Departs from the 10-13 note, so it needs your ruling". The 10-13 note (Overwatch's): a run mark "feeds NO attendance report, reconciled view, board or grant figure" | `OWNER_DECISIONS.md:1437`, `:1440`; note in `infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:29-32` |
 | OD-2026-11-21-007, OW27-43 A (RECONSTRUCTED) | Status words for the staff-only Athlete Safety page (`apps/web/app/coach/athlete-safety/page.tsx:536`, coach and admin) went to Jason ("those words are yours", said of the words for "no hold" and the injury count); the option he chose also set the not-read words, "Hold not read yet" and "Injury reports not read yet" | `OWNER_DECISIONS.md:1193`, `:1197`, `:1201` |
 | OD-2026-10-01-002, item 2 (with OD-2026-10-01-001) | "What an athlete sees when the training-hold check fails: his own wording." Asked A ("We could not check your training status just now. Ask your coach before you train."), B (nothing) or C (his own words): "**C.** The line is "Talk to your coach about today's training."" OD-2026-10-01-001 had marked this question his: "One question inside it is his" | `OWNER_DECISIONS.md:14029-14033`; `:14208-14212` |
-| OD-2026-10-08-003, R2 and PLAN-3 | "platform_owner is removed from the six gym routes (... session-script runs ...)", on every verb in those files | `OWNER_DECISIONS.md:8528-8529` |
+| OD-2026-10-08-003, R2 and PLAN-3 (RECONSTRUCTED) | "platform_owner is removed from the six gym routes (... session-script runs ...)", on every verb in those files | `OWNER_DECISIONS.md:8528-8529` |
 
 **On G8 and Q3.5 B.** G8 sends minors'-privacy questions to Jason. Q3.5 B is
 later and is about FN-0: the card asks "Who signs off the privacy review
@@ -124,8 +124,8 @@ recorded ruling, `:1501`) and Q3.5 B against the recommendation. So this
 review recommends building C as chosen: a register-only mark shows as "on
 the floor now", with the card's con (after they have gone home) as he
 accepted it. It recommends three narrowings of Q3.1 C, each for a case the
-card did not show, and each goes to him: a present mark on a class cancelled after it
-started, for families (FN0-Q1); a register-only mark before its class starts,
+card did not show, and each goes to him: a present mark on a cancelled class, for families
+(FN0-Q1); a register-only mark before its class starts,
 so the line does not say a child is on the floor before they arrive (FN0-Q2,
 F2); and a run mark the register later set Absent or Excused (FN0-Q6, F16).
 Nothing is built against his answer in the meantime: FN-1 builds each case
@@ -311,7 +311,7 @@ attendance figure, report, board or grant figure changes"
   carries a minors'-privacy guard, so it is narrowed, not dropped: it should
   still fail for any family, board, platform or public route that reaches the
   table, except the one floor-line read. Its audience pattern
-  (`sessionRunPresenceStaffOnly.convention.test.ts:160`) keeps `wall` and
+  (`sessionRunPresenceStaffOnly.convention.test.ts:161`) keeps `wall` and
   `kiosk` and should add `tv`: `/api/pilot/tv/session` does not match it
   today, and the paired TV is held to initials (OD-2026-10-07-008 ruling 1,
   `OWNER_DECISIONS.md:8713`). The floor-line read should be shown to
@@ -424,12 +424,13 @@ on it:
   reading. INFERRED.
 - His standing direction of 2026-08-16 says "the goal is every role
   (coach, athlete, admin, parent, board members, staff), not one favored
-  role" (OD-2026-11-11-002, `OWNER_DECISIONS.md:4592-4593`); it names no
+  role" (OD-2026-11-11-002, RECONSTRUCTED, `OWNER_DECISIONS.md:4592-4593`); it names no
   platform owner. OBSERVED. It bears on "every home" by analogy. INFERRED.
-- On the board, a drill-library ruling calls it an "oversight /
-  aggregate-governance role, not an operational coaching-content role"
-  (OD-2026-08-27-001, `:18334-18335`). OBSERVED; it is about coaching
-  content, so here it is an analogy.
+- On the board, a drill-library ruling (OD-2026-08-27-001, RECONSTRUCTED:
+  "the wording is a lane's transcription", `OWNER_DECISIONS.md:18326-18330`)
+  calls it an "oversight / aggregate-governance role, not an operational
+  coaching-content role" (`:18334-18335`). OBSERVED; the words are a lane's,
+  and it is about coaching content, so here it is an analogy.
 - Stage 1 also says "admin has three homes" (`stage-1.md:181`), so "home" is
   not one fixed set of pages there either.
 - The App Scrub's navigation map and its stage 2 file are not in this
@@ -660,7 +661,7 @@ withdraw the child (`infra/azure/pilot_slice_postgres_data_retention_deletion_mi
 and a deleted guardian's media-consent "no" keeps restricting the child
 (OD-2026-10-05-023). The organization admin can also end a login's sessions
 (`apps/web/app/api/pilot/admin/accounts/revoke/route.ts:13`, `:26`), which does
-not stop the next sign-in, and moving a guardian to a new login switches the
+not, by my reading, stop the next sign-in (INFERRED), and moving a guardian to a new login switches the
 old one off only when it backs no guardian record left
 (`apps/web/src/server/pilot/guardianLoginMove.ts:337-348`; reported at
 `apps/web/app/api/pilot/admin/guardian-login/route.ts:46`).
@@ -992,7 +993,7 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     number; `privacyTiers.ts:85-86`).
   - No line says who marked or how (F11). A family's line on a failed read is
     FN0-Q5.
-  - Pros: your words and your C, less only the before-arrival case; never
+  - Pros: your C and its "on the floor now", less only the before-arrival case; never
     claims absence (F4); the same kernel-floor ground as FN0-Q6 ("Nothing
     false ships", `AGENT_KERNEL.md:105`). Cons: narrows your C for the time
     before a class starts; a child who arrives early shows only from the
@@ -1055,7 +1056,7 @@ is still open, because each of these roles has limits on what it may see
   so "no person" rests on titles naming none; the board's privacy tier is
   "Counts only ... never a row" (`privacyTiers.ts:84-86`), and the record
   calls the board an "oversight / aggregate-governance role"
-  (OD-2026-08-27-001, an analogy, F3); a class list is rows, though of
+  (OD-2026-08-27-001, a lane's transcription and an analogy, F3); a class list is rows, though of
   classes, not people; not an "on the floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
   it, as B's con says for all three; not sized.
@@ -1113,7 +1114,7 @@ after it's applied" (`:6017`). Applying either here is my reading. INFERRED.
   "touching" standard gives a one-line note for that. INFERRED. Pros: he
   learns the two facts the cards did not show; FN-1 does not wait. Cons: he
   hears after the sign-off, not before; OD-2026-10-21-005 was written for
-  pilot questions; a one-line note asks him nothing, and the only fix for F14,
+  pilot questions; a one-line note asks him nothing, and the one fix this review found for F14,
   holding the line back from one guardian, is a new restriction that needs
   his direction (RULES section 1, `W4_SIZING.md:136-137`), so under A it
   reaches him only if he asks back. Timing: the no-new-lanes hold is lifted (OD-2026-11-24-007,
@@ -1195,7 +1196,8 @@ reaches the case and they disagree, so it is put to you. INFERRED.
 
 - Read at `f8963ecb`: the files cited above; in
   `docs/current/OWNER_DECISIONS.md`, the entries named in section 1 (each at
-  the lines cited) and, at the lines cited, OD-2026-10-07-011,
+  the lines cited) and these, at the lines cited where the body cites lines
+  and otherwise as named: OD-2026-10-07-011,
   OD-2026-10-10-003, OD-2026-10-10-007, OD-2026-10-21-001, -002 and -005,
   OD-2026-10-13-009, OD-2026-10-02-013 and -015, OD-2026-10-03-010,
   OD-2026-10-03-018, OD-2026-10-05-006, OD-2026-10-05-023, OD-2026-10-07-009,
