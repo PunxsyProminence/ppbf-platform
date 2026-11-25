@@ -47,13 +47,14 @@ let inTransaction = false;
 let sideClient: Client | null = null;
 // Runs once, committed from the second connection, just before the statement a staff path relies
 // on: the one that writes a reply or a read (alone, or inside the store's transaction after any
-// earlier statement of it), or the one that returns the thread list. A check made in any earlier
+// earlier statement of it), the one that returns the thread list, or the one that counts. A check made in any earlier
 // statement has then already been read (Overwatch on #2179: every check-then-write path).
 let beforeStaffStatement: ((client: Client) => Promise<unknown>) | null = null;
 
 jest.mock('./db', () => {
   const isStaffStatement = (text: string) =>
-    /insert into pilot\.family_thread_(posts|reads)/.test(text) || text.includes('from pilot.family_thread_posts o');
+    /insert into pilot\.family_thread_(posts|reads)/.test(text) || text.includes('from pilot.family_thread_posts o')
+    || text.includes('count(*)::int as unseen');
   const landChange = async (text: string) => {
     if (!beforeStaffStatement || !isStaffStatement(text)) return;
     const change = beforeStaffStatement;
@@ -634,6 +635,21 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
 
     for (const role of ['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
       await expect(count(GUARDIAN, role)).rejects.toThrow('Forbidden');
+    }
+  });
+
+  test("each fact the unseen count relies on, changed after the coach's athletes are read and just before the count: nothing counted (Overwatch on #2179)", async () => {
+    const client = await freshDatabase('fts_count_race');
+    await open(GUARDIAN);
+    const count = () => threads.countUnseenFamilyThreadPostsForStaff(staff(COACH));
+    expect(await count()).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    for (const [label, , change, undo] of STAFF_FACT_CHANGES) {
+      beforeStaffStatement = change;
+      const counted = await count();
+      expect(beforeStaffStatement).toBeNull();
+      expect([label, counted]).toEqual([label, []]);
+      await undo(client);
+      expect(await count()).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
     }
   });
 });

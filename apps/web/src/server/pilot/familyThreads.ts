@@ -573,7 +573,11 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
  * the count goes up for the child's coach and active covering coaches, and for
  * organization admins and admins across the gym, as the escalation route
  * scopes; other coaches can still read). Live athletes of this gym only;
- * athletes with none are left out.
+ * athletes with none are left out. The statement that counts checks the staff
+ * seat itself (staffSeatSql; Overwatch on #2179), so a seat that ends after the
+ * gate counts nothing. The coach's list of athletes is read first: it decides
+ * whom the count nudges (OW27-27), not who may read, since a coach reaches the
+ * whole gym (OD-2026-10-11-007, Q3 A on #2161).
  */
 export async function countUnseenFamilyThreadPostsForStaff(
   staff: FamilyThreadStaff,
@@ -589,11 +593,12 @@ export async function countUnseenFamilyThreadPostsForStaff(
       where p.organization_id = $1
         and p.author_role = 'parent'
         and ($3::text[] is null or p.athlete_id = any($3::text[]))
+        and ${staffSeatSql('p.organization_id', '$2', '$4')}
         and not exists (select 1 from pilot.family_thread_reads r
                          where r.organization_id = p.organization_id and r.post_id = p.post_id
                            and r.reader_account_id = $2)
       group by p.athlete_id
       order by p.athlete_id`,
-    [staff.organizationId, staff.accountId, scope],
+    [staff.organizationId, staff.accountId, scope, staff.role],
   );
 }
