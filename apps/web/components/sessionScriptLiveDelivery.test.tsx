@@ -1237,6 +1237,40 @@ describe('a write whose answer proves nothing is checked against the server (aud
       expect(screen.queryByText('logged')).toBeNull();
     });
 
+    it('two tabs of one coach: another tab\'s new log of the pair is not taken for this tap, which sent its own key (OVERWATCH 7158257725)', async () => {
+      let committed = false;
+      await renderLive(liveRun(), {
+        logPost: () => {
+          committed = true;
+          return dropped();
+        },
+        // Only the other tab's log, under its own key, is new.
+        logGet: () => jsonResponse({ items: committed ? [{ ...execution('exec-other-tab'), request_key: 'other-tab-key' }] : [] }),
+      });
+      await pickAndLog();
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server does not show the intervention yet. Try again -- it will not be logged twice.');
+      expect(screen.queryByText('logged')).toBeNull();
+    });
+
+    it('this tap\'s own log, named by the key it sent, is the one found after a lost answer', async () => {
+      let committed = false;
+      let key: unknown;
+      await renderLive(liveRun(), {
+        logPost: (body) => {
+          committed = true;
+          key = body.request_key;
+          return dropped();
+        },
+        logGet: () => jsonResponse({
+          items: committed ? [{ ...execution('exec-other-tab'), request_key: 'other-tab-key' }, { ...execution('exec-mine'), request_key: key }] : [],
+        }),
+      });
+      await pickAndLog();
+      expect(typeof key).toBe('string');
+      expect(await screen.findByRole('alert')).toHaveTextContent('the server shows the intervention was logged.');
+      expect(screen.getAllByText('logged')).toHaveLength(1);
+    });
+
     it('(c) a yes with no execution in it is checked, not read as a refusal', async () => {
       let committed = false;
       await renderLive(liveRun(), {
@@ -2197,7 +2231,6 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   it('a refused log RESEND that the ledger shows had landed reads as logged (condition 2), read with the queue\'s signal', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let reads = 0;
     let key: unknown = null;
     const { fetchMock } = await renderKept(liveRun(), {
       logPost: (body) => {
@@ -2207,9 +2240,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
         return jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
       },
       logGet: () => {
-        reads += 1;
-        // The before read finds nothing; the landed check finds the log this tap's own key started.
-        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-9', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: key }] });
+        // Before the refused resend nothing is listed; the landed check finds the log this tap's own key started.
+        return jsonResponse({ items: posts < 2 ? [] : [{ execution_id: 'exec-9', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: key }] });
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
@@ -2227,7 +2259,6 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   it('two tabs of one account: another tab\'s log of the same pair is never taken for this tap\'s refused RESEND (matched by request key)', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let reads = 0;
     let key: unknown = null;
     await renderKept(liveRun(), {
       logPost: (body) => {
@@ -2238,10 +2269,9 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
         return jsonResponse({ error: 'This protocol changed since it was loaded.', code: 'RECORD_CHANGED' }, false, 409);
       },
       logGet: () => {
-        reads += 1;
-        // After this tap's before read, the same coach logged the same pair in another tab: a log of
-        // this run, pair and account, under the other tab's own key.
-        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-other-tab', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: 'other-tab-key' }] });
+        // By the landed check, the same coach has logged the same pair in another tab: a log of this
+        // run, pair and account, under the other tab's own key.
+        return jsonResponse({ items: posts < 2 ? [] : [{ execution_id: 'exec-other-tab', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: 'other-tab-key' }] });
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
@@ -2536,15 +2566,13 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   it('a refused log RESEND the ledger could not be checked for says the outcome is not known, in the log panel', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let reads = 0;
     await renderKept(liveRun(), {
       logPost: () => {
         posts += 1;
         return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
       },
       logGet: () => {
-        reads += 1;
-        return reads === 1 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
+        return posts < 2 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
       },
     });
     await openLog();
@@ -2742,6 +2770,77 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.getAllByText('logged')).toHaveLength(1);
   });
 
+  it('a log sent again under its own key after replaying another account\'s log is found by that key, not the pair\'s', async () => {
+    jest.useFakeTimers();
+    let checks = 0;
+    let firstKey: unknown;
+    let ownKey: unknown;
+    let ownSends = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      session: () => {
+        checks += 1;
+        return checks <= 2 ? jsonResponse({}, false, 500) : jsonResponse({ authenticated: true, account_id: 'acct-b' });
+      },
+      logPost: (body) => {
+        if (firstKey === undefined) {
+          firstKey = body.request_key;
+          return lost();
+        }
+        if (body.request_key === firstKey) {
+          return jsonResponse({ item: { execution_id: 'exec-a', created_at: '2026-08-17T00:00:00.000Z', recorded_by_account_id: 'acct-a', version: 1 }, replayed: true });
+        }
+        ownKey = body.request_key;
+        ownSends += 1;
+        // Its own key's first send lands, its answer lost; the next is refused before the server's key lookup.
+        return ownSends === 1 ? lost() : jsonResponse({ error: 'This account cannot log for that athlete.' }, false, 403);
+      },
+      logGet: () => jsonResponse({
+        items: ownSends < 2 ? [] : [
+          { execution_id: 'exec-a', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', recorded_by_account_id: 'acct-a', version: 1, request_key: firstKey },
+          { execution_id: 'exec-b', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', recorded_by_account_id: 'acct-b', version: 1, request_key: ownKey },
+        ],
+      }),
+    });
+    await openLog();
+    await logPair();
+    await logPair();
+    await wait(RESEND_MS);
+    await wait(RESEND_MS);
+    expect(logPostCalls(fetchMock)).toHaveLength(4);
+    expect(ownSends).toBe(2);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
+  it('a ledger that names no request keys (an older server) leaves a refused RESEND not known, never taken as landed or not', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => jsonResponse({ items: posts < 2 ? [] : [{ execution_id: 'exec-x', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', recorded_by_account_id: 'acct-a', version: 1 }] }),
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toContain('Intervention log: Round-3 endurance block: the server refused it when it was sent again and could not be checked');
+    expect(screen.queryByText('logged')).toBeNull();
+  });
+
+  it('a kept log reads no ledger before it is sent: the before picture is only today\'s way', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {});
+    await openLog();
+    await logPair();
+    expect(logPostCalls(fetchMock)).toHaveLength(1);
+    expect(screen.getAllByText('logged')).toHaveLength(1);
+    const ledgerReads = fetchMock.mock.calls.filter(
+      (call) => String(call[0]).includes('/intervention-executions') && (call[1] as RequestInit | undefined)?.method !== 'POST',
+    );
+    expect(ledgerReads).toHaveLength(0);
+  });
+
   it('a replay of this log as corrected by someone else since is still this log: never written twice (F-135)', async () => {
     jest.useFakeTimers();
     let posts = 0;
@@ -2767,16 +2866,14 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   it('a refused RESEND is not read as landed by another account\'s new log of the pair', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let reads = 0;
     await renderKept(liveRun(), {
       logPost: () => {
         posts += 1;
         return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
       },
       logGet: () => {
-        reads += 1;
         return jsonResponse({
-          items: reads === 1 ? [] : [{
+          items: posts < 2 ? [] : [{
             execution_id: 'exec-x', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1',
             recorded_by_account_id: 'acct-x', version: 1,
           }],
@@ -2864,7 +2961,8 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await tap('Record as completed');
     await wait(RESEND_MS);
-    expect(reads).toBeGreaterThan(1);
+    // The landed check read the ledger.
+    expect(reads).toBeGreaterThan(0);
     const alert = within(screen.getByRole('alert'));
     expect(alert.getByText(FAILED_WORDS)).toBeInTheDocument();
     expect(alert.getByText(/^Intervention log: Round-3 endurance block: /)).toBeInTheDocument();
@@ -2895,15 +2993,13 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
   it('a log whose outcome is not known while a kept finish waits is listed apart in the page\'s list, with where to check', async () => {
     jest.useFakeTimers();
     let posts = 0;
-    let reads = 0;
     await renderKept(liveRun(), {
       logPost: () => {
         posts += 1;
         return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
       },
       logGet: () => {
-        reads += 1;
-        return reads === 1 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
+        return posts < 2 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
       },
       patch: () => new Promise<Response>(() => {}),
     });
