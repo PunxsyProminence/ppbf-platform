@@ -91,6 +91,7 @@ const OTHER_GYM_GUARDIAN = 'acct-fts-other-guardian';
 const COACH = 'acct-fts-coach';
 const SECOND_COACH = 'acct-fts-coach-b';
 const GYM_ADMIN = 'acct-fts-admin';
+const LEGACY_ADMIN = 'acct-fts-legacy-admin';
 const SEATLESS_COACH = 'acct-fts-seatless';
 const OTHER_GYM_COACH = 'acct-fts-other-coach';
 const CHILD = 'ATH-FTS-CHILD';
@@ -151,6 +152,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [COACH, 'coach', ORG, true],
     [SECOND_COACH, 'coach', ORG, true],
     [GYM_ADMIN, 'organization_admin', ORG, true],
+    [LEGACY_ADMIN, 'admin', ORG, true],
     [SEATLESS_COACH, 'coach', ORG, false],
     [OTHER_GYM_GUARDIAN, 'parent', OTHER_ORG, true],
     [OTHER_GYM_COACH, 'coach', OTHER_ORG, true],
@@ -508,6 +510,8 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
     expect(await count(SECOND_COACH)).toEqual([{ athlete_id: SIBLING, unseen: 1 }]);
     expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    // The legacy 'admin' role is an organization admin (roleAlias.ts): the whole gym too.
+    expect(await count(LEGACY_ADMIN, 'admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
     expect(await count(OTHER_GYM_COACH, 'coach', OTHER_ORG)).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
     expect(await count(SEATLESS_COACH)).toEqual([]);
 

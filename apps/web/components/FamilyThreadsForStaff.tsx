@@ -21,8 +21,12 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * NEW TO ME: a guardian post this staff member had not seen when the panel
  * first loaded carries "New", kept for the visit. It is recorded as seen when
  * at least half of it is on screen (FC-05 Q-1 A, as FC-09b's replies), once
- * per visit; a failed write is tried again when the post is next on screen.
- * The panel is mounted per athlete (key), so nothing carries across children.
+ * per visit; a failed write is not repeated at once (a refusal would only come
+ * back again), but the post is watched afresh on the panel's next read.
+ * Everything shown is tagged with the athlete it was read for: after a switch,
+ * the last child's messages are never left on screen under the next. Unsent
+ * reply drafts are kept per message across switches, as the page keeps its own
+ * drafts per athlete (UXB-13).
  */
 
 export interface StaffThreadPostView {
@@ -43,13 +47,19 @@ export interface StaffThreadView {
 }
 
 // newIds: the guardian posts new to this staff member on this visit, so far.
-type ReadState = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; items: StaffThreadView[]; newIds: ReadonlySet<string> };
+type ReadState =
+  | { state: 'loading' }
+  | { state: 'failed'; athleteId: string }
+  | { state: 'loaded'; athleteId: string; items: StaffThreadView[]; newIds: ReadonlySet<string> };
 
 function when(at: string): string {
   return formatGymDateTimeShort(at) ?? at;
 }
 
-export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteId: string }>) {
+export default function FamilyThreadsForStaff({
+  athleteId,
+  onSeen,
+}: Readonly<{ athleteId: string; onSeen?: () => void }>) {
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -57,17 +67,21 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const seq = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
-  // Guardian posts that were new to this staff member on this visit: New stays after a reload.
-  const newThisVisit = useRef<Set<string>>(new Set());
-  // Reads sent on this visit; a failed write leaves the set, so it is sent again.
-  const readsSent = useRef<Set<string>>(new Set());
+  // This visit to this athlete: the guardian posts that were new (New stays after a re-read),
+  // and the reads sent (a failed write leaves the set, so the next read watches it again).
+  const visit = useRef<{ athleteId: string; newIds: Set<string>; readsSent: Set<string> }>(
+    { athleteId: '', newIds: new Set(), readsSent: new Set() },
+  );
 
   useEffect(() => {
     if (!athleteId) return;
     const mine = ++seq.current;
-    // A re-read after a reply keeps the list on screen; only the first read says Loading.
+    if (visit.current.athleteId !== athleteId) {
+      visit.current = { athleteId, newIds: new Set(), readsSent: new Set() };
+    }
+    // A re-read after a reply keeps this athlete's list on screen; anything else reads as loading.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRead((held) => (held.state === 'loaded' ? held : { state: 'loading' }));
+    setRead((held) => (held.state === 'loaded' && held.athleteId === athleteId ? held : { state: 'loading' }));
     void (async () => {
       try {
         const response = await fetch(
@@ -77,18 +91,18 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
         const payload = (await response.json().catch(() => ({}))) as { items?: unknown };
         if (mine !== seq.current) return;
         if (!response.ok || !Array.isArray(payload.items)) {
-          setRead({ state: 'failed' });
+          setRead({ state: 'failed', athleteId });
           return;
         }
         const items = payload.items as StaffThreadView[];
         for (const thread of items) {
           for (const post of thread.posts) {
-            if (post.from === 'guardian' && post.new_to_me) newThisVisit.current.add(post.post_id);
+            if (post.from === 'guardian' && post.new_to_me) visit.current.newIds.add(post.post_id);
           }
         }
-        setRead({ state: 'loaded', items, newIds: new Set(newThisVisit.current) });
+        setRead({ state: 'loaded', athleteId, items, newIds: new Set(visit.current.newIds) });
       } catch {
-        if (mine === seq.current) setRead({ state: 'failed' });
+        if (mine === seq.current) setRead({ state: 'failed', athleteId });
       }
     })();
   }, [athleteId, attempt]);
@@ -96,10 +110,12 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
   /* SEEING A GUARDIAN'S POST: at least half of it on screen, or, for a post
      taller than the screen, half the screen filled with it. */
   useEffect(() => {
-    if (read.state !== 'loaded' || !listRef.current || typeof IntersectionObserver === 'undefined') return;
+    if (read.state !== 'loaded' || read.athleteId !== athleteId || !listRef.current) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const sent = visit.current.readsSent;
     const unseen = new Set(
       read.items.flatMap((thread) => thread.posts)
-        .filter((post) => post.from === 'guardian' && post.new_to_me && !readsSent.current.has(post.post_id))
+        .filter((post) => post.from === 'guardian' && post.new_to_me && !sent.has(post.post_id))
         .map((post) => post.post_id),
     );
     if (unseen.size === 0) return;
@@ -109,14 +125,13 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
           && entry.intersectionRect.height >= 0.5 * entry.rootBounds.height;
         if (!entry.isIntersecting || (entry.intersectionRatio < 0.5 && !fillsHalfTheScreen)) continue;
         const postId = (entry.target as HTMLElement).dataset.readPost;
-        if (!postId || readsSent.current.has(postId)) continue;
-        readsSent.current.add(postId);
+        if (!postId || sent.has(postId)) continue;
+        sent.add(postId);
         observer.unobserve(entry.target);
-        const target = entry.target;
+        // Not watched again at once: a refusal (an ended session, no seat here) would only come
+        // back again, in a loop. The panel's next read watches the post afresh.
         const failed = () => {
-          readsSent.current.delete(postId);
-          // Watched again: if it is still on screen, it is sent again.
-          if (target.isConnected) observer.observe(target);
+          sent.delete(postId);
         };
         void fetch(`${apiBase()}/api/pilot/coach/family-thread-reads`, {
           method: 'POST',
@@ -125,7 +140,8 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
           body: JSON.stringify({ post_id: postId }),
         })
           .then((response) => {
-            if (!response.ok) failed();
+            if (response.ok) onSeen?.();
+            else failed();
           })
           .catch(failed);
       }
@@ -135,7 +151,7 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
       if (unseen.has(element.dataset.readPost ?? '')) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, [read]);
+  }, [read, athleteId, onSeen]);
 
   async function sendReply(threadId: string) {
     const text = (drafts[threadId] ?? '').trim();
@@ -169,16 +185,19 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
   }
 
   if (!athleteId) return null;
+  // What is on screen belongs to the athlete selected now, or it reads as loading.
+  const shown: ReadState = read.state !== 'loading' && read.athleteId !== athleteId ? { state: 'loading' } : read;
 
   return (
     <div ref={listRef} className="mt-[var(--s4)]">
       <h3 className="t-label">Messages from the family</h3>
       <p className="t-muted mt-[var(--s1)]">
-        Messages a guardian started to the coach. Only the guardian who wrote one sees it and the replies under it.
+        Messages a guardian started to the coach. The gym&apos;s staff can read them; of the family, only the guardian
+        who wrote one sees it and the replies under it.
       </p>
-      {read.state === 'loading' ? (
+      {shown.state === 'loading' ? (
         <p className="t-muted mt-[var(--s2)]">Loading messages from the family…</p>
-      ) : read.state === 'failed' ? (
+      ) : shown.state === 'failed' ? (
         <div role="alert" className="mt-[var(--s2)]">
           <p className="t-body">
             Messages from the family could not be loaded. This is not a statement that there are none.
@@ -187,11 +206,11 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
             Check again
           </button>
         </div>
-      ) : read.items.length === 0 ? (
+      ) : shown.items.length === 0 ? (
         <p className="t-muted mt-[var(--s2)]">No messages from the family yet.</p>
       ) : (
         <ul aria-label="Messages from the family" className="mt-[var(--s2)] space-y-[var(--s3)]">
-          {read.items.map((thread) => (
+          {shown.items.map((thread) => (
             <li key={thread.thread_id} className="rounded-[var(--r-md)] mat-leather--raised p-[var(--s3)]">
               <ul aria-label={`Message from ${thread.guardian_name}`} className="space-y-[var(--s2)]">
                 {thread.posts.map((post) => (
@@ -199,7 +218,7 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
                     <p className="t-label">
                       {post.from === 'guardian' ? thread.guardian_name : post.staff_name ?? 'Staff'}
                       <span className="t-muted"> · {when(post.created_at)}</span>
-                      {post.from === 'guardian' && read.newIds.has(post.post_id) ? (
+                      {post.from === 'guardian' && shown.newIds.has(post.post_id) ? (
                         <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i><span>New</span></span>
                       ) : null}
                     </p>
@@ -223,7 +242,12 @@ export default function FamilyThreadsForStaff({ athleteId }: Readonly<{ athleteI
                     className="textarea min-h-[56px]"
                   />
                 </label>
-                <button type="submit" className="btn btn--ghost" disabled={sending !== null}>
+                <button
+                  type="submit"
+                  className="btn btn--ghost"
+                  disabled={sending !== null}
+                  aria-label={`Send reply to ${thread.guardian_name}`}
+                >
                   {sending === thread.thread_id ? 'Sending…' : 'Send reply'}
                 </button>
                 {replyErrors[thread.thread_id] ? (
@@ -297,8 +321,8 @@ export function FamilyThreadsUnread({
   });
   if (named.length === 0) return null;
   return (
-    <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s2)]">
-      <p className="t-body">New messages from families:</p>
+    <div role="group" aria-label="New messages from families" className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s2)]">
+      <p className="t-body" aria-hidden="true">New messages from families:</p>
       {named.map((item) => (
         <button key={item.athleteId} type="button" className="btn btn--ghost" onClick={() => onChoose(item.athleteId)}>
           {item.name} ({item.unseen} new)

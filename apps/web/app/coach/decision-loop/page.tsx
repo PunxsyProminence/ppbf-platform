@@ -638,6 +638,9 @@ export default function DecisionLoopReviewPage() {
   // also asks for that section: the page scrolls to it once, when the arriving
   // athlete's sections are on screen, and never on a later pick.
   const scrollToFamilyRef = useRef(false);
+  // Bumped when the family-messages panel records a read, so the unread line is read again.
+  const [familyThreadsSeen, setFamilyThreadsSeen] = useState(0);
+  const onFamilyThreadSeen = useCallback(() => setFamilyThreadsSeen((n) => n + 1), []);
   /* The picker is the only way to choose an athlete, so it is never an empty
      picker that reads as "no athletes": while the roster is read it says so,
      and a roster that would not load -- or has not answered within
@@ -1335,8 +1338,14 @@ export default function DecisionLoopReviewPage() {
             {rosterState === 'loaded' && (
               <FamilyThreadsUnread
                 athletes={athletes}
-                refreshKey={athleteId}
+                refreshKey={`${athleteId}:${familyThreadsSeen}`}
                 onChoose={(chosen) => {
+                  // The athlete already on screen is not chosen again (that would drop their
+                  // records' read and the notices): the page only goes to the family section.
+                  if (chosen === athleteId) {
+                    document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
+                    return;
+                  }
                   scrollToFamilyRef.current = true;
                   selectAthlete(chosen);
                 }}
@@ -1750,7 +1759,7 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
-                <FamilyThreadsForStaff key={`family-threads-${athleteId}`} athleteId={athleteId} />
+                <FamilyThreadsForStaff athleteId={athleteId} onSeen={onFamilyThreadSeen} />
                 <FamilyGoalsForStaff key={athleteId} athleteId={athleteId} />
               </section>
 
