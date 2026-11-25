@@ -72,6 +72,17 @@ describe('the events each user type can be sent (EM-5)', () => {
     expect(match?.[1].split(',').map((part) => part.trim().replace(/'/g, ''))).toEqual([...EMAIL_ALERT_USER_TYPES]);
   });
 
+  it('the send log (EM-3) allows exactly the same three user types and the same key shape', () => {
+    const sql = (file: string) => fs.readFileSync(path.resolve(__dirname, '../../../../infra/azure', file), 'utf8');
+    const sends = sql('pilot_slice_postgres_email_alert_sends_migration.sql');
+    const gymChoice = sql('pilot_slice_postgres_organization_email_alert_events_migration.sql');
+    const types = sends.match(/check \(user_type in \(([^)]*)\)\)/);
+    expect(types?.[1].split(',').map((part) => part.trim().replace(/'/g, ''))).toEqual([...EMAIL_ALERT_USER_TYPES]);
+    const kindShape = (text: string) => text.match(/check \(event_kind ~ '([^']+)'\)/)?.[1];
+    expect(kindShape(sends)).toBeDefined();
+    expect(kindShape(sends)).toBe(kindShape(gymChoice));
+  });
+
   it('every key has the shape the table CHECK allows', () => {
     const sql = fs.readFileSync(
       path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_email_alert_events_migration.sql'),

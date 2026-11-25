@@ -18,21 +18,24 @@ function sslConfig() {
 }
 
 // Asserts, for pilot.email_alert_sends: the exact column list with each
-// column's type and nullability; a new row starts queued with no tries;
-// exactly the CHECKs below and no others, each compared IN FULL against the
-// text Postgres stores (emailAlertSendsMigration.pg.test.ts drives this runner
-// against a real database); the primary key; the one-row-per-event key by name
-// and column order; exactly three foreign keys (gym, account, and the
-// person's membership of that gym), each by column, target and cascade; and
-// both partial indexes the sender reads through, by full definition. For
-// pilot.email_alert_checkpoints: its columns, its one CHECK and its primary key.
+// column's type, nullability, default and identity (so a new row starts
+// queued, with no tries, due now); exactly the CHECKs below and no others,
+// each compared IN FULL against the text Postgres stores
+// (emailAlertSendsMigration.pg.test.ts drives this runner against a real
+// database); the primary key; the one-row-per-event key by name and column
+// order, not deferrable (ON CONFLICT refuses a deferrable key), and no other
+// unique key; exactly three foreign keys (gym, account, and the person's
+// membership of that gym), each by column, target and cascade, none
+// deferrable; and every index on the table by full definition. For
+// pilot.email_alert_checkpoints: its columns, its one CHECK, its primary key
+// and its only index.
 export const EXPECTED_SEND_CHECKS = {
   pilot_email_alert_send_user_type_check:
     "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))",
   pilot_email_alert_send_kind_check:
     "CHECK ((event_kind ~ '^[a-z][a-z_]{0,62}$'::text))",
   pilot_email_alert_send_event_id_check:
-    "CHECK ((event_id ~ '^[A-Za-z0-9][A-Za-z0-9_:.-]{0,127}$'::text))",
+    "CHECK ((event_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))",
   pilot_email_alert_send_status_check:
     "CHECK ((status = ANY (ARRAY['queued'::text, 'sending'::text, 'sent'::text, 'skipped'::text, 'failed'::text])))",
   pilot_email_alert_send_tries_check:
@@ -49,6 +52,8 @@ export const EXPECTED_SEND_CHECKS = {
     "CHECK (((status = ANY (ARRAY['sent'::text, 'skipped'::text, 'failed'::text])) = (finished_at IS NOT NULL)))",
   pilot_email_alert_send_skipped_check:
     "CHECK (((status = 'skipped'::text) = (skip_reason IS NOT NULL)))",
+  pilot_email_alert_send_queued_tries_check:
+    "CHECK (((status <> 'queued'::text) OR (tries < 5)))",
 };
 
 export const EXPECTED_CHECKPOINT_CHECKS = {
@@ -56,35 +61,42 @@ export const EXPECTED_CHECKPOINT_CHECKS = {
     "CHECK ((event_kind ~ '^[a-z][a-z_]{0,62}$'::text))",
 };
 
-// name:type:nullable, in column order.
+// name|type|nullable|default|identity, in column order ('a' = generated always).
 export const EXPECTED_SEND_COLUMNS = [
-  'send_id:bigint:NO',
-  'organization_id:text:NO',
-  'account_id:text:NO',
-  'user_type:text:NO',
-  'event_kind:text:NO',
-  'event_id:text:NO',
-  'status:text:NO',
-  'tries:integer:NO',
-  'next_try_at:timestamp with time zone:NO',
-  'lease_token:uuid:YES',
-  'lease_expires_at:timestamp with time zone:YES',
-  'skip_reason:text:YES',
-  'last_status_code:integer:YES',
-  'last_error_code:text:YES',
-  'created_at:timestamp with time zone:NO',
-  'finished_at:timestamp with time zone:YES',
+  'send_id|bigint|NO||a',
+  'organization_id|text|NO||',
+  'account_id|text|NO||',
+  'user_type|text|NO||',
+  'event_kind|text|NO||',
+  'event_id|text|NO||',
+  "status|text|NO|'queued'::text|",
+  'tries|integer|NO|0|',
+  'next_try_at|timestamp with time zone|NO|clock_timestamp()|',
+  'lease_token|uuid|YES||',
+  'lease_expires_at|timestamp with time zone|YES||',
+  'skip_reason|text|YES||',
+  'last_status_code|integer|YES||',
+  'last_error_code|text|YES||',
+  'created_at|timestamp with time zone|NO|clock_timestamp()|',
+  'finished_at|timestamp with time zone|YES||',
 ];
 
 export const EXPECTED_CHECKPOINT_COLUMNS = [
-  'event_kind:text:NO',
-  'swept_to:timestamp with time zone:NO',
-  'updated_at:timestamp with time zone:NO',
+  'event_kind|text|NO||',
+  'swept_to|timestamp with time zone|NO||',
+  'updated_at|timestamp with time zone|NO|clock_timestamp()|',
 ];
 
+// Every index on each table, ordered by name.
 export const EXPECTED_SEND_INDEXES = [
+  'CREATE UNIQUE INDEX email_alert_sends_pkey ON pilot.email_alert_sends USING btree (send_id)',
   "CREATE INDEX idx_email_alert_sends_leased ON pilot.email_alert_sends USING btree (lease_expires_at) WHERE (status = 'sending'::text)",
   "CREATE INDEX idx_email_alert_sends_queued ON pilot.email_alert_sends USING btree (next_try_at) WHERE (status = 'queued'::text)",
+  'CREATE UNIQUE INDEX pilot_email_alert_send_once_key ON pilot.email_alert_sends USING btree (organization_id, account_id, event_kind, event_id)',
+];
+
+export const EXPECTED_CHECKPOINT_INDEXES = [
+  'CREATE UNIQUE INDEX email_alert_checkpoints_pkey ON pilot.email_alert_checkpoints USING btree (event_kind)',
 ];
 
 const SENDS = `to_regclass('pilot.email_alert_sends')`;
@@ -92,10 +104,20 @@ const CHECKPOINTS = `to_regclass('pilot.email_alert_checkpoints')`;
 
 function columnsOf(rel) {
   return `(
-      select array_agg(a.attname::text || ':' || format_type(a.atttypid, a.atttypmod)
-                       || ':' || case when a.attnotnull then 'NO' else 'YES' end order by a.attnum)
+      select array_agg(a.attname::text || '|' || format_type(a.atttypid, a.atttypmod)
+                       || '|' || case when a.attnotnull then 'NO' else 'YES' end
+                       || '|' || coalesce(pg_get_expr(d.adbin, d.adrelid), '')
+                       || '|' || a.attidentity::text order by a.attnum)
       from pg_attribute a
+      left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
       where a.attrelid = ${rel} and a.attnum > 0 and not a.attisdropped
+    )`;
+}
+
+function indexesOf(table) {
+  return `(
+      select array_agg(indexdef::text order by indexname collate "C") from pg_indexes
+      where schemaname = 'pilot' and tablename = '${table}'
     )`;
 }
 
@@ -121,7 +143,7 @@ function sendKeyReady(name, columns, target) {
   return `exists (
       select 1 from pg_constraint c
       where c.conrelid = ${SENDS} and c.contype = 'f' and c.conname = '${name}' and c.convalidated
-        and c.confrelid = to_regclass('${target}') and c.confdeltype = 'c'
+        and not c.condeferrable and c.confrelid = to_regclass('${target}') and c.confdeltype = 'c'
         and ${keyColumns('local')} = array[${columns}]
         and ${keyColumns('referenced')} = array[${columns}]
     )`;
@@ -131,15 +153,6 @@ const READINESS_QUERY = `
   select
     ${SENDS} is not null as sends_table_ready,
     ${columnsOf(SENDS)} = $1::text[] as send_columns_ready,
-    exists (
-      select 1 from information_schema.columns
-      where table_schema = 'pilot' and table_name = 'email_alert_sends'
-        and column_name = 'status' and column_default = '''queued''::text'
-    ) and exists (
-      select 1 from information_schema.columns
-      where table_schema = 'pilot' and table_name = 'email_alert_sends'
-        and column_name = 'tries' and column_default = '0'
-    ) as a_new_send_starts_queued,
     ${checksReady(SENDS, '$2', '$3', '$4')} as send_checks_ready,
     exists (
       select 1 from pg_constraint c
@@ -148,25 +161,27 @@ const READINESS_QUERY = `
     exists (
       select 1 from pg_constraint c
       where c.conrelid = ${SENDS} and c.contype = 'u' and c.conname = 'pilot_email_alert_send_once_key'
+        and not c.condeferrable
         and ${keyColumns('local')} = array['organization_id', 'account_id', 'event_kind', 'event_id']
     ) as send_once_key_ready,
+    (
+      select count(*) = 1 from pg_constraint c where c.conrelid = ${SENDS} and c.contype = 'u'
+    ) as send_no_other_unique_keys,
     ${sendKeyReady('email_alert_sends_organization_id_fkey', "'organization_id'", 'pilot.organizations')} as send_organization_fk_ready,
     ${sendKeyReady('email_alert_sends_account_id_fkey', "'account_id'", 'pilot.accounts')} as send_account_fk_ready,
     ${sendKeyReady('pilot_email_alert_send_membership_fk', "'account_id', 'organization_id'", 'pilot.organization_memberships')} as send_membership_fk_ready,
     (
       select count(*) = 3 from pg_constraint c where c.conrelid = ${SENDS} and c.contype = 'f'
     ) as send_no_other_keys,
-    (
-      select array_agg(indexdef::text order by indexname) from pg_indexes
-      where schemaname = 'pilot' and tablename = 'email_alert_sends' and indexname like 'idx\\_%'
-    ) = $5::text[] as send_indexes_ready,
+    ${indexesOf('email_alert_sends')} = $5::text[] as send_indexes_ready,
     ${CHECKPOINTS} is not null as checkpoints_table_ready,
     ${columnsOf(CHECKPOINTS)} = $6::text[] as checkpoint_columns_ready,
     ${checksReady(CHECKPOINTS, '$7', '$8', '$9')} as checkpoint_checks_ready,
     exists (
       select 1 from pg_constraint c
       where c.conrelid = ${CHECKPOINTS} and c.contype = 'p' and ${keyColumns('local')} = array['event_kind']
-    ) as checkpoint_primary_key_ready
+    ) as checkpoint_primary_key_ready,
+    ${indexesOf('email_alert_checkpoints')} = $10::text[] as checkpoint_indexes_ready
 `;
 const READINESS_PARAMS = [
   EXPECTED_SEND_COLUMNS,
@@ -178,6 +193,7 @@ const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKPOINT_CHECKS).length,
   Object.keys(EXPECTED_CHECKPOINT_CHECKS),
   Object.values(EXPECTED_CHECKPOINT_CHECKS),
+  EXPECTED_CHECKPOINT_INDEXES,
 ];
 
 export async function applyMigrationTransaction(client, sql) {

@@ -41,6 +41,15 @@ const COACH_ID = 'acct-emailsend-coach';
 const PARENT_ID = 'acct-emailsend-parent';
 const OUTSIDER_ID = 'acct-emailsend-outsider';
 
+// Event row ids are UUIDs in every source (the event id CHECK takes nothing else).
+const EVENT_1 = '00000000-0000-4000-8000-0000000000e1';
+const NOTE_1 = '00000000-0000-4000-8000-0000000000a1';
+const NOTE_2 = '00000000-0000-4000-8000-0000000000a2';
+const EVENT_SENT = '00000000-0000-4000-8000-0000000000b1';
+const EVENT_SKIPPED = '00000000-0000-4000-8000-0000000000b2';
+const EVENT_FAILED = '00000000-0000-4000-8000-0000000000b3';
+const EVENT_SENDING = '00000000-0000-4000-8000-0000000000b4';
+
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
@@ -126,7 +135,7 @@ async function insertSend(client: Client, overrides: Record<string, unknown> = {
     account_id: COACH_ID,
     user_type: 'staff',
     event_kind: 'safety_escalation',
-    event_id: 'esc-1',
+    event_id: EVENT_1,
     ...overrides,
   };
   const columns = Object.keys(row);
@@ -213,7 +222,7 @@ describe('email alert sends migration', () => {
       await applyMigrationTransaction(client, migrationSql);
 
       expect(await sendRows(client)).toEqual([
-        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
+        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
       ]);
       const checkpoints = await client.query('select event_kind from pilot.email_alert_checkpoints');
       expect(checkpoints.rows).toEqual([{ event_kind: 'safety_escalation' }]);
@@ -294,6 +303,59 @@ describe('email alert sends migration', () => {
        create index idx_email_alert_sends_queued on pilot.email_alert_sends (next_try_at)`,
     ],
     ['no index for expired leases', 'drop index pilot.idx_email_alert_sends_leased'],
+    ['an extra index', 'create index idx_email_alert_sends_extra on pilot.email_alert_sends (created_at)'],
+    [
+      'an extra unique index (a second person\'s alert would be dropped)',
+      'create unique index email_alert_sends_per_event on pilot.email_alert_sends (organization_id, event_kind, event_id)',
+    ],
+    [
+      'an extra unique key',
+      `alter table pilot.email_alert_sends
+         add constraint pilot_email_alert_send_extra_key unique (organization_id, event_kind, event_id)`,
+    ],
+    [
+      'a deferrable one-row key (ON CONFLICT refuses it)',
+      `alter table pilot.email_alert_sends
+         drop constraint pilot_email_alert_send_once_key,
+         add constraint pilot_email_alert_send_once_key unique (organization_id, account_id, event_kind, event_id)
+           deferrable initially immediate`,
+    ],
+    [
+      'a deferred membership key',
+      `alter table pilot.email_alert_sends
+         drop constraint pilot_email_alert_send_membership_fk,
+         add constraint pilot_email_alert_send_membership_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(account_id, organization_id) on delete cascade
+           deferrable initially deferred`,
+    ],
+    [
+      'a gym key that no longer cascades',
+      `alter table pilot.email_alert_sends
+         drop constraint email_alert_sends_organization_id_fkey,
+         add constraint email_alert_sends_organization_id_fkey foreign key (organization_id)
+           references pilot.organizations(organization_id)`,
+    ],
+    [
+      'the primary key on other columns',
+      `alter table pilot.email_alert_sends
+         drop constraint email_alert_sends_pkey,
+         add constraint email_alert_sends_pkey primary key (send_id, organization_id)`,
+    ],
+    [
+      'a CHECK not validated',
+      `alter table pilot.email_alert_sends
+         drop constraint pilot_email_alert_send_event_id_check,
+         add constraint pilot_email_alert_send_event_id_check
+           check (event_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') not valid`,
+    ],
+    [
+      'a new send that is never due',
+      `alter table pilot.email_alert_sends alter column next_try_at set default 'infinity'`,
+    ],
+    ['no time a send was made', 'alter table pilot.email_alert_sends alter column created_at drop default'],
+    ['a send id with no generator', 'alter table pilot.email_alert_sends alter column send_id drop identity'],
+    ['a checkpoint with no update time', 'alter table pilot.email_alert_checkpoints alter column updated_at drop default'],
+    ['an extra checkpoint index', 'create index idx_email_alert_checkpoints_extra on pilot.email_alert_checkpoints (swept_to)'],
     [
       'a checkpoint of any kind',
       'alter table pilot.email_alert_checkpoints drop constraint pilot_email_alert_checkpoint_kind_check',
@@ -316,8 +378,15 @@ describe('email alert sends migration', () => {
     ['an event kind with capitals', { event_kind: 'Gym_Notice' }, 'pilot_email_alert_send_kind_check'],
     ['an address as the event id', { event_id: 'someone@example.org' }, 'pilot_email_alert_send_event_id_check'],
     ['an event id with spaces', { event_id: 'open the app' }, 'pilot_email_alert_send_event_id_check'],
+    ['an id-like token that is not a UUID', { event_id: 'esc-1' }, 'pilot_email_alert_send_event_id_check'],
+    ['a UUID in capitals', { event_id: '00000000-0000-4000-8000-0000000000AB' }, 'pilot_email_alert_send_event_id_check'],
     ['a status off the list', { status: 'pending' }, 'pilot_email_alert_send_status_check'],
-    ['a sixth try', { tries: 6 }, 'pilot_email_alert_send_tries_check'],
+    [
+      'a sixth try',
+      { status: 'failed', tries: 6, finished_at: '2026-11-25T12:00:00Z' },
+      'pilot_email_alert_send_tries_check',
+    ],
+    ['a queued row with no tries left', { tries: 5 }, 'pilot_email_alert_send_queued_tries_check'],
     ['a negative try count', { tries: -1 }, 'pilot_email_alert_send_tries_check'],
     ['an address as the error code', { last_error_code: 'someone@example.org' }, 'pilot_email_alert_send_error_code_check'],
     ['an HTTP status off the scale', { last_status_code: 99 }, 'pilot_email_alert_send_status_code_check'],
@@ -358,24 +427,24 @@ describe('email alert sends migration', () => {
   test('it takes every finished state the sender writes: sent, skipped with its reason, failed with its codes', async () => {
     const client = await freshDatabase('emailsend_states');
     try {
-      await insertSend(client, { event_id: 'esc-sent', status: 'sent', tries: 1, finished_at: '2026-11-25T12:00:00Z' });
+      await insertSend(client, { event_id: EVENT_SENT, status: 'sent', tries: 1, finished_at: '2026-11-25T12:00:00Z' });
       await insertSend(client, {
-        event_id: 'esc-skipped', status: 'skipped', skip_reason: 'gym_unticked', finished_at: '2026-11-25T12:00:00Z',
+        event_id: EVENT_SKIPPED, status: 'skipped', skip_reason: 'gym_unticked', finished_at: '2026-11-25T12:00:00Z',
       });
       await insertSend(client, {
-        event_id: 'esc-failed', status: 'failed', tries: 5, last_status_code: 503,
+        event_id: EVENT_FAILED, status: 'failed', tries: 5, last_status_code: 503,
         last_error_code: 'GRAPH_SEND_FAILED', finished_at: '2026-11-25T12:00:00Z',
       });
       await insertSend(client, {
-        event_id: 'esc-sending', status: 'sending',
+        event_id: EVENT_SENDING, status: 'sending',
         lease_token: '00000000-0000-4000-8000-000000000001', lease_expires_at: '2026-11-25T12:02:00Z',
       });
       const { rows } = await client.query('select event_id, status from pilot.email_alert_sends order by send_id');
       expect(rows).toEqual([
-        { event_id: 'esc-sent', status: 'sent' },
-        { event_id: 'esc-skipped', status: 'skipped' },
-        { event_id: 'esc-failed', status: 'failed' },
-        { event_id: 'esc-sending', status: 'sending' },
+        { event_id: EVENT_SENT, status: 'sent' },
+        { event_id: EVENT_SKIPPED, status: 'skipped' },
+        { event_id: EVENT_FAILED, status: 'failed' },
+        { event_id: EVENT_SENDING, status: 'sending' },
       ]);
     } finally {
       await client.end();
@@ -404,9 +473,9 @@ describe('email alert sends migration', () => {
       await insertSend(client, { account_id: ADMIN_ID });
       await insertSend(client, { event_kind: 'gym_notice' });
       expect(await sendRows(client)).toEqual([
-        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
-        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
-        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'gym_notice', event_id: 'esc-1' },
+        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
+        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
+        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'gym_notice', event_id: EVENT_1 },
       ]);
     } finally {
       await client.end();
@@ -434,9 +503,9 @@ describe('email alert sends migration', () => {
          values ($1, $2, 'parent', true)`,
         [PARENT_ID, OTHER_ORG_ID],
       );
-      await insertSend(client, { account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: 'note-1' });
+      await insertSend(client, { account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: NOTE_1 });
       await insertSend(client, {
-        organization_id: OTHER_ORG_ID, account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: 'note-2',
+        organization_id: OTHER_ORG_ID, account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: NOTE_2,
       });
       await insertSend(client, { account_id: COACH_ID });
       await insertSend(client, { account_id: ADMIN_ID });
@@ -447,16 +516,16 @@ describe('email alert sends migration', () => {
         [PARENT_ID, ORG_ID],
       );
       expect(await sendRows(client)).toEqual([
-        { organization_id: OTHER_ORG_ID, account_id: PARENT_ID, event_kind: 'family_note', event_id: 'note-2' },
-        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
-        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
+        { organization_id: OTHER_ORG_ID, account_id: PARENT_ID, event_kind: 'family_note', event_id: NOTE_2 },
+        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
+        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
       ]);
 
       // An account (the purge hard-deletes parent accounts): every send of it goes.
       await client.query('delete from pilot.accounts where account_id = $1', [PARENT_ID]);
       expect(await sendRows(client)).toEqual([
-        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
-        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: 'esc-1' },
+        { organization_id: ORG_ID, account_id: COACH_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
+        { organization_id: ORG_ID, account_id: ADMIN_ID, event_kind: 'safety_escalation', event_id: EVENT_1 },
       ]);
     } finally {
       await client.end();
@@ -475,13 +544,13 @@ describe('email alert sends migration', () => {
          values ($1, $2, 'parent', true)`,
         [PARENT_ID, OTHER_ORG_ID],
       );
-      await insertSend(client, { account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: 'note-1' });
+      await insertSend(client, { account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: NOTE_1 });
       await insertSend(client, {
-        organization_id: OTHER_ORG_ID, account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: 'note-2',
+        organization_id: OTHER_ORG_ID, account_id: PARENT_ID, user_type: 'parent', event_kind: 'family_note', event_id: NOTE_2,
       });
       await client.query('delete from pilot.organizations where organization_id = $1', [OTHER_ORG_ID]);
       expect(await sendRows(client)).toEqual([
-        { organization_id: ORG_ID, account_id: PARENT_ID, event_kind: 'family_note', event_id: 'note-1' },
+        { organization_id: ORG_ID, account_id: PARENT_ID, event_kind: 'family_note', event_id: NOTE_1 },
       ]);
     } finally {
       await client.end();

@@ -6,43 +6,64 @@
 -- WHY. OD-2026-11-19-019: an opt-in, content-free email that says only "open
 -- the app". OW27-03 B: one email per event per person. Q1.10: "a send log
 -- (who, when, which kind) to prevent repeats and resume after a restart". The
--- sender (src/server/pilot/emailAlertSender.ts) works from this table: one row
--- per (gym, person, event kind, event row), written when the sweep finds an
--- event the person can read, and claimed, re-checked and sent on the server's
--- worker tick.
+-- sender (src/server/pilot/emailAlertSender.ts, EM-3b) works from this table:
+-- one row per (gym, person, event kind, event row), written only for a person
+-- whose switch is on, and whose gym has that event ticked for their user type,
+-- when the sweep finds an event they can read. Nobody else gets a row. Each row
+-- is claimed, re-checked and sent on the server's worker tick.
 --
 -- WHAT A ROW HOLDS. Who (gym, account, user type), which event (its kind and
 -- its row id), when, and the send's state: queued, sending (claimed under a
 -- lease), sent, skipped (a re-check before the send said no, with the reason)
 -- or failed (no more tries), the try count, the next try time and the last
--- error's code. NO ADDRESS AND NO CONTENT: the address is read at send time
--- (the sign-in address, or an adult athlete's confirmed one on
+-- error's code. No address column and no content: the address is read at send
+-- time (the sign-in address, or an adult athlete's confirmed one on
 -- pilot.email_alert_switches) and the email says only "open the app".
+-- THE ACCOUNT ID CAN BE AN ADDRESS. A staff member invited without an account
+-- id, and a parent login made by a guardian move, get their sign-in address as
+-- their account_id (staffProvisioning.ts, `|| loginEmail`; guardianLoginMove.ts
+-- inserts the email as account_id). For them, this row's account_id is that
+-- address, as in every table keyed by account.
 --
 -- WHAT THE DATABASE REFUSES (each a named CHECK, compared in full by the
 -- runner):
 --   * a user type other than the three, or an event kind of the wrong shape
 --     (the same rules as pilot.organization_email_alert_events);
---   * an event id or an error code of any shape an address or free text could
---     take: letters, digits and a few separators only, no '@', bounded;
---   * a status other than the five; more than 5 tries (plan 5.4);
+--   * an event id that is not a UUID: every event source mints one
+--     (randomUUID in escalationLadder.ts; uuid columns for family message
+--     replies, coach notes, announcements and family thread posts);
+--   * an error code of any shape but a bare word (extractGraphErrorCode's
+--     shape in graphMailer.ts), so no address or free text fits;
+--   * a status other than the five; more than 5 tries (plan 5.4), or a
+--     queued row with none left;
 --   * a lease on a row that is not being sent, or a row being sent without
 --     one; a finished time on an unfinished row, or the reverse;
 --   * a skip without its reason, a reason off the list, or a reason on a row
 --     that was not skipped; an HTTP status outside 100-599.
--- One row per (gym, account, event kind, event id), so a restart neither
--- resends nor skips (OW27-03 B, Q1.10).
+-- One row per (gym, account, event kind, event id), so the sweep's overlap and
+-- a restart never make a second row. A send cut off after Graph took it but
+-- before its row says sent is sent again when its lease runs out (EM-3b): the
+-- one way a person can get a second email for one event.
 --
 -- DELETION (Overwatch GO on #2159, condition 4). All three keys cascade, as on
 -- pilot.email_alert_switches: a row goes when its gym's row, its account row
--- or the person's membership of that gym is deleted. A parent account
--- hard-deleted by the purge takes its rows. An athlete login is kept by the
--- purge (retired by UPDATE) and a staff account is never hard-deleted, so
--- their rows stay; they hold no address and no content, only the account id,
--- gym, user type, event kind and event id, and times. The event id is not a
--- foreign key (the events live in several tables), so a purged event leaves
--- its id here. The retention period is not ruled (docs/DATA_RETENTION.md row).
--- pilot.email_alert_checkpoints holds no person data.
+-- or the person's membership of that gym is deleted. Which of those are ever
+-- deleted (scripts/pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md
+-- Method 1):
+--   * a parent account is hard-deleted by the purge once its account
+--     retention window has passed (later for a guardian held for safeguarding
+--     chats), and its rows go with it;
+--   * an athlete login is kept by the purge (retired by UPDATE) and a staff
+--     account is never hard-deleted, so their rows stay;
+--   * a soft-deleted account, or a membership switched off (the app switches
+--     memberships off, it does not delete them), keeps its rows.
+-- A row that stays holds the account id (an address, for the accounts named
+-- above), gym, user type, event kind and id, status, skip reason (which can
+-- say the person's sign-in was off or they were no longer offered alerts) and
+-- times. The event id is not a foreign key (the events live in several
+-- tables), so a purged event leaves its id here. The retention period is not
+-- ruled (docs/DATA_RETENTION.md row). pilot.email_alert_checkpoints holds no
+-- person data.
 --
 -- No `begin;`/`commit;` here on purpose: the runner
 -- (apps/web/scripts/pilot-apply-email-alert-sends-migration.mjs) opens the
@@ -62,7 +83,7 @@ create table if not exists pilot.email_alert_sends (
       check (event_kind ~ '^[a-z][a-z_]{0,62}$'),
   event_id          text not null
     constraint pilot_email_alert_send_event_id_check
-      check (event_id ~ '^[A-Za-z0-9][A-Za-z0-9_:.-]{0,127}$'),
+      check (event_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
   status            text not null default 'queued'
     constraint pilot_email_alert_send_status_check
       check (status in ('queued', 'sending', 'sent', 'skipped', 'failed')),
@@ -97,7 +118,10 @@ create table if not exists pilot.email_alert_sends (
   constraint pilot_email_alert_send_finished_check
     check ((status in ('sent', 'skipped', 'failed')) = (finished_at is not null)),
   constraint pilot_email_alert_send_skipped_check
-    check ((status = 'skipped') = (skip_reason is not null))
+    check ((status = 'skipped') = (skip_reason is not null)),
+  -- A row back in the queue has a try left: the fifth failed try ends it.
+  constraint pilot_email_alert_send_queued_tries_check
+    check (status <> 'queued' or tries < 5)
 );
 
 -- The sender claims queued rows whose time has come, oldest first, and
@@ -110,7 +134,7 @@ create index if not exists idx_email_alert_sends_leased
   where status = 'sending';
 
 comment on table pilot.email_alert_sends is
-  'Email alert send log: one row per gym, person, event kind and event row (OW27-03 B; Q1.10). Who, which event, when, and the send state. No address and no content. Lane W4-1, EM-3.';
+  'Email alert send log: one row per gym, person, event kind and event row (OW27-03 B; Q1.10). Who, which event, when, and the send state. No address column and no content; an account id can itself be a sign-in address. Lane W4-1, EM-3.';
 
 -- How far the sweep has read each event kind's source (plan 5.1). The sweep
 -- re-reads a 10-minute overlap behind swept_to, so a row that commits late is
