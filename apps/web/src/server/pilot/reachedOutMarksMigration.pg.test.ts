@@ -488,6 +488,8 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(`update ${T} set marked_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
         .rejects.toMatchObject(refused);
       await expect(client.query(`update ${T} set athlete_id = 'ben' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      // Only an account's delete (the foreign key's own SET NULL, deeper than 1) may clear a name.
+      await expect(client.query(`update ${T} set marked_by_account_id = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       await client.query(
         `update ${T} set cleared_at = '2000-01-01T00:00:00Z', cleared_by_account_id = $1 where athlete_id = 'ada'`,
         [COACH_ID],
@@ -498,6 +500,7 @@ describe('athlete reached-out marks migration', () => {
         .rejects.toMatchObject(refused);
       await expect(client.query(`update ${T} set cleared_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
         .rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set cleared_by_account_id = null where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
       await expect(client.query(`delete from ${T} where athlete_id = 'ada'`))
         .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_no_delete' });
       expect((await client.query(`select count(*)::int as n from ${T} where cleared_at is not null`)).rows[0].n).toBe(1);
