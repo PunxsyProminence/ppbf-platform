@@ -2332,6 +2332,9 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pause session' })).not.toBeDisabled();
     expect(screen.queryByText(/^Ending this session is not saved yet/)).toBeNull();
+    // The finish's own refusal is said on the console, which stays; not in the page's list.
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    expect(screen.getAllByRole('alert').some((alert) => alert.textContent !== '')).toBe(true);
   });
 
   it('signing out while a finish waits frees the controls and takes its words away', async () => {
@@ -2587,7 +2590,7 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.queryByText(/intervention is not saved yet/)).toBeNull();
   });
 
-  it('another account confirmed on this page forgets every pair\'s key: the next person\'s log is never the last person\'s', async () => {
+  it('another account\'s tap of the same pair sends its own key: the next person\'s log is never the last person\'s', async () => {
     jest.useFakeTimers();
     let account = 'acct-a';
     const { fetchMock } = await renderKept(liveRun(), {
@@ -2608,6 +2611,63 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(posted).toHaveLength(2);
     expect(posted[1].made_by_account_id).toBe('acct-b');
     expect(posted[1].request_key).not.toBe(posted[0].request_key);
+  });
+
+  it('a tap made while the page checks again who is signed in, answered as another account, still sends that account\'s own key', async () => {
+    jest.useFakeTimers();
+    let account = 'acct-a';
+    const held: Array<() => void> = [];
+    let holdChecks = false;
+    const { fetchMock } = await renderKept(liveRun(), {
+      session: () => (holdChecks
+        ? new Promise<Response>((resolve) => {
+          held.push(() => resolve(jsonResponse({ authenticated: true, account_id: account })));
+        })
+        : jsonResponse({ authenticated: true, account_id: account })),
+      logPost: lost,
+    });
+    await openLog();
+    await logPair();
+    // Someone else signs in by a path that writes no device mark; the focus re-check is still out
+    // when they tap the same pair.
+    account = 'acct-b';
+    holdChecks = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await logPair();
+    await act(async () => {
+      for (const answerNow of held.splice(0)) answerNow();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    const posted = logPostCalls(fetchMock);
+    const last = posted[posted.length - 1];
+    expect(last.made_by_account_id).toBe('acct-b');
+    expect(last.request_key).not.toBe(posted[0].request_key);
+  });
+
+  it('the same coach keeps a pair\'s key across a drop: a log retried after a 401 is the same log, never a second', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    const { fetchMock } = await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        // The first send may have landed; its answer was lost. The resend meets a lapsed session.
+        if (posts === 1) return lost();
+        if (posts === 2) return jsonResponse({ error: 'UNAUTHENTICATED' }, false, 401);
+        return jsonResponse({ item: { execution_id: 'exec-1', created_at: '2026-08-17T00:00:00.000Z' } });
+      },
+    });
+    await openLog();
+    await logPair();
+    await wait(RESEND_MS);
+    // Dropped at the 401, words and all.
+    expect(waitingLine()).toBeNull();
+    await logPair();
+    const keys = logPostCalls(fetchMock).map((body) => body.request_key);
+    expect(keys).toHaveLength(3);
+    expect(keys[2]).toBe(keys[0]);
   });
 
   it('a log refused while a kept finish waits behind it is said in the page\'s list: the console goes once the finish lands', async () => {
@@ -2635,6 +2695,52 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(alert.getByText(FAILED_WORDS)).toBeInTheDocument();
     expect(alert.getByText(/^Intervention log: Round-3 endurance block: /)).toBeInTheDocument();
     expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('a run action refused while a kept finish waits behind it is said in the page\'s list, not on the console', async () => {
+    jest.useFakeTimers();
+    let shows = 0;
+    await renderKept(liveRun(), {
+      patch: (body) => {
+        if (body.action === 'finish') return new Promise<Response>(() => {});
+        shows += 1;
+        return shows === 1 ? lost() : jsonResponse({ error: 'SESSION_SCRIPT_RUN_BLOCK_NOT_IN_SCRIPT' }, false, 422);
+      },
+      // The landed check finds the TV still not allowed: refused, not landed.
+      runsGet: () => jsonResponse({ run: liveRun() }),
+    });
+    await tap('Allow on a TV', 'switch');
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await wait(RESEND_MS);
+    const alert = within(screen.getByRole('alert'));
+    expect(alert.getByText(FAILED_WORDS)).toBeInTheDocument();
+    expect(alert.getByText(/^Allow on a TV: on: /)).toBeInTheDocument();
+  });
+
+  it('a log whose outcome is not known while a kept finish waits is listed apart in the page\'s list, with where to check', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    await renderKept(liveRun(), {
+      logPost: () => {
+        posts += 1;
+        return posts === 1 ? lost() : jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        return reads === 1 ? jsonResponse({ items: [] }) : jsonResponse({}, false, 500);
+      },
+      patch: () => new Promise<Response>(() => {}),
+    });
+    await openLog();
+    await logPair();
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await wait(RESEND_MS);
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeInTheDocument();
+    expect(screen.getByText(`Intervention log: Round-3 endurance block: ${unknownOffPage('Check The Work before logging it again.')}`)).toBeInTheDocument();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
   });
 
   it('a no-shows tap refused while a kept finish waits behind it is said in the page\'s list', async () => {

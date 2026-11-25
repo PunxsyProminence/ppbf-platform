@@ -272,7 +272,7 @@ describe('SessionRunClass: a tie kept on a flaky connection (W4 item 7, OQ-3)', 
     await act(async () => {
       render(
         <>
-          <SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={jest.fn()} finishWaiting />
+          <SessionRunClass runId="run-1" classId={null} onClassChange={jest.fn()} onRunNotLive={jest.fn()} isFinishWaiting={() => true} />
           <SaveQueueNotice />
         </>,
       );
