@@ -272,8 +272,9 @@ search only.
 **F1. Something derived from run marks reaches roles that read none today,
 by Jason's newer answers.** Today run marks are staff only (2.1). Under Q3.1 C
 a run mark alone puts a person on the floor, and Q3.2 A and Q3.4 A give the
-parent and the athlete a line about that person. So FN-1 would let a parent
-and an athlete learn one fact derived from a run mark: "marked here in a
+parent and the athlete a line about that person. So the line would let a
+parent and an athlete learn one fact derived from a run mark (from FN-2,
+which opens the read's family branches, section 4): "marked here in a
 running session, yes or no". For a session tied to a class the family often
 already learns it through the register copy (2.1); when the copy is skipped,
 or the session is untied, the fact is new to the family. OBSERVED (the
@@ -302,15 +303,19 @@ attendance figure, report, board or grant figure changes"
   INFERRED. The OW27-19 card told Jason only that a run mark "is not
   attendance" (`:1258`), not that it is staff-only today; whether that goes to
   him is FN0-Q4.
-- **Recommendation for FN-1:** only that yes/no leaves the server for a
-  family reader, for their own child or themselves; the run, its coach, its
+- **Recommendation for the read (FN-1, with its family branches opened by
+  FN-2):** only that yes/no leaves the server for a family reader, for their own child or themselves; the run, its coach, its
   class, its times, and who else is in it stay staff only, as the registry
   note says. That holds for what is sent; a family who watches the line
   change can still tell roughly when a run-only mark began and when the run
-  ended (F14). In the same PR, naming OD-2026-11-21-006, FN-1 changes the module
-  comment (`sessionRunAthletes.ts:38-44`), the registry entry
+  ended (F14). FN-1 adds its staff read to the convention test's lists
+  (check 7) and leaves the family wording as it is, since it serves families
+  nothing yet. The PR that opens the family branches (FN-2), naming
+  OD-2026-11-21-006, changes the module comment
+  (`sessionRunAthletes.ts:38-44`), the registry entry
   (`privacyTiers.ts:557-580`), the staff route comment
-  (`runs/[runId]/athletes/route.ts:31-34`) and the convention test. The test
+  (`runs/[runId]/athletes/route.ts:31-34`) and the convention test's family
+  rule, so none of them claims a family read before one exists. The test
   carries a minors'-privacy guard, so it is narrowed, not dropped: it should
   still fail for any family, board, platform or public route that reaches the
   table, except the one floor-line read. Its audience pattern
@@ -683,7 +688,7 @@ choose. Every linked guardian gets it, including one a release restriction
 concerns. INFERRED. How often the line refreshes sets how closely a guardian
 can time this; that is a screen-flow choice, which the kernel gives to Jason
 with the lane (`AGENT_KERNEL.md:87-88`), so it is asked in FN0-Q2. This review recommends no new gate (L1 rule). Whether this, with F1, goes to
-Jason before FN-1 is FN0-Q4.
+Jason before FN-2 is FN0-Q4.
 
 **F15. A failed read must not look like "nobody".** The kernel floor says
 "an unknown value never looks complete or zero" (`AGENT_KERNEL.md:106-107`).
@@ -856,8 +861,9 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
    on today's gym day, from the time FN0-Q2 rules (recommended: the class's
    start for a mark the family wrote) to the end of that gym day.
 7. `sessionRunPresenceStaffOnly.convention.test.ts`, `privacyTiers.ts`,
-   `sessionRunAthletes.ts` and the staff route comment say who now reads the
-   derived run-mark fact (a yes/no for families), and the test still fails
+   `sessionRunAthletes.ts` and the staff route comment say who reads the
+   derived run-mark fact (a yes/no for families, from the PR that opens the
+   family branches, FN-2, F1), and the test still fails
    for any other family, board, platform, public or TV route that reaches the
    table (its audience pattern keeps `wall` and `kiosk` and adds `tv`, F1). The new read's name goes into the test's `REACHES` pattern
    (`sessionRunPresenceStaffOnly.convention.test.ts:47-48`), its module onto
@@ -914,10 +920,10 @@ no copy in this repository).
 
 **What each question holds up (INFERRED, from the sizing's PR split,
 `W4_SIZING.md:549-554`).** FN-1, the read: FN0-Q1, FN0-Q6 and FN0-Q2's
-start time change which marks count, and FN0-Q4 decides whether Jason hears
-F1 and F14 first. FN-1 can build those three as separate conditions before
-they are answered, serving staff only until FN-2; FN-2 and FN-3 ship after
-(section 4). FN-2 and
+start time change which marks count. FN-1 can build those three as separate
+conditions before they are answered, serving staff only until FN-2; FN-2 and
+FN-3 ship after (section 4), and FN0-Q4 decides whether Jason hears F1 and
+F14 before FN-2. FN-2 and
 FN-3, the screens: FN0-Q2 sets the words for both, and FN0-Q5 the family
 words on a failed read, in FN-2. FN0-Q3 sets what the
 board's, the platform owner's and the staff-role and volunteer homes show;
@@ -996,7 +1002,9 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
   scheduler tells one apart: method self or parent, or an older parent mark
   by its role, `schedulerDb.ts:723-729`) counts from its class's start time to the
   end of that gym day, not from when it was written; a staff mark counts from
-  when it is written, as staff have confirmed the child.
+  when it is written, as a staff mark is staff's word that the child is
+  there (INFERRED: the code lets staff mark any class that is not cancelled,
+  at any hour, `scheduler/route.ts:1411-1413`, `:1497-1530`).
   - Coach line: "On the floor now: " and the names. With nobody counted:
     "Nobody is marked on the floor right now." (the shape of the TV's
     approved "Nobody is marked here yet today.", OW27-12 A). When the read
@@ -1012,19 +1020,29 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     number; `privacyTiers.ts:85-86`).
   - No line says who marked or how (F11). A family's line on a failed read is
     FN0-Q5.
-  - Pros: your C and its "on the floor now", less only the before-arrival case; never
+  - Pros: your C and its "on the floor now", less the before-arrival case for
+    a family's own mark; never
     claims absence (F4); the same kernel-floor ground as FN0-Q6 ("Nothing
     false ships", `AGENT_KERNEL.md:105`); keeps an early arrival a coach has
     marked on the coach's head count (Q3.3 A's "for safety and the head
     count", `OWNER_DECISIONS.md:1287`). Cons: narrows your C for the time
     before a class starts; a child who taps in early shows only from the
     class's start; a child's own tap for a class they never come to still
-    shows them from its start (F2); keeps the con you accepted (may still
-    show someone after they have gone home).
+    shows them from its start (F2); a staff mark written early (a roster
+    marked at noon for an evening class) still shows those children from
+    when it is written; an athlete who taps "I'm here" in the morning for an
+    evening class reads "You're not marked on the floor right now." while
+    the check-in card says "You are marked here. Your coach can see it."
+    (`apps/web/components/AthleteImHere.tsx:364`); a line before a class
+    starts can only come from a staff mark, so its timing tells a family
+    that staff marked the child (low: families already see "via" the
+    method, `apps/web/app/schedule/page.tsx:1596`); keeps the con you
+    accepted (may still show someone after they have gone home).
 - **B: your C exactly as chosen.** As A, but a register-only mark counts from
   when it is written, all gym day. Pros: exactly what you chose, as
   OD-2026-10-13-013 asks. Cons: as on your OW27-19 card, plus the
-  before-arrival case above, and a child's own tap for a class they never
+  before-arrival case above, a staff mark written early shows the children
+  from when it is written, and a child's own tap for a class they never
   come to shows them all day (F2).
 - **C: the ruled name for a register-only mark.** As A, but a register-only
   mark reads "marked here today" ("[first name] is marked here today.", as
@@ -1119,8 +1137,8 @@ is still open, because each of these roles has limits on what it may see
   comment, which depends on a deploy setting not checked here,
   `apps/web/app/api/pilot/wall-of-names/route.ts:26-33`).
 
-**FN0-Q4 (for App Overwatch). Do F1 and F14 go to Jason before FN-1
-starts?**
+**FN0-Q4 (for App Overwatch). Do F1 and F14 go to Jason before FN-2
+ships?**
 Plain: with the line, a parent learns their child is on the floor from a
 mark in an open-gym session, which only staff see today, and every linked
 guardian sees it, including roughly when the child was marked in and when
@@ -1136,34 +1154,37 @@ He hears about such a matter only if it breaks the hard floor in his rules
 false), and then as one line." OD-2026-10-21-005's limits, on pilot
 questions: "Anything touching safety or minors' privacy gets a one-line note
 after it's applied" (`:6017`). Applying either here is my reading. INFERRED.
+Timing: FN-2 already waits on Jason's answers to FN0-Q1, Q2, Q5 and Q6, and
+FN-1 serves families nothing before it (section 4), so none of the options costs FN-1
+anything; the choice is only whether, and how, Jason hears these two facts
+before families see the line.
 - **A (recommended): App Overwatch decides, and Jason gets one line on F1 and
-  F14 before FN-2 ships (the first PR in which families see the line); FN-1
-  does not wait.** I read F1 and F14 as inside his Q3.2 A answer (a
-  parent sees their own child's line), so not breaking the hard floor; they
-  do touch minors' privacy and safeguarding, and OD-2026-10-21-005's
-  "touching" standard gives a one-line note for that. INFERRED. Pros: he
-  learns the two facts the cards did not show; FN-1 does not wait. Cons: he
-  hears after the sign-off, not before; OD-2026-10-21-005 was written for
-  pilot questions; a one-line note asks him nothing, and the one fix this review found for F14,
-  holding the line back from one guardian, is a new restriction that needs
-  his direction (RULES section 1, `W4_SIZING.md:136-137`), so under A it
-  reaches him only if he asks back. F14 is told, not asked, because the build
-  needs no decision on it (this review recommends no new restriction);
-  FN0-Q5 is asked because FN-2 cannot ship without its words. Timing: the no-new-lanes hold is lifted (OD-2026-11-24-007,
-  `OWNER_DECISIONS.md:697`) and Jason's "A" started this review with the
-  other W4 lanes (OD-2026-11-25-001, `:681`); the brief says FN-1 starts after
-  this sign-off. If FN-1 cannot start soon anyway, C costs no time and A's
-  main pro falls away; App Overwatch knows which holds.
+  F14, posted in this PR with the five questions, before FN-2 ships.** I read
+  F1 and F14 as inside his Q3.2 A answer (a parent sees their own child's
+  line), so not breaking the hard floor; they do touch minors' privacy and
+  safeguarding, and OD-2026-10-21-005's "touching" standard gives a one-line
+  note for that. INFERRED. Pros: he learns the two facts the cards did not
+  show before any family sees the line; it asks him nothing, as ruling 3
+  reads. Cons: OD-2026-10-21-005 was written for pilot questions; a one-line
+  note asks him nothing, and the one fix this review found for F14, holding
+  the line back from one guardian, is a new restriction that needs his
+  direction (RULES section 1, `W4_SIZING.md:136-137`), so under A it reaches
+  him only if he asks back. F14 is told, not asked, because the build needs
+  no decision on it (this review recommends no new restriction); FN0-Q5 is
+  asked because FN-2 cannot ship without its words.
 - **B: App Overwatch decides; nothing to Jason.** Pros: ruling 3 read
   narrowly (no floor broken, so he hears nothing). Cons: the cards did not
-  show him that run marks are staff-only today (`:1258`), or that one
+  show him that run marks are staff-only today (`OWNER_DECISIONS.md:1258`), or that one
   guardian cannot be held back.
-- **C: ask Jason in this PR before FN-1.** For use if App Overwatch reads
-  either finding as breaking the hard floor. Ruling 3 gives him only a line
-  then, so asking first goes beyond it; it rests on G8 ("minors' privacy ...
-  go to Jason"), the kernel floor ("Minors' privacy ... untouched",
-  `AGENT_KERNEL.md:104-105`) and his rule that lanes ask him in their own
-  lane (OD-2026-10-03-018). Pros: he decides first. Cons: FN-1 waits.
+- **C: ask Jason in this PR, with the five questions.** For use if App
+  Overwatch reads either finding as breaking the hard floor. Ruling 3 gives
+  him only a line then, so asking goes beyond it; it rests on G8 ("minors'
+  privacy ... go to Jason"), the kernel floor ("Minors' privacy ...
+  untouched", `AGENT_KERNEL.md:104-105`) and his rule that lanes ask him in
+  their own lane (OD-2026-10-03-018). Pros: he decides on F14's fix before
+  families see the line, at no cost to FN-1. Cons: goes beyond ruling 3; one
+  more question, of the kind he called "slowly adds constrainsts"
+  (`OWNER_DECISIONS.md:8034`).
 
 **FN0-Q5 (for Jason). What does a parent or an athlete see when the app
 cannot check the line?**
