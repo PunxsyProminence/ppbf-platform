@@ -2198,16 +2198,18 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     jest.useFakeTimers();
     let posts = 0;
     let reads = 0;
+    let key: unknown = null;
     const { fetchMock } = await renderKept(liveRun(), {
-      logPost: () => {
+      logPost: (body) => {
         posts += 1;
+        key = body.request_key;
         if (posts === 1) throw new TypeError('Failed to fetch');
         return jsonResponse({ error: 'INTERVENTION_EXECUTION_PROTOCOL_INACTIVE' }, false, 409);
       },
       logGet: () => {
         reads += 1;
-        // The before read finds nothing; the landed check finds this tap's log.
-        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-9', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1' }] });
+        // The before read finds nothing; the landed check finds the log this tap's own key started.
+        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-9', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: key }] });
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
@@ -2220,6 +2222,63 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(screen.getByText('logged')).toBeInTheDocument();
     const ledgerReads = signalsTo(fetchMock, (url, init) => url.includes('/api/pilot/coach/intervention-executions') && init?.method !== 'POST');
     expect(ledgerReads[ledgerReads.length - 1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('two tabs of one account: another tab\'s log of the same pair is never taken for this tap\'s refused RESEND (matched by request key)', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let reads = 0;
+    let key: unknown = null;
+    await renderKept(liveRun(), {
+      logPost: (body) => {
+        posts += 1;
+        key = body.request_key;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        // Not written: the protocol was revised after this tap.
+        return jsonResponse({ error: 'This protocol changed since it was loaded.', code: 'RECORD_CHANGED' }, false, 409);
+      },
+      logGet: () => {
+        reads += 1;
+        // After this tap's before read, the same coach logged the same pair in another tab: a log of
+        // this run, pair and account, under the other tab's own key.
+        return jsonResponse({ items: reads === 1 ? [] : [{ execution_id: 'exec-other-tab', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-a', request_key: 'other-tab-key' }] });
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await tap('Log intervention');
+    await wait(RESEND_MS);
+    expect(posts).toBe(2);
+    expect(key).not.toBe('other-tab-key');
+    // Said as not logged, with the server's reason, and never listed as this tap's log.
+    expect(screen.getByRole('alert')).toHaveTextContent('This protocol changed since it was loaded.');
+    expect(screen.queryByText('logged')).toBeNull();
+  });
+
+  it('a log under this tap\'s own key that another account wrote (a pair key first sent on today\'s path) is not taken for this tap\'s refused RESEND', async () => {
+    jest.useFakeTimers();
+    let posts = 0;
+    let key: unknown = null;
+    await renderKept(liveRun(), {
+      logPost: (body) => {
+        posts += 1;
+        key = body.request_key;
+        if (posts === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ error: 'This account cannot log for that athlete.' }, false, 403);
+      },
+      logGet: () => jsonResponse({ items: posts < 2 ? [] : [{ execution_id: 'exec-b', created_at: '2026-08-17T00:00:00.000Z', session_run_id: 'ssrun_1', protocol_id: 'proto-1', version: 1, recorded_by_account_id: 'acct-b', request_key: key }] }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Log an intervention...' }));
+    await wait(0);
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    await tap('Log intervention');
+    await wait(RESEND_MS);
+    expect(posts).toBe(2);
+    expect(screen.getByRole('alert')).toHaveTextContent('This account cannot log for that athlete.');
+    expect(screen.queryByText('logged')).toBeNull();
   });
 
   it('signing out drops a kept run action and a kept log: their words leave the page, and neither is resent', async () => {
