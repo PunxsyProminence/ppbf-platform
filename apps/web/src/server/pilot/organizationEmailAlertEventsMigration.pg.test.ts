@@ -1,11 +1,11 @@
 // Real PostgreSQL-backed test for the organization-email-alert-events
-// migration (lane W4-1, EM-5a; the store, EM-5b, has its own suite;
-// OW27-10 A: the gym's organization admin chooses, per user type, which events
-// send the email alert; OW27-39 A: every event starts ticked). './db' is mocked
-// to route into the embedded server (the tabletIdlePolicy.pg.test.ts pattern;
-// withTransaction runs a real BEGIN/COMMIT/ROLLBACK), so the module's real SQL
-// and audit.ts's run against real rows. The runner is driven through its real
-// entrypoint, so its readiness check runs against a real Postgres here.
+// migration (lane W4-1, EM-5a; OW27-10 A: the gym's organization admin
+// chooses, per user type, which events send the email alert; OW27-39 A: every
+// event starts ticked). Nothing is mocked: the migration SQL is applied
+// through the runner's applyMigrationTransaction (not its run(), which only
+// adds the operator's target check), so its readiness check runs against a
+// real Postgres. The store that reads and writes the table is EM-5b, with its
+// own suite.
 //
 // It NEVER connects to production or staging: an embedded server on a free
 // local port, in a throwaway data directory.
@@ -72,7 +72,6 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** The full schema, two gyms, and one account of each kind in the first. */
 
 /** The full schema, two gyms, two gym admins and a coach in the first. */
 async function freshDatabase(name: string, { preMigration = false } = {}): Promise<Client> {
@@ -217,6 +216,16 @@ describe('organization email alert events migration', () => {
          drop constraint organization_email_alert_events_set_by_account_id_fkey,
          add constraint organization_email_alert_events_set_by_account_id_fkey
            foreign key (set_by_account_id) references pilot.accounts(account_id) on delete cascade`,
+    ],
+    ['ticked that may be null', 'alter table pilot.organization_email_alert_events alter column ticked drop not null'],
+    ['ticked stored as text', 'alter table pilot.organization_email_alert_events alter column ticked type text'],
+    ['a set time that may be null', 'alter table pilot.organization_email_alert_events alter column set_at drop not null'],
+    ['an extra column', 'alter table pilot.organization_email_alert_events add column note text'],
+    [
+      'a second gym key that blocks deleting the gym',
+      `alter table pilot.organization_email_alert_events
+         add constraint pilot_org_email_alert_extra_fk foreign key (organization_id)
+           references pilot.organizations(organization_id) on delete restrict`,
     ],
     [
       'the primary key in another order',
