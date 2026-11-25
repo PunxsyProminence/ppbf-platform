@@ -292,12 +292,16 @@ describe('athlete reached-out marks migration', () => {
   });
 
   const INDEX = 'pilot.uq_athlete_reached_out_marks_current';
+  const GUARD = 'trg_athlete_reached_out_marks_guard';
+  const GUARD_FUNCTION = 'pilot.athlete_reached_out_marks_guard()';
+  const replaceGuard = (when: string, each: string, fn: string) =>
+    `drop trigger ${GUARD} on ${T}; create trigger ${GUARD} ${when} on ${T} ${each} execute function ${fn}`;
   // With no table, every piece that looks at the table fails with it.
   const NO_TABLE = [
     'table_ready', 'columns_ready', 'organization_id_ready', 'mark_id_ready', 'athlete_id_ready', 'marked_by_account_id_ready',
     'marked_by_role_ready', 'marked_at_ready', 'cleared_at_ready', 'cleared_by_account_id_ready', 'checks_ready', 'primary_key_ready',
     'current_mark_index_ready', 'foreign_key_count_ready', 'organization_fk_ready', 'athlete_fk_ready', 'marked_by_fk_ready',
-    'cleared_by_fk_ready',
+    'cleared_by_fk_ready', 'guard_ready',
   ];
   // Each condition of the readiness check, drifted on its own. The refusal must name exactly the
   // pieces listed (the piece, or the 4th entry when a drift trips more), so a readiness check that
@@ -340,6 +344,8 @@ describe('athlete reached-out marks migration', () => {
       `drop index ${INDEX}; create unique index zz_cond on ${T} (organization_id, athlete_id) where cleared_at is null and marked_by_role = 'coach'`],
     ['current_mark_index_ready', 'the index columns reversed',
       `drop index ${INDEX}; create unique index zz_rev on ${T} (athlete_id, organization_id) where cleared_at is null`],
+    ['current_mark_index_ready', 'the index under another collation',
+      `drop index ${INDEX}; create unique index zz_coll on ${T} (organization_id, athlete_id collate "C") where cleared_at is null`],
     ['current_mark_index_ready', 'the index on an expression',
       `drop index ${INDEX}; create unique index zz_expr on ${T} (organization_id, lower(athlete_id)) where cleared_at is null`],
     ['current_mark_index_ready', 'a second unique index', `create unique index zz_second on ${T} (marked_by_account_id, athlete_id)`],
@@ -353,6 +359,15 @@ describe('athlete reached-out marks migration', () => {
     ['foreign_key_count_ready', 'a fifth foreign key',
       `alter table ${T} add constraint zz_org_again foreign key (organization_id) references pilot.organizations(organization_id)`],
     ...FOREIGN_KEY_DRIFTS,
+    ['guard_ready', 'no guard', `drop trigger ${GUARD} on ${T}`],
+    ['guard_ready', 'the guard switched off', `alter table ${T} disable trigger ${GUARD}`],
+    ['guard_ready', 'the guard on inserts only', replaceGuard('before insert', 'for each row', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard not on inserts', replaceGuard('before update or delete', 'for each row', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard after the write', replaceGuard('after insert or update or delete', 'for each row', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard once per statement', replaceGuard('before insert or update or delete', 'for each statement', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard calling another function',
+      `create function pilot.zz_let_through() returns trigger language plpgsql as $$ begin return coalesce(new, old); end $$;
+       ${replaceGuard('before insert or update or delete', 'for each row', 'pilot.zz_let_through()')}`],
   ])('readiness refuses %s: %s', async (piece, _label, alteration, pieces = [piece]) => {
     const client = await migratedCopy();
     try {
@@ -395,7 +410,7 @@ describe('athlete reached-out marks migration', () => {
       );
       expect(again.rowCount).toBe(0);
       await expect(client.query(`update ${T} set cleared_by_account_id = $1 where athlete_id = 'ada'`, [COACH_ID]))
-        .rejects.toMatchObject({ code: '23514' });
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_append_only' });
       await takeBack(client, 'ada', LEAVER_ID);
       await mark(client, 'ada');
       await takeBack(client, 'ada');
@@ -416,7 +431,7 @@ describe('athlete reached-out marks migration', () => {
     }
   });
 
-  test('an account\'s delete (the purge\'s step) clears its id from every mark and take-back, and keeps the marks', async () => {
+  test('an account\'s delete (as the purge deletes a guardian\'s account) clears its id from every mark and take-back, and keeps the marks', async () => {
     const { client } = await freshDatabase();
     try {
       await mark(client, 'ada', { account: LEAVER_ID });
@@ -436,6 +451,56 @@ describe('athlete reached-out marks migration', () => {
         { athlete_id: 'ben', marked_by_account_id: COACH_ID, marked_by_role: 'coach', has_time: true, cleared_by_account_id: null, cleared: true },
       ]);
       expect(JSON.stringify((await client.query(`select * from ${T}`)).rows)).not.toContain(LEAVER_ID);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the guard: a mark names who made it, starts current, and takes the database\'s time', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await expect(mark(client, 'ada', { account: null }))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_names_who' });
+      await expect(client.query(
+        `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role, cleared_at, cleared_by_account_id)
+         values ($1, gen_random_uuid(), 'ada', $2, 'coach', now(), $2)`,
+        [ORG_ID, COACH_ID],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_starts_current' });
+      await client.query(
+        `insert into ${T} (organization_id, mark_id, athlete_id, marked_by_account_id, marked_by_role, marked_at)
+         values ($1, gen_random_uuid(), 'ada', $2, 'coach', '2000-01-01T00:00:00Z')`,
+        [ORG_ID, COACH_ID],
+      );
+      const { rows } = await client.query(`select marked_at > now() - interval '1 minute' as now_ish from ${T}`);
+      expect(rows).toEqual([{ now_ish: true }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the guard: a take-back is once, names who, takes the database\'s time, and nothing undoes or deletes it', async () => {
+    const { client } = await freshDatabase();
+    const refused = { code: '23514', constraint: 'pilot_athlete_reached_out_marks_append_only' };
+    try {
+      await mark(client, 'ada');
+      await expect(client.query(`update ${T} set cleared_at = now() where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set marked_by_role = 'admin' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set marked_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
+        .rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set athlete_id = 'ben' where athlete_id = 'ada'`)).rejects.toMatchObject(refused);
+      await client.query(
+        `update ${T} set cleared_at = '2000-01-01T00:00:00Z', cleared_by_account_id = $1 where athlete_id = 'ada'`,
+        [COACH_ID],
+      );
+      const taken = await client.query(`select cleared_at >= marked_at as after_mark, cleared_at > now() - interval '1 minute' as now_ish from ${T}`);
+      expect(taken.rows).toEqual([{ after_mark: true, now_ish: true }]);
+      await expect(client.query(`update ${T} set cleared_at = null, cleared_by_account_id = null where athlete_id = 'ada'`))
+        .rejects.toMatchObject(refused);
+      await expect(client.query(`update ${T} set cleared_by_account_id = $1 where athlete_id = 'ada'`, [LEAVER_ID]))
+        .rejects.toMatchObject(refused);
+      await expect(client.query(`delete from ${T} where athlete_id = 'ada'`))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_no_delete' });
+      expect((await client.query(`select count(*)::int as n from ${T} where cleared_at is not null`)).rows[0].n).toBe(1);
     } finally {
       await client.end();
     }

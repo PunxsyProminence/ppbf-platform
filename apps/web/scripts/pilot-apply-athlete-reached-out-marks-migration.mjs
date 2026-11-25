@@ -24,10 +24,14 @@ function sslConfig() {
 // CHECKs, validated and compared IN FULL against the text Postgres stores; the
 // primary key on (organization_id, mark_id), not deferrable; exactly one other
 // unique index, the current-mark index on (organization_id, athlete_id) WHERE
-// cleared_at IS NULL, and no unique or exclusion constraint; exactly four
-// foreign keys, each by source columns, target table and columns, ON DELETE,
-// ON UPDATE NO ACTION, validated and not deferrable. Each condition is drifted
-// on its own in reachedOutMarksMigration.pg.test.ts.
+// cleared_at IS NULL, by columns (an expression column reads 0 there, so it
+// never matches), their collations, validity and immediacy, and no unique or
+// exclusion constraint; exactly four foreign keys, each by source columns,
+// target table and columns, ON DELETE, ON UPDATE NO ACTION, validated and not
+// deferrable; the guard trigger by name, BEFORE INSERT, UPDATE and DELETE, FOR
+// EACH ROW, enabled, calling the guard function (whose body each apply
+// replaces). Each condition is drifted on its own in
+// reachedOutMarksMigration.pg.test.ts.
 const EXPECTED_CHECKS = {
   pilot_athlete_reached_out_marks_role_check:
     "CHECK ((marked_by_role = ANY (ARRAY['coach'::text, 'organization_admin'::text, 'admin'::text])))",
@@ -49,6 +53,8 @@ export const EXPECTED_COLUMNS = [
 const OWN = 'pilot.athlete_reached_out_marks';
 const attnum = (table, column) => `(select attnum from pg_attribute where attrelid = to_regclass('${table}') and attname = '${column}')`;
 const attnums = (table, columns) => `array[${columns.map((column) => attnum(table, column)).join(', ')}]::int2[]`;
+const attcollations = (table, columns) =>
+  `array[${columns.map((column) => `(select attcollation from pg_attribute where attrelid = to_regclass('${table}') and attname = '${column}')`).join(', ')}]::oid[]`;
 // type: a regtype; notNull: boolean; defaultText: what pg_get_expr prints, or null.
 const column = (name, type, notNull, defaultText = null) => `
     exists (select 1 from col where attname = '${name}' and atttypid = '${type}'::regtype
@@ -102,9 +108,10 @@ const READINESS_QUERY = `
     ) as primary_key_ready,
     (select count(*) from uniq) = 1
       and exists (
-        select 1 from uniq u where u.indisvalid and u.indimmediate and u.indexprs is null
-          -- indkey is an int2vector numbered from 0; its text form ('1 3') compares cleanly.
+        select 1 from uniq u where u.indisvalid and u.indimmediate
+          -- indkey and indcollation are vectors numbered from 0; their text forms compare cleanly.
           and string_to_array(u.indkey::text, ' ')::int2[] = ${attnums(OWN, ['organization_id', 'athlete_id'])}
+          and string_to_array(u.indcollation::text, ' ')::oid[] = ${attcollations(OWN, ['organization_id', 'athlete_id'])}
           and pg_get_expr(u.indpred, u.indrelid) = '(cleared_at IS NULL)'
       ) as current_mark_index_ready,
     not exists (select 1 from con where contype in ('u', 'x')) as no_unique_constraint_ready,
@@ -112,7 +119,14 @@ const READINESS_QUERY = `
     ${foreignKey('organization', ['organization_id'], 'pilot.organizations', ['organization_id'], 'c')},
     ${foreignKey('athlete', ['organization_id', 'athlete_id'], 'pilot.athletes', ['organization_id', 'athlete_id'], 'c')},
     ${foreignKey('marked_by', ['marked_by_account_id'], 'pilot.accounts', ['account_id'], 'n')},
-    ${foreignKey('cleared_by', ['cleared_by_account_id'], 'pilot.accounts', ['account_id'], 'n')}
+    ${foreignKey('cleared_by', ['cleared_by_account_id'], 'pilot.accounts', ['account_id'], 'n')},
+    -- tgtype: ROW 1, BEFORE 2, INSERT 4, DELETE 8, UPDATE 16.
+    exists (
+      select 1 from pg_trigger g
+       where g.tgrelid = to_regclass('${OWN}') and g.tgname = 'trg_athlete_reached_out_marks_guard' and not g.tgisinternal
+         and g.tgenabled in ('O', 'A') and (g.tgtype & 31) = 31
+         and g.tgfoid = to_regprocedure('pilot.athlete_reached_out_marks_guard()')
+    ) as guard_ready
 `;
 const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKS),

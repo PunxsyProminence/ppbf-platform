@@ -30,19 +30,38 @@ const COLUMNS = [
   'cleared_at',
   'cleared_by_account_id',
 ];
-const COLUMN_LINE = /^([a-z_]+)\s+(text|uuid|timestamptz)\s+(not )?null\b/;
-const CONSTRAINT_LINE = /^(constraint [a-z_]+|check \(|primary key \(|foreign key \(|references pilot\.|on delete )/;
+const COLUMN_ITEM = /^([a-z_]+)\s+(text|uuid|timestamptz)\s+(not )?null\b/;
+const CONSTRAINT_ITEM = /^(constraint [a-z_]+ (check|foreign key) \(|primary key \()/;
+
+/** The table body split on its top-level commas: one item per column or table constraint. */
+function items(body: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of body) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) {
+      out.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  out.push(current);
+  return out.map((item) => item.replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
 
 describe('athlete reached-out marks schema ownership', () => {
   test('the table has exactly these columns: who and when, nowhere to type a note', () => {
     const create = code(migration).match(/create table if not exists pilot\.athlete_reached_out_marks \(([\s\S]*?)\n\);/);
     expect(create).not.toBeNull();
-    const lines = create![1].split('\n').map((line) => line.trim()).filter(Boolean);
-    // Every line is a column of a known type or part of a constraint: a column of any
-    // other type (varchar, json, bytea, ...) is a line this test does not know, and fails.
-    const unknown = lines.filter((line) => !COLUMN_LINE.test(line) && !CONSTRAINT_LINE.test(line));
+    const all = items(create![1]);
+    // Every item is a column of a known type or a table constraint: a column of any other type
+    // (varchar, json, bytea, ...), even on the line of another item, is one this test does not know.
+    const unknown = all.filter((item) => !COLUMN_ITEM.test(item) && !CONSTRAINT_ITEM.test(item));
     expect(unknown).toEqual([]);
-    const columns = lines.map((line) => line.match(COLUMN_LINE)?.[1]).filter(Boolean);
+    const columns = all.map((item) => item.match(COLUMN_ITEM)?.[1]).filter(Boolean);
     expect(columns).toEqual(COLUMNS);
     // The runner's readiness check pins the same list in the live database.
     const pinned = runner.match(/EXPECTED_COLUMNS = \[([\s\S]*?)\];/);
@@ -55,6 +74,12 @@ describe('athlete reached-out marks schema ownership', () => {
       /create unique index if not exists uq_athlete_reached_out_marks_current\s+on pilot\.athlete_reached_out_marks\(organization_id, athlete_id\)\s+where cleared_at is null;/,
     );
     expect(code(migration)).toMatch(/check \(marked_by_role in \('coach', 'organization_admin', 'admin'\)\)/);
+  });
+
+  test('the guard trigger runs before every insert, update and delete, row by row', () => {
+    expect(code(migration)).toMatch(
+      /create trigger trg_athlete_reached_out_marks_guard\s+before insert or update or delete on pilot\.athlete_reached_out_marks\s+for each row execute function pilot\.athlete_reached_out_marks_guard\(\);/,
+    );
   });
 
   test('an account\'s delete clears its id from the marks (a staff account id is often an email address)', () => {
@@ -80,6 +105,6 @@ describe('athlete reached-out marks schema ownership', () => {
     const row = retention.split('\n').find((line) => line.includes('`pilot.athlete_reached_out_marks`'));
     expect(row).toMatch(/\| Period not yet ruled \| -- \| Not yet ruled \|$/);
     expect(row).toContain('by cascade when the purge deletes it');
-    expect(row).toContain("an account's delete clears its id");
+    expect(row).toContain('when the purge deletes an account, its id is cleared from the marks');
   });
 });
