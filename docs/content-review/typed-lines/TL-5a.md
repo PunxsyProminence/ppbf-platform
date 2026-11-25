@@ -163,3 +163,17 @@ Source: the typed steps of `wtp_01de3f48606d4c` (Conditioning session A — SIT,
 - Stop: The talk drifts away from the session's one focus or runs past the cool-down's minutes: close it on one reset. (intent_drift)
 - Cue: "Evaluate → Reset"
 - Bases: name: the typed line, and the session's one focus (D-OQ58); discipline: boxing, technical, as TL-1a's character drills (a coach-led session close); category: technical, as TL-1a's character drills; purpose: D-OQ57 (the last step, inside the cool-down's 10 minutes, beside its log line) and DOC-027's session template block order; execution: AI draft: DOC-027's block order gives the step's name only; what is evaluated (the one focus) is the round-focus rule's (D-OQ58); what_good_looks_like: AI draft; the time is D-OQ57's (inside the cool-down's 10 minutes, beside its log line); stop_rules: AI draft; cues: the DOC-027 (Punxsy Master Source Manual v1, Boxing Workflow v4 Core, 10. Session template) block name, word for word
+
+## Durations (the rule App Overwatch set on #2177; its `details.time` form, App Overwatch on #2162)
+
+- Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose details state a time of its own (its `block_time` range, the minutes its own `block_title` states, or its `details.time` in whole minutes, "N min"), held by no other step of its template, carries it as its duration, at contact none or light_technical.
+- Carried (the template's own `items` label gains a lane `duration_minutes` part naming each step, its stated time and `details.time`; `TIMED_STEPS` and `LANE_W48_DURATIONS` pin them):
+  - Conditioning session A, step 1 (Warm-up): "15 min" → 15;
+  - Conditioning session A, step 3 (Cool-down): "8 min" → 8.
+- Stated but not carried, so blank or unchanged (only a step's own whole minutes fill the column; App Overwatch on #2162):
+  - Conditioning session A, step 1's typed line gives its parts ("5 min easy", "5 × 20 s", "60 s easy", "2 × 5 s"), inside its own 15 minutes;
+  - Conditioning session A, step 4 (Record): `details.time` is "—"; "7 s, 17 s, 27 s" are reading points in each rep, not a duration;
+  - Conditioning session A, steps 5 and 6 (the owner's checks, D-PK73-3): their timing places them ("at the end of the warm-up, before the main set"; "straight after the main set, before the cool-down") and states no minutes;
+  - Conditioning session A, step 2 (Main set; linked before this lane, an owner item): "20–24 min" is a range;
+  - Phase 1, steps 1, 4, 5 and 6 already carry the template's own durations (12, 20, 8, 10), unchanged; their plan items' inner times (for example "General (3 min)", "5 × 3 min with 1 min rest", "8 × 20 s hard / 10 s easy", "2 min diaphragmatic breathing") are parts of those;
+  - Phase 1, step 7 (Evaluate → Reset): no time of its own; it sits inside the cool-down's 10 minutes (D-OQ57).

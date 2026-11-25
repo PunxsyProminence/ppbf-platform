@@ -275,7 +275,7 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
  * go, each linked step gets its typed line back (each drill quotes its line word for word in its source_ref; a
  * line a scripted step held only as its block title stays there), and its template's 'items' label loses the
  * lane's 'drill_id' part (only that part: a template can hold an owner's top-level 'items.drill_id', D-OQ99). A step
- * that took its own stated time as its duration (#2177; its block_time range or its title's minutes) gets its blank duration back, and the template's 'items' label
+ * that took its own stated time as its duration (#2177; its block_time range, its title's minutes or its details.time, #2162) gets its blank duration back, and the template's 'items' label
  * loses the lane's 'duration_minutes' part; no assertion here depends on that part of the restore (those templates are
  * not in this package's plan), which keeps the stripped files equal to the pre-lane files. typedLinesContent.test.ts
  * checks the lane's rows, and reads block times the same way.
@@ -307,7 +307,8 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
     const details = row.details !== '' ? JSON.parse(row.details) : {};
     const heldInTitle = details.block_title === line;
     const titleMinutes = [...String(details.block_title ?? '').matchAll(/\((\d{1,2}) MIN\)/g)].map((match) => match[1]);
-    const stated = [blockMinutes(details.block_time), ...(titleMinutes.length === 1 ? titleMinutes : [])];
+    const timeMinutes = /^(\d{1,2}) min$/.exec(String(details.time ?? ''))?.[1];
+    const stated = [blockMinutes(details.block_time), ...(titleMinutes.length === 1 ? titleMinutes : []), ...(timeMinutes ? [timeMinutes] : [])];
     const timed = laneTimed.has(row.template_id) && row.duration_minutes !== '' && stated.includes(row.duration_minutes);
     return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line, duration_minutes: timed ? '' : row.duration_minutes };
   };
