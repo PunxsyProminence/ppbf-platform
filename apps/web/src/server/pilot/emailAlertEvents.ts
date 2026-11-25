@@ -194,10 +194,14 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * counts from the moment it goes live -- when it is posted, or at its start
  * time if that is later -- so a scheduled notice is sent when people can read
  * it, not before. Readers: every coach, organization admin, admin, parent and
- * athlete of the gym whose role may read the notice's placement
- * (mayReadLivePlacement, announcements.ts, the page's own rule), each under
- * the user type their role gives. A notice retired, or ended, by the send is
- * not sent. Its time is on the database clock, as the sweep's overlap needs:
+ * athlete of the gym who sees the notice once signed in, each under the user
+ * type their role gives. That is the placements below for their user type
+ * (Overwatch's answer on #2159, comment 7160013584: a parent's or adult
+ * athlete's own board, or everywhere; a sign-in-page notice, gym_notices,
+ * emails nobody), and only where their role may read it
+ * (mayReadLivePlacement, announcements.ts, the page's own rule). A notice
+ * retired, or ended, by the send is not sent. Its time is on the database
+ * clock, as the sweep's overlap needs:
  * created_at, or a start time still to come when it was posted (by then the
  * row has committed); a start time already past counts as the posting. So a
  * notice that was retired when it would have gone live is sent if it is
@@ -205,6 +209,14 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * later; a notice already sent is not sent again when restored.
  */
 const NOTICE_READER_ROLES = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];
+// The boards each user type sees once signed in (ParentHub.tsx reads
+// parent_hub, AthleteWorkspace.tsx athlete_workspace, each with everywhere;
+// staff see every board but the sign-in page's).
+const NOTICE_PLACEMENTS_EMAILED: Readonly<Record<EmailAlertUserType, readonly string[]>> = {
+  staff: ['coach_workspace', 'athlete_workspace', 'parent_hub', 'everywhere'],
+  parent: ['parent_hub', 'everywhere'],
+  adult_athlete: ['athlete_workspace', 'everywhere'],
+};
 const NOTICE_LIVE_FROM = 'greatest(n.created_at, coalesce(n.starts_at, n.created_at))';
 const NOTICE_LIVE_NOW = `n.kind = 'notice' and n.active
         and (n.starts_at is null or n.starts_at <= now()) and (n.ends_at is null or n.ends_at > now())`;
@@ -212,6 +224,9 @@ const NOTICE_LIVE_NOW = `n.kind = 'notice' and n.active
 function readsNotice(role: string, placement: string, userType?: string): EmailAlertUserType | null {
   const type = emailAlertCandidateUserType(role);
   if (!type || (userType !== undefined && type !== userType)) return null;
+  if (!NOTICE_PLACEMENTS_EMAILED[type].includes(placement)) return null;
+  // The membership filter admits only roles the shared list names, and the
+  // placement comes from the table's own CHECK.
   return mayReadLivePlacement(role as PilotRole, placement as AnnouncementPlacement) ? type : null;
 }
 

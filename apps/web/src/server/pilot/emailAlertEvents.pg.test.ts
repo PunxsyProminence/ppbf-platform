@@ -409,18 +409,29 @@ async function expectStillReadableAsPage(
   }
 }
 
+// The boards each user type sees once signed in, written out here rather than
+// read from the module: ParentHub.tsx reads parent_hub and AthleteWorkspace.tsx
+// athlete_workspace, each with everywhere; staff see every board but the
+// sign-in page's (Overwatch on #2159, comment 7160013584).
+const SIGNED_IN_BOARDS: Readonly<Record<string, readonly string[]>> = {
+  staff: ['coach_workspace', 'athlete_workspace', 'parent_hub'],
+  parent: ['parent_hub'],
+  adult_athlete: ['athlete_workspace'],
+};
+
 /**
- * What each signed-in person's notice boards show (announcements/get/route.ts):
- * the live notices of every placement their role may read, for every role that
- * has an email user type, in the window.
+ * What each signed-in person's notice boards show: the live notices of their
+ * own boards, with everywhere (listLiveAnnouncements), where their role may
+ * read the placement (announcements/get/route.ts), in the window.
  */
 async function noticesPageReach(inWindow: ReadonlySet<string>): Promise<Reach> {
   const reach: Reach = new Map();
   for (const [accountId, org, role, on] of PEOPLE) {
-    if (!on || !emailAlertCandidateUserType(role)) continue;
+    const userType = emailAlertCandidateUserType(role);
+    if (!on || !userType) continue;
     const ids = new Set<string>();
     for (const placement of ANNOUNCEMENT_PLACEMENTS) {
-      if (!mayReadLivePlacement(role as PilotRole, placement)) continue;
+      if (!SIGNED_IN_BOARDS[userType].includes(placement) || !mayReadLivePlacement(role as PilotRole, placement)) continue;
       for (const row of await listLiveAnnouncements(org, { placement, kind: 'notice', limit: 25 })) {
         if (inWindow.has(row.announcement_id)) ids.add(row.announcement_id);
       }
@@ -738,7 +749,7 @@ describe('email alert staff event sources', () => {
     expect(await emailAlertEventStillReadable({ ...adminReads, user_type: 'parent', event_kind: 'safety_escalation' })).toBe(false);
   });
 
-  test('gym_notice names, once it is live, exactly the people whose boards show it, each under the user type their role gives', async () => {
+  test('gym_notice names, once it is live, exactly the people whose signed-in boards show it, under their own user type; a sign-in-page notice names nobody', async () => {
     const client = await freshDatabase('emailevents_notices');
     activeClient = client;
 
@@ -747,15 +758,15 @@ describe('email alert staff event sources', () => {
     const athletesOnly = await notice(client, ORG, { placement: 'athlete_workspace' });
     const coachesOnly = await notice(client, ORG, { placement: 'coach_workspace' });
     const everywhere = await notice(client, ORG, { placement: 'everywhere' });
-    const motivation = await notice(client, ORG, { kind: 'motivation' });
-    const retired = await notice(client, ORG, { active: false });
+    const motivation = await notice(client, ORG, { placement: 'everywhere', kind: 'motivation' });
+    const retired = await notice(client, ORG, { placement: 'everywhere', active: false });
     // Posted two hours ago for a start five minutes ago: it counts from its start.
-    const startedLately = await notice(client, ORG, { minutesAgo: 120, startsInMinutes: -5 });
+    const startedLately = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 120, startsInMinutes: -5 });
     // Posted now with a start five hours ago: it counts from its posting.
-    const backdated = await notice(client, ORG, { startsInMinutes: -300 });
-    const notYetLive = await notice(client, ORG, { startsInMinutes: 60 });
-    const ended = await notice(client, ORG, { endsInMinutes: -1 });
-    const old = await notice(client, ORG, { minutesAgo: 120 });
+    const backdated = await notice(client, ORG, { placement: 'everywhere', startsInMinutes: -300 });
+    const notYetLive = await notice(client, ORG, { placement: 'everywhere', startsInMinutes: 60 });
+    const ended = await notice(client, ORG, { placement: 'everywhere', endsInMinutes: -1 });
+    const old = await notice(client, ORG, { placement: 'everywhere', minutesAgo: 120 });
     const otherGym = await notice(client, OTHER_ORG, { placement: 'everywhere' });
 
     const { from, to } = await lastHour(client);
@@ -768,9 +779,10 @@ describe('email alert staff event sources', () => {
 
     expect(sorted(source)).toEqual(sorted(page));
 
-    const forStaff = [wall, parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately, backdated].sort();
-    const forParents = [wall, parentsOnly, everywhere, startedLately, backdated].sort();
-    const forAthletes = [wall, athletesOnly, everywhere, startedLately, backdated].sort();
+    // The sign-in page's notice (wall) reaches nobody.
+    const forStaff = [parentsOnly, athletesOnly, coachesOnly, everywhere, startedLately, backdated].sort();
+    const forParents = [parentsOnly, everywhere, startedLately, backdated].sort();
+    const forAthletes = [athletesOnly, everywhere, startedLately, backdated].sort();
     expect(sorted(source)).toEqual(sorted(new Map([
       ...['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover', 'acct-ev-coach-expired',
         'acct-ev-coach-future', 'acct-ev-coach-none', 'acct-ev-home-admin'].map((id) => [`${ORG}|${id}`, forStaff] as [string, string[]]),
@@ -783,6 +795,7 @@ describe('email alert staff event sources', () => {
       [`${OTHER_ORG}|acct-ev-other-athlete`, [otherGym]],
     ])));
     expect([...source.values()].flat()).not.toContain(old);
+    expect([...source.values()].flat()).not.toContain(wall);
     await expectStillReadableAsPage(page, inWindow, 'gym_notice', userTypeOf);
     // A send queued under another user type than the role now gives reads as no.
     expect(await emailAlertEventStillReadable({
