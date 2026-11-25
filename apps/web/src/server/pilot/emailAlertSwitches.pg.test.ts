@@ -584,6 +584,42 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('an age corrected to under 18 while a save waits on the athlete row is seen inside the save: 403, never switched on (Codex on #2169)', async () => {
+    const client = await freshDatabase('emailsw_age_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_age_race'), max: 4 });
+    const office = await activePool.connect();
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      // The office corrects the date of birth and has not committed yet: the
+      // save's first age read still sees an adult.
+      await office.query('BEGIN');
+      await office.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+      let settled = false;
+      const save = setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW);
+      save.then(() => { settled = true; }, () => { settled = true; });
+      // Wait until the save is held on the athlete row (or has finished).
+      for (let i = 0; i < 200 && !settled; i += 1) {
+        const { rows } = await client.query(
+          `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if (rows[0].n > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await office.query('COMMIT');
+      await expect(save).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false })]);
+      expect((await auditRows(client)).map((row) => (row.details as { switched_on: boolean }).switched_on)).not.toContain(true);
+    } finally {
+      office.release();
+      await client.end();
+    }
+  });
+
   test('a membership removed between sign-in and the save gets the plain 403, and nothing is written', async () => {
     const client = await freshDatabase('emailsw_no_membership');
     activeClient = client;

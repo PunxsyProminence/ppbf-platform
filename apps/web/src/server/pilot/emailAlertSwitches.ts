@@ -57,17 +57,20 @@ export async function emailAlertUserTypeFor(
   if (candidate !== 'adult_athlete') return candidate;
   const athleteId = subject.athleteId?.trim();
   if (!athleteId) return null;
-  const row = await queryOne<{ dob: string | null }>(
-    `select to_char(ath.dob, 'YYYY-MM-DD') as dob
-       from pilot.accounts acc
-       join pilot.athletes ath
-         on ath.organization_id = $1 and ath.athlete_id = acc.athlete_id
-      where acc.account_id = $2 and acc.athlete_id = $3 and ath.deleted_at is null`,
-    [subject.organizationId, subject.accountId, athleteId],
-  );
+  const row = await queryOne<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, athleteId]);
   if (!row) return null;
   return isMinor(row.dob, now) ? null : 'adult_athlete';
 }
+
+/** The date of birth of the live athlete record linked to this very account in this gym. */
+const LINKED_ATHLETE_DOB_SQL = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
+       from pilot.accounts acc
+       join pilot.athletes ath
+         on ath.organization_id = $1 and ath.athlete_id = acc.athlete_id
+      where acc.account_id = $2 and acc.athlete_id = $3 and ath.deleted_at is null`;
+
+/** Thrown inside a save that finds the person no longer offered; the save rolls back. */
+class NoLongerOfferedError extends Error {}
 
 interface SwitchRow {
   user_type: EmailAlertUserType;
@@ -196,21 +199,39 @@ export async function setEmailAlertSwitch(
     throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
   }
 
-  return withTransaction(async (client) => {
-    const stored = await lockSwitchRow(client, subject);
-    try {
-      return await saveSwitch(client, subject, userType, switchedOn, stored);
-    } catch (error) {
-      // A membership row deleted between sign-in and this save (EM-1a's
-      // membership key): the same answer as anyone not offered a switch, not a
-      // raw error. Only that key's 23503; anything else stays an error.
-      const pgError = error as { code?: unknown; constraint?: unknown };
-      if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
-        throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+  try {
+    return await withTransaction(async (client) => {
+      const stored = await lockSwitchRow(client, subject);
+      // An athlete's age again, inside the save: the account row is locked
+      // (a re-link waits), and FOR SHARE holds the athlete row until this
+      // commits, so a date of birth corrected to under 18 or a record deleted
+      // since the read above is seen here (Codex on #2169).
+      if (userType === 'adult_athlete') {
+        const athlete = await client.query<{ dob: string | null }>(
+          `${LINKED_ATHLETE_DOB_SQL}
+        for share of ath`,
+          [subject.organizationId, subject.accountId, subject.athleteId?.trim()],
+        );
+        if (!athlete.rows[0] || isMinor(athlete.rows[0].dob, now)) throw new NoLongerOfferedError();
       }
-      throw error;
-    }
-  });
+      try {
+        return await saveSwitch(client, subject, userType, switchedOn, stored);
+      } catch (error) {
+        // A membership row deleted between sign-in and this save (EM-1a's
+        // membership key): the same answer as anyone not offered a switch, not a
+        // raw error. Only that key's 23503; anything else stays an error.
+        const pgError = error as { code?: unknown; constraint?: unknown };
+        if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
+          throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+        }
+        throw error;
+      }
+    });
+  } catch (error) {
+    if (!(error instanceof NoLongerOfferedError)) throw error;
+    await retireSwitchIfAny(subject);
+    throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+  }
 }
 
 async function saveSwitch(
