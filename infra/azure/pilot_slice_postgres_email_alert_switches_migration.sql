@@ -44,8 +44,9 @@
 --
 -- DELETION (Overwatch GO on #2159, condition 4). All three keys cascade, so a
 -- row goes when its gym's pilot.organizations row, its pilot.accounts row or
--- the person's pilot.organization_memberships row for that gym is deleted. Which accounts are ever deleted
--- (scripts/pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md Method 1):
+-- the person's pilot.organization_memberships row for that gym is deleted.
+-- Which accounts are ever deleted (scripts/pilot-cleanup-deleted-data.mjs,
+-- docs/DATA_RETENTION.md Method 1):
 --   * a parent account is hard-deleted by the purge -> its row goes;
 --   * an athlete login is NOT deleted: the purge keeps it, retired, and clears
 --     its email, PIN and password by UPDATE, so the cascade never fires and
@@ -55,9 +56,11 @@
 --     such a login's SHADOW memory corrections there for the same reason);
 --   * a staff account (coach, admin) is never hard-deleted: its row stays,
 --     holding only on/off and times (no address can be stored on it).
--- A soft-deleted account (accounts.deleted_at set, Method 2) keeps its row;
--- the sender (EM-3, not yet built) is to refuse a deleted account before
--- every send.
+-- A soft-deleted account (accounts.deleted_at set, Method 2), or a membership
+-- switched off (the app switches memberships off, it does not delete them),
+-- keeps its row. So the sender (EM-3, not yet built) is to send only to an
+-- active, not-deleted account with an active membership in that gym, checked
+-- before every send.
 -- The retention period is not ruled (docs/DATA_RETENTION.md row).
 --
 -- AUDIT. Every change of the switch writes an audit row (on/off, before and
@@ -87,7 +90,8 @@ create table if not exists pilot.email_alert_switches (
   confirmed_at             timestamptz null,
   primary key (organization_id, account_id),
   -- The person's membership of this gym (Codex P1 on #2168): a switch can only
-  -- name an account in a gym it belongs to. The coach_development pattern.
+  -- name an account in a gym it has a membership row in, active or not (the
+  -- sender checks it is active). The coach_development pattern.
   constraint pilot_email_alert_switch_membership_fk
     foreign key (account_id, organization_id)
     references pilot.organization_memberships(account_id, organization_id) on delete cascade,

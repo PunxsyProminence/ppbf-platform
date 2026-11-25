@@ -253,6 +253,38 @@ describe('email alert switches migration', () => {
     ['no partial index for the sender', 'drop index pilot.idx_email_alert_switches_on'],
     ['no membership key', 'alter table pilot.email_alert_switches drop constraint pilot_email_alert_switch_membership_fk'],
     [
+      'a crossed membership key (each column pointing at the other)',
+      `alter table pilot.email_alert_switches
+         drop constraint pilot_email_alert_switch_membership_fk,
+         add constraint pilot_email_alert_switch_membership_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(organization_id, account_id) on delete cascade`,
+    ],
+    [
+      'a membership key in the other local column order',
+      `alter table pilot.email_alert_switches
+         drop constraint pilot_email_alert_switch_membership_fk,
+         add constraint pilot_email_alert_switch_membership_fk foreign key (organization_id, account_id)
+           references pilot.organization_memberships(organization_id, account_id) on delete cascade`,
+    ],
+    [
+      'a membership key not validated',
+      `alter table pilot.email_alert_switches
+         drop constraint pilot_email_alert_switch_membership_fk,
+         add constraint pilot_email_alert_switch_membership_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(account_id, organization_id) on delete cascade not valid`,
+    ],
+    [
+      'the membership key under another name',
+      `alter table pilot.email_alert_switches
+         rename constraint pilot_email_alert_switch_membership_fk to some_other_membership_fk`,
+    ],
+    [
+      'an extra foreign key that blocks deleting a membership',
+      `alter table pilot.email_alert_switches
+         add constraint pilot_email_alert_switch_extra_fk foreign key (account_id, organization_id)
+           references pilot.organization_memberships(account_id, organization_id) on delete restrict`,
+    ],
+    [
       'a membership key that no longer cascades',
       `alter table pilot.email_alert_switches
          drop constraint pilot_email_alert_switch_membership_fk,
