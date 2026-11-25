@@ -157,7 +157,10 @@ export default function SessionScriptEditor({
   // One save per press: `busy` disables the button only after a render.
   const inFlight = useRef(false);
 
+  // While a save is in flight its body is already sent, so a late edit would be lost when the
+  // editor closes: the fields are read-only then, and a change is not taken (Codex on #2199).
   const change = (blockId: string, field: 'label' | 'start' | 'end', value: string) => {
+    if (inFlight.current) return;
     setBlocks((current) => current.map((block) => (block.block_id === blockId ? { ...block, [field]: value } : block)));
   };
 
@@ -351,7 +354,7 @@ export default function SessionScriptEditor({
     >
       <label className="field">
         <span className="t-label">Plan name</span>
-        <input type="text" className="input" value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
+        <input type="text" className="input" value={name} maxLength={200} readOnly={busy} onChange={(event) => { if (!inFlight.current) setName(event.target.value); }} />
       </label>
 
       <ol aria-label="Blocks to edit, in the order they run" className="flex flex-col gap-[var(--s3)]">
@@ -375,6 +378,7 @@ export default function SessionScriptEditor({
                   className="input"
                   value={block.label}
                   maxLength={200}
+                  readOnly={busy}
                   onChange={(event) => change(block.block_id, 'label', event.target.value)}
                 />
               </label>
@@ -385,6 +389,7 @@ export default function SessionScriptEditor({
                   className="input"
                   inputMode="numeric"
                   value={block.start}
+                  readOnly={busy}
                   onChange={(event) => change(block.block_id, 'start', event.target.value)}
                 />
               </label>
@@ -395,6 +400,7 @@ export default function SessionScriptEditor({
                   className="input"
                   inputMode="numeric"
                   value={block.end}
+                  readOnly={busy}
                   onChange={(event) => change(block.block_id, 'end', event.target.value)}
                 />
               </label>

@@ -464,6 +464,38 @@ describe('adding, removing and moving blocks', () => {
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
+  // Codex on #2199: the body is sent when Save is pressed, so a late edit would be shown and then lost.
+  it('while the plan saves, the name and every block\'s title and minutes are read-only and take no change', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const fetchMock = jest.fn((url: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'PATCH'
+        ? new Promise<Response>((resolve) => { finish = resolve; })
+        : Promise.resolve(String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {})));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
+    await addDrill('Slip and counter');
+    const fields = () => [
+      screen.getByLabelText('Plan name'),
+      ...[1, 3].flatMap((number) => ['Title', 'Starts at minute', 'Ends at minute'].map((label) => block(number).getByLabelText(label))),
+    ];
+    fields().forEach((field) => expect(field).not.toHaveAttribute('readonly'));
+
+    await act(async () => save());
+    fields().forEach((field) => expect(field).toHaveAttribute('readonly'));
+    type(screen.getByLabelText('Plan name'), 'Late name');
+    type(block(3).getByLabelText('Title'), 'Late title');
+    type(block(1).getByLabelText('Ends at minute'), '9');
+    expect(screen.getByLabelText('Plan name')).toHaveValue('Tuesday juniors');
+    expect(block(3).getByLabelText('Title')).toHaveValue('Slip and counter');
+    expect(block(1).getByLabelText('Ends at minute')).toHaveValue('6');
+
+    await act(async () => {
+      finish?.(answer(409, { code: 'SESSION_SCRIPT_CHANGED' }));
+    });
+    // A refused save hands the form back for editing.
+    fields().forEach((field) => expect(field).not.toHaveAttribute('readonly'));
+  });
+
   it('a drill library that cannot be loaded is said in words, not shown as an empty list', async () => {
     global.fetch = jest.fn(async () => answer(500, { error: 'boom' })) as unknown as typeof fetch;
     render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
