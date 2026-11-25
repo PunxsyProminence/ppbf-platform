@@ -454,11 +454,12 @@ function install(): void {
     recheck();
   });
   // Back in view (a tab switch), or back in focus (two windows side by side are both visible): with
-  // an account known, one ask, unless one is already out for a re-check.
+  // an account known, a new ask every time. An ask already out may predate someone else signing in;
+  // only the newest answer is used (when both events fire, one extra ask).
   const backInView = () => {
     if (document.visibilityState !== 'visible' || accountId === null) return;
     if (boundaryNewer()) dropAll();
-    else if (!(rechecking && learning)) recheck();
+    else recheck();
   };
   document.addEventListener('visibilitychange', backInView);
   window.addEventListener('focus', backInView);

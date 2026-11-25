@@ -968,6 +968,30 @@ describe('nothing survives a sign-out or an account change', () => {
     expect(kept.save.onSaved).toHaveBeenCalledTimes(1);
   });
 
+  test('coming back to the tab while a re-check\'s ask is still out asks again: the older ask\'s answer never confirms the last coach', async () => {
+    await failedSave('Staff note on Ada Reyes');
+    // The coach glances away and back; that re-check's ask hangs on the floor network.
+    sessionAccount = 'hang';
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    const olderAsk = releaseSession;
+    // Someone else signs in in another tab (no mark) and comes back to this one.
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    const newerAsk = releaseSession;
+    expect(newerAsk).not.toBe(olderAsk);
+    // The older ask answers with the last coach: not used.
+    olderAsk?.('acct-a');
+    await settle();
+    expect(saveQueueAccountConfirmed()).toBe(false);
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 1 });
+    // The newer ask decides: another account, so the last coach's words go unseen.
+    newerAsk?.('acct-b');
+    await settle();
+    expect(saveQueueAccountConfirmed()).toBe(true);
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 0 });
+  });
+
   test('a drop during the account check before a resend: the next person\'s first save goes at once, not 15 seconds later', async () => {
     await waitingSave('Ada Reyes: here');
     sessionAccount = 'hang';
