@@ -1569,8 +1569,8 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_a7006437e11427,drl_4df0b9ab4b632c,B,true,4 x 30 s fast punch bursts.,,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_c338f8f64d0419,drl_4df0b9ab4b632c,C,false,The same bursts with coach-called combinations.,Called combinations.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2d0bded1c328f8,drl_1508f028c4ce4e,A,false,The fourth round at a steady pace.,Steady pace.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_2d993880896b19,drl_1508f028c4ce4e,B,true,"A fourth round as written, in Weeks 7-8.",,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_a98660498cf7cd,drl_1508f028c4ce4e,C,false,The fourth round with coach-called combinations.,Called combinations.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2d993880896b19,drl_1508f028c4ce4e,B,true,"A fourth simulated round as written, in Weeks 7-8.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a98660498cf7cd,drl_1508f028c4ce4e,C,false,The fourth round with the defensive moves the coach calls.,Called defense.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_4b58626471782f,drl_4cc1133e4158e8,A,false,The coach states the focus and gives the example.,Coach-led.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_d455f4511cd048,drl_4cc1133e4158e8,B,true,"The focus as written, with one example from today's session.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_9866284c48382f,drl_4cc1133e4158e8,C,false,"Athletes give the examples themselves, the coach closing.",Athlete examples.,none,,scaffold_needs_coach_review

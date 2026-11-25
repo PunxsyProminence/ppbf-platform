@@ -29,13 +29,16 @@ const LABELLED = [
   'category', 'contact_level', 'cues', 'difficulty', 'discipline', 'equipment_needed', 'execution', 'name', 'purpose',
   'scale_levels', 'standard_setup', 'stop_rules', 'target_behavior', 'what_good_looks_like',
 ];
-const STEP_REF = /typed line of ((?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*): '(.*)'$/s;
+// No 's' flag: the app targets ES2017 (tsconfig), and a typed line with a line break is matched by [^]*.
+const STEP_REF = /typed line of ((?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*): '([^]*)'$/;
+const PROVENANCE = 'COACHING-CRAFT DRAFT \u2014 no directly relevant research retrieved; REQUIRES FLOOR VALIDATION';
 
 type Row = Record<string, string>;
 
+const parseProblems: string[] = [];
 function rows(name: string): Row[] {
   const table = readCsv(fs.readFileSync(path.join(SEED, name), 'utf8'));
-  expect(table.problems).toEqual([]);
+  parseProblems.push(...table.problems.map((problem) => `${name}: ${JSON.stringify(problem)}`));
   return table.records.map((record) => Object.fromEntries(table.header.map((column, index) => [column, record.cells[index]])));
 }
 
@@ -69,7 +72,8 @@ function closeNames(a: string, b: string): boolean {
 }
 
 describe('lane W4-8 drills for the typed steps of the mixed templates (committed rows)', () => {
-  it('are present', () => {
+  it('are present, in seed files that parse', () => {
+    expect(parseProblems).toEqual([]);
     expect(laneDrills.length).toBeGreaterThan(0);
   });
 
@@ -114,7 +118,9 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
         expect(labels[field].sources[0]).toBe(drill.source_ref);
       }
       const evidence = JSON.parse(drill.evidence);
-      expect(evidence.map((entry: Row) => [entry.evidence_label, entry.check_state])).toEqual([['UNTIERED', 'unchecked']]);
+      expect(evidence.map((entry: Row) => [entry.evidence_label, entry.check_state, entry.source])).toEqual([['UNTIERED', 'unchecked', drill.source_ref]]);
+      // A draft provenance, so a gym's coach must still floor-test it before adoption (OD-2026-10-06-026 ruling 3).
+      expect({ drill: drill.drill_id, provenance: drill.field_provenance }).toEqual({ drill: drill.drill_id, provenance: PROVENANCE });
     }
   });
 
@@ -140,6 +146,21 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
         expect({ step, contact: item.contact_level || 'none' }).toEqual({ step, contact: drill.contact_level });
       }
       for (const level of scales.get(drill.drill_id) ?? []) expect(level.contact_level).toBe(drill.contact_level);
+    }
+  });
+
+  it('cover every typed or lane-linked step of each template they name, each step named by exactly one drill', () => {
+    const namers = new Map<string, string[]>();
+    for (const drill of laneDrills) {
+      for (const step of namedSteps(drill).steps) namers.set(step, [...(namers.get(step) ?? []), drill.drill_id]);
+    }
+    const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
+    const templates = new Set([...namers.keys()].map((step) => step.split(' ')[0]));
+    const steps = items.filter((item) => templates.has(item.template_id) && (item.drill_id === '' || laneIds.has(item.drill_id)));
+    expect(steps.length).toBeGreaterThan(0);
+    for (const item of steps) {
+      const step = `${item.template_id} ${item.ordinal}`;
+      expect({ step, namedBy: (namers.get(step) ?? []).length }).toEqual({ step, namedBy: 1 });
     }
   });
 
