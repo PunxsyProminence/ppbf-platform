@@ -98,6 +98,7 @@ const SIBLING = 'ATH-FTS-SIBLING';
 const MINOR_DOB = '2014-06-01';
 
 type Threads = typeof import('./familyThreads');
+let getStaffAuthorName: typeof import('./achievements').getStaffAuthorName;
 let threads: Threads;
 
 let PG_PORT: number;
@@ -217,6 +218,9 @@ async function freshDatabase(name: string): Promise<Client> {
   return client;
 }
 
+// One status and one sentence, whichever it was (familyThreads.ts NOT_HERE).
+const NOT_HERE = { status: 404, message: 'Not found: that message is not in your gym.' };
+
 const staff = (accountId: string, role: PilotRole = 'coach', organizationId = ORG) => ({ organizationId, accountId, role });
 
 const open = (accountId: string, athleteId = CHILD, organizationId = ORG, text = 'Is practice on Saturday?') =>
@@ -264,6 +268,7 @@ beforeAll(async () => {
   const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
   threads = await import('./familyThreads');
+  ({ getStaffAuthorName } = await import('./achievements'));
 });
 
 afterEach(async () => {
@@ -311,7 +316,7 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     expect(list[1].posts[0]).toEqual({
       post_id: first.post_id, from: 'guardian', staff_name: null, text: 'Is practice on Saturday?', created_at: first.created_at, new_to_me: true,
     });
-    expect(typeof list[1].posts[1].staff_name).toBe('string');
+    expect(list[1].posts[1].staff_name).toBe(await getStaffAuthorName(ORG, COACH, 'coach'));
     for (const account of [GUARDIAN, CO_GUARDIAN, COACH]) expect(JSON.stringify(list)).not.toContain(account);
 
     // The other gym's coach, asking about the same athlete id, reads only their own gym's thread.
@@ -366,18 +371,18 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     const before = await counts(client);
 
     for (const threadId of ['not-an-id', '88888888-8888-4888-8888-888888888888', elsewhere.thread_id, answer.post_id]) {
-      await expect(reply(COACH, threadId)).rejects.toMatchObject({ status: 404 });
+      await expect(reply(COACH, threadId)).rejects.toMatchObject(NOT_HERE);
     }
-    await expect(reply(OTHER_GYM_COACH, opened.thread_id, 'coach', OTHER_ORG)).rejects.toMatchObject({ status: 404 });
+    await expect(reply(OTHER_GYM_COACH, opened.thread_id, 'coach', OTHER_ORG)).rejects.toMatchObject(NOT_HERE);
     for (const postId of ['not-an-id', '88888888-8888-4888-8888-888888888888', elsewhere.post_id]) {
-      await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), postId)).rejects.toMatchObject({ status: 404 });
+      await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), postId)).rejects.toMatchObject(NOT_HERE);
     }
     await expect(threads.recordFamilyThreadReadByStaff(staff(OTHER_GYM_COACH, 'coach', OTHER_ORG), opened.post_id))
-      .rejects.toMatchObject({ status: 404 });
+      .rejects.toMatchObject(NOT_HERE);
 
     await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD]);
-    await expect(reply(COACH, opened.thread_id)).rejects.toMatchObject({ status: 404 });
-    await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)).rejects.toMatchObject({ status: 404 });
+    await expect(reply(COACH, opened.thread_id)).rejects.toMatchObject(NOT_HERE);
+    await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)).rejects.toMatchObject(NOT_HERE);
     await expect(threads.listFamilyThreadsForStaff(staff(COACH), CHILD)).rejects.toThrow('Forbidden');
     expect(await counts(client)).toEqual(before);
   });

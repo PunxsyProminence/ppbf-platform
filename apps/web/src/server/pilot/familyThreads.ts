@@ -63,7 +63,6 @@ export interface FamilyThreadStaff {
   role: PilotRole;
 }
 
-
 /** One post in a thread, as the guardian who opened it sees it. */
 export interface GuardianThreadPost {
   post_id: string;
@@ -453,6 +452,7 @@ export async function replyInFamilyThread(
     });
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_posts_staff_of_this_gym'])) throw new ForbiddenError(NO_SEAT);
+    // Only in a race: the thread went (its athlete deleted) between the lookup above and this write.
     if (refusedByGuard(error, ['pilot_family_thread_posts_thread_fk'])) throw new NotFoundError(NOT_HERE);
     throw error;
   }
@@ -483,6 +483,7 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
     );
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_reads_reader_of_this_gym'])) throw new ForbiddenError(NO_SEAT);
+    // Not reached unless the lookup above is wrong, or the post went between it and this write.
     if (refusedByGuard(error, ['pilot_family_thread_reads_post_fk', 'pilot_family_thread_reads_staff_reads_guardian'])) {
       throw new NotFoundError(NOT_HERE);
     }
