@@ -40,7 +40,8 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => null)) as
       { athlete_id?: unknown; thread_id?: unknown; text?: unknown } | null;
-    // Exactly one of the two, as text: a stray or mistyped second id is refused, never ignored.
+    // Exactly one of the two, as text. A second id that is not text is refused; a blank or null
+    // one counts as absent, as in parent/message-replies.
     for (const value of [body?.athlete_id, body?.thread_id]) {
       if (value !== undefined && value !== null && typeof value !== 'string') {
         throw new ValidationError('athlete_id and thread_id are text.');
@@ -53,6 +54,9 @@ export async function POST(request: NextRequest) {
     }
     if (athleteId.length > 300) {
       throw new ValidationError('athlete_id is too long.');
+    }
+    if (athleteId.includes('\u0000')) {
+      throw new ValidationError('athlete_id cannot contain a NUL character.');
     }
 
     const item = athleteId

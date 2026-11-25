@@ -97,6 +97,7 @@ describe('POST /api/pilot/parent/family-threads (W4 item 4)', () => {
     ['a non-string id', { athlete_id: 7, text: 'Hi' }],
     ['a valid athlete id with a non-string thread id', { athlete_id: 'ath-1', thread_id: 7, text: 'Hi' }],
     ['an over-long athlete id', { athlete_id: 'a'.repeat(301), text: 'Hi' }],
+    ['an athlete id with a NUL character', { athlete_id: 'ATH\u0000X', text: 'Hi' }],
     ['no body', 'not json'],
   ])('%s is 400 and writes nothing', async (_label, body) => {
     mockRequirePrincipal.mockResolvedValue(principal());
@@ -104,6 +105,13 @@ describe('POST /api/pilot/parent/family-threads (W4 item 4)', () => {
     expect(response.status).toBe(400);
     expect(mockStart).not.toHaveBeenCalled();
     expect(mockAgain).not.toHaveBeenCalled();
+  });
+
+  test('an over-long athlete id says so', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    const response = await post({ athlete_id: 'a'.repeat(301), text: 'Hi' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'athlete_id is too long.' });
   });
 
   test.each([
