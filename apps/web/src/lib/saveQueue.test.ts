@@ -689,7 +689,7 @@ describe('refusals', () => {
     expect(save.send).toHaveBeenCalledTimes(1);
     expect(checkLanded).not.toHaveBeenCalled();
     expect(save.onRefused).toHaveBeenCalledWith(expect.anything(), false);
-    expect(readSaveQueue()).toEqual({ waiting: [], failed: [{ label: 'Staff note on Ada Reyes', words: 'The server refused it.' }], notSent: 0, checking: 0 });
+    expect(readSaveQueue()).toEqual({ waiting: [], failed: [{ label: 'Staff note on Ada Reyes', words: 'The server refused it.', known: true }], notSent: 0, checking: 0 });
 
     dismissFailedSaves();
     expect(readSaveQueue()).toEqual({ waiting: [], failed: [], notSent: 0, checking: 0 });
@@ -932,7 +932,7 @@ describe('nothing survives a sign-out or an account change', () => {
     await jest.advanceTimersByTimeAsync(RESEND_MS);
     expect(readSaveQueue()).toEqual({
       waiting: [],
-      failed: [{ label: 'Staff note on Ada Reyes', words: 'The server refused it.' }],
+      failed: [{ label: 'Staff note on Ada Reyes', words: 'The server refused it.', known: true }],
       notSent: 0,
       checking: 0,
     });

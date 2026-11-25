@@ -27,10 +27,10 @@ type Copied = { athlete_id: string; effect: string; previous_status?: string };
  * Words for a kept save whose resend was refused and could not be checked (W4 item 7): whether it
  * was saved is not known, so it is not called failed. Said where the coach tapped.
  */
-export const UNKNOWN_OUTCOME =
-  'the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.';
+/** Off the screen, the page's list says it under its own "not known" heading, after the save's name. */
+export const UNKNOWN_OUTCOME = 'the server refused it when it was sent again, and whether it was saved could not be checked.';
 export function unknownOutcomeWords(label: string): string {
-  return `${label}: ${UNKNOWN_OUTCOME}`;
+  return `${label}: the server refused it when it was sent again and could not be checked, so it is not known whether it was saved. Check what this screen shows before doing it again.`;
 }
 
 /**
@@ -154,7 +154,7 @@ export default function SessionRunClass({
   // Kept on the open page and resent until it goes through (W4 item 7, OQ-3). It sets the session's
   // class, so a resend changes nothing more (OQ-1's repeat proofs). A refused RESEND is checked
   // against the class the server holds before any failed words (Overwatch condition 2).
-  function keptTie(next: string | null): KeptSave {
+  function keptTie(next: string | null, resolved: { done: boolean }): KeptSave {
     let refusal: { error?: string; message?: string } = {};
     const title = next ? pickedClasses.current.find((item) => item.class_id === next)?.title : undefined;
     const label = next ? `Tie the session to ${title ?? 'a class'}` : 'Untie the session from its class';
@@ -181,6 +181,7 @@ export default function SessionRunClass({
         return now.runId === runId && (now.view?.class_id ?? null) === next;
       },
       onSaved: (response) => {
+        resolved.done = true;
         setWaitingWords('');
         if (!forThisRun()) return;
         void (async () => {
@@ -192,6 +193,7 @@ export default function SessionRunClass({
       },
       // Refused: said on this line, where the coach tapped.
       onRefused: (_response, landed) => {
+        resolved.done = true;
         setWaitingWords('');
         if (!forThisRun()) return undefined;
         if (refusal.error && RUN_GONE.has(refusal.error)) {
@@ -212,10 +214,12 @@ export default function SessionRunClass({
     setBusy(true);
     setMessage('');
     try {
-      const kept = keptTie(next);
+      const resolved = { done: false };
+      const kept = keptTie(next, resolved);
       if ((await keepSave(kept)) === 'kept') {
         setChoosing(false);
-        setWaitingWords(`${kept.label}: not saved yet. This page keeps sending it while it stays open.`);
+        // Said once kept (the account check settles first), unless it was answered already.
+        if (!resolved.done) setWaitingWords(`${kept.label}: not saved yet. This page keeps sending it while it stays open.`);
         return;
       }
       // Not kept (the page does not know who is signed in): sent once, as before.
