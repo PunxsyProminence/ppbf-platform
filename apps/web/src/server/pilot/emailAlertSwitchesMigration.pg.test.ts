@@ -267,6 +267,15 @@ describe('email alert switches migration', () => {
            references pilot.organization_memberships(organization_id, account_id) on delete cascade`,
     ],
     [
+      // The referenced columns are in the right order here, so only the check
+      // of the local column order can see this one is crossed.
+      'a membership key crossed on the local side',
+      `alter table pilot.email_alert_switches
+         drop constraint pilot_email_alert_switch_membership_fk,
+         add constraint pilot_email_alert_switch_membership_fk foreign key (organization_id, account_id)
+           references pilot.organization_memberships(account_id, organization_id) on delete cascade`,
+    ],
+    [
       'a membership key not validated',
       `alter table pilot.email_alert_switches
          drop constraint pilot_email_alert_switch_membership_fk,
