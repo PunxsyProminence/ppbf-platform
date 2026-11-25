@@ -17,8 +17,10 @@ import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopAr
 // Who is on it is the server's (stoppedComing.ts): the gym's athletes not
 // marked as left who have come before and have not come for the gym's number
 // of days (OW27-30 A, OW27-31 A). "Came" is a present day on a class register
-// or a "here" tap at open gym, on this page only (OW27-32 A), so the words here
-// say "came", never "present" or "attendance": no attendance figure is shown.
+// or a "here" tap the register does not hold (open gym, a tap the class register
+// did not take, or a cancelled class), on this page only (OW27-32 A; App
+// Overwatch on #2172), so the words here say "came", never "present" or
+// "attendance": no attendance figure is shown.
 // The server orders the list, longest gone first; this page renders that order
 // as given.
 //
@@ -51,10 +53,25 @@ function gapWords(days: number): string {
   return `${days} days`;
 }
 
+/** "the last week", "the last 2 weeks". */
+function withinWords(days: number): string {
+  return days === 7 ? 'the last week' : `the last ${gapWords(days)}`;
+}
+
+/** The answer has the shape the route sends, or the page says it could not read it. */
+function isStoppedComingList(value: unknown): value is StoppedComingList {
+  const list = value as Partial<StoppedComingList> | null;
+  return typeof list === 'object' && list !== null
+    && typeof list.gap_days === 'number' && typeof list.is_default === 'boolean'
+    && typeof list.today === 'string' && Array.isArray(list.athletes);
+}
+
+const READ_FAILED = 'Could not read who has stopped coming, so no one is shown. This is not an empty list.';
+
 export default function CoachStoppedComingPage() {
   const [list, setList] = useState<StoppedComingList | null>(null);
-  const [refused, setRefused] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [refused, setRefused] = useState<'signed_out' | 'wrong_door' | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,17 +84,20 @@ export default function CoachStoppedComingPage() {
         // A refusal is a stamp, not an error toast (Law 7).
         if (response.status === 401 || response.status === 403) {
           if (controller.signal.aborted) return;
-          setRefused(true);
+          setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
           return;
         }
-        if (!response.ok) throw new Error('Unable to read who has stopped coming.');
-        const payload = (await response.json()) as StoppedComingList;
+        if (!response.ok) throw new Error('read failed');
+        const payload: unknown = await response.json();
+        if (!isStoppedComingList(payload)) throw new Error('unexpected answer');
         if (controller.signal.aborted) return;
         setList(payload);
-      } catch (error) {
-        // An aborted load is the page unmounting, not a failure to report.
+      } catch {
+        // An aborted load is the page unmounting, not a failure to report. Any other
+        // failure (network, a bad status, an answer that is not the list) shows the
+        // same fixed sentence, never an empty list.
         if (controller.signal.aborted) return;
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to read who has stopped coming.');
+        setFailed(true);
       }
     })();
     return () => controller.abort();
@@ -97,29 +117,31 @@ export default function CoachStoppedComingPage() {
             <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
               Athletes on the roster who have come before but have not come for{' '}
               {gap ? <strong>{gap}</strong> : 'the gym’s number of days'} or more, longest gone first. Coming
-              means a present day on a class register or a &ldquo;here&rdquo; tap at open gym.
+              means a present day on a class register, or a &ldquo;here&rdquo; tap the register does not hold:
+              open gym, or a class whose register did not take the tap or was cancelled.
             </p>
             {list ? (
               <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-400)]">
                 {list.is_default
                   ? `The gym has not set its own number of days, so the default, ${gap}, applies.`
-                  : `${gap} is the gym’s own setting.`}
+                  : `${gap} is the gym’s own setting.`}{' '}
+                As of {formatCalendarDay(list.today)}.
               </p>
             ) : null}
           </header>
 
           {refused ? (
             <RefusalStamp
-              kind="wrong_door"
-              detail="who has stopped coming is read by a coach or the gym admin"
+              kind={refused}
+              detail="who has stopped coming is read by a coach or the gym admin of this gym"
               className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]"
             />
-          ) : errorMessage ? (
+          ) : failed ? (
             <div className="alert alert--warning" role="alert">
               <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
-                <p className="alert-msg">{errorMessage} Athletes who have stopped coming may not be shown here.</p>
+                <p className="alert-msg">{READ_FAILED}</p>
               </div>
             </div>
           ) : !list ? (
@@ -129,10 +151,10 @@ export default function CoachStoppedComingPage() {
           ) : list.athletes.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
-                <div className="empty-title">No one has gone {gap} without coming</div>
+                <div className="empty-title">No one who has come before has gone {gap} without coming</div>
                 <p className="empty-msg mx-auto">
-                  Every athlete on the roster who has come before came within the last {gap}. Athletes who have
-                  never come, and athletes marked as left the gym, are not on this list.
+                  Every athlete on the roster who has come before came within {withinWords(list.gap_days)}. Athletes
+                  who have never come, and athletes marked as left the gym, are not on this list.
                 </p>
               </div>
             </div>
@@ -157,6 +179,7 @@ export default function CoachStoppedComingPage() {
                   <Link
                     href="/coach/passbook"
                     className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)] text-[length:var(--t-md)]"
+                    aria-label={`Open passbook: ${athlete.full_name}`}
                     onClick={(event) => {
                       if (isPlainClick(event)) handOffArrivalAthlete(athlete.athlete_id, PASSBOOK_PAGE);
                     }}

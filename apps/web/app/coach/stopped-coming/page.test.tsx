@@ -30,13 +30,14 @@ jest.mock('@/components/ClusterNav', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href, className, onClick }: {
+  default: ({ children, href, className, onClick, 'aria-label': ariaLabel }: {
     readonly children: React.ReactNode;
     readonly href: string;
     readonly className?: string;
     readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+    readonly 'aria-label'?: string;
   }) => (
-    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+    <a href={href} className={className} aria-label={ariaLabel} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
   ),
 }));
 
@@ -52,14 +53,19 @@ const LIST = {
   ],
 };
 
-function mockFetch(options: { body?: unknown; status?: number }) {
+function mockFetch(options: { body?: unknown; status?: number; badJson?: boolean }) {
   const status = options.status ?? 200;
   return jest.fn(async () => ({
     ok: status >= 200 && status < 300,
     status,
-    json: async () => options.body ?? LIST,
+    json: async () => {
+      if (options.badJson) throw new SyntaxError("Unexpected token '<'");
+      return options.body ?? LIST;
+    },
   })) as unknown as typeof fetch;
 }
+
+const READ_FAILED = 'Could not read who has stopped coming, so no one is shown. This is not an empty list.';
 
 async function renderPage(fetchImpl: typeof fetch) {
   global.fetch = fetchImpl;
@@ -100,6 +106,14 @@ test('the gym\'s number reads in weeks, and says when it is the default', async 
   await renderPage(mockFetch({}));
   expect(pageText()).toContain('have not come for 2 weeks or more, longest gone first');
   expect(pageText()).toContain('The gym has not set its own number of days, so the default, 2 weeks, applies.');
+  expect(pageText()).toContain(`As of ${formatCalendarDay('2026-11-25')}.`);
+});
+
+test('one week reads as "1 week" and "the last week"', async () => {
+  await renderPage(mockFetch({ body: { ...LIST, gap_days: 7, is_default: false, athletes: [] } }));
+  expect(pageText()).toContain('have not come for 1 week or more');
+  expect(pageText()).toContain('No one who has come before has gone 1 week without coming');
+  expect(pageText()).toContain('came within the last week.');
 });
 
 test('a number the gym set is said to be the gym\'s own', async () => {
@@ -109,19 +123,24 @@ test('a number the gym set is said to be the gym\'s own', async () => {
   expect(pageText()).not.toContain('default');
 });
 
-test('"Open passbook" hands that row\'s athlete to the Passbook in page memory, not the address', async () => {
+test('"Open passbook" hands each row\'s own athlete to the Passbook in page memory, not the address', async () => {
   await renderPage(mockFetch({}));
   const rows = screen.getAllByRole('listitem');
-  const link = within(rows[1]).getByText('Open passbook');
-  expect(link.getAttribute('href')).toBe('/coach/passbook');
-  fireEvent.click(link);
+  const first = within(rows[0]).getByText('Open passbook');
+  expect(first.getAttribute('href')).toBe('/coach/passbook');
+  expect(first.getAttribute('aria-label')).toBe('Open passbook: Rosa D.');
+  fireEvent.click(first);
+  expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-2');
+  const second = within(rows[1]).getByText('Open passbook');
+  expect(second.getAttribute('aria-label')).toBe('Open passbook: Jordan P.');
+  fireEvent.click(second);
   expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-1');
 });
 
 test('an empty list says what was checked, and who is not on it, never that nobody is slipping', async () => {
   await renderPage(mockFetch({ body: { ...LIST, athletes: [] } }));
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-  expect(pageText()).toContain('No one has gone 2 weeks without coming');
+  expect(pageText()).toContain('No one who has come before has gone 2 weeks without coming');
   expect(pageText()).toContain('Every athlete on the roster who has come before came within the last 2 weeks.');
   expect(pageText()).toContain('Athletes who have never come, and athletes marked as left the gym, are not on this list.');
 });
@@ -130,15 +149,30 @@ test.each([401, 403])('a refused read (%i) is a stamp, not an error banner, and 
   await renderPage(mockFetch({ status }));
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-  expect(pageText()).toContain('who has stopped coming is read by a coach or the gym admin');
+  expect(pageText()).toContain('who has stopped coming is read by a coach or the gym admin of this gym');
 });
 
-test('a failure says athletes may be missing, rather than showing an empty list', async () => {
-  await renderPage(mockFetch({ status: 500 }));
+test('a 401 is the signed-out stamp and a 403 the wrong-door stamp', async () => {
+  await renderPage(mockFetch({ status: 401 }));
+  const signedOut = pageText();
+  document.body.innerHTML = '';
+  await renderPage(mockFetch({ status: 403 }));
+  expect(pageText()).not.toBe(signedOut);
+});
+
+test.each([
+  ['a server error', () => mockFetch({ status: 500 })],
+  ['a network failure', () => jest.fn(async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch],
+  ['an answer that is not JSON', () => mockFetch({ badJson: true })],
+  ['an answer of the wrong shape', () => mockFetch({ body: { ok: true } })],
+])('%s shows one fixed sentence, never an empty list or the raw error', async (_label, make) => {
+  await renderPage(make());
   const alert = screen.getByRole('alert');
   expect(alert.textContent).toContain('Failed');
-  expect(alert.textContent).toContain('Athletes who have stopped coming may not be shown here.');
-  expect(pageText()).not.toContain('No one has gone');
+  expect(alert.textContent).toContain(READ_FAILED);
+  expect(alert.textContent).not.toMatch(/Failed to fetch|Unexpected token|TypeError/);
+  expect(pageText()).not.toContain('No one who has come before');
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0);
 });
 
 test('the page shows no attendance figure or rate', async () => {
