@@ -28,18 +28,31 @@
 --                 not newer than the athlete's last day they came, the page
 --                 rule in the plan, #2163 section 4). The new row names who.
 -- Without the second way the stale mark would stay current and this index
--- would refuse the new absence's mark (Codex, #2176). The athlete pathway ends
--- a placement the same way (end_reason 'replaced'). The audit stream (written
--- by reachedOutMarks.ts, SC-3a-2) records each change as well. This file does
--- not check that a 'replaced' mark was in fact stale or followed by a new one:
--- the database cannot see the athlete's last day they came; the module can.
+-- would refuse the new absence's mark (Codex, #2176). An athlete who comes
+-- back and keeps coming keeps their last mark, current, until it is taken back
+-- or replaced; the page shows it only while it is newer than their last day
+-- they came. The fixed word follows the athlete pathway's end_reason
+-- 'replaced', but this table does not link an ended mark to the mark that
+-- replaced it (the pathway holds that link with a deferred self-reference).
+-- So this file checks neither that a 'replaced' mark was stale (the database
+-- cannot see the athlete's last day they came) nor that a new mark followed
+-- it: the module ends the old mark and inserts the new one in one
+-- transaction, and the audit stream (written by reachedOutMarks.ts, SC-3a-2)
+-- records each change.
 --
--- AN ACCOUNT'S PURGE CLEARS ITS ID HERE. A staff account id is often the
--- person's email address. Both account columns reference pilot.accounts ON
--- DELETE SET NULL (the pain-report reviewer's precedent, DR-25): the purge's
--- account delete is not held up, and the mark stays with its time and role
--- but no longer names the account. marked_by_account_id is nullable only for
--- that; the guard below refuses a mark that does not name who made it.
+-- STAFF IDS STAY UNTIL THE ATHLETE GOES; A DELETED ACCOUNT'S ID GOES AT ONCE.
+-- A staff account id is often the person's email address. Only staff mark or
+-- end a mark, and no job deletes a staff account: the retention purge deletes
+-- only role 'parent' accounts (pilot-cleanup-deleted-data.mjs), and
+-- DATA_RETENTION.md says a staff account is never hard-deleted. So the ids of
+-- who marked and who ended a mark, a replaced mark's ender included, stay on
+-- the row until the athlete row is purged and the mark goes with it. Both
+-- account columns reference pilot.accounts ON DELETE SET NULL (the
+-- pain-report reviewer's precedent, DR-25), so an account delete that does
+-- happen (an account the purge deletes, or a staff deletion added later) is
+-- not held up: the mark stays with its time, role and kind but no longer
+-- names the account. marked_by_account_id is nullable only for that; the
+-- guard below refuses a mark that does not name who made it.
 --
 -- THE GUARD (trg_athlete_reached_out_marks_guard) holds the ruling at the
 -- database, not only in the module: a new mark names who made it, starts
