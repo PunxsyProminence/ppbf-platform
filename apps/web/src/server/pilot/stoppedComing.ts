@@ -52,7 +52,7 @@
  * empty list: an empty list here reads as "nobody has stopped coming". A
  * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
  * the same list. A mark is for a live athlete of this gym (404) who is on the
- * list now, by its own rules (409; the day rule read on the write's
+ * list now, by its own rules (409; all of them read on the write's
  * transaction); the staff membership and the live athlete are checked again
  * under lock in the write, as sessionRunAthletes.ts does.
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
@@ -119,14 +119,19 @@ function laterDay(registerDay: string | null, openGymDay: string | null): string
 /**
  * Of these athletes, those the gym records program memberships for, none of
  * them active (lapsed or ended only): they are not listed. An athlete with no
- * membership row in this gym is not returned. Ids only.
+ * membership row in this gym is not returned. Ids only. `client` runs it on
+ * the caller's transaction (a mark write).
  */
 async function athletesWithNoActiveMembership(
   organizationId: string,
   athleteIds: readonly string[],
+  client?: PoolClient,
 ): Promise<Set<string>> {
   if (athleteIds.length === 0) return new Set();
-  const rows = await query<{ athlete_id: string }>(
+  type Row = { athlete_id: string };
+  const read = async (text: string, params: unknown[]): Promise<Row[]> =>
+    (client ? (await client.query<Row>(text, params)).rows : query<Row>(text, params));
+  const rows = await read(
     `select pm.athlete_id
        from pilot.program_memberships pm
       where pm.organization_id = $1
@@ -247,19 +252,28 @@ export async function setStoppedComingReachedOut(
   }
   const organizationId = actor.organizationId;
   // Live athletes of this gym only: the table would take a soft-deleted one. 404, as athleteInjuries.ts answers.
-  const athlete = (await organizationActionableRoster(organizationId)).find((row) => row.athlete_id === athleteId);
-  if (!athlete) throw new NotFoundError('Athlete not found.');
-  const policy = reachedOut ? await readStoppedComingPolicy(organizationId) : null;
-  if (reachedOut && (athlete.active_flag !== true
-    || (await athletesWithNoActiveMembership(organizationId, [athleteId])).has(athleteId))) {
-    throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
+  if (!(await organizationActionableRoster(organizationId)).some((row) => row.athlete_id === athleteId)) {
+    throw new NotFoundError('Athlete not found.');
   }
+  const policy = reachedOut ? await readStoppedComingPolicy(organizationId) : null;
   return withTransaction(async (client) => {
     // Both again, under lock, as sessionRunAthletes.ts marks a session: membership and account,
     // then the athlete row, then (in reachedOutMarks.ts) the mark row. The role is the membership's.
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
     if (!(await lockLiveAthlete(client, organizationId, athleteId))) throw new NotFoundError('Athlete not found.');
+    // The list check, all of it on this transaction (reviewer J): a "left" flag or a lapsed
+    // membership committed before this point is seen; the athlete row is locked above.
+    if (policy) {
+      const flag = await client.query<{ active_flag: boolean }>(
+        'select active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2',
+        [organizationId, athleteId],
+      );
+      if (flag.rows[0]?.active_flag !== true
+        || (await athletesWithNoActiveMembership(organizationId, [athleteId], client)).has(athleteId)) {
+        throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
+      }
+    }
     // The last day they came, from both sources, on this transaction (Overwatch on #2163, answer A).
     const register = await getAttendanceLast28Days(organizationId, [athleteId], today, client);
     const openGym = await lastOpenGymDays(organizationId, [athleteId], today, client);

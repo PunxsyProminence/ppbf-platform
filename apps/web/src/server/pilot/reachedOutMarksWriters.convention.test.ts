@@ -33,7 +33,8 @@ function filesUnder(dir: string, keep: (file: string) => boolean): string[] {
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 const source = (file: string) => fs.readFileSync(file, 'utf8');
-const isSource = (file: string) => /\.(ts|tsx|mts|mjs|js)$/.test(file) && !/\.test\.[a-z]+$/.test(file);
+// Every JS or TS extension, .jsx and .cts included (reviewer J got a .jsx re-export past a narrower list).
+const isSource = (file: string) => /\.[cm]?[jt]sx?$/.test(file) && !/\.test\.[a-z]+$/.test(file);
 
 const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnder(path.join(WEB_DIR, dir), isSource));
 

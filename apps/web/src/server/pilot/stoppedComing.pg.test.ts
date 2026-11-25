@@ -675,4 +675,72 @@ describe('listStoppedComing on a real database', () => {
       audits: [{ athlete_id: 'fay', event_type: 'create' }, { athlete_id: 'fay', event_type: 'update' }],
     });
   });
+
+  // Reviewer J, round 2: a "left" flag or a lapsed membership committed after the roster read and
+  // BEGIN, before the list check, must refuse the mark. Deterministic: a second connection holds
+  // the marker's membership row FOR UPDATE, so the PUT waits in lockStaffMembership, inside its
+  // transaction; the change is committed while it waits, which releases it.
+  test('a "left" flag or a lapsed membership committed while the mark waits inside its transaction refuses it (409), nothing written', async () => {
+    const gym = await newGym('race-list');
+    const today = (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    for (const [id, name] of [['lia', 'Lia Leaving'], ['lou', 'Lou Lapsing'], ['ola', 'Ola Staying']]) {
+      await addAthlete(gym, id, name);
+      await registerDay(gym, id, day(-40), 'present');
+      await programMembership(gym, id, 'Youth Boxing', 'active');
+    }
+    const markerPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    const holder = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await holder.connect();
+
+    /** The PUT for `athleteId`, with `change` committed on the holder while the PUT waits inside its transaction. */
+    async function markWhileHeld(athleteId: string, change: string | null) {
+      await holder.query('BEGIN');
+      await holder.query(
+        'select 1 from pilot.organization_memberships where account_id = $1 and organization_id = $2 for update',
+        [gym.coach.accountId, gym.organizationId],
+      );
+      const marking = setStoppedComingReachedOut(gym.coach, athleteId, true, today).then(
+        (outcome) => ({ outcome }),
+        (error: { status?: number; code?: string }) => ({ status: error.status, code: error.code }),
+      );
+      for (let attempt = 0; ; attempt += 1) {
+        // The holder polls from inside its own transaction, where activity is a snapshot: clear it each time.
+        await holder.query('select pg_stat_clear_snapshot()');
+        const { rows } = await holder.query(
+          'select wait_event_type, query from pg_stat_activity where pid = $1',
+          [markerPid],
+        );
+        if (rows[0]?.wait_event_type === 'Lock' && /organization_memberships/.test(rows[0].query)) break;
+        if (attempt > 400) throw new Error('the mark never waited on the membership lock');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      if (change) await holder.query(change, [gym.organizationId, athleteId]);
+      await holder.query('COMMIT');
+      return marking;
+    }
+
+    try {
+      await expect(markWhileHeld('lia', 'update pilot.athletes set active_flag = false where organization_id = $1 and athlete_id = $2'))
+        .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' });
+      await expect(markWhileHeld('lou', `update pilot.program_memberships set status = 'lapsed' where organization_id = $1 and athlete_id = $2`))
+        .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' });
+      // The control: the same hold with nothing committed during it marks.
+      await expect(markWhileHeld('ola', null)).resolves.toEqual({ outcome: 'marked' });
+    } finally {
+      await holder.query('ROLLBACK').catch(() => {});
+      await holder.end();
+    }
+
+    const marks = await client.query(
+      'select athlete_id from pilot.athlete_reached_out_marks where organization_id = $1 order by athlete_id', [gym.organizationId],
+    );
+    expect(marks.rows).toEqual([{ athlete_id: 'ola' }]);
+    const audits = await client.query(
+      `select details->>'athlete_id' as athlete_id from pilot.audit_events
+        where organization_id = $1 and entity_type = 'athlete_reached_out_mark'`,
+      [gym.organizationId],
+    );
+    expect(audits.rows).toEqual([{ athlete_id: 'ola' }]);
+  });
 });

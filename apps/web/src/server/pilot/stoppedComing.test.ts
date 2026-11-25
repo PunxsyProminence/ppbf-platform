@@ -63,13 +63,22 @@ const MEMBERSHIPS = 'from pilot.program_memberships pm';
 const MARKS = 'from pilot.session_run_athletes m';
 let membershipRows: Array<{ athlete_id: string }> = [];
 let marksRows: Array<{ athlete_id: string; last_day: string }> = [];
-/** The mark write's transaction client: it answers only the here-marks read. */
+/** The athlete's active_flag as the mark's transaction reads it; null: no row. */
+let activeFlag: boolean | null = true;
+const FLAG = 'select active_flag from pilot.athletes';
+/** The mark write's transaction client: the list check's two reads and the here-marks read. */
 const txClient = {
   query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]]>(async (sql) => {
+    if (String(sql).includes(FLAG)) return { rows: activeFlag === null ? [] : [{ active_flag: activeFlag }] };
+    if (String(sql).includes(MEMBERSHIPS)) return { rows: membershipRows };
     if (String(sql).includes(MARKS)) return { rows: marksRows };
     throw new Error(`test bug: an unexpected read on the transaction: ${sql}`);
   }),
 };
+/** The order of the transaction client's reads that name `fragment`. */
+const onTx = (fragment: string) => txClient.query.mock.calls
+  .map((call, index) => ({ call, order: txClient.query.mock.invocationCallOrder[index] }))
+  .filter(({ call }) => String(call[0]).includes(fragment));
 
 function callFor(fromClause: string): unknown[] {
   const calls = mockQuery.mock.calls.filter(([sql]) => String(sql).includes(fromClause));
@@ -85,6 +94,7 @@ beforeEach(() => {
   mockRegister.mockResolvedValue(new Map());
   membershipRows = [];
   marksRows = [];
+  activeFlag = true;
   mockQuery.mockImplementation(async (sql: string) => {
     if (String(sql).includes(MEMBERSHIPS)) return membershipRows;
     if (String(sql).includes(MARKS)) return marksRows;
@@ -286,8 +296,8 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
     const onClient = txClient.query.mock.calls.filter(([sql]) => String(sql).includes(MARKS));
     expect(onClient).toHaveLength(1);
     expect(onClient[0][1]).toEqual(['org-1', ['a-1'], TODAY, 'America/New_York']);
-    // The pool answered only the membership read, before the transaction; no day was read on it.
-    expect(mockQuery.mock.calls.map(([sql]) => String(sql).includes(MEMBERSHIPS))).toEqual([true]);
+    // Nothing of the list check or the days was read on the pool.
+    expect(mockQuery).not.toHaveBeenCalled();
     // The later of the two days, with the membership role.
     expect(mockSetMark).toHaveBeenCalledWith(txClient, {
       actor: coach, role: 'organization_admin', athleteId: 'a-1', lastCameDay: daysAgo(20), reachedOut: true,
@@ -297,13 +307,42 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
   describe('a mark only for an athlete on the list now, by the list\'s rules (409, nothing written); reviewers J and K', () => {
     const refused = { status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' };
 
-    test('marked as left, or only lapsed or ended memberships: refused before any transaction', async () => {
-      mockRoster.mockResolvedValue([athlete('a-left', 'Dee', false), athlete('a-lapsed', 'Ben')]);
-      await expect(setStoppedComingReachedOut(coach, 'a-left', true, TODAY)).rejects.toMatchObject(refused);
-      membershipRows = [{ athlete_id: 'a-lapsed' }];
-      await expect(setStoppedComingReachedOut(coach, 'a-lapsed', true, TODAY)).rejects.toMatchObject(refused);
-      expect(callFor(MEMBERSHIPS)[1]).toEqual(['org-1', ['a-lapsed']]);
-      expect(mockTransaction).not.toHaveBeenCalled();
+    test('the whole list check runs on the transaction, after both locks and before the day reads (reviewer J, round 2)', async () => {
+      mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
+      mockRegister.mockResolvedValue(register({ 'a-1': daysAgo(30) }));
+      await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).resolves.toBe('marked');
+
+      const [flag] = onTx(FLAG);
+      const [membership] = onTx(MEMBERSHIPS);
+      const [marks] = onTx(MARKS);
+      expect(flag.call[1]).toEqual(['org-1', 'a-1']);
+      expect(membership.call[1]).toEqual(['org-1', ['a-1']]);
+      const order = [
+        mockLockMembership.mock.invocationCallOrder[0],
+        mockLockAthlete.mock.invocationCallOrder[0],
+        flag.order,
+        membership.order,
+        mockRegister.mock.invocationCallOrder[0],
+        marks.order,
+        mockSetMark.mock.invocationCallOrder[0],
+      ];
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['marked as left (read on the transaction, whatever the roster said before it)', false, []],
+      ['no row on the transaction', null, []],
+      ['only lapsed or ended memberships (read on the transaction)', true, [{ athlete_id: 'a-1' }]],
+    ])('%s: refused (409) before the days are read or the mark is touched', async (_label, flag, lapsed) => {
+      mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]); // the roster, before the transaction, says active
+      activeFlag = flag;
+      membershipRows = lapsed;
+      await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject(refused);
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(onTx(FLAG)).toHaveLength(1);
+      expect(mockQuery).not.toHaveBeenCalled();
+      expect(mockRegister).not.toHaveBeenCalled();
       expect(mockSetMark).not.toHaveBeenCalled();
     });
 
@@ -335,9 +374,11 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       mockRoster.mockResolvedValue([athlete('a-left', 'Dee', false)]);
       mockRegister.mockResolvedValue(register({ 'a-left': TODAY }));
       mockSetMark.mockResolvedValue('taken_back');
+      activeFlag = false;
       await expect(setStoppedComingReachedOut(coach, 'a-left', false, TODAY)).resolves.toBe('taken_back');
       expect(mockPolicy).not.toHaveBeenCalled();
       expect(mockQuery).not.toHaveBeenCalled();
+      expect([...onTx(FLAG), ...onTx(MEMBERSHIPS)]).toEqual([]);
       expect(mockSetMark).toHaveBeenCalledWith(txClient, expect.objectContaining({ lastCameDay: TODAY, reachedOut: false }));
     });
   });
