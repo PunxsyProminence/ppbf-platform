@@ -5,7 +5,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
-import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import { keepSave, readSaveQueue, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
@@ -303,26 +302,16 @@ export default function SessionRunPresence({
   // Refused new notes' words, by athlete, out of sight until that athlete's notes are opened.
   const [noteWords, setNoteWords] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
   const noteRefusals = useRef(0);
-  // They name athletes and hold one person's note text: a sign-out, or any drop of the queue (another
-  // account, a 401), takes them off the screen at once (a shared floor tablet).
+  // They name athletes and hold one person's note text, and come only from kept saves: any drop of the
+  // queue (a sign-out, another account, a 401) takes them off the screen at once (a shared floor tablet).
   useEffect(() => {
-    const forgetAll = () => {
-      setKeptRefusals(NO_REFUSALS);
-      setNoteWords(NO_REFUSALS);
-    };
     let seen = saveQueueGeneration();
-    const stopQueue = subscribeSaveQueue(() => {
+    return subscribeSaveQueue(() => {
       if (saveQueueGeneration() === seen) return;
       seen = saveQueueGeneration();
-      forgetAll();
+      setKeptRefusals(NO_REFUSALS);
+      setNoteWords(NO_REFUSALS);
     });
-    const stopRole = subscribeRoleSession(() => {
-      if (!getRoleSessionSnapshot()) forgetAll();
-    });
-    return () => {
-      stopQueue();
-      stopRole();
-    };
   }, []);
   // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
   // words kept for the box.
