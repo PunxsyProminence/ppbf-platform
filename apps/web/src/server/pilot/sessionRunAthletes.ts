@@ -58,17 +58,33 @@ interface RunOwnership {
   delivered_by_account_id: string;
   run_state: string | null;
   class_id: string | null;
+  /** The run's start, in epoch milliseconds (float8, so no text date format is parsed here). */
+  started_ms: number;
 }
 
 /**
  * Mark an athlete present in the actor's own live run, or take the mark back.
  * Asking for the state the mark already has writes nothing.
+ *
+ * `tappedAt` is when the coach tapped, for a tap sent late (W4 item 7: a tap kept in the open page
+ * while the wifi was down). Without it the tap counts as made now, exactly as before. With it:
+ *   - the mark records the tap's time (marked_at, or removed_at for a take-back), so a class tie
+ *     made later copies it as a tap made then;
+ *   - on a tied session it goes to the register as a tap made earlier, so an Absent or Excused set
+ *     there after the tap is a later register change and wins (OD-2026-10-21-004 ruling 1, "a
+ *     later register change still wins"; Overwatch condition 1 on #2158).
+ * A tap time is never earlier than the run's start: a count off by a network delay cannot date a
+ * mark before the run existed. The order of two changes to one mark is the order they arrive, as
+ * before: the page sends its kept saves one at a time, in order, and two tap times worked out from
+ * two requests are each off by that request's delay, so comparing them could turn a quick
+ * correction around (review of #2165).
  */
 export async function setRunAthletePresent(input: {
   actor: ActorIdentity;
   runId: string;
   athleteId: string;
   present: boolean;
+  tappedAt?: string;
 }): Promise<{ outcome: RunAthleteOutcome; register?: RegisterResult }> {
   const { actor, runId, athleteId } = input;
   // One refusal for "not staff here", "another gym's athlete", "a deleted
@@ -87,7 +103,8 @@ export async function setRunAthletePresent(input: {
     }
     // Read under a row lock, so a finish cannot land between this check and the write.
     const run = await client.query<RunOwnership>(
-      `select delivered_by_account_id, run_state, class_id
+      `select delivered_by_account_id, run_state, class_id,
+              (extract(epoch from started_at) * 1000)::float8 as started_ms
          from pilot.session_script_runs
         where organization_id = $1 and run_id = $2
           for update`,
@@ -107,6 +124,11 @@ export async function setRunAthletePresent(input: {
       throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
     }
 
+    // Not before the run began (see above).
+    const tappedAt = input.tappedAt === undefined
+      ? null
+      // Rounded up: a Date holds whole milliseconds, and the start may carry a fraction of one.
+      : new Date(Math.max(Date.parse(input.tappedAt), Math.ceil(Number(owned.started_ms)))).toISOString();
     let outcome: RunAthleteOutcome;
     let remarked = false;
     let closedWindowIds: string[] = [];
@@ -116,17 +138,17 @@ export async function setRunAthletePresent(input: {
       // mark matches neither arm (the conflict's WHERE is false), returns no row, and is left alone.
       const written = await client.query<{ inserted: boolean }>(
         `insert into pilot.session_run_athletes as m
-           (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
-         values ($1, $2, $3, $4, $5)
+           (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role, marked_at)
+         values ($1, $2, $3, $4, $5, coalesce($6::timestamptz, clock_timestamp()))
          on conflict (organization_id, run_id, athlete_id) do update
            set removed_at = null,
                removed_by_account_id = null,
                marked_by_account_id = excluded.marked_by_account_id,
                marked_by_role = excluded.marked_by_role,
-               marked_at = clock_timestamp()
+               marked_at = excluded.marked_at
            where m.removed_at is not null
          returning (xmax = 0) as inserted`,
-        [actor.organizationId, runId, athleteId, actor.accountId, role],
+        [actor.organizationId, runId, athleteId, actor.accountId, role, tappedAt],
       );
       outcome = written.rows[0] ? 'marked' : 'unchanged';
       remarked = written.rows[0] ? !written.rows[0].inserted : false;
@@ -142,10 +164,10 @@ export async function setRunAthletePresent(input: {
       pointer = standing.rows[0] ?? null;
       const removed = await client.query(
         `update pilot.session_run_athletes
-            set removed_at = clock_timestamp(), removed_by_account_id = $4,
+            set removed_at = greatest(coalesce($5::timestamptz, clock_timestamp()), marked_at), removed_by_account_id = $4,
                 register_class_id = null, register_written_at = null
           where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null`,
-        [actor.organizationId, runId, athleteId, actor.accountId],
+        [actor.organizationId, runId, athleteId, actor.accountId, tappedAt],
       );
       outcome = removed.rowCount === 1 ? 'unmarked' : 'unchanged';
       // A child marked not there can no longer be tapped in a window on this run, so the athlete's
@@ -170,6 +192,8 @@ export async function setRunAthletePresent(input: {
           entity_id: `${runId}:${athleteId}`,
           details: {
             run_id: runId, athlete_id: athleteId, present: input.present, ...(remarked ? { remarked: true } : {}),
+            // A tap sent late records when it was made (W4 item 7).
+            ...(tappedAt ? { tapped_at: tappedAt } : {}),
             // Which windows this take-back ended (7111507024 Q2 A); the window table records no closer.
             ...(closedWindowIds.length > 0 ? { closed_window_ids: closedWindowIds } : {}),
           },
@@ -183,7 +207,7 @@ export async function setRunAthletePresent(input: {
     // register). A standing mark asked again writes nothing, so a later register change wins.
     const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
     if (outcome === 'marked' && owned.class_id) {
-      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }) };
+      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined) };
     }
     if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
       return {
