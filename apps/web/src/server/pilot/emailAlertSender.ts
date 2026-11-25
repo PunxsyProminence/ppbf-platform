@@ -3,20 +3,24 @@
  *
  * OD-2026-11-19-019: an opt-in email that says only "open the app". It runs on
  * the server's worker tick (instrumentation.ts), every 30 seconds by default,
- * on every replica. Each tick:
+ * on every replica, and only where PPBF_SHADOW_WORKER_ENABLED is 'true' (GO
+ * condition 7 on #2159: Overwatch confirms production has it before EM-3
+ * merges). Each tick:
  *   1. sweeps each event source and queues its sends (emailAlertQueue.ts);
  *   2. puts back sends whose lease ran out (emailAlertQueue.ts);
- *   3. claims due sends one at a time (emailAlertQueue.ts), re-checks the person
- *      and sends only while the claim's lease has four of its five minutes
- *      left; the Graph call is cut off at 30 seconds. A send cut off after Graph
- *      took it can still go twice (the send log migration lists when). One
- *      row's failure is logged and the tick goes on. It stops claiming after
- *      20 seconds, so the video sweep after it waits at most that long plus one
- *      send.
+ *   3. claims due sends one at a time (emailAlertQueue.ts), re-checks the
+ *      person, fetches the Graph token, and sends only while the claim's lease
+ *      still has four of its five minutes left; the Graph call is cut off at
+ *      30 seconds. A send cut off after Graph took it can still go twice (the
+ *      send log migration lists when). One row's failure is logged and the
+ *      tick goes on. It stops claiming after 20 seconds or 20 sends; the
+ *      source sweeps and lease recovery before that, and the send in flight,
+ *      come on top (a token fetch has no cut-off of its own).
  *
  * RE-CHECKED BEFORE EVERY SEND (plan 5.2). The switch is on, under the row's
  * user type. Sign-in to this gym is on, as resolvePrincipal (auth.ts) would
- * find it: this is the account's own gym (every sign-in mints its session
+ * find it, or stricter (a platform owner is not let into a gym that is not
+ * active): this is the account's own gym (every sign-in mints its session
  * there), the account is active and not deleted, its membership here is active,
  * the gym is active, a PIN account holds only roles PIN may sign in as
  * (pinLoginPermitted, both roles), and the membership's role fits the home
@@ -62,32 +66,44 @@ import { SENDER } from './magicLinkStore';
 import { graphTokenProvider } from './managedIdentityToken';
 import { getOrganizationProfile, OrganizationProfileUnavailableError } from './organizationProfileStore';
 
+/** The waits between tries, one fewer than the tries (emailAlertSender.test.ts pins it). */
 export const EMAIL_ALERT_RETRY_WAIT_MINUTES = [1, 5, 15, 60] as const;
-// A send starts only with this much of its claim's lease left: the token, then
-// the Graph call (cut off at MAIL_TIMEOUT_SECONDS), finish well before another
-// replica could take the row back.
-const LEASE_LEFT_TO_SEND_SECONDS = EMAIL_ALERT_LEASE_SECONDS - 60;
-const MAIL_TIMEOUT_SECONDS = 30;
-// The sweep stops claiming after this, so the video sweep after it is not held up.
-const SEND_BUDGET_MS = 20_000;
-const SENDS_PER_TICK = 20;
+/**
+ * A send goes to Graph only with this much of its claim's lease left. The
+ * token is fetched before this is checked, so only the Graph call, cut off at
+ * EMAIL_ALERT_MAIL_TIMEOUT_MS, runs after it: it ends long before another
+ * replica could take the row back.
+ */
+export const EMAIL_ALERT_LEASE_LEFT_TO_SEND_SECONDS = EMAIL_ALERT_LEASE_SECONDS - 60;
+export const EMAIL_ALERT_MAIL_TIMEOUT_MS = 30_000;
+/** The tick stops claiming after this, or after this many sends. */
+export const EMAIL_ALERT_SEND_LIMITS = { budgetMs: 20_000, sendsPerTick: 20 } as const;
 
 export interface EmailAlertSenderDependencies {
-  readonly sendMail: (message: OutboundMessage) => Promise<void>;
+  /** Gets ready to send (the Graph token, which can be slow) and returns the send itself. */
+  readonly prepareSend: () => Promise<(message: OutboundMessage) => Promise<void>>;
   /** The gym's short name for the subject. */
   readonly gymName: (organizationId: string) => Promise<string>;
   readonly now: () => Date;
+  /** The clock the tick's claim budget reads. */
+  readonly clockMs: () => number;
 }
 
-export function emailAlertSenderDependencies(): EmailAlertSenderDependencies {
+export function emailAlertSenderDependencies(
+  mailTimeoutMs: number = EMAIL_ALERT_MAIL_TIMEOUT_MS,
+): EmailAlertSenderDependencies {
   return {
-    sendMail: (message) =>
-      sendPlainTextMail(message, { sender: SENDER, saveToSentItems: false }, {
-        getAccessToken: graphTokenProvider(),
-        fetchImpl: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(MAIL_TIMEOUT_SECONDS * 1000) }),
-      }),
+    prepareSend: async () => {
+      const token = await graphTokenProvider()();
+      return (message) =>
+        sendPlainTextMail(message, { sender: SENDER, saveToSentItems: false }, {
+          getAccessToken: async () => token,
+          fetchImpl: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(mailTimeoutMs) }),
+        });
+    },
     gymName: gymShortName,
     now: () => new Date(),
+    clockMs: () => Date.now(),
   };
 }
 
@@ -204,17 +220,20 @@ export async function deliverEmailAlertSend(
     return written ? 'skipped' : 'lost';
   }
   const name = (await dependencies.gymName(row.organization_id)).trim();
-  // Send only while this claim's lease has time to spare: a lease that ran out
-  // may already be another replica's, and that one would send too.
-  const live = await queryOne<{ live: boolean }>(
-    `select true as live from pilot.email_alert_sends
-      where send_id = $1 and lease_token = $2 and status = 'sending'
-        and lease_expires_at > clock_timestamp() + make_interval(secs => $3)`,
-    [row.send_id, row.lease_token, LEASE_LEFT_TO_SEND_SECONDS],
-  );
-  if (!live) return 'lost';
   try {
-    await dependencies.sendMail({
+    // The token first: a slow refresh then costs this claim its lease, not a
+    // second email.
+    const send = await dependencies.prepareSend();
+    // Send only while this claim's lease has time to spare: a lease that ran
+    // out may already be another replica's, and that one would send too.
+    const live = await queryOne<{ live: boolean }>(
+      `select true as live from pilot.email_alert_sends
+        where send_id = $1 and lease_token = $2 and status = 'sending'
+          and lease_expires_at > clock_timestamp() + make_interval(secs => $3)`,
+      [row.send_id, row.lease_token, EMAIL_ALERT_LEASE_LEFT_TO_SEND_SECONDS],
+    );
+    if (!live) return 'lost';
+    await send({
       to: decision.to,
       subject: name ? `${name}: open the app` : 'Open the app',
       body: 'open the app',
@@ -267,6 +286,7 @@ export interface EmailAlertSweepResult {
 export async function runEmailAlertSweep(
   dependencies: EmailAlertSenderDependencies = emailAlertSenderDependencies(),
   sources: readonly EmailAlertSource[] = EMAIL_ALERT_SOURCES,
+  limits: { readonly budgetMs: number; readonly sendsPerTick: number } = EMAIL_ALERT_SEND_LIMITS,
 ): Promise<EmailAlertSweepResult> {
   const result: EmailAlertSweepResult = { queued: 0, recovered: 0, sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0 };
   for (const source of sources) {
@@ -281,8 +301,8 @@ export async function runEmailAlertSweep(
   }
   result.recovered = await recoverExpiredEmailAlertLeases();
   // One claim at a time, so each lease starts when its send does.
-  const stopClaimingAt = Date.now() + SEND_BUDGET_MS;
-  for (let count = 0; count < SENDS_PER_TICK && Date.now() < stopClaimingAt; count += 1) {
+  const stopClaimingAt = dependencies.clockMs() + limits.budgetMs;
+  for (let count = 0; count < limits.sendsPerTick && dependencies.clockMs() < stopClaimingAt; count += 1) {
     const [row] = await claimDueEmailAlertSends(1);
     if (!row) break;
     try {

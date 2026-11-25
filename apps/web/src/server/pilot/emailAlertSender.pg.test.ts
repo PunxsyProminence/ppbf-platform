@@ -44,6 +44,7 @@ jest.mock('./db', () => ({
 import {
   claimDueEmailAlertSends,
   enqueueEmailAlertSends,
+  recoverExpiredEmailAlertLeases,
   type EmailAlertCandidate,
 } from './emailAlertQueue';
 import {
@@ -173,12 +174,13 @@ function candidate(accountId: string, userType: EmailAlertCandidate['userType'],
 function recorder(fail?: () => Error) {
   const sent: OutboundMessage[] = [];
   const dependencies: EmailAlertSenderDependencies = {
-    sendMail: async (message) => {
+    prepareSend: async () => async (message) => {
       if (fail) throw fail();
       sent.push(message);
     },
     gymName: async () => 'GYM',
     now: () => NOW,
+    clockMs: () => Date.now(),
   };
   return { sent, dependencies };
 }
@@ -422,13 +424,80 @@ describe('email alert sender', () => {
       const { dependencies } = recorder();
       const slow = {
         ...dependencies,
-        sendMail: async (message: OutboundMessage) => {
-          await dependencies.sendMail(message);
-          await client.query('update pilot.email_alert_sends set lease_token = gen_random_uuid()');
+        prepareSend: async () => {
+          const send = await dependencies.prepareSend();
+          return async (message: OutboundMessage) => {
+            await send(message);
+            await client.query('update pilot.email_alert_sends set lease_token = gen_random_uuid()');
+          };
         },
       };
       expect(await deliverEmailAlertSend(claimed, slow)).toBe('lost');
       expect(await sendRows(client)).toMatchObject([{ status: 'sending', finished: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a token fetch that outlives the lease sends nothing', async () => {
+    const client = await freshDatabase('emailsender_slow_token');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const [claimed] = await claimDueEmailAlertSends(1);
+      const { sent, dependencies } = recorder();
+      const slowToken = {
+        ...dependencies,
+        prepareSend: async () => {
+          // While the token is fetched, the lease runs out and another replica takes the row.
+          await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() - interval '1 second'`);
+          await recoverExpiredEmailAlertLeases();
+          await claimDueEmailAlertSends(1);
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await deliverEmailAlertSend(claimed, slowToken)).toBe('lost');
+      expect(sent).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['3 minutes 50 seconds', 'lost', 0],
+    ['4 minutes 10 seconds', 'sent', 1],
+  ])('with %s of the lease left, the send is %s (it needs four minutes)', async (left, outcome, sends) => {
+    const client = await freshDatabase('emailsender_lease_margin');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const [claimed] = await claimDueEmailAlertSends(1);
+      await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() + $1::interval`, [left]);
+      const { sent, dependencies } = recorder();
+      expect(await deliverEmailAlertSend(claimed, dependencies)).toBe(outcome);
+      expect(sent).toHaveLength(sends);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the tick stops claiming at its send limit and at its time budget', async () => {
+    const client = await freshDatabase('emailsender_limits');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_2),
+        candidate(PARENT_ID, 'parent', 'family_note', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      expect((await runEmailAlertSweep(dependencies, [], { budgetMs: 60_000, sendsPerTick: 2 })).sent).toBe(2);
+      // A clock that moves 15 seconds a read: the budget of 20 seconds allows one claim.
+      let clock = 0;
+      const ticking = { ...dependencies, clockMs: () => { const now = clock; clock += 15_000; return now; } };
+      await client.query('update pilot.email_alert_sends set next_try_at = clock_timestamp()');
+      expect((await runEmailAlertSweep(ticking, [], { budgetMs: 20_000, sendsPerTick: 20 })).sent).toBe(1);
+      expect(sent).toHaveLength(3);
     } finally {
       await client.end();
     }
