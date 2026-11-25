@@ -3,20 +3,26 @@
 import { useEffect, useRef, useState } from 'react';
 
 import BlockDrillPicker, { type PickableDrill } from './BlockDrillPicker';
+import CopyBlockPicker, { type CopiedBlock } from './CopyBlockPicker';
+import TextBlockForm, { type WrittenBlock } from './TextBlockForm';
 
+import { blockKindWord } from '@/components/blockKindIcons';
 import { apiBase } from '@/lib/apiBase';
+import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import type { SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
 // Changing a plan: its name, each block's title and minutes (lane L1), and
 // (SP-2a) adding a block from the drill library, removing a block, and moving a
-// block up or down, all in this form and this one Save.
+// block up or down, and (SP-2b) writing a text block or copying a block of any
+// of the gym's plans, all in this form and this one Save.
 //
 // The minutes stay what the page shows everywhere else: minutes from the start
 // of the session, a start and an end, never a clock time. After an add, a remove
 // or a move the blocks from the change point on are re-timed to run on (runOn
 // below; App Overwatch ruling Q2 = A), in the form, before Save; every minute can
 // still be edited. A drill block's contact level is its drill's own, set by the
-// server, so no contact control is here.
+// server; a copy's is its source's; a text block's is the coach's pick in its
+// form, required, with no default (TextBlockForm.tsx; App Overwatch Q1 = C).
 //
 // ONLY WHAT WAS CHANGED IS SENT. The name goes only if it was retyped, and a
 // kept block only if its title or minutes were; the server keeps the rest. A new
@@ -53,7 +59,10 @@ interface BlockDraft {
   start: string;
   end: string;
   /** Present only on a block added here and not saved yet. */
-  added?: { drill_id: string; drill_name: string };
+  added?:
+    | { kind: 'drill'; drill_id: string; drill_name: string }
+    | ({ kind: 'text' } & Omit<WrittenBlock, 'block_label'>)
+    | ({ kind: 'copy' } & CopiedBlock);
 }
 
 // A new block is this long: the server's DEFAULT_STEP_MINUTES
@@ -92,9 +101,31 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'Nothing was saved. A block you changed or removed is not in this plan any more. Open the plan again to see it as it is now.',
   SESSION_SCRIPT_DRILL_NOT_FOUND:
     'Nothing was saved. A drill you added is not one of this gym\'s drills. Remove that block and choose a drill from the library.',
+  // Also a copied block whose drill has no current version (sessionScriptAuthoring.ts copyHeads, lockDrills).
   SESSION_SCRIPT_DRILL_NOT_CURRENT:
-    'Nothing was saved. A drill you added was replaced or withdrawn after the list was read. Remove that block, open the drill library again and choose from the new list.',
+    'Nothing was saved. A drill you added, or the drill of a block you copied, has been replaced or withdrawn. Remove that block, then choose again from the drill library or from the plans.',
+  SESSION_SCRIPT_BLOCK_KIND_INVALID:
+    'Nothing was saved. A text block you wrote has a kind of block that was not accepted. Remove it and write it again.',
+  // A text block's level, or a copied block's own (its source holds a level not on the ladder).
+  SESSION_SCRIPT_BLOCK_CONTACT_INVALID:
+    'Nothing was saved. A block you wrote or copied does not have a contact level from the contact ladder. Remove that block and write it as a text block, choosing its contact level from the list.',
+  SESSION_SCRIPT_BLOCK_TEXT_INVALID:
+    'Nothing was saved. The words of a text block you wrote were not accepted: every kind but Arrival, Transition and Close needs words, and they can be 1000 characters at most. Remove it and write it again.',
+  SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND:
+    'Nothing was saved. A block you copied is not in this gym\'s plans any more. Remove that block and copy one from the plans again.',
+  SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL:
+    'Nothing was saved. A block you copied runs at more contact than its drill now allows: the gym has lowered that drill\'s contact level. Remove that block, or add the drill from the library, which carries its new level.',
 };
+
+/** What a block added here is, in words: a drill, a block the coach wrote, or a copy, with its kind and contact level. */
+function newWords(added: NonNullable<BlockDraft['added']>): string {
+  if (added.kind === 'drill') return `drill ${added.drill_name}`;
+  const kind = blockKindWord(added.block_kind) ?? added.block_kind;
+  const contact = humanizeContactLevel(added.contact_level);
+  return added.kind === 'text'
+    ? `${kind} block you wrote (${contact})`
+    : `copy of ${added.block_label} from ${added.plan_name} (${kind}, ${contact})`;
+}
 
 function wholeMinutes(text: string): number | null {
   return /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
@@ -152,7 +183,8 @@ export default function SessionScriptEditor({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [picking, setPicking] = useState(false);
+  // Which way of adding a block is open, if any; each closes back to the button that opened it.
+  const [panel, setPanel] = useState<null | 'add' | 'text' | 'copy'>(null);
   const refCount = useRef(0);
   // One save per press: `busy` disables the button only after a render.
   const inFlight = useRef(false);
@@ -198,7 +230,7 @@ export default function SessionScriptEditor({
   };
 
   // A new block goes last, starting where the last block ends.
-  const add = (drill: PickableDrill) => {
+  const add = (label: string, added: NonNullable<BlockDraft['added']>) => {
     const taken = new Set(script.blocks.map((block) => block.block_id));
     let ref: string;
     do {
@@ -211,19 +243,22 @@ export default function SessionScriptEditor({
       ...blocks,
       {
         block_id: ref,
-        label: drill.name,
+        label,
         start: start === null ? '' : String(start),
         end: start === null ? '' : String(start + NEW_BLOCK_MINUTES),
-        added: { drill_id: drill.drill_id, drill_name: drill.name },
+        added,
       },
     ]);
     wantFocus.current = `${ref}:title`;
-    setPicking(false);
+    setPanel(null);
   };
+  const addDrill = (drill: PickableDrill) => add(drill.name, { kind: 'drill', drill_id: drill.drill_id, drill_name: drill.name });
+  const addText = ({ block_label, ...written }: WrittenBlock) => add(block_label, { kind: 'text', ...written });
+  const addCopy = (copied: CopiedBlock) => add(copied.block_label, { kind: 'copy', ...copied });
 
-  const closePicker = () => {
-    wantFocus.current = 'add';
-    setPicking(false);
+  const closePanel = () => {
+    wantFocus.current = panel;
+    setPanel(null);
   };
 
   const save = async () => {
@@ -231,6 +266,10 @@ export default function SessionScriptEditor({
     setError('');
 
     // Said here, by block, before anything is sent; the server checks the same things.
+    if (panel === 'text') {
+      setError('Add the text block you are writing, or close its form, before you save.');
+      return;
+    }
     const nameChanged = name !== script.name;
     if (nameChanged && name.trim() === '') {
       setError('The plan needs a name.');
@@ -263,16 +302,24 @@ export default function SessionScriptEditor({
         setError(`Block ${index + 1} ends after minute ${LAST_MINUTE}, the longest a plan can run.`);
         return;
       }
-      if (block.added) {
+      const { added } = block;
+      const place = { start_offset_min: start, end_offset_min: end };
+      if (added?.kind === 'drill') {
         additions.push({
           ref: block.block_id,
           kind: 'drill',
-          drill_id: block.added.drill_id,
+          drill_id: added.drill_id,
           // Left out when it is the drill's name: the server's own title then stands.
-          ...(block.label !== block.added.drill_name ? { block_label: block.label } : {}),
-          start_offset_min: start,
-          end_offset_min: end,
+          ...(block.label !== added.drill_name ? { block_label: block.label } : {}),
+          ...place,
         });
+      } else if (added?.kind === 'text') {
+        const { block_kind, text, contact_level } = added;
+        additions.push({ ref: block.block_id, kind: 'text', block_kind, block_label: block.label, text, contact_level, ...place });
+      } else if (added?.kind === 'copy') {
+        // As with a drill: the source's title stands unless the coach retitled it.
+        const retitled = block.label !== added.block_label ? { block_label: block.label } : {};
+        additions.push({ ref: block.block_id, kind: 'copy', block_id: added.block_id, ...retitled, ...place });
       } else {
         edits.push({ block_id: block.block_id, block_label: block.label, start_offset_min: start, end_offset_min: end });
       }
@@ -364,8 +411,11 @@ export default function SessionScriptEditor({
               <legend className="t-label">Block {index + 1}</legend>
               {block.added && (
                 <p className="w-full text-[length:var(--t-md)] font-semibold">
-                  New, not saved yet: drill {block.added.drill_name}
+                  New, not saved yet: {newWords(block.added)}
                 </p>
+              )}
+              {block.added?.kind === 'text' && (
+                <p className="w-full whitespace-pre-wrap text-[length:var(--t-md)]">What to say: {block.added.text.trim() || 'no words'}</p>
               )}
               <label className="field min-w-[14rem] flex-1">
                 <span className="t-label">Title</span>
@@ -413,14 +463,23 @@ export default function SessionScriptEditor({
           </li>
         ))}
       </ol>
-      {blocks.length === 0 && <p className="text-[length:var(--t-md)]">This plan has no blocks. Add one from the drill library.</p>}
+      {blocks.length === 0 && (
+        <p className="text-[length:var(--t-md)]">This plan has no blocks. Add a drill from the library, write a text block or copy a block.</p>
+      )}
 
-      {picking ? (
-        <BlockDrillPicker onPick={add} onClose={closePicker} />
-      ) : (
-        <div>
-          <button type="button" ref={hold('add')} disabled={busy} onClick={() => setPicking(true)} className={rowButton}>
+      {panel === 'add' && <BlockDrillPicker onPick={addDrill} onClose={closePanel} />}
+      {panel === 'text' && <TextBlockForm onAdd={addText} onClose={closePanel} disabled={busy} />}
+      {panel === 'copy' && <CopyBlockPicker currentScriptId={script.script_id} onPick={addCopy} onClose={closePanel} disabled={busy} />}
+      {panel === null && (
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <button type="button" ref={hold('add')} disabled={busy} onClick={() => setPanel('add')} className={rowButton}>
             Add a drill from the library
+          </button>
+          <button type="button" ref={hold('text')} disabled={busy} onClick={() => setPanel('text')} className={rowButton}>
+            Write a text block
+          </button>
+          <button type="button" ref={hold('copy')} disabled={busy} onClick={() => setPanel('copy')} className={rowButton}>
+            Copy a block from a plan
           </button>
         </div>
       )}
