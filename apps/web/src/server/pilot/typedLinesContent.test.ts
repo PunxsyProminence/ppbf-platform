@@ -49,13 +49,14 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_ed57bea28de0f7: '5c1fda8d7e279462011757fdb575f8ed2b837d6e6544cc45ad5e6e51f20f0bdb', // Weeks 5-8 (TL-1b)
   wtp_d861f584584788: '0db4dd011480e5ccfd5f3fc5df45984ebb9f25803a3e26c91e55fa94bb79f2b2', // Weeks 9-12 (TL-1b)
   wtp_900c0a3fd4422a: '76781c9612b5ad2c1e003308dafa24cf78438f64140c99b5ffaa2180ff21f03e', // Scripted 60-Minute Class (TL-2; at d9514532)
-  wtp_1ad3c846b03ecc: '8bfaffbfcb34d4f272ca36e03e104c4cd51954e5e1b65be5f83638c29105298d', // Friday Sparring Coach Sheet (TL-3a; at 6037ca94)
-  wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 6037ca94)
+  wtp_1ad3c846b03ecc: '8bfaffbfcb34d4f272ca36e03e104c4cd51954e5e1b65be5f83638c29105298d', // Friday Sparring Coach Sheet (TL-3a; at 746bc1a5)
+  wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 746bc1a5)
 };
 
 /** The lane-linked steps that carry their own block time as their duration (#2177); a step PR adds its templates here. */
 const TIMED_STEPS: Record<string, number[]> = {
   wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+  wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a; step 9's own block time is open sparring, so it stays blank)
 };
 
 type Row = Record<string, string>;

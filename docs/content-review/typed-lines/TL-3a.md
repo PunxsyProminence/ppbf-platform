@@ -167,3 +167,9 @@ Source: the typed steps of `wtp_1ad3c846b03ecc` (Friday Sparring Coach Sheet; st
 - Stop: The circle drifts or runs past its 5 minutes: close it on the line. (intent_drift)
 - Cue: "Defense is staying calm when things feel fast."
 - Bases: discipline: boxing, technical, as TL-1a's character drills; category: technical, as TL-1a's character drills; execution: the typed line, word for word; stop_rules: AI draft (intent drift); the sheet gives no stop rule; cues: the typed line's closing line, word for word
+
+## Durations (the rule App Overwatch set on #2177)
+
+- Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose own `details.block_time` is a time range no other step of its template shares carries that range as its duration, at contact none or light_technical (the import's rule for durations).
+- Friday step 1 ("3:30 to 3:40") now carries 10 minutes. Friday step 9 ("4:10 to 5:20") is open sparring: the duration column may not hold sparring volume, so it stays blank. Friday steps 2, 10 and 11 and every Wednesday step hold no time of their own (no `block_time`, or one several steps share), so none changes.
+- The Friday template's own `items` label gains a lane `duration_minutes` part (INFERRED; its basis names the step, its block time and its minutes). `typedLinesContent.test.ts` pins the step (`TIMED_STEPS`); the frozen youth-recreational case expects `drill_id, duration_minutes` on it (`LANE_W48_DURATIONS`; UNVERIFIED here).

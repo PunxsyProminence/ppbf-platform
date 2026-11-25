@@ -544,6 +544,7 @@ describe('the committed youth + recreational rows', () => {
   // App Overwatch on #2177): the export would blank that cell too.
   const LANE_W48_DURATIONS: Record<string, number[]> = {
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+    wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
