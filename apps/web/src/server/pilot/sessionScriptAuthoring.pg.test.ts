@@ -1596,7 +1596,8 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     const v2Spar = v2!.blocks[0].block_id;
     const removed = await edit(gym, moved.script_id, { remove: [v2Spar] });
     expect(removed).toMatchObject({ outcome: 'new_version', version: 3 });
-    expect((await getSessionScriptWithDetail(gym.organizationId, removed.script_id))!.contact_structure).toBe('non_contact');
+    // Removing the contact block does not lower it.
+    expect((await getSessionScriptWithDetail(gym.organizationId, removed.script_id))!.contact_structure).toBe('contact');
   });
 
   test('a block a research claim names is never deleted: its removal is version 2 though nobody ran the plan (Q3 = A)', async () => {
@@ -1686,10 +1687,12 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
     expect(after!.blocks.map((block) => [block.block_order, block.block_label])).toEqual([[1, 'Pad Round']]);
   });
 
-  // Reviewer A on #2191, finding 1: an import names the label in its own column, and a block imported
-  // with no contact level reads 'none'. A block edit never lowers such a label.
-  test("a label the author set apart from the blocks is never lowered by a block edit; one that matched them follows them", async () => {
+  // Reviewers A and B on #2191: an import names the label in its own column, and a block imported with
+  // no contact level reads 'none'. Nothing records which labels are an author's, so no block edit lowers
+  // one -- not in one save, and not across saves that end where they started.
+  test('no block edit lowers the contact label, in one save or across several; the blocks raise it', async () => {
     const { gym, scriptId, jab, mirror, spar } = await plan('label-floor');
+    await libraryDrill(gym, 'ref-clinch', 'Clinch Work', 'controlled_sparring');
     await client.query(`update pilot.session_scripts set contact_structure = 'contact' where organization_id = $1 and script_id = $2`, [
       gym.organizationId,
       scriptId,
@@ -1698,9 +1701,15 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
       gym.organizationId,
       spar,
     ]);
+    const label = async () => (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.contact_structure;
 
     await edit(gym, scriptId, { order: [mirror, jab, spar] });
-    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.contact_structure).toBe('contact');
+    expect(await label()).toBe('contact');
+    // Add a contact drill, then take it out again: the plan ends as it began, and so does its label.
+    await edit(gym, scriptId, { add: [{ ref: 'n', kind: 'drill', drill_id: 'ref-clinch', start_offset_min: 16, end_offset_min: 20 }] });
+    const added = (await getSessionScriptWithDetail(gym.organizationId, scriptId))!.blocks.find((block) => block.drill_id === 'ref-clinch');
+    await edit(gym, scriptId, { remove: [added!.block_id] });
+    expect(await label()).toBe('contact');
 
     // observation_only, which no block can say, is kept while no block has contact, through a real save.
     await client.query(`update pilot.session_scripts set contact_structure = 'observation_only' where organization_id = $1 and script_id = $2`, [
@@ -1708,19 +1717,19 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
       scriptId,
     ]);
     await edit(gym, scriptId, { order: [jab, mirror, spar] });
-    expect((await getSessionScriptWithDetail(gym.organizationId, scriptId))!.contact_structure).toBe('observation_only');
+    expect(await label()).toBe('observation_only');
 
-    // The fixture's own label is what its blocks say, so it follows them down when the contact block goes.
-    const fresh = await plan('label-follows');
+    // A plan whose contact block is removed keeps the contact it said (the floor errs on the safe side).
+    const fresh = await plan('label-kept');
     await edit(fresh.gym, fresh.scriptId, { remove: [fresh.spar] });
-    expect((await getSessionScriptWithDetail(fresh.gym.organizationId, fresh.scriptId))!.contact_structure).toBe('non_contact');
+    expect((await getSessionScriptWithDetail(fresh.gym.organizationId, fresh.scriptId))!.contact_structure).toBe('split_non_contact_then_contact');
   });
 
-  // Reviewer A on #2191, findings 4 and 5: a behaviour window or a behaviour report naming the block.
+  // Reviewer A on #2191, findings 4 and 5: a behaviour window, report or intervention naming the block.
   // Written with triggers and foreign keys off for this connection (session_replication_role), so the
   // fixture needs no run, athlete or key; the CHECK constraints still hold. What is proven is the
   // writer's own read: a block those rows name is never deleted.
-  test.each(['window', 'report'] as const)('a block a behaviour %s names is never deleted: its removal is a new version', async (kind) => {
+  test.each(['window', 'report', 'intervention'] as const)('a block a behaviour %s names is never deleted: its removal is a new version', async (kind) => {
     const { gym, scriptId, mirror } = await plan(`named-${kind}`);
     await client.query(`set session_replication_role = replica`);
     try {
@@ -1730,6 +1739,14 @@ describe('adding, removing and moving blocks (lane W4-5, SP-1a)', () => {
              (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint, opened_by_role)
            values ($1, 'ath-1', 'key-1', 'run-elsewhere', 'block', $2, 'controlled', 'coach')`,
           [gym.organizationId, mirror],
+        );
+      } else if (kind === 'intervention') {
+        await client.query(
+          `insert into pilot.intervention_executions
+             (organization_id, execution_id, lineage_id, version, athlete_id, protocol_id, protocol_version,
+              recorded_by_account_id, trained_task_context_key)
+           values ($1, 'exe-1', 'exe-1', 1, 'ath-1', 'protocol-1', 1, $3, 'block:' || $2)`,
+          [gym.organizationId, mirror, gym.coachId],
         );
       } else {
         await client.query(

@@ -402,18 +402,14 @@ export function runningOrderAfter(
 const CONTACT_RANK: Readonly<Record<string, number>> = { non_contact: 0, observation_only: 0, split_non_contact_then_contact: 1, contact: 2 };
 
 /**
- * The plan's contact label once its blocks change. Pure. A label that is what the blocks said
- * before follows them. One the author set apart from them (an import names it in its own column,
- * and a block imported with no contact level reads 'none') is a floor the blocks raise, never
- * lower: a plan never reads less contact than it is (Overwatch Q1 on #2189).
+ * The plan's contact label once its blocks change. Pure. The blocks raise it when they carry more
+ * contact than it says, and never lower it: the label may be the author's own, set apart from the
+ * blocks (an import names it in its own column, and a block imported with no contact level reads
+ * 'none'), and nothing records which it is. So a plan never reads less contact than it is
+ * (Overwatch Q1 on #2189). Whether a coach may lower it is asked on #2191.
  */
-export function contactStructureAfter(
-  stored: string,
-  before: readonly { contact_level: string }[],
-  after: readonly { contact_level: string }[],
-): string {
+export function contactStructureAfter(stored: string, after: readonly { contact_level: string }[]): string {
   const read = contactStructure(after);
-  if (stored === contactStructure(before)) return read;
   return (CONTACT_RANK[read] ?? 0) > (CONTACT_RANK[stored] ?? 0) ? read : stored;
 }
 
@@ -544,8 +540,8 @@ type PlannedBlock = Omit<SessionScriptBlockRow, 'organization_id' | 'script_id' 
  * and (lane W4-5) its blocks: a library drill added, a block removed, the running order. Minutes
  * are stored as sent; the editor proposes them (Q2 = A on #2189). A new drill block carries its
  * drill's own contact level (Q1 = C) and an Explain line naming the drill (FROM_DRILL). When the
- * blocks change, the contact label is read again (contactStructureAfter). A plan may be left with
- * no blocks. Coach renderings made from the blocks are re-rendered; the rest stay as written.
+ * blocks change, the contact label is raised, never lowered (contactStructureAfter). A plan may
+ * be left with no blocks. Coach renderings made from the blocks are re-rendered; the rest stay.
  *
  * A plan with a run, or whose edit removes a block something else names (blocksNamedElsewhere),
  * gets a new version. Otherwise in place, the running order renumbered 1..n when blocks change.
@@ -651,7 +647,7 @@ export async function editSessionScript(
     const totalMinutes = minutesChanged
       ? statedLength(script.total_minutes, blocks.reduce((last, block) => Math.max(last, block.end_offset_min), 0))
       : script.total_minutes;
-    const contact = structural ? contactStructureAfter(script.contact_structure, stored.rows, blocks) : script.contact_structure;
+    const contact = structural ? contactStructureAfter(script.contact_structure, blocks) : script.contact_structure;
 
     const run = await client.query(
       `select 1 from pilot.session_script_runs
