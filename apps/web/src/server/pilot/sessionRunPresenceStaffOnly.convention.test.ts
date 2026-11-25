@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
@@ -66,6 +66,16 @@ const STAFF_ROUTES = [
 const SESSION_NOTE_READERS = [
   'app/api/pilot/coach/athlete-session-note/route.ts',
   'src/server/pilot/sessionNotes.ts',
+];
+
+// The stopped-coming list (lane W4-6, SC-1; Jason OW27-32 A, "Yes, on this page only"): an
+// open-gym "here" mark counts as coming on that page, so stoppedComing.ts reads the last standing
+// mark day per athlete on untied runs, and its one route is the only caller of listStoppedComing.
+// Approved for exactly these two files, the route pinned below to coach, organization_admin and
+// admin (Overwatch, W4-6 GO on #2163, condition 1). Nothing else from the table leaves the module.
+const STOPPED_COMING_READERS = [
+  'app/api/pilot/stopped-coming/route.ts',
+  'src/server/pilot/stoppedComing.ts',
 ];
 
 // The modules that define the reads and writers. privacyTiers.ts names them to forbid them on public surfaces.
@@ -99,6 +109,9 @@ const DEFINING_MODULES = [
 // note on the run counts as activity. The statement returns only the ids of
 // the runs it closed; no athlete, name, mark or note leaves it, so the TV read
 // that triggers it (gymTvs.ts) gets nothing from either table.
+// stoppedComing.ts (lane W4-6, SC-1) reads one day per athlete from
+// session_run_athletes: the last standing mark on an untied run. It returns no
+// run, mark or marker; see STOPPED_COMING_READERS.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/privacyTiers.ts',
@@ -107,6 +120,7 @@ const TABLE_FILES = [
   'src/server/pilot/sessionRunClass.ts',
   'src/server/pilot/sessionScriptRuns.ts',
   'src/server/pilot/sessionStaffNotes.ts',
+  'src/server/pilot/stoppedComing.ts',
 ];
 
 // The behaviour writer and the window module (PATTERN-1d-2, 1e): their refusals say whether an
@@ -134,14 +148,14 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(routes.length).toBeGreaterThan(100);
     expect(ALL_SOURCE.length).toBeGreaterThan(routes.length + 200);
     const all = ALL_SOURCE.map(relative);
-    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS]) {
+    for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS]) {
       expect(all).toContain(file);
     }
   });
 
-  it('exactly the three staff routes, the defining modules and the session-note read reach them, anywhere in the app', () => {
+  it('exactly the three staff routes, the defining modules, the session-note read and the stopped-coming read reach them, anywhere in the app', () => {
     expect(ALL_SOURCE.filter((file) => REACHES.test(source(file))).map(relative).sort())
-      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS].sort());
+      .toEqual([...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS].sort());
   });
 
   it('the session-note route admits only coach, organization admin and the legacy admin name', () => {
@@ -151,6 +165,15 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(text).not.toMatch(/^export\s*(\{|\*)/m);
     expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.SESSION_NOTE_READ_ROLES\]\s*\)/g))).toHaveLength(1);
     expect(text).toMatch(/const SESSION_NOTE_READ_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
+  });
+
+  it('the stopped-coming route admits only coach, organization admin and the legacy admin name', () => {
+    const text = source(path.join(WEB_DIR, STOPPED_COMING_READERS[0]));
+    const handlers = Array.from(text.matchAll(HANDLER)).length;
+    expect(handlers).toBe(1);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.STOPPED_COMING_READ_ROLES\]\s*\)/g))).toHaveLength(1);
+    expect(text).toMatch(/const STOPPED_COMING_READ_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
   });
 
   it('no route, page, component or other module names either table in its own text', () => {

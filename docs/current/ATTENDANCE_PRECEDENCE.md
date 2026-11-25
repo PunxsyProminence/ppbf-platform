@@ -159,6 +159,12 @@ what counts. An untied (open gym) session writes no register
 are in `sessionRunClass.ts`; the no-shows offer at End Session (ruling 3) comes
 in a later change.
 
+One page, and only that page, also reads open-gym marks: the "who has stopped
+coming" list counts a standing "here" mark on an untied session as coming
+(Jason OW27-32 A, "Yes, on this page only", OD-2026-11-21-006;
+`stoppedComing.ts`, lane W4-6). No attendance figure, report, board or grant
+figure reads it, and nothing above changes.
+
 **A cancelled class** (OD-2026-10-22-001; migration `attendance-reconciled-cancelled`): rank 2 reads no mark on a class whose `status` is `cancelled`, so for that day an `activity_log` boxing row still wins, else the day's held classes, else legacy, else there is no row; every `scheduler_attendance` row is kept and staff still see it on `/schedule` and `/admin/attendance`.
 
 ## What this deliberately does not do

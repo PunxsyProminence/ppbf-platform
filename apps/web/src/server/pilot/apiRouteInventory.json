@@ -8840,6 +8840,35 @@
     }
   },
   {
+    "id": "app/api/pilot/stopped-coming/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/stopped-coming",
+    "gate": "requirePrincipal + requireRole(STOPPED_COMING_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in listStoppedComing; 403 without); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Who has stopped coming: the gym's live, not-left athletes who came at least once (a register present day, or a standing here mark on an untied open-gym run, OW27-32 A on this page only) and have not come for the gym's number of days. Returns id, name, last day they came and days since; no date of birth, membership, run or mark. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/incidents/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/incidents",
