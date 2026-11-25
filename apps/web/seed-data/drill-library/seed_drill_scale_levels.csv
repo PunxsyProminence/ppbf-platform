@@ -1721,7 +1721,7 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_0093ef4223e3be,drl_e7279a0244efa5,A,false,The coach logs the first failure; the athlete only performs.,Coach-logged.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_b866d13f0adc2d,drl_e7279a0244efa5,B,true,"Same technical check, first-failure log and regression note, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_2fdc009d628d94,drl_e7279a0244efa5,C,false,"As written, and the athlete names their own first failure before the coach's note.",Athlete names it.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_2ce677ea870dac,drl_6d21ac893974ec,A,false,"The four parts at an easy pace, the neck holds gentle; in the pre-activation cue drill the athlete braces on the cue with no push.",Easy pace; no push.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2ce677ea870dac,drl_6d21ac893974ec,A,false,"The four parts at an easy pace, the neck holds gentle; in the pre-activation cue drill the athlete braces on the cue with no push, until the brace comes on time every rep.",Easy pace; no push.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_e696cc2140e488,drl_6d21ac893974ec,B,true,The warm-up as written.,,light_technical,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_bc3445c569cab0,drl_6d21ac893974ec,C,false,"As written, the fast feet and the medicine-ball passes at full speed; the jab flurries stay at 50%.",Faster activation.,light_technical,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_35a6fedf77c0e4,drl_6529e148d4b491,A,false,"One theme for every round (a theme may repeat), at a controlled pace.",One theme.,none,,scaffold_needs_coach_review

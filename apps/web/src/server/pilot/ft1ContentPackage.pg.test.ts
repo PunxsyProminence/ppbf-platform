@@ -280,7 +280,8 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
  * not in this package's plan), which keeps the stripped files equal to the pre-lane files. typedLinesContent.test.ts
  * checks the lane's rows, and reads block times the same way. A step whose contact level the lane changed by a ruling
  * (LANE_W48_CONTACT: Phase 1 step 1, light_technical as D-OQ94; App Overwatch on #2201) gets its pre-lane level back,
- * and its template's 'items' label loses the lane's 'contact_level' part.
+ * and its template's 'items' label loses the lane's 'contact_level' part; its 'contact_structure' label loses the
+ * lane's note (a source starting 'lane W4-8').
  */
 const LANE_W48_CONTACT: Record<string, Record<number, string>> = { wtp_c2c4bec001a56b: { 1: 'none' } };
 const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
@@ -326,6 +327,8 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
     delete labels.items.drill_id;
     if (String(labels.items.duration_minutes?.basis ?? '').startsWith('lane W4-8')) delete labels.items.duration_minutes;
     if (String(labels.items.contact_level?.basis ?? '').startsWith('lane W4-8')) delete labels.items.contact_level;
+    const structure = labels.contact_structure?.sources;
+    if (Array.isArray(structure)) labels.contact_structure.sources = structure.filter((source: unknown) => !String(source).startsWith('lane W4-8'));
     return { ...row, field_labels: JSON.stringify(labels) };
   };
   const out = { ...files };

@@ -560,6 +560,11 @@ describe('the committed youth + recreational rows', () => {
   const LANE_W48_CONTACT: Record<string, number[]> = {
     wtp_c2c4bec001a56b: [1], // Phase 1 boxing skill session, 90 minutes (TL-5a)
   };
+  it("names duration and contact cells only on lane W4-8's linked steps (the frozen case below ignores any other)", () => {
+    for (const changed of [LANE_W48_DURATIONS, LANE_W48_CONTACT]) {
+      for (const [id, steps] of Object.entries(changed)) expect({ id, outside: steps.filter((step) => !(LANE_W48_STEPS[id] ?? []).includes(step)) }).toEqual({ id, outside: [] });
+    }
+  });
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
