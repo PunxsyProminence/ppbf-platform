@@ -35,7 +35,11 @@
 -- current, and takes the database's time; the one change a mark takes is a
 -- take-back, once, naming who, at the database's time; nothing undoes a
 -- take-back; and a mark is not deleted on its own (it goes with its athlete or
--- gym). The account foreign keys' own SET NULL is the one other update.
+-- gym). The account foreign keys' own SET NULL is the one other update. The
+-- runner refuses any other trigger or rule on the table. TRUNCATE, a
+-- statement-level command, is not guarded (as on the behaviour windows): pg
+-- suites truncate pilot.organizations and pilot.accounts with cascade, and no
+-- app code truncates a pilot table.
 --
 -- WHO MAY WRITE AND READ is the module's rule (SC-3a-2), not this file's:
 -- coach, organization admin and admin with an active staff membership here,
@@ -86,20 +90,29 @@ returns trigger
 language plpgsql
 as $athlete_reached_out_marks_guard$
 begin
+  -- Each exception is tested on the data, not on the trigger depth, so no other
+  -- trigger, wherever it sits, can delete a mark or clear a name either.
   if tg_op = 'DELETE' then
-    -- Only as a consequence: the athlete's or the gym's delete, by cascade.
-    if pg_trigger_depth() = 1 then
+    -- Only once the mark's athlete row is gone: the athlete's delete, or the
+    -- gym's (which needs its athletes gone first), by cascade.
+    if exists (
+      select 1 from pilot.athletes a
+       where a.organization_id = old.organization_id and a.athlete_id = old.athlete_id
+    ) then
       raise exception 'REACHED_OUT_MARK_IS_NOT_DELETED'
         using errcode = '23514', constraint = 'pilot_athlete_reached_out_marks_no_delete';
     end if;
     return old;
   end if;
   if tg_op = 'UPDATE' then
-    -- (1) An account's delete: the foreign keys' own SET NULL, which runs this
-    -- deeper than 1; only the account columns go to NULL, nothing else moves.
-    if pg_trigger_depth() > 1
-       and (new.marked_by_account_id is null or new.marked_by_account_id = old.marked_by_account_id)
-       and (new.cleared_by_account_id is null or new.cleared_by_account_id = old.cleared_by_account_id)
+    -- (1) An account's delete: the foreign keys' SET NULL. A name goes NULL only
+    -- once its account row is gone; nothing else moves.
+    if (new.marked_by_account_id is not distinct from old.marked_by_account_id
+        or (new.marked_by_account_id is null
+            and not exists (select 1 from pilot.accounts x where x.account_id = old.marked_by_account_id)))
+       and (new.cleared_by_account_id is not distinct from old.cleared_by_account_id
+        or (new.cleared_by_account_id is null
+            and not exists (select 1 from pilot.accounts x where x.account_id = old.cleared_by_account_id)))
        and to_jsonb(new) - array['marked_by_account_id', 'cleared_by_account_id']
          = to_jsonb(old) - array['marked_by_account_id', 'cleared_by_account_id'] then
       return new;

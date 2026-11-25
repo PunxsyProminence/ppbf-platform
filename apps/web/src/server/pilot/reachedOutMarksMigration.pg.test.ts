@@ -365,6 +365,14 @@ describe('athlete reached-out marks migration', () => {
     ['guard_ready', 'the guard not on inserts', replaceGuard('before update or delete', 'for each row', GUARD_FUNCTION)],
     ['guard_ready', 'the guard after the write', replaceGuard('after insert or update or delete', 'for each row', GUARD_FUNCTION)],
     ['guard_ready', 'the guard once per statement', replaceGuard('before insert or update or delete', 'for each statement', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard on updates of one column only',
+      replaceGuard('before insert or update of cleared_at or delete', 'for each row', GUARD_FUNCTION)],
+    ['guard_ready', 'the guard with a WHEN', `drop trigger ${GUARD} on ${T};
+       create trigger ${GUARD} before insert or update or delete on ${T} for each row when (false) execute function ${GUARD_FUNCTION}`],
+    ['no_other_trigger_ready', 'a second trigger on the table',
+      `create function pilot.zz_after() returns trigger language plpgsql as $$ begin return null; end $$;
+       create trigger zz_after after insert on ${T} for each row execute function pilot.zz_after()`],
+    ['no_rule_ready', 'a rule on the table', `create rule zz_drop_updates as on update to ${T} do instead nothing`],
     ['guard_ready', 'the guard calling another function',
       `create function pilot.zz_let_through() returns trigger language plpgsql as $$ begin return coalesce(new, old); end $$;
        ${replaceGuard('before insert or update or delete', 'for each row', 'pilot.zz_let_through()')}`],
@@ -504,6 +512,29 @@ describe('athlete reached-out marks migration', () => {
       await expect(client.query(`delete from ${T} where athlete_id = 'ada'`))
         .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_no_delete' });
       expect((await client.query(`select count(*)::int as n from ${T} where cleared_at is not null`)).rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the guard holds against a write from inside another table\'s trigger: no delete, no name cleared while its account lives', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await mark(client, 'ada');
+      await client.query(`create table pilot.zz_poke (action text)`);
+      await client.query(`create function pilot.zz_poke() returns trigger language plpgsql as $$
+        begin
+          if new.action = 'clear name' then update ${T} set marked_by_account_id = null; end if;
+          if new.action = 'delete' then delete from ${T}; end if;
+          return new;
+        end $$`);
+      await client.query(`create trigger zz_poke after insert on pilot.zz_poke for each row execute function pilot.zz_poke()`);
+      await expect(client.query(`insert into pilot.zz_poke values ('clear name')`))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_append_only' });
+      await expect(client.query(`insert into pilot.zz_poke values ('delete')`))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_athlete_reached_out_marks_no_delete' });
+      const { rows } = await client.query(`select marked_by_account_id from ${T}`);
+      expect(rows).toEqual([{ marked_by_account_id: COACH_ID }]);
     } finally {
       await client.end();
     }

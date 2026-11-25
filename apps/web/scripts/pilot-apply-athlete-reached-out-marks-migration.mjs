@@ -29,9 +29,10 @@ function sslConfig() {
 // exclusion constraint; exactly four foreign keys, each by source columns,
 // target table and columns, ON DELETE, ON UPDATE NO ACTION, validated and not
 // deferrable; the guard trigger by name, BEFORE INSERT, UPDATE and DELETE, FOR
-// EACH ROW, enabled, calling the guard function (whose body each apply
-// replaces). Each condition is drifted on its own in
-// reachedOutMarksMigration.pg.test.ts.
+// EACH ROW, on every column (no UPDATE OF) and with no WHEN, enabled, calling
+// the guard function (whose body each apply replaces); and no other trigger and
+// no rule on the table, which could act before or around the guard. Each
+// condition is drifted on its own in reachedOutMarksMigration.pg.test.ts.
 const EXPECTED_CHECKS = {
   pilot_athlete_reached_out_marks_role_check:
     "CHECK ((marked_by_role = ANY (ARRAY['coach'::text, 'organization_admin'::text, 'admin'::text])))",
@@ -125,8 +126,14 @@ const READINESS_QUERY = `
       select 1 from pg_trigger g
        where g.tgrelid = to_regclass('${OWN}') and g.tgname = 'trg_athlete_reached_out_marks_guard' and not g.tgisinternal
          and g.tgenabled in ('O', 'A') and (g.tgtype & 31) = 31
+         and g.tgattr::text = '' and g.tgqual is null
          and g.tgfoid = to_regprocedure('pilot.athlete_reached_out_marks_guard()')
-    ) as guard_ready
+    ) as guard_ready,
+    not exists (
+      select 1 from pg_trigger g, t
+       where g.tgrelid = t.oid and not g.tgisinternal and g.tgname <> 'trg_athlete_reached_out_marks_guard'
+    ) as no_other_trigger_ready,
+    not exists (select 1 from pg_rewrite r, t where r.ev_class = t.oid) as no_rule_ready
 `;
 const READINESS_PARAMS = [
   Object.keys(EXPECTED_CHECKS),
