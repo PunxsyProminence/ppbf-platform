@@ -416,7 +416,7 @@ export default function SessionScriptEditor({
       {blocks.length === 0 && <p className="text-[length:var(--t-md)]">This plan has no blocks. Add one from the drill library.</p>}
 
       {picking ? (
-        <BlockDrillPicker onPick={add} onClose={closePicker} />
+        <BlockDrillPicker disabled={busy} onPick={add} onClose={closePicker} />
       ) : (
         <div>
           <button type="button" ref={hold('add')} disabled={busy} onClick={() => setPicking(true)} className={rowButton}>

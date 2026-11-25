@@ -438,6 +438,32 @@ describe('adding, removing and moving blocks', () => {
     expect(body.order).toEqual(['blk-1', body.add_blocks[0].ref, 'blk-2']);
   });
 
+  // Codex on #2199: the body is read when Save is pressed, so a drill picked while the save is in flight would be lost.
+  it('while the plan saves, the open picker lets no drill be picked', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    const fetchMock = jest.fn((url: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'PATCH'
+        ? new Promise<Response>((resolve) => { finish = resolve; })
+        : Promise.resolve(String(url).includes('/api/pilot/drills') ? drillList() : answer(404, {})));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const onSaved = jest.fn();
+    render(<SessionScriptEditor script={SCRIPT} onSaved={onSaved} onCancel={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+    const drill = await screen.findByRole('button', { name: 'Footwork ladder' });
+    type(block(1).getByLabelText('Title'), 'Jab Drill, longer');
+    expect(drill).toBeEnabled();
+
+    await act(async () => save());
+    expect(drill).toBeDisabled();
+    fireEvent.click(drill);
+    expect(screen.queryByRole('group', { name: 'Block 3' })).not.toBeInTheDocument();
+
+    await act(async () => {
+      finish?.(answer(200, { outcome: 'updated', script: SCRIPT }));
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
   it('a drill library that cannot be loaded is said in words, not shown as an empty list', async () => {
     global.fetch = jest.fn(async () => answer(500, { error: 'boom' })) as unknown as typeof fetch;
     render(<SessionScriptEditor script={SCRIPT} onSaved={jest.fn()} onCancel={jest.fn()} />);
@@ -667,6 +693,15 @@ describe('adding, removing and moving blocks', () => {
       await screen.findByRole('button', { name: 'Footwork ladder' });
       fireEvent.click(screen.getByRole('button', { name: 'Close the drill library' }));
       expect(screen.getByRole('button', { name: 'Add a drill from the library' })).toHaveFocus();
+    });
+
+    it('when the picker opens, on its heading (Codex on #2199)', async () => {
+      setupRouted();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add a drill from the library' }));
+
+      expect(screen.getByRole('heading', { name: 'Add a drill from the library' })).toHaveFocus();
+      await screen.findByRole('button', { name: 'Footwork ladder' });
     });
   });
 });
