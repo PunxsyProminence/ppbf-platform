@@ -1934,8 +1934,9 @@ describe('a step an owner placed inside another is issued straight after it (TL-
           .toEqual({ templateId, ordinals: [...items].sort((a, b) => a.ordinal - b.ordinal).map((row) => row.ordinal) });
       }
     }
-    // The seed's nested owner items sit on 7 templates (OBSERVED 2026-11-25).
-    expect(nestedTemplates).toBe(7);
+    // The sweep reaches templates with nested owner items (7 on 2026-11-25); a count is not pinned, so a
+    // new nested template in the seed does not fail this case without a code fault.
+    expect(nestedTemplates).toBeGreaterThan(0);
   });
 
   test('several steps inside one keep their ordinal order, and a step inside a nested step follows it', () => {
