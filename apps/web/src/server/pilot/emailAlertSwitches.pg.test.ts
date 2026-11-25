@@ -583,4 +583,19 @@ describe('emailAlertSwitches.ts on a real database', () => {
       await client.end();
     }
   });
+
+  test('a membership removed between sign-in and the save gets the plain 403, and nothing is written', async () => {
+    const client = await freshDatabase('emailsw_no_membership');
+    activeClient = client;
+    try {
+      // As if the gym removed the coach's membership row after they signed in.
+      await client.query('delete from pilot.organization_memberships where account_id = $1', [COACH_ID]);
+      await expect(setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW))
+        .rejects.toMatchObject({ status: 403, message: 'Forbidden: email alerts are not offered to this account' });
+      expect(await switchRows(client)).toEqual([]);
+      expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
 });
