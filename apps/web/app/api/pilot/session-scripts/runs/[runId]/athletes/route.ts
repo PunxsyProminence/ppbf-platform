@@ -21,11 +21,13 @@ interface RouteContext {
 //   GET                              the athletes marked present in this run, by name, and the
 //                                    gym's athletes the caller may mark (the live screen's picker)
 //   POST { athlete_id, present }     mark one present, or take the mark back
-//        optional tapped_ms_ago        whole milliseconds since the coach tapped, for a tap kept in
-//                                     the open page and sent late (W4 item 7). On a tied session
-//                                     the register then treats it as a tap made that long ago, so
-//                                     an Absent or Excused set after it wins (OD-2026-10-21-004
-//                                     ruling 1). Without it the tap counts as made now, as before.
+//        optional tapped_ms_ago        whole milliseconds since the coach tapped, for a tap or
+//                                     take-back kept in the open page and sent late (W4 item 7).
+//                                     The mark records that time; on a tied session the register
+//                                     treats it as a tap made then, so an Absent or Excused set
+//                                     after it wins (OD-2026-10-21-004 ruling 1); and a change made
+//                                     after it on the same mark stands (outcome 'superseded').
+//                                     Without it the tap counts as made now, as before.
 //
 // STAFF ONLY, like every other route under runs/: coach, organization admin and the legacy admin
 // name. platform_owner is refused (running a session is gym work, OD-2026-10-08-003 R2), and so

@@ -457,6 +457,20 @@ describe('session staff note request key migration', () => {
     }
   });
 
+  test('the runner refuses a same-named unique index of the right shape that is not valid (a failed build enforces nothing)', async () => {
+    const client = await freshDatabase('sknkey_index_invalid');
+    try {
+      // What a failed concurrent build leaves behind: the name and definition are right, and the
+      // index enforces nothing. The file's if-not-exists keeps it, so only readiness can refuse it.
+      await client.query(
+        `update pg_index set indisvalid = false where indexrelid = to_regclass('pilot.${INDEX}')`,
+      );
+      await expect(applyRunner(client, migrationSql)).rejects.toThrow(`${NOT_READY}: index_ready`);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the runner refuses a same-named unique index over the key alone, or without the partial predicate', async () => {
     const client = await freshDatabase('sknkey_index_shape');
     try {
@@ -749,23 +763,68 @@ describe('one tap, one staff note (createRunStaffNote / createSessionStaffNote w
     expect(own.athlete_id).toBe(gym.ben);
   });
 
-  test.each(SUBJECTS)('on a %s: a resend after its author edited the note returns the note as it stands now; the text is not compared', async (subject) => {
+  test.each(SUBJECTS)('on a %s: the same key sent with different text is refused and writes nothing, so two notes are never taken as one', async (subject) => {
+    const gym = await newGym(`text-${subject}`);
+    const key = randomUUID();
+    const first = await send(gym, subject, { requestKey: key, note: 'Hands dropped in round two.' });
+
+    expect(await refusal(send(gym, subject, { requestKey: key, note: 'Something else entirely.' }))).toEqual(REUSED);
+
+    expect(await notesOf(gym)).toEqual([
+      { note_id: first.note_id, request_key: key, note: 'Hands dropped in round two.', removed: false },
+    ]);
+    expect(await createAudits(gym)).toEqual([first.note_id]);
+  });
+
+  test.each(SUBJECTS)('on a %s: a resend after its author edited the note (on another device) is refused and adds nothing; the edit stands', async (subject) => {
     const gym = await newGym(`edited-${subject}`);
     const key = randomUUID();
     const first = await send(gym, subject, { requestKey: key, note: 'Hands dropped in round two.' });
-    const edited = await updateOwnSessionStaffNote({
-      actor: gym.coach, noteId: first.note_id, note: 'Hands dropped in rounds two and three.',
-    });
+    await updateOwnSessionStaffNote({ actor: gym.coach, noteId: first.note_id, note: 'Hands dropped in rounds two and three.' });
 
-    // The queued resend carries the text as first sent.
-    const again = await send(gym, subject, { requestKey: key, note: 'Hands dropped in round two.' });
-    expect(again).toEqual({ ...edited, replayed: true });
-    const otherText = await send(gym, subject, { requestKey: key, note: 'Something else entirely.' });
-    expect(otherText).toEqual({ ...edited, replayed: true });
+    // The kept resend carries the text as first sent.
+    expect(await refusal(send(gym, subject, { requestKey: key, note: 'Hands dropped in round two.' }))).toEqual(REUSED);
 
     expect(await notesOf(gym)).toEqual([
       { note_id: first.note_id, request_key: key, note: 'Hands dropped in rounds two and three.', removed: false },
     ]);
+    expect(await createAudits(gym)).toEqual([first.note_id]);
+  });
+
+  test.each(SUBJECTS)('on a %s: a resend by an author who is no longer staff here is refused by the access check, not answered with the note', async (subject) => {
+    const gym = await newGym(`lost-access-${subject}`);
+    const key = randomUUID();
+    const first = await send(gym, subject, { requestKey: key });
+    await moduleClient.query(
+      `update pilot.organization_memberships set active_flag = false where organization_id = $1 and account_id = $2`,
+      [gym.organizationId, gym.coach.accountId],
+    );
+
+    expect(await refusal(send(gym, subject, { requestKey: key }))).toEqual({
+      name: 'ForbiddenError', status: 403, code: 'SESSION_STAFF_NOTE_NOT_PERMITTED',
+    });
+    expect(await notesOf(gym)).toEqual([
+      { note_id: first.note_id, request_key: key, note: 'Hands dropped in round two.', removed: false },
+    ]);
+    expect(await createAudits(gym)).toEqual([first.note_id]);
+  });
+
+  test('on a run: a resend after the athlete\'s mark was taken back returns the note it added and writes nothing', async () => {
+    const gym = await newGym('mark-taken-back');
+    const key = randomUUID();
+    const first = await send(gym, 'run', { requestKey: key });
+    await moduleClient.query(
+      `update pilot.session_run_athletes set removed_at = now(), removed_by_account_id = $3
+        where organization_id = $1 and run_id = $2 and athlete_id = $4`,
+      [gym.organizationId, gym.runs[0], gym.coach.accountId, gym.ada],
+    );
+
+    const again = await send(gym, 'run', { requestKey: key });
+    expect(again.note_id).toBe(first.note_id);
+    expect(again.replayed).toBe(true);
+    // A new key on the same athlete is refused as before: the mark no longer stands.
+    expect(await refusal(send(gym, 'run', { requestKey: randomUUID() }))).toMatchObject({ code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' });
+    expect(await notesOf(gym)).toHaveLength(1);
     expect(await createAudits(gym)).toEqual([first.note_id]);
   });
 
@@ -831,5 +890,34 @@ describe('one tap, one staff note (createRunStaffNote / createSessionStaffNote w
       { note_id: theirs.note_id, request_key: key, note: 'Hands dropped in round two.', removed: false },
     ]);
     expect(await createAudits(there)).toEqual([theirs.note_id]);
+  });
+});
+
+// The code reaches an environment before Overwatch applies the migration there (a release applies
+// it; this lane never does). An add without a key must not name the column, so it works on a
+// database without it; an add with a key fails there and writes nothing. LAST in this file: it
+// drops the column from the shared module database and puts it back by re-running the migration.
+describe('before the migration is applied', () => {
+  test.each(SUBJECTS)('on a %s: an add without a key works, and an add with a key is refused and writes nothing', async (subject) => {
+    const gym = await newGym(`pre-migration-${subject}`);
+    await moduleClient.query('alter table pilot.session_staff_notes drop column request_key');
+    try {
+      const plain = await send(gym, subject, { requestKey: null });
+      expect(plain.note_id).toEqual(expect.any(String));
+
+      const keyed = await send(gym, subject, { requestKey: randomUUID(), note: 'Keyed.' }).then(
+        () => null,
+        (error: { code?: string }) => error,
+      );
+      expect(keyed).toMatchObject({ code: '42703' });
+
+      const { rows } = await moduleClient.query<{ note: string }>(
+        'select note from pilot.session_staff_notes where organization_id = $1 order by created_at',
+        [gym.organizationId],
+      );
+      expect(rows.map((row) => row.note)).toEqual(['Hands dropped in round two.']);
+    } finally {
+      await moduleClient.query(migrationSql);
+    }
   });
 });

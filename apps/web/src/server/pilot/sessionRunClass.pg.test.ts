@@ -1038,3 +1038,116 @@ describe('a late here tap carries when it was tapped', () => {
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'present', by: gym.coach.accountId });
   });
 });
+
+// A tap or take-back kept in the open page and sent late carries its tap time (W4 item 7; Overwatch
+// condition 1 on #2158). The mark records that time, so a class tie made after it lands copies it as
+// a tap made then; and a change made after it on the same mark stands, so a stale resend (from a
+// second device of the same coach, say) never undoes a newer change ('superseded', nothing written).
+describe('a late tap or take-back keeps its tap time on the session mark', () => {
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+  const lateTap = (by: ActorIdentity, runId: string, athleteId: string, present: boolean, tappedAt: string) =>
+    setRunAthletePresent({ actor: by, runId, athleteId, present, tappedAt });
+
+  async function markTimes(gym: Gym, runId: string, athleteId: string) {
+    const { rows } = await client.query<{ marked_at: string; removed_at: string | null }>(
+      `select marked_at, removed_at from pilot.session_run_athletes
+        where organization_id = $1 and run_id = $2 and athlete_id = $3`,
+      [gym.organizationId, runId, athleteId],
+    );
+    return rows[0];
+  }
+
+  async function markAudit(gym: Gym) {
+    const { rows } = await client.query<{ event_type: string; details: Record<string, unknown> }>(
+      `select event_type, details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_run_athlete' order by audit_id`,
+      [gym.organizationId],
+    );
+    return rows;
+  }
+
+  test('the mark records the tap time, and the audit row says when it was tapped', async () => {
+    const gym = await newGym('late-stamp');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    const tappedAt = ago(60_000);
+
+    expect(await lateTap(gym.coach, runId, gym.ada, true, tappedAt)).toEqual({ outcome: 'marked' });
+    expect(new Date((await markTimes(gym, runId, gym.ada)).marked_at).toISOString()).toBe(tappedAt);
+    expect((await markAudit(gym)).map((row) => row.details.tapped_at)).toEqual([tappedAt]);
+  });
+
+  test('untied when it lands, tied later: an Absent set on the register after the tap stands (register_newer)', async () => {
+    const gym = await newGym('late-then-tie');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await lateTap(gym.coach, runId, gym.ada, true, ago(60_000));
+    // Another coach marks Ada Absent 30 seconds ago, after the tap was made, before the tie.
+    await staffMark(gym, gym.ada, 'absent');
+    await client.query(
+      `update pilot.scheduler_attendance set checked_in_at = $3::timestamptz, updated_at = $3::timestamptz
+        where organization_id = $1 and athlete_id = $2`,
+      [gym.organizationId, gym.ada, ago(30_000)],
+    );
+    const absent = await register(gym, gym.ada);
+
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass)).toEqual({
+      class_id: gym.klass,
+      copied: [{ athlete_id: gym.ada, effect: 'register_newer', status: 'absent' }],
+      released: [],
+    });
+    expect(await register(gym, gym.ada)).toEqual(absent);
+    expect(await registerAudit(gym)).toEqual([]);
+  });
+
+  test('a tap made before a take-back that has since landed is superseded: the mark stays taken back, the register is not re-created, nothing is audited', async () => {
+    const gym = await newGym('late-after-untap');
+    const { run_id: runId } = await start(gym, gym.coach);
+    const tappedAt = ago(60_000);
+    await tap(gym.coach, runId, gym.ada);
+    await tap(gym.coach, runId, gym.ada, false);
+    const before = await gymState(gym, runId);
+    await letTheClockMove();
+
+    expect(await lateTap(gym.coach, runId, gym.ada, true, tappedAt)).toEqual({ outcome: 'superseded' });
+    expect(await gymState(gym, runId)).toEqual(before);
+  });
+
+  test('a take-back made before a tap that has since landed is superseded: the newer mark and its register mark stand', async () => {
+    const gym = await newGym('late-untap-after-tap');
+    const { run_id: runId } = await start(gym, gym.coach);
+    const takenBackAt = ago(60_000);
+    await tap(gym.coach, runId, gym.ada);
+    const before = await gymState(gym, runId);
+    await letTheClockMove();
+
+    expect(await lateTap(gym.coach, runId, gym.ada, false, takenBackAt)).toEqual({ outcome: 'superseded' });
+    expect(await gymState(gym, runId)).toEqual(before);
+  });
+
+  test('changes made after the mark still land: a late take-back made after the tap, then a late tap made after that take-back', async () => {
+    const gym = await newGym('late-in-order');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await lateTap(gym.coach, runId, gym.ada, true, ago(90_000));
+    const takenBackAt = ago(60_000);
+
+    expect(await lateTap(gym.coach, runId, gym.ada, false, takenBackAt)).toEqual({ outcome: 'unmarked', register: { effect: 'removed' } });
+    expect(new Date((await markTimes(gym, runId, gym.ada)).removed_at as string).toISOString()).toBe(takenBackAt);
+
+    const retappedAt = ago(30_000);
+    expect(await lateTap(gym.coach, runId, gym.ada, true, retappedAt)).toEqual({ outcome: 'marked', register: { effect: 'created' } });
+    expect(await markTimes(gym, runId, gym.ada)).toMatchObject({ removed_at: null });
+    expect((await markAudit(gym)).map((row) => [row.event_type, row.details.present, row.details.tapped_at])).toEqual([
+      ['create', true, expect.any(String)],
+      ['update', false, takenBackAt],
+      ['update', true, retappedAt],
+    ]);
+  });
+
+  test('without a tap time, a tap after a take-back re-marks and a take-back after a tap removes, exactly as before', async () => {
+    const gym = await newGym('late-none-order');
+    const { run_id: runId } = await start(gym, gym.coach);
+    expect(await tap(gym.coach, runId, gym.ada)).toEqual({ outcome: 'marked', register: { effect: 'created' } });
+    expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked', register: { effect: 'removed' } });
+    expect(await tap(gym.coach, runId, gym.ada)).toEqual({ outcome: 'marked', register: { effect: 'created' } });
+    expect((await markAudit(gym)).every((row) => !('tapped_at' in row.details))).toBe(true);
+  });
+});

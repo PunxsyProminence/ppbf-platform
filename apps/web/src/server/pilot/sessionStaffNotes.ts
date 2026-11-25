@@ -246,10 +246,11 @@ function noSuchSession(): NotFoundError {
  * written and audited once.
  *
  * The note a key names counts as this send only when it is the same author's, on the same session
- * or run, about the same athlete; anything else is refused and nothing is written. The text is not
- * compared: the author may have edited the note after the first send landed, and the resend is
- * still the same tap. A note since removed is still the one the key added: it is returned, never
- * added again.
+ * or run, about the same athlete, with the same text; anything else is refused and nothing is
+ * written, so a key sent with two different notes is never silently taken as one. A note its author
+ * edited (from another device) before the resend arrives is refused the same way: nothing is added
+ * twice, and the page reads the list again before it says anything failed. A note since removed is
+ * still the one the key added: it is returned, never added again.
  */
 export type AddedStaffNote = SessionStaffNoteRow & { replayed?: true };
 type NoteSubject = { sessionId: string } | { runId: string };
@@ -260,6 +261,7 @@ async function noteOfRequestKey(
   subject: NoteSubject,
   athleteId: string,
   requestKey: string,
+  text: string,
 ): Promise<AddedStaffNote | null> {
   const first = await queryOne<SessionStaffNoteRow>(
     `select ${FIELDS} from pilot.session_staff_notes
@@ -268,7 +270,7 @@ async function noteOfRequestKey(
   );
   if (!first) return null;
   const sameSubject = 'runId' in subject ? first.run_id === subject.runId : first.session_id === subject.sessionId;
-  if (first.author_account_id !== actor.accountId || first.athlete_id !== athleteId || !sameSubject) {
+  if (first.author_account_id !== actor.accountId || first.athlete_id !== athleteId || !sameSubject || first.note !== text) {
     throw new ConflictError('This request was already used to add a different note.', 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED');
   }
   return { ...first, replayed: true };
@@ -280,10 +282,11 @@ async function addOnce(
   subject: NoteSubject,
   athleteId: string,
   requestKey: string | null,
+  text: string,
   write: () => Promise<SessionStaffNoteRow>,
 ): Promise<AddedStaffNote> {
   if (requestKey === null) return write();
-  const earlier = await noteOfRequestKey(actor, subject, athleteId, requestKey);
+  const earlier = await noteOfRequestKey(actor, subject, athleteId, requestKey, text);
   if (earlier) return earlier;
   try {
     return await write();
@@ -291,7 +294,7 @@ async function addOnce(
     // Two sends of one key at once: both missed the other's row, and the index refused the second.
     const { code, constraint } = error as { code?: unknown; constraint?: unknown };
     if (code === '23505' && constraint === REQUEST_KEY_INDEX) {
-      const landed = await noteOfRequestKey(actor, subject, athleteId, requestKey);
+      const landed = await noteOfRequestKey(actor, subject, athleteId, requestKey, text);
       if (landed) return landed;
     }
     throw error;
@@ -390,7 +393,7 @@ export async function createRunStaffNote(input: {
   const noteId = randomUUID();
   const requestKey = input.requestKey ?? null;
 
-  return addOnce(input.actor, { runId: input.runId }, input.athleteId, requestKey, () => withTransaction(async (client) => {
+  return addOnce(input.actor, { runId: input.runId }, input.athleteId, requestKey, text, () => withTransaction(async (client) => {
     // The writer must still be staff here, and the athlete still live, now: not only when the
     // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
     const lockedRole = await relockNoteWriter(client, input.actor, input.athleteId);
@@ -461,7 +464,7 @@ export async function createSessionStaffNote(input: {
   const noteId = randomUUID();
   const requestKey = input.requestKey ?? null;
 
-  return addOnce(input.actor, { sessionId: input.sessionId }, input.athleteId, requestKey, () => withTransaction(async (client) => {
+  return addOnce(input.actor, { sessionId: input.sessionId }, input.athleteId, requestKey, text, () => withTransaction(async (client) => {
     const session = await client.query<{ session_id: string }>(
       `select session_id from pilot.sessions
         where organization_id = $1 and session_id = $2 and athlete_id = $3`,

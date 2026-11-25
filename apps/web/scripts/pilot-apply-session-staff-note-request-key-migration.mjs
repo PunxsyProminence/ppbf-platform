@@ -21,9 +21,10 @@ function sslConfig() {
 // column as nullable text with no default (a default would give every note sent
 // without a key the same key, and the second would be refused); the check,
 // validated, compared IN FULL against the text Postgres stores for this
-// migration's own check; and the unique index by name, compared by the tail of
-// its stored definition so a same-named index over other columns, not unique,
-// or without the partial predicate is refused (sessionStaffNoteRequestKey.pg.test.ts).
+// migration's own check; and the unique index by name, compared by the exact tail
+// of its stored definition so a same-named index over other columns, not unique,
+// or without the partial predicate is refused, and VALID, so a leftover index from
+// a failed build that enforces nothing is refused too (sessionStaffNoteRequestKey.pg.test.ts).
 const EXPECTED_CHECK = 'CHECK (((request_key IS NULL) OR ((length(btrim(request_key)) > 0) AND (length(request_key) <= 200))))';
 const EXPECTED_INDEX_TAIL = 'UNIQUE INDEX pilot_session_staff_notes_one_per_request_key ON pilot.session_staff_notes USING btree (organization_id, request_key) WHERE (request_key IS NOT NULL)';
 
@@ -47,7 +48,12 @@ const READINESS_QUERY = `
       select 1 from pg_indexes i
        where i.schemaname = 'pilot' and i.tablename = 'session_staff_notes'
          and i.indexname = 'pilot_session_staff_notes_one_per_request_key'
-         and i.indexdef like '%' || $2
+         and right(i.indexdef, length($2)) = $2
+         and exists (
+           select 1 from pg_index x
+            where x.indexrelid = to_regclass('pilot.pilot_session_staff_notes_one_per_request_key')
+              and x.indisvalid
+         )
     ) as index_ready
 `;
 
