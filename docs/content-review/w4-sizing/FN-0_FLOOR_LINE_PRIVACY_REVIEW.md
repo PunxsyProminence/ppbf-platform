@@ -142,8 +142,8 @@ case as its own condition and serves staff only until FN-2 opens its parent
 and athlete branches, and FN-2 and FN-3, the first PRs that show the line,
 ship after he has answered (section 4). Two temporary narrowings hold
 until he answers: FN-1's staff branch leaves cancelled-class marks out until
-FN0-Q1 is answered (in the read only; no screen shows the line before
-FN-3), and three homes get no line until FN0-Q3 is answered,
+FN0-Q1 is answered (in the read only; no staff screen shows the line
+before FN-3), and three homes get no line until FN0-Q3 is answered,
 a narrowing of Q12 A if "every home" reaches them (section 4). OD-2026-10-10-007 records his complaint about questions
 that "slowly adds constrainsts" (`OWNER_DECISIONS.md:8034`); each of the
 three is put once, each with the option that builds C as chosen. Narrower words are an option put to him, not a recommendation
@@ -836,7 +836,7 @@ which FN0-Q1 splits by reader.
 |---|---|---|
 | Coach, organization admin, admin (coach home, admin home): the coach line | The names of every live athlete of this gym who counts, from either source (Q3.3 A). Presence only, as answered (F12). Staff gate as F5. That it could not be checked, when the read fails (F15). | Anyone the rule above leaves out. Absent or excused shown as "not here" (F4). "Nobody ..." when the read failed (F15). |
 | Parent (Parent Hub) | For each of their own children who counts, a line saying so (Q3.2 A), in the words FN0-Q2 rules. Scope as F6. When the read fails, what FN0-Q5 rules. | Any other athlete: no name, no initials, no count, no id. The class, the start time, the time of the mark, the coach, the run, the room (Q3.2 B not chosen; a run mark's time is staff only today, `runs/[runId]/athletes/route.ts:74`; a register mark's time already reaches families on the schedule read, 2.2, but not on this line). A child who is 18 or over, unlinked, or deleted. Who marked the child or how (F11). A hold, pain, readiness or injury state (F12). "Not here" or "absent" (F4). A failed read shown as "not on the floor" (F15). |
-| Athlete (athlete home) | Their own status (Q3.4 A, "A line about themselves only ... Their own status"): on the floor now, or not marked on the floor right now (FN0-Q2). When the read fails, what FN0-Q5 rules. | Anyone else: no name, no count (Q3.4 B not chosen), no id; not who else is in the session, nor the coach ("nothing about others", Q3.4 A). Recommended, not ruled by Q3.4 A: not the run, the class or the time of the mark, so the athlete's line carries no more than the parent's (Q3.2 A). Who marked them or how (F11). A hold or health state (F12). A failed read shown as "not on the floor" (F15). |
+| Athlete (athlete home) | Their own status (Q3.4 A, "A line about themselves only ... Their own status"): on the floor now, or not counted on the floor right now (FN0-Q2). When the read fails, what FN0-Q5 rules. | Anyone else: no name, no count (Q3.4 B not chosen), no id; not who else is in the session, nor the coach ("nothing about others", Q3.4 A). Recommended, not ruled by Q3.4 A: not the run, the class or the time of the mark, so the athlete's line carries no more than the parent's (Q3.2 A). Who marked them or how (F11). A hold or health state (F12). A failed read shown as "not on the floor" (F15). |
 | Board, staff-role and volunteer accounts | Under FN0-Q3 A, the classes running now (title and times only) and no person, as far as class titles name none (FN0-Q3 A's con). Under its other options, only what Jason rules there. | Names, initials or ids (F3). Any count that includes run marks unless Jason rules it (F1, FN0-Q3). On the board's home, and under FN0-Q3 C on the staff-role and volunteer home, a number below 5. |
 | Platform owner | Nothing, under FN0-Q3 A ("platform for platform gym for gym"). Under its other options, only what Jason rules there. | Names, initials or ids (F3; OD-2026-09-28-005). Any per-gym class list or count unless Jason rules it. |
 | Signed out: public wall, paired TV | Unchanged: classes and counts on the public address, initials on a paired TV (OD-2026-10-07-008 ruling 1). | Any part of the line. |
@@ -923,7 +923,7 @@ Each guard below should be seen to fail when broken (`AGENT_KERNEL.md`,
     could not be checked, never "Nobody ..."; families see what FN0-Q5 rules;
     a family's failure text is the same whatever the cause; no log line
     carries an athlete name or id (F15). While the read is in progress, no
-    line reads as complete or zero: no "Nobody ...", no "You're not marked
+    line reads as complete or zero: no "Nobody ...", no "You're not counted
     ...", and no family screen that reads as "not on the floor"; the coach
     line says it is checking, as the coach home does ("Checking whether you
     have a session in progress...", `CoachWorkspace.tsx:1317-1318`), and
@@ -1065,8 +1065,8 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
   - Parent: "[first name] is on the floor now." for each child who counts;
     nothing for a child who does not (Q3.2 A's option text, "A line for each
     of their own children on the floor now").
-  - Athlete: "You're on the floor now." or "You're not marked on the floor
-    right now." (Q3.4 A, "Their own status"; never "absent", F4).
+  - Athlete: "You're on the floor now." or "You're not counted on the floor
+    right now." ("counted", for the coach line's reason) (Q3.4 A, "Their own status"; never "absent", F4).
   - A board count, if FN0-Q3 rules one: "On the floor now: [number]"; below
     5, the board's existing hidden-figure state (`insufficient_data`, no
     number; `privacyTiers.ts:85-86`).
@@ -1086,7 +1086,7 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
     class) still shows those children from when it is written, or from the
     start of the gym day; before a class starts the coach line counts fewer
     than the TV, which counts a family's mark from when it is written; an athlete who taps "I'm here" in the morning for an
-    evening class reads "You're not marked on the floor right now." while
+    evening class reads "You're not counted on the floor right now." while
     the check-in card says "You are marked here. Your coach can see it."
     (`apps/web/components/AthleteImHere.tsx:364`); a line before a class
     starts can only come from a staff mark, so its timing tells a family
@@ -1119,7 +1119,7 @@ class puts the child on the line all day. OBSERVED (the code), INFERRED (the eff
   timing a guardian can read off the line (F14). Cons: an open page can be
   out of date, and for a family a stale page with no line looks like "not on
   the floor" (F15), while an "as of" time on it would give back the timing
-  F14 limits; the card calls it "the live line"
+  F14 limits (INFERRED); the card calls it "the live line"
   (`OWNER_DECISIONS.md:1258`).
 - Families get nothing from the read, and no screen shows the line, until
   you answer (section 4).
@@ -1166,11 +1166,12 @@ is still open, because each of these roles has limits on what it may see
   classes, not people; it opens a read to roles the scheduler read refuses
   today, against the kernel floor's "role gates ... untouched"
   (`AGENT_KERNEL.md:104-105`), which only B leaves as it is, so choosing A
-  is your direction past that floor (RULES section 1, "unless the owner
-  directs it"); it is recommended because your Q12 A says "on every home"
-  and OD-2026-10-13-013 has what you chose built, and the widening is class
-  titles and times only, which every parent and the public wall already see
-  (F3); not an "on the floor" line; leaving the platform
+  is a decision for you as "owner and final authority" (`AGENT_KERNEL.md:38-40`);
+  it is recommended because your Q12 A says "on every home", if that
+  reaches these homes, and OD-2026-10-13-013 applies a standing ruling "to
+  every case its words or plain principle reach" (`OWNER_DECISIONS.md:7331`),
+  and the widening is class titles and times only, which every parent and,
+  for the default gym, the public wall already see (F3); not an "on the floor" line; leaving the platform
   owner's home with no line narrows your Q12 A there if "every home" reaches
   it, as B's con says for all three; not sized.
 - **B: no line on those three homes.** Pros: no new access for any role; matches the sizing. Cons: narrows your Q12 A if
