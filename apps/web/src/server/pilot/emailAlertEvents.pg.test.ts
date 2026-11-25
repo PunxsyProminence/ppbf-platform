@@ -51,6 +51,7 @@ import type { PilotRole } from './contracts';
 import { sweepEmailAlertSource, type EmailAlertCandidate, type EmailAlertSource } from './emailAlertQueue';
 import {
   EMAIL_ALERT_EVENT_SOURCES,
+  EMAIL_ALERT_READ_RULE_KINDS,
   emailAlertEventStillReadable,
   parentReplySource,
   safetyEscalationSource,
@@ -237,6 +238,12 @@ async function reply(client: Client, org: string, noteId: string, athleteId: str
   );
   return replyId;
 }
+
+// A row "made after the first tick" is dated a minute back, still inside the
+// sweep's 10-minute overlap. The sweep reads the database clock to the
+// millisecond, so a row from that same millisecond waits for the next tick
+// (whose overlap reads it): a row dated "now" could make a test flaky.
+const JUST_NOW = 1;
 
 /** The sweep's window: the last hour, on the database's clock. */
 async function lastHour(client: Client): Promise<{ from: Date; to: Date }> {
@@ -498,9 +505,9 @@ describe('email alert staff event sources', () => {
     expect((await client.query('select event_kind from pilot.email_alert_checkpoints order by 1')).rows)
       .toEqual([{ event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' }]);
 
-    await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: 0 });
-    await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: 0 });
-    await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, 0);
+    await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
+    await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: JUST_NOW });
+    await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, JUST_NOW);
 
     // The admin reads all three; the coach of record the near miss and the
     // reply, never the athlete_voice row; the covering coach reads the reply
@@ -528,11 +535,11 @@ describe('email alert staff event sources', () => {
     const { sent, dependencies } = recorder();
     await runEmailAlertSweep(dependencies); // sets the checkpoints
 
-    const voiceOnA = await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: 0 });
-    const nearMissOnA = await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: 0 });
-    const painOnB = await escalation(client, ORG, ATH_B, 'pain_report', { minutesAgo: 0 });
-    const replyOnA = await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, 0);
-    const replyOnB = await reply(client, ORG, await parentMessage(client, ORG, ATH_B, 'acct-ev-coach-own'), ATH_B, 0);
+    const voiceOnA = await escalation(client, ORG, ATH_A, 'athlete_voice', { minutesAgo: JUST_NOW });
+    const nearMissOnA = await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
+    const painOnB = await escalation(client, ORG, ATH_B, 'pain_report', { minutesAgo: JUST_NOW });
+    const replyOnA = await reply(client, ORG, await parentMessage(client, ORG, ATH_A, 'acct-ev-coach-own'), ATH_A, JUST_NOW);
+    const replyOnB = await reply(client, ORG, await parentMessage(client, ORG, ATH_B, 'acct-ev-coach-own'), ATH_B, JUST_NOW);
     const label = new Map([
       [voiceOnA, 'voiceOnA'], [nearMissOnA, 'nearMissOnA'], [painOnB, 'painOnB'],
       [replyOnA, 'replyOnA'], [replyOnB, 'replyOnB'],
@@ -591,7 +598,7 @@ describe('email alert staff event sources', () => {
     const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
       await runEmailAlertSweep(dependencies, [failing, safetyEscalationSource]); // sets the checkpoints
-      await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: 0 });
+      await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
       expect(await runEmailAlertSweep(dependencies, [failing, safetyEscalationSource]))
         .toMatchObject({ queued: 1, sent: 1 });
       expect(sent.map((message) => message.to)).toEqual(['acct-ev-admin@example.com']);
@@ -605,10 +612,13 @@ describe('email alert staff event sources', () => {
     expect(emailAlertSenderDependencies().stillReads).toBe(emailAlertEventStillReadable);
   });
 
-  test('each source is a staff event on the shared list, read in a fixed order', () => {
+  test('each source is a staff event on the shared list, read in a fixed order, with a send-time read rule', () => {
     expect(EMAIL_ALERT_EVENT_SOURCES).toEqual([safetyEscalationSource, parentReplySource]);
     for (const source of EMAIL_ALERT_EVENT_SOURCES) {
       expect(EMAIL_ALERT_EVENTS.staff as readonly string[]).toContain(source.checkpointKey);
     }
+    // A source the sweep reads but the send-time check does not know would be
+    // skipped on every send.
+    expect(EMAIL_ALERT_EVENT_SOURCES.map((source) => source.checkpointKey)).toEqual(EMAIL_ALERT_READ_RULE_KINDS);
   });
 });

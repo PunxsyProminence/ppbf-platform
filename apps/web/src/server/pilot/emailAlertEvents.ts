@@ -9,7 +9,9 @@
  * again for the one person and event just before the send
  * (emailAlertEventStillReadable, called by emailAlertSender.ts): someone who
  * can no longer read the row by then -- moved off the athlete, coverage ended,
- * no longer an admin, the athlete deleted -- is skipped as 'not_offered'.
+ * no longer an admin, the athlete deleted (an admin still reads an open
+ * escalation about a deleted athlete, so is still sent it) -- is skipped as
+ * 'not_offered', the send log's reason for "this event is not for them now".
  * Reach is judged when the sweep reads the row, so someone who can read it
  * only later (coverage granted afterwards) is not emailed for it. The source
  * names a membership whatever the account's sign-in; the sender's own
@@ -127,6 +129,9 @@ export const parentReplySource = staffSource(PARENT_REPLY);
 export const EMAIL_ALERT_EVENT_SOURCES: readonly EmailAlertSource[] = [safetyEscalationSource, parentReplySource];
 
 const STAFF_EVENTS: readonly StaffEvent[] = [SAFETY_ESCALATION, PARENT_REPLY];
+
+/** The event kinds the send-time check has a read rule for (a test ties them to the sources). */
+export const EMAIL_ALERT_READ_RULE_KINDS: readonly string[] = STAFF_EVENTS.map((event) => event.kind);
 
 /**
  * Whether this person can still read this event in the app, asked again just
