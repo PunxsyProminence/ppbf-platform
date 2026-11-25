@@ -39,24 +39,53 @@ let activeClient: Client | null = null;
 // Runs once, just before the next statement that reads the guardian's threads: the moment between
 // any earlier read and the one that returns the posts (Codex P2 and Overwatch on #2179).
 let beforeThreadsRead: ((client: Client) => Promise<unknown>) | null = null;
+// Runs once, committed, just before the guardian's next write: before the transaction that makes
+// it, or before a bare insert of a post or a read, whichever comes first. With a check made in an
+// earlier statement, that is the moment between the check and the write (Codex P2 on c77aed08).
+let beforeGuardianWrite: ((client: Client) => Promise<unknown>) | null = null;
 
-jest.mock('./db', () => ({
-  query: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    if (beforeThreadsRead && text.includes('from pilot.family_thread_posts o')) {
-      const change = beforeThreadsRead;
-      beforeThreadsRead = null;
-      await change(activeClient);
-    }
-    const result = await activeClient.query(text, params);
-    return result.rows;
-  }),
-  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const result = await activeClient.query(text, params);
-    return result.rows[0] ?? null;
-  }),
-}));
+jest.mock('./db', () => {
+  const landWriteChange = async (client: Client) => {
+    const change = beforeGuardianWrite;
+    beforeGuardianWrite = null;
+    if (change) await change(client);
+  };
+  const isGuardianWrite = (text: string) => /insert into pilot\.family_thread_(posts|reads)/.test(text);
+  return {
+    query: jest.fn(async (text: string, params: unknown[] = []) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      if (beforeThreadsRead && text.includes('from pilot.family_thread_posts o')) {
+        const change = beforeThreadsRead;
+        beforeThreadsRead = null;
+        await change(activeClient);
+      }
+      if (isGuardianWrite(text)) await landWriteChange(activeClient);
+      const result = await activeClient.query(text, params);
+      return result.rows;
+    }),
+    queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      if (isGuardianWrite(text)) await landWriteChange(activeClient);
+      const result = await activeClient.query(text, params);
+      return result.rows[0] ?? null;
+    }),
+    // A real BEGIN/COMMIT/ROLLBACK on the one embedded connection (the adultPathway.pg.test.ts pattern).
+    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+      if (!activeClient) throw new Error('test bug: no active embedded client');
+      const client = activeClient;
+      await landWriteChange(client);
+      await client.query('BEGIN');
+      try {
+        const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    }),
+  };
+});
 
 jest.setTimeout(180_000);
 
@@ -229,6 +258,8 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  beforeThreadsRead = null;
+  beforeGuardianWrite = null;
   if (activeClient) await activeClient.end();
   activeClient = null;
 });
@@ -344,6 +375,20 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
     ).rejects.toMatchObject({ status: 404 });
     await expect(
       threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: opened.post_id }),
+    ).rejects.toMatchObject({ status: 404 });
+    // The link itself, checked in the statement that writes: a child not linked to this guardian,
+    // this gym's child named by another gym's guardian, and the guardian's own link removed.
+    await expect(start(GUARDIAN, UNLINKED)).rejects.toMatchObject({ status: 403 });
+    await expect(start(OTHER_GYM_GUARDIAN, CHILD)).rejects.toMatchObject({ status: 403 });
+    await client.query(
+      'delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3',
+      [ORG, `parent-${GUARDIAN}`, CHILD],
+    );
+    await expect(
+      threads.writeAgainInFamilyThread({ organizationId: ORG, accountId: GUARDIAN, threadId: opened.thread_id, text: 'Still here.' }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: reply }),
     ).rejects.toMatchObject({ status: 404 });
     const left = await client.query(
       `select (select count(*)::int from pilot.family_thread_posts) as posts, (select count(*)::int from pilot.family_thread_reads) as reads`,
@@ -480,6 +525,48 @@ describe('family threads, the guardian half (W4 item 4, PM-1b)', () => {
       await client.query('rollback');
       expect(await threads.listOwnFamilyThreads(ORG, GUARDIAN)).toHaveLength(1);
     }
+  });
+
+  test('a child deleted or a date of birth corrected to an adult just before a guardian writes: refused, and nothing kept (Codex P2 on c77aed08)', async () => {
+    const client = await freshDatabase('ftg_write_race');
+    const opened = await start(GUARDIAN, CHILD);
+    const reply = await staffReply(client, opened.thread_id);
+    const kept = async () => (await client.query(
+      `select (select count(*) from pilot.family_thread_posts)::int + (select count(*) from pilot.family_thread_reads)::int as n`,
+    )).rows[0].n as number;
+    const before = await kept();
+
+    const changes: Array<[string, (db: Client) => Promise<unknown>]> = [
+      ['the child deleted', (db) => db.query(
+        `update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, CHILD],
+      )],
+      ['the date of birth corrected to an adult', (db) => db.query(
+        `update pilot.athletes set dob = $3::date where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, ADULT_DOB],
+      )],
+    ];
+    const writes: Array<[string, () => Promise<unknown>, number]> = [
+      ['open a thread', () => start(GUARDIAN, CHILD), 403],
+      ['write again', () => threads.writeAgainInFamilyThread({
+        organizationId: ORG, accountId: GUARDIAN, threadId: opened.thread_id, text: 'One more thing.',
+      }), 404],
+      ['record a read', () => threads.recordFamilyThreadReadByGuardian({ organizationId: ORG, accountId: GUARDIAN, postId: reply }), 404],
+    ];
+    for (const [changeLabel, change] of changes) {
+      for (const [writeLabel, write, status] of writes) {
+        beforeGuardianWrite = change;
+        const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
+        expect(beforeGuardianWrite).toBeNull();
+        expect([changeLabel, writeLabel, outcome, await kept()]).toEqual([changeLabel, writeLabel, status, before]);
+        // The child as they were.
+        await client.query(
+          `update pilot.athletes set deleted_at = null, dob = $3::date where organization_id = $1 and athlete_id = $2`,
+          [ORG, CHILD, MINOR_DOB],
+        );
+      }
+    }
+    // Positive control: with the child as they were, each of the three writes goes through.
+    for (const [, write] of writes) await write();
+    expect(await kept()).toBe(before + 3);
   });
 
   test("only this gym's link keeps the thread: not the same login's record in another gym, nor a parent id there equal to the co-guardian's here", async () => {
