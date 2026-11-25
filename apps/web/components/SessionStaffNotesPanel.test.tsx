@@ -511,7 +511,6 @@ describe('live-floor writes kept on a flaky connection (W4 item 7, OQ-4)', () =>
   interface Sent { method: string; url: string; body: Record<string, unknown> | null; signal: unknown }
   let sent: Sent[];
   let noteReads: unknown[];
-  const RUN_GET = `${ROUTE}?run_id=ssrun%201&athlete_id=ath-1`;
   const answer = (body: unknown, status = 200) => {
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
