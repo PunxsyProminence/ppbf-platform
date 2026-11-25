@@ -351,10 +351,16 @@ export async function recordFamilyThreadReadByGuardian(input: {
  * membership in this gym with this role, the account active and not deleted (accountDeletedSql,
  * the session's own rule), and the gym active (a platform owner's session is not refused for the
  * gym's status, as at the gate). The athlete half of the reach (a live athlete in this gym, the
- * rule assertActorCanAccessAthlete applies to a coach or an admin) is the caller's join. The
- * arguments are written in code, never input.
+ * rule assertActorCanAccessAthlete applies to a coach or an admin) is the caller's join, after
+ * the named gate itself (reachOrNotHere). The arguments are written in code, never input: an
+ * alias.column reference (no alias of s followed only by letters, the shape of the predicate's own
+ * sm, sc, sy) and $n placeholders; anything else throws.
  */
+const SEAT_COLUMN = /^(?!s[a-z]*\.)[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
 function staffSeatSql(organizationColumn: string, accountParam: string, roleParam: string): string {
+  if (!SEAT_COLUMN.test(organizationColumn) || !/^\$\d+$/.test(accountParam) || !/^\$\d+$/.test(roleParam)) {
+    throw new Error('staffSeatSql takes an alias.column reference and $n placeholders');
+  }
   return `exists (select 1
                     from pilot.organization_memberships sm
                     join pilot.accounts sc
@@ -363,6 +369,23 @@ function staffSeatSql(organizationColumn: string, accountParam: string, rolePara
                       on sy.organization_id = sm.organization_id and (sy.status = 'active' or sc.is_platform_owner)
                    where sm.organization_id = ${organizationColumn} and sm.account_id = ${accountParam}
                      and sm.role = ${roleParam} and sm.active_flag)`;
+}
+
+/**
+ * The athlete gate the plan names for the staff routes (Q3 A on #2161: requireRole plus
+ * assertActorCanAccessAthlete, as "Post to Family"), on the athlete of the thread or post the
+ * caller named, with a refusal turned into the staff side's one 404. The statement that writes
+ * then checks the athlete's live record in this gym and the seat again itself, so neither can end
+ * between this gate and the write (Overwatch on #2179). The lookup is not the check.
+ */
+async function reachOrNotHere(staff: FamilyThreadStaff, athleteId: string | undefined): Promise<void> {
+  if (!athleteId) throw new NotFoundError(NOT_HERE);
+  try {
+    await assertActorCanAccessAthlete({ ...staff, athleteId: null }, athleteId);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Forbidden')) throw new NotFoundError(NOT_HERE);
+    throw error;
+  }
 }
 
 // The opener's name for staff (Q4 A), as listRepliesForStaff finds it: their parent record linked to
@@ -475,11 +498,17 @@ export async function replyInFamilyThread(
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
   const text = cleanText(input.text);
   if (!UUID.test(input.threadId)) throw new NotFoundError(NOT_HERE);
+  const opening = await queryOne<{ athlete_id: string }>(
+    `select t.athlete_id from pilot.family_thread_posts t
+      where t.organization_id = $1 and t.post_id = $2::uuid and t.thread_id = $2::uuid`,
+    [staff.organizationId, input.threadId],
+  );
+  await reachOrNotHere(staff, opening?.athlete_id);
 
   try {
     return await withTransaction(async (client) => {
-      // ONE statement checks and writes (Overwatch on #2179): the thread in this gym, its athlete
-      // live, and this staff member's seat. The reply is written only from that row; the row comes
+      // ONE statement checks again and writes (Overwatch on #2179): the thread in this gym, its
+      // athlete live, and this staff member's seat. The reply is written only from that row; the row comes
       // back either way, so no thread is the one 404 and no seat is the seat's 403.
       const { rows } = await client.query<{
         athlete_id: string;
@@ -523,7 +552,7 @@ export async function replyInFamilyThread(
     });
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_posts_staff_of_this_gym'])) throw new ForbiddenError(NO_SEAT);
-    // Only in a race: the thread went (its athlete deleted) between the lookup above and this write.
+    // Only in a race: the thread went (its athlete deleted) between the gate above and this write.
     if (refusedByGuard(error, ['pilot_family_thread_posts_thread_fk'])) throw new NotFoundError(NOT_HERE);
     throw error;
   }
@@ -537,9 +566,15 @@ export async function replyInFamilyThread(
 export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, postId: string): Promise<{ post_id: string }> {
   requireRole({ ...staff, athleteId: null }, FAMILY_THREAD_STAFF_ROLES);
   if (!UUID.test(postId)) throw new NotFoundError(NOT_HERE);
+  const post = await queryOne<{ athlete_id: string }>(
+    `select t.athlete_id from pilot.family_thread_posts t
+      where t.organization_id = $1 and t.post_id = $2::uuid and t.author_role = 'parent'`,
+    [staff.organizationId, postId],
+  );
+  await reachOrNotHere(staff, post?.athlete_id);
 
   try {
-    // ONE statement checks and records (Overwatch on #2179): a guardian's post in this gym, its
+    // ONE statement checks again and records (Overwatch on #2179): a guardian's post in this gym, its
     // athlete live, and this staff member's seat; a second look finds the row already there.
     const row = await queryOne<{ seated: boolean }>(
       `with eligible as (
@@ -560,7 +595,7 @@ export async function recordFamilyThreadReadByStaff(staff: FamilyThreadStaff, po
     if (!row.seated) throw new ForbiddenError(NO_SEAT);
   } catch (error) {
     if (refusedByGuard(error, ['pilot_family_thread_reads_reader_of_this_gym'])) throw new ForbiddenError(NO_SEAT);
-    // Not reached unless the lookup above is wrong, or the post went between it and this write.
+    // Not reached unless the lookup above is wrong, or the post went between the gate and this write.
     if (refusedByGuard(error, ['pilot_family_thread_reads_post_fk', 'pilot_family_thread_reads_staff_reads_guardian'])) {
       throw new NotFoundError(NOT_HERE);
     }

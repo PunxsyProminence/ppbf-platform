@@ -193,6 +193,13 @@ async function freshDatabase(name: string): Promise<Client> {
       [account, org, role, seated],
     );
   }
+  // A typed name for each staff author here, so a staff post is named for the one who wrote it.
+  for (const [account, typedName] of [[COACH, 'Avery Fixture'], [SECOND_COACH, 'Blake Fixture'], [GYM_ADMIN, 'Casey Fixture']]) {
+    await client.query(
+      `insert into pilot.account_profiles (organization_id, account_id, staff_display_name) values ($1, $2, $3)`,
+      [ORG, account, typedName],
+    );
+  }
   const athletes: Array<[string, string, string]> = [
     [ORG, CHILD, COACH],
     [ORG, SIBLING, COACH],
@@ -335,7 +342,7 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     const second = await open(CO_GUARDIAN);
     await open(GUARDIAN, SIBLING);
     await open(OTHER_GYM_GUARDIAN, CHILD, OTHER_ORG);
-    const answer = await reply(COACH, first.thread_id);
+    const answer = await reply(SECOND_COACH, first.thread_id);
     const again = await threads.writeAgainInFamilyThread({ organizationId: ORG, accountId: GUARDIAN, threadId: first.thread_id, text: 'Thank you!' });
 
     const list = await threads.listFamilyThreadsForStaff(staff(COACH), CHILD);
@@ -351,8 +358,10 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     expect(list[1].posts[0]).toEqual({
       post_id: first.post_id, from: 'guardian', staff_name: null, text: 'Is practice on Saturday?', created_at: first.created_at, new_to_me: true,
     });
-    expect(list[1].posts[1].staff_name).toBe(await getStaffAuthorName(ORG, COACH, 'coach'));
-    for (const account of [GUARDIAN, CO_GUARDIAN, COACH]) expect(JSON.stringify(list)).not.toContain(account);
+    // Named for the coach who wrote it, not the one reading (reviewer B on PM-1c).
+    expect(list[1].posts[1].staff_name).toBe('Coach Blake Fixture');
+    expect(list[1].posts[1].staff_name).toBe(await getStaffAuthorName(ORG, SECOND_COACH, 'coach'));
+    for (const account of [GUARDIAN, CO_GUARDIAN, COACH, SECOND_COACH]) expect(JSON.stringify(list)).not.toContain(account);
 
     // The other gym's coach, asking about the same athlete id, reads only their own gym's thread.
     const elsewhere = await threads.listFamilyThreadsForStaff(staff(OTHER_GYM_COACH, 'coach', OTHER_ORG), CHILD);
@@ -446,9 +455,38 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     const audit = await client.query(`select actor_role from pilot.audit_events where entity_id = $1`, [answer.post_id]);
     expect(audit.rows).toEqual([{ actor_role: 'organization_admin' }]);
     expect(await counts(client)).toEqual({ posts: 2, reads: 1, audits: 1 });
+    // An organization admin's answer is named without the coach title (getStaffDisplayName).
+    const [thread] = await threads.listFamilyThreadsForStaff(staff(COACH), CHILD);
+    expect(thread.posts.map((post) => [post.post_id, post.staff_name])).toEqual([
+      [opened.post_id, null],
+      [answer.post_id, 'Casey Fixture'],
+    ]);
   });
 
-  test('a staff account without an active seat in this gym is refused by the database guard, and nothing is kept', async () => {
+  test("the plan's athlete gate runs on the thread's or post's athlete before each write, and its refusal is the one 404 (Q3 A)", async () => {
+    const client = await freshDatabase('fts_named_gate');
+    const opened = await open(GUARDIAN);
+    const access = await import('./access');
+    const gate = jest.spyOn(access, 'assertActorCanAccessAthlete');
+    try {
+      // The gate refuses on its own (as for an athlete a future rule puts out of reach); the write's
+      // own re-check would let it through, so only the gate stands between.
+      gate.mockRejectedValueOnce(new Error('Forbidden: athlete not reachable'));
+      await expect(reply(COACH, opened.thread_id)).rejects.toMatchObject({ status: 404 });
+      gate.mockRejectedValueOnce(new Error('Forbidden: athlete not reachable'));
+      await expect(threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)).rejects.toMatchObject({ status: 404 });
+      expect(await counts(client)).toEqual({ posts: 1, reads: 0, audits: 0 });
+      // Unrefused, the same two calls go through, each gated on this thread's athlete.
+      await reply(COACH, opened.thread_id);
+      await threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id);
+      expect(gate.mock.calls.map(([, athleteId]) => athleteId)).toEqual([CHILD, CHILD, CHILD, CHILD]);
+      expect(await counts(client)).toEqual({ posts: 2, reads: 1, audits: 1 });
+    } finally {
+      gate.mockRestore();
+    }
+  });
+
+  test('a staff account without an active seat in this gym is refused (the store checks the seat; the database guard is a second line), and nothing is kept', async () => {
     const client = await freshDatabase('fts_seat');
     const opened = await open(GUARDIAN);
     await expect(reply(SEATLESS_COACH, opened.thread_id)).rejects.toMatchObject({ status: 403 });
@@ -550,16 +588,27 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
       ['reply', () => reply(COACH, opened.thread_id)],
       ['record a read', () => threads.recordFamilyThreadReadByStaff(staff(COACH), opened.post_id)],
     ];
-    for (const [changeLabel, status, change, undo] of STAFF_FACT_CHANGES) {
-      for (const [writeLabel, write] of writes) {
-        beforeStaffStatement = change;
-        const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
-        expect(beforeStaffStatement).toBeNull();
-        expect([changeLabel, writeLabel, outcome, await counts(client)]).toEqual([changeLabel, writeLabel, status, before]);
-        await undo(client);
+    // Twice: with the database guards (PM-1a) on, then off. The guards re-check the seat and the
+    // account inside the insert and refuse with the same 403, so only the second pass proves the
+    // store's own statement sees each fact (reviewers A and B on PM-1c, as PM-1b's 0c95ed8a).
+    for (const guards of ['on', 'off'] as const) {
+      if (guards === 'off') {
+        await client.query(`alter table pilot.family_thread_posts disable trigger trg_family_thread_posts_guard;
+          alter table pilot.family_thread_reads disable trigger trg_family_thread_reads_guard`);
+      }
+      for (const [changeLabel, status, change, undo] of STAFF_FACT_CHANGES) {
+        for (const [writeLabel, write] of writes) {
+          beforeStaffStatement = change;
+          const outcome = await write().then(() => 'written', (error: { status?: number }) => error.status);
+          expect(beforeStaffStatement).toBeNull();
+          expect([guards, changeLabel, writeLabel, outcome, await counts(client)]).toEqual([guards, changeLabel, writeLabel, status, before]);
+          await undo(client);
+        }
       }
     }
-    // Positive control: with every fact as it was, the reply (with its audit row) and the read go through.
+    // Positive control, guards back on: with every fact as it was, the reply (with its audit row) and the read go through.
+    await client.query(`alter table pilot.family_thread_posts enable trigger trg_family_thread_posts_guard;
+      alter table pilot.family_thread_reads enable trigger trg_family_thread_reads_guard`);
     for (const [, write] of writes) await write();
     expect(await counts(client)).toEqual({ posts: before.posts + 1, reads: before.reads + 1, audits: before.audits + 1 });
   });
@@ -593,10 +642,13 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
       [answer.post_id, 'staff', null],
     ]);
 
-    for (const text of ['', '   ', null, 'x'.repeat(2001)]) {
+    for (const text of ['', '   ', null, 'x'.repeat(2001), 'hi\u0000there']) {
       await expect(threads.replyInFamilyThread(staff(COACH), { threadId: opened.thread_id, text })).rejects.toMatchObject({ status: 400 });
     }
     expect((await counts(client)).posts).toBe(2);
+    await threads.replyInFamilyThread(staff(COACH), { threadId: opened.thread_id, text: `  ${'x'.repeat(2000)}  ` });
+    const longest = await client.query(`select max(length(post_text))::int as n from pilot.family_thread_posts`);
+    expect(longest.rows).toEqual([{ n: 2000 }]);
   });
   test("the unseen count (Q4.5 A): the child's coach and an active covering coach, admins the gym; guardian posts this staff member has not seen, on live athletes", async () => {
     const client = await freshDatabase('fts_unseen');
