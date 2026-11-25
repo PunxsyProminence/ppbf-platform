@@ -168,7 +168,7 @@ Source: the typed steps of `wtp_1ad3c846b03ecc` (Friday Sparring Coach Sheet; st
 - Cue: "Defense is staying calm when things feel fast."
 - Bases: discipline: boxing, technical, as TL-1a's character drills; category: technical, as TL-1a's character drills; execution: the typed line, word for word; stop_rules: AI draft (intent drift); the sheet gives no stop rule; cues: the typed line's closing line, word for word
 
-## Durations (the rule App Overwatch set on #2177)
+## Durations (the rule App Overwatch set on #2177, and its extension to title minutes)
 
 - Issuing, timers and presets read `duration_minutes`, never `details`. A linked step whose details state a time of its own carries it as its duration: its `block_time` range, or, where it has none of its own, the minutes its `block_title` states ("(5 MIN)"), either held by no other step of its template; only at contact none or light_technical (the import's rule for durations). The title form is this PR's extension of the TL-2 rule (reviewer A found the Wednesday titles state their minutes); App Overwatch can strike it.
 - Friday step 1 ("3:30 to 3:40") carries 10 minutes. Friday step 9 ("4:10 to 5:20") is open sparring: the duration column may not hold sparring volume, so it stays blank. Friday steps 2, 10 and 11 state no time.

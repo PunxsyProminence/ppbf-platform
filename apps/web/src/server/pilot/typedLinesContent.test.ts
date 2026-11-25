@@ -236,9 +236,10 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
     // Issuing, timers and presets read duration_minutes, never details (workoutTemplates.ts, WorkoutTemplateItemRow
     // .details). A linked step whose details state a time of its own runs for that many minutes: its block_time range,
     // or, where it has none of its own, the minutes its block_title states ("(5 MIN)"), either held by no other step of
-    // its template. A time several steps share is the block's, not a step's; and only a step at contact none or
-    // light_technical may hold a duration (the import's rule, specs/templates.ts). Durations a step states some other
-    // way (details.time, or minutes inside its typed line) are not read here.
+    // its template (the title's minutes are matched as written, "(N MIN)"). A time several steps share is the block's,
+    // not a step's; and only a step at contact none or light_technical may hold a duration (the import's rule,
+    // specs/templates.ts). Durations a step states some other way (details.time, or minutes inside its typed line) are
+    // not read here.
     const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
     const detail = (item: Row, key: string) => (item.details ? JSON.parse(item.details)[key] : undefined);
     const holders = new Map<string, number>();
