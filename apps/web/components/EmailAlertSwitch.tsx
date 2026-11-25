@@ -16,8 +16,12 @@ import { apiBase } from '@/lib/apiBase';
  * 'volunteer' login (403), a first read that fails -- gets nothing at all on
  * this page: no panel, no message, no warning (L1 rule).
  *
- * An unknown setting never looks like off: after a save that failed and a read
- * that failed too, neither choice is pressed and the panel says so.
+ * After a save: a refusal (403) takes the panel away at once, whoever is
+ * signed in by then, with nothing said (a minor in a stale tab sees nothing
+ * new). A signed-out save (401) says so. Any other failure reads the setting
+ * again and shows that: no error if the change did land, "not saved" only if
+ * it did not. An unknown setting never looks like off: after a save and a read
+ * that both failed, neither choice is pressed and the panel says so.
  *
  * The route is self-scoped: nothing here names an account, and the PUT body is
  * exactly { switched_on }.
@@ -72,18 +76,15 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let live = true;
     void readSwitch().then((read) => {
-      if (live && read !== 'hidden' && read !== 'failed') setCurrent(read);
+      if (read !== 'hidden' && read !== 'failed') setCurrent(read);
     });
-    return () => {
-      live = false;
-    };
   }, []);
 
   const save = useCallback(async (userType: UserType, switchedOn: boolean) => {
     setSaving(true);
     setError(null);
+    let status: number | null = null;
     let saved: ShownSwitch | 'hidden' | null = null;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/email-alerts/me`, {
@@ -92,16 +93,24 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ switched_on: switchedOn }),
       });
+      status = response.status;
       if (response.ok) saved = fromPayload(await response.json().catch(() => null));
     } catch {
       saved = null;
     }
     if (saved && saved !== 'hidden') {
       setCurrent(saved);
+    } else if (saved === 'hidden' || status === 403) {
+      // Refused, or answered as not offered: no switch for whoever is signed
+      // in now, so the panel goes, and nothing more is said (L1 rule).
+      setCurrent(null);
+    } else if (status === 401) {
+      // Nothing was saved, and with no session the setting cannot be read.
+      setCurrent({ userType, switchedOn: null });
+      setError('You are signed out. Sign in again to see or change this.');
     } else {
-      // Not saved, or not known to be: show what the server holds now, not
-      // what was asked for. Someone no longer offered a switch reads as
-      // 'hidden', and the panel goes.
+      // Not known to be saved: show what the server holds now, not what was
+      // asked for, and say "not saved" only if it really was not.
       const read = await readSwitch();
       if (read === 'hidden') {
         setCurrent(null);
@@ -110,7 +119,7 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
         setError('That change may not have been saved, and your setting could not be read. Try again.');
       } else {
         setCurrent(read);
-        setError('That change was not saved.');
+        if (read.switchedOn !== switchedOn) setError('That change was not saved.');
       }
     }
     setSaving(false);
@@ -118,30 +127,33 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
 
   if (!current) return null;
 
-  const status = saving
-    ? 'Saving…'
-    : current.switchedOn === null
-      ? 'Your setting could not be read.'
-      : current.switchedOn ? 'Email alerts are on.' : 'Email alerts are off.';
+  // The state in words, saving or not, so the pressed colour is never the
+  // only thing that says which choice is in force.
+  const inForce = current.switchedOn === null
+    ? 'Your setting could not be read.'
+    : current.switchedOn ? 'Email alerts are on.' : 'Email alerts are off.';
+  const status = saving ? `Saving… ${inForce}` : inForce;
 
   return (
     <section className={styles.panel} aria-labelledby="email-alerts-heading">
       <h2 id="email-alerts-heading" className={styles.heading}>Email alerts</h2>
       <p className={styles.help}>
-        Off unless you turn it on. When it is on, the gym sends an email to the address you sign
-        in with when there is something new for you in the app. The email says only &ldquo;open
-        the app&rdquo;. It never says what happened or who it is about.
+        Off unless you turn it on. When it is on, an email can go to the address you sign in with
+        when certain new things arrive for you in the app. It says only &ldquo;open the
+        app&rdquo;, with the gym&rsquo;s name. It never says what happened or who it is about.
       </p>
-      <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Email alerts">
+      <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Email alerts" aria-busy={saving}>
         {[false, true].map((on) => (
           <button
             key={on ? 'on' : 'off'}
             type="button"
             aria-pressed={current.switchedOn === on}
-            disabled={saving}
+            // aria-disabled, not disabled: a disabled button drops the
+            // keyboard focus of the person who just pressed it.
+            aria-disabled={saving}
             className={`${styles.choiceBase} ${current.switchedOn === on ? styles.choiceOn : styles.choiceOff}`}
             onClick={() => {
-              if (current.switchedOn !== on) void save(current.userType, on);
+              if (!saving && current.switchedOn !== on) void save(current.userType, on);
             }}
           >
             {on ? 'On' : 'Off'}

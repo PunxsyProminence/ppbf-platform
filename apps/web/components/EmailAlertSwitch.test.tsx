@@ -29,6 +29,9 @@ jest.mock('next/navigation', () => ({
 const ROUTER = { replace: jest.fn(), push: jest.fn() };
 
 jest.mock('./roleSession', () => ({ clearRoleSession: jest.fn() }));
+// A separate API origin, so a request that skips apiBase() is caught.
+const API = 'https://api.example.test';
+jest.mock('@/lib/apiBase', () => ({ apiBase: () => 'https://api.example.test' }));
 jest.mock('./FightCard', () => ({ __esModule: true, default: () => null }));
 
 const STYLES: EmailAlertSwitchStyles = {
@@ -89,7 +92,10 @@ test.each([
   expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getByText('Email alerts are off.')).toBeInTheDocument();
-  expect(screen.getByText(/says only “open the app”/)).toBeInTheDocument();
+  // The words promise no particular event: which events email whom changes by
+  // user type and by the gym's choice (EM-5), and some are not wired yet.
+  expect(screen.getByText(/certain new things arrive for you in the app\. It says only “open the app”, with the gym’s name\./)).toBeInTheDocument();
+  expect(screen.queryByText(/something new/)).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'On' }));
 
@@ -98,9 +104,87 @@ test.each([
   const [put] = puts(fetchMock);
   expect(put.credentials).toBe('include');
   expect(JSON.parse(String(put.body))).toEqual({ switched_on: true });
-  // Self-scoped: the URL carries no account and no query.
+  // Self-scoped: both calls go to the API origin's own-account route, with the
+  // session cookie, and carry no account and no query.
+  const [getUrl, getInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(getUrl).toBe(`${API}${URL_PART}`);
+  expect(getInit.credentials).toBe('include');
   const putUrl = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')![0];
-  expect(String(putUrl).endsWith(URL_PART)).toBe(true);
+  expect(putUrl).toBe(`${API}${URL_PART}`);
+  // The state is said in words, in a polite live region.
+  expect(screen.getByText('Email alerts are on.')).toHaveAttribute('aria-live', 'polite');
+});
+
+test('while a save is in flight the panel says so, marks itself busy, and a second press sends nothing', async () => {
+  let finish: (value: Response) => void = () => {};
+  const fetchMock = mockRoute([offered('parent', false)], () => new Promise<Response>((resolve) => { finish = resolve; }));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  // The choice in force is said in words while saving, not by colour alone.
+  expect(await screen.findByText('Saving… Email alerts are off.')).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'Email alerts' })).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+  expect(puts(fetchMock)).toHaveLength(1);
+
+  finish(response({ ok: true, offered: true, user_type: 'parent', switched_on: true }));
+  await screen.findByText('Email alerts are on.');
+  expect(screen.getByRole('group', { name: 'Email alerts' })).toHaveAttribute('aria-busy', 'false');
+});
+
+test('a save shows what the server answered, not what was asked', async () => {
+  mockRoute([offered('staff', false)], () => response({ ok: true, offered: true, user_type: 'staff', switched_on: false }));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await waitFor(() => expect(screen.getByText('Email alerts are off.')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('an error from one save is cleared by the next save that works', async () => {
+  let putCount = 0;
+  mockRoute([offered('staff', false), offered('staff', false)], () => {
+    putCount += 1;
+    return putCount === 1
+      ? response({ ok: false, error: 'boom' }, 500)
+      : response({ ok: true, offered: true, user_type: 'staff', switched_on: true });
+  });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('That change was not saved.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+  await screen.findByText('Email alerts are on.');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a save that failed for another reason, whose re-read is then refused (403), takes the panel away, not "could not be read"', async () => {
+  const { container } = (mockRoute([offered('staff', false), () => response({ ok: false, error: 'Forbidden' }, 403)], () =>
+    response({ ok: false }, 500)), render(<EmailAlertSwitch styles={STYLES} />));
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await waitFor(() => expect(container).toBeEmptyDOMElement());
+});
+
+test('a failed save whose re-read fails with a server error shows the setting as unknown, not gone', async () => {
+  mockRoute([offered('staff', false), () => response({ ok: false }, 500)], () => response({ ok: false }, 502));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  expect(await screen.findByText('Your setting could not be read.')).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('may not have been saved');
 });
 
 test('a switch that is on can be turned off', async () => {
@@ -152,7 +236,10 @@ test('a refused save shows what the server holds, not what was asked for', async
 
   fireEvent.click(screen.getByRole('button', { name: 'On' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent('That change was not saved.');
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('That change was not saved.');
+  // Never colour alone: the alert carries its glyph and its words.
+  expect(alert).toHaveTextContent('▲');
   expect(screen.getByText('Email alerts are off.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
 });
@@ -177,6 +264,45 @@ test('a save refused, then a read refused (the role no longer has a switch), tak
   fireEvent.click(screen.getByRole('button', { name: 'On' }));
 
   await waitFor(() => expect(container).toBeEmptyDOMElement());
+});
+
+test('a save that landed but whose answer was lost shows the new state and no error', async () => {
+  mockRoute([offered('staff', false), offered('staff', true)], () => Promise.reject(new Error('connection dropped')));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await screen.findByText('Email alerts are on.');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a refused save (403) takes the panel away at once, without reading again, so nothing new reaches whoever is signed in now', async () => {
+  // As on a parent's page left open after a minor signed in on the same
+  // device: the save is refused, and a read now might fail too.
+  const fetchMock = mockRoute([offered('parent', false), () => Promise.reject(new Error('offline'))], () =>
+    response({ ok: false, error: 'Forbidden' }, 403));
+  const { container } = render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await waitFor(() => expect(container).toBeEmptyDOMElement());
+  const gets = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'PUT');
+  expect(gets).toHaveLength(1);
+});
+
+test('a save refused for want of a session says so, and does not show a setting it cannot read', async () => {
+  mockRoute([offered('staff', true)], () => response({ ok: false, error: 'Unauthorized' }, 401));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are on.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('You are signed out. Sign in again to see or change this.');
+  expect(screen.getByText('Your setting could not be read.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('a save and the read after it both failing leaves the setting unknown: neither choice pressed, and it says so', async () => {
@@ -212,4 +338,10 @@ test('/profile carries the panel, before "Your sign-in"', async () => {
   const alerts = await screen.findByRole('heading', { name: 'Email alerts' });
   const signIn = screen.getByRole('heading', { name: 'Your sign-in' });
   expect(alerts.compareDocumentPosition(signIn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The page's own choice style: the gym-floor tap height and the focus ring.
+  for (const name of ['On', 'Off']) {
+    const button = screen.getByRole('button', { name });
+    expect(button.className).toContain('min-h-[var(--tap)]');
+    expect(button.className).toContain('focus-visible:shadow-[var(--focus)]');
+  }
 });
