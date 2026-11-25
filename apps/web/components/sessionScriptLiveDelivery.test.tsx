@@ -1928,6 +1928,28 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(waitingLine()).toBeNull();
   });
 
+  it('a yes that does not carry the run proves nothing: the pause stays kept and is sent again', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    const { fetchMock } = await renderLive(liveRun(), {
+      session: signedIn,
+      patch: () => {
+        sends += 1;
+        return sends === 1 ? jsonResponse({}) : jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) });
+      },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(within(waitingLine() as HTMLElement).getByText('Pause session')).toBeInTheDocument();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(patchCalls(fetchMock)).toHaveLength(2);
+    expect(screen.getByText('PAUSED')).toBeInTheDocument();
+  });
+
   it('a refused first send is not resent: the failed line names it with the refusal\'s words', async () => {
     jest.useFakeTimers();
     const { fetchMock } = await renderLive(liveRun(), {
