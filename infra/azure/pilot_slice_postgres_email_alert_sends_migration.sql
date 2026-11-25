@@ -6,11 +6,12 @@
 -- WHY. OD-2026-11-19-019: an opt-in, content-free email that says only "open
 -- the app". OW27-03 B: one email per event per person. Q1.10: "a send log
 -- (who, when, which kind) to prevent repeats and resume after a restart". The
--- sender (src/server/pilot/emailAlertSender.ts, EM-3b) works from this table:
--- one row per (gym, person, event kind, event row), written only for a person
--- whose switch is on, and whose gym has that event ticked for their user type,
--- when the sweep finds an event they can read. Nobody else gets a row. Each row
--- is claimed, re-checked and sent on the server's worker tick.
+-- sender (src/server/pilot/emailAlertSender.ts, EM-3b, not yet built) is to
+-- work from this table: one row per (gym, person, event kind, event row),
+-- written only for a person whose switch is on, and whose gym has that event
+-- ticked for their user type, when the sweep finds an event they can read.
+-- Nothing in this table ties a row to a switch; that rule is the sender's.
+-- Each row is claimed, re-checked and sent on the server's worker tick.
 --
 -- WHAT A ROW HOLDS. Who (gym, account, user type), which event (its kind and
 -- its row id), when, and the send's state: queued, sending (claimed under a
@@ -19,11 +20,13 @@
 -- error's code. No address column and no content: the address is read at send
 -- time (the sign-in address, or an adult athlete's confirmed one on
 -- pilot.email_alert_switches) and the email says only "open the app".
--- THE ACCOUNT ID CAN BE AN ADDRESS. A staff member invited without an account
--- id, and a parent login made by a guardian move, get their sign-in address as
--- their account_id (staffProvisioning.ts, `|| loginEmail`; guardianLoginMove.ts
--- inserts the email as account_id). For them, this row's account_id is that
--- address, as in every table keyed by account.
+-- THE ACCOUNT ID IS USUALLY AN ADDRESS. An invite with no account id (the
+-- admin console's invite sends none) gives the person their sign-in address as
+-- their account_id, staff and parents alike (staffProvisioning.ts,
+-- `|| loginEmail`), and a guardian move makes a parent login the same way
+-- (guardianLoginMove.ts). Other ids are typed by an admin, with no shape
+-- check. So for most staff and parents this row's account_id is their address,
+-- as in every table keyed by account.
 --
 -- WHAT THE DATABASE REFUSES (each a named CHECK, compared in full by the
 -- runner):
@@ -33,7 +36,7 @@
 --     (randomUUID in escalationLadder.ts; uuid columns for family message
 --     replies, coach notes, announcements and family thread posts);
 --   * an error code of any shape but a bare word (extractGraphErrorCode's
---     shape in graphMailer.ts), so no address or free text fits;
+--     shape in graphMailer.ts), so no address fits (a single word still does);
 --   * a status other than the five; more than 5 tries (plan 5.4), or a
 --     queued row with none left;
 --   * a lease on a row that is not being sent, or a row being sent without
@@ -41,26 +44,27 @@
 --   * a skip without its reason, a reason off the list, or a reason on a row
 --     that was not skipped; an HTTP status outside 100-599.
 -- One row per (gym, account, event kind, event id), so the sweep's overlap and
--- a restart never make a second row. A send cut off after Graph took it but
--- before its row says sent is sent again when its lease runs out, if it has a
--- try left (EM-3b): the one way a person can get a second email for one event.
--- Cut off on its fifth try, it is marked failed instead (a queued row must have
--- a try left).
+-- a restart never make a second row. A person can still get a second email
+-- for one event (EM-3b): a send cut off after Graph took it but before its row
+-- says sent is sent again when its lease runs out, if it has a try left (cut
+-- off on its fifth try, it is marked failed: a queued row must have a try
+-- left); a Graph timeout or 5xx after Graph accepted the mail is retried; and
+-- a person with two accounts at one address gets one email per account.
 --
 -- DELETION (Overwatch GO on #2159, condition 4). All three keys cascade, as on
 -- pilot.email_alert_switches: a row goes when its gym's row, its account row
 -- or the person's membership of that gym is deleted. Which of those are ever
 -- deleted (scripts/pilot-cleanup-deleted-data.mjs, docs/DATA_RETENTION.md
 -- Method 1):
---   * a parent account is hard-deleted by the purge once its account
---     retention window has passed (later for a guardian held for safeguarding
---     chats), and its rows go with it;
+--   * a parent account is hard-deleted by the purge, a manual apply=APPLY
+--     run, once its account retention window has passed (later for a guardian
+--     held for safeguarding chats), and its rows go with it;
 --   * an athlete login is kept by the purge (retired by UPDATE) and a staff
 --     account is never hard-deleted, so their rows stay;
 --   * a soft-deleted account, or a membership switched off (the app switches
 --     memberships off, it does not delete them), keeps its rows.
--- A row that stays holds the account id (an address, for the accounts named
--- above), gym, user type, event kind and id, status, skip reason (which can
+-- A row that stays holds the account id (usually an address, above), gym,
+-- user type, event kind and id, status, skip reason (which can
 -- say the person's sign-in was off or they were no longer offered alerts) and
 -- times. The event id is not a foreign key (the events live in several
 -- tables), so a purged event leaves its id here. The retention period is not
