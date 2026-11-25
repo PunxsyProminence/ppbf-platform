@@ -1252,7 +1252,7 @@ test('on the live floor, notes refused with the panel closed are each said, name
 
 // The live list with one notes route: the session answers `account()`, the list has Ada and Ben marked
 // here, and each note POST gets `notePost(n)`.
-async function showLiveNotes(handlers: { account: () => string; notePost: (n: number) => 'lost' | Response }) {
+async function showLiveNotes(handlers: { account: () => string; notePost: (n: number) => 'lost' | 'refused' }) {
   const answer = (body: unknown, status = 200) => {
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
@@ -1264,9 +1264,8 @@ async function showLiveNotes(handlers: { account: () => string; notePost: (n: nu
     if (url.startsWith('/api/pilot/coach/session-staff-notes')) {
       if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
       posts += 1;
-      const next = handlers.notePost(posts);
-      if (next === 'lost') throw new TypeError('Failed to fetch');
-      return next;
+      if (handlers.notePost(posts) === 'lost') throw new TypeError('Failed to fetch');
+      return answer({ error: 'That athlete is not marked here.' }, 409);
     }
     if (url === URL_FOR) return answer({ present: [ADA, BEN].map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: [ADA, BEN, CY] });
     return answer({});
@@ -1281,7 +1280,6 @@ async function showLiveNotes(handlers: { account: () => string; notePost: (n: nu
     );
     await jest.advanceTimersByTimeAsync(0);
   });
-  return answer;
 }
 
 async function writeNote(athleteName: string, words: string) {
@@ -1310,12 +1308,10 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     });
     jest.useRealTimers();
   });
-  const refused = (answer: (body: unknown, status?: number) => Response) => answer({ error: 'That athlete is not marked here.' }, 409);
   const ADA_SAID = /^Ada Reyes: a new note was not saved/;
 
   test('a note refused while its row is filtered away is still named in the list, and its words come back to that athlete only', async () => {
-    let answer: ((body: unknown, status?: number) => Response) | undefined;
-    answer = await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : refused(answer as never)) });
+    await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused') });
     await writeNote('Ada Reyes', 'Wrist taped.');
     // Ada's row goes out of view while her note waits.
     fireEvent.change(screen.getByLabelText('Find an athlete'), { target: { value: 'Ben' } });
@@ -1341,8 +1337,7 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
 
   test('another account confirmed on this page clears the named lines and the kept words: nothing reaches the next person\'s box', async () => {
     let account = 'acct-a';
-    let answer: ((body: unknown, status?: number) => Response) | undefined;
-    answer = await showLiveNotes({ account: () => account, notePost: (n) => (n === 1 ? 'lost' : refused(answer as never)) });
+    await showLiveNotes({ account: () => account, notePost: (n) => (n === 1 ? 'lost' : 'refused') });
     await writeNote('Ada Reyes', 'Wrist taped.');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
@@ -1367,8 +1362,7 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
 
   test('another account confirmed on this page clears an open panel\'s box of the last person\'s refused words', async () => {
     let account = 'acct-a';
-    let answer: ((body: unknown, status?: number) => Response) | undefined;
-    answer = await showLiveNotes({ account: () => account, notePost: (n) => (n === 1 ? 'lost' : refused(answer as never)) });
+    await showLiveNotes({ account: () => account, notePost: (n) => (n === 1 ? 'lost' : 'refused') });
     await writeNote('Ada Reyes', 'Wrist taped.');
     await act(async () => {
       await jest.advanceTimersByTimeAsync(RESEND_MS);
