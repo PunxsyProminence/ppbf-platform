@@ -2847,11 +2847,6 @@ export default function CoachWorkspace() {
           </div>
         </div>
 
-        {/* WHO IS ON THE FLOOR NOW (lane W4-3, FN-3; Jason Q3.3 A): names only, read
-            once when the page opens. On every tab, under the tab row, like the
-            safety lists: a head count is not a Dashboard-only fact. */}
-        <OnTheFloorStaffLine />
-
         {/* NEEDS YOU NOW, THE HOME'S STRIP (stage 2 section 3.4 row 11; Q6 = A;
             lane 6C7 7b): the board's card, moved to the top of the home and
             widened with a count per list. On the home only, like the card. */}
@@ -3112,6 +3107,13 @@ export default function CoachWorkspace() {
           <p className="t-eyebrow">Coach Standard</p>
           <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
         </div>
+
+        {/* WHO IS ON THE FLOOR NOW (lane W4-3, FN-3; Jason Q3.3 A): names only,
+            read once when the page opens. Outside the tab switch, so a tab change
+            does not read it again; below every safety list, whose places above
+            stay as they are; beside the session-status line, which the panel
+            below carries on every tab but the Dashboard. */}
+        <OnTheFloorStaffLine />
 
         {/* ROLE SUMMARY PANEL -- not on the Dashboard, where the floor
             board's gauges and the tiles below already give each count. */}

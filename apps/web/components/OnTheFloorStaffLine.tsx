@@ -37,7 +37,8 @@ type ReadState =
 function isCountedAthlete(value: unknown): value is CountedAthlete {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
-  return typeof row.athlete_id === 'string' && typeof row.full_name === 'string';
+  // A blank name would read "On the floor now: " with nobody after it, so it is a malformed answer.
+  return typeof row.athlete_id === 'string' && typeof row.full_name === 'string' && row.full_name.trim() !== '';
 }
 
 export const ON_THE_FLOOR_WORDS = {
@@ -82,7 +83,7 @@ export default function OnTheFloorStaffLine() {
   else line = `${ON_THE_FLOOR_WORDS.lead}${read.athletes.map((athlete) => athlete.full_name).join(', ')}`;
 
   return (
-    <section aria-label="On the floor now" className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+    <section aria-label="Who is on the floor" className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
       <p className="t-body" style={{ fontSize: 'var(--t-md)' }} aria-live="polite" aria-busy={read.state === 'loading'}>
         {line}
       </p>
