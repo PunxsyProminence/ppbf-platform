@@ -567,14 +567,15 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunClass.ts#describeRunClass',
       'stoppedComing.ts#listStoppedComing',
       'onTheFloor.ts#listOnTheFloorForStaff',
+      'onTheFloor.ts#onTheFloorForFamily',
     ],
     note:
       'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
       + 'the delivering coach writes, while the run is live, with an active staff membership here AND '
       + 'assertActorCanAccessAthlete for that athlete; coach and organization admin of the gym read, '
       + 'and the read returns only live athletes of the caller\'s own organization, filtered in SQL '
-      + '(OD-2026-10-11-007; OD-2026-10-10-003 items 3 and 4). Athletes, guardians, the board and '
-      + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
+      + '(OD-2026-10-11-007; OD-2026-10-10-003 items 3 and 4). The board and platform_owner have no read '
+      + 'of it; athletes and guardians have one derived yes or no, through the on-the-floor line below. Session detail, not attendance: nothing here feeds an '
       + 'attendance view or report (CT-13). A mark taken back keeps its row. On a session tied to a '
       + 'class (D4, OD-2026-10-21-002) the same tap also writes an ordinary class register mark '
       + '(sessionRunClass.ts), which the register\'s existing readers see as one; this list, its run '
@@ -583,7 +584,12 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'standing mark the register does not hold (an untied run, a tap that created no register mark, or a cancelled '
       + 'class) as coming, for coach and organization admin with a staff '
       + 'membership here; it returns that day per athlete, never the run, the mark or who else was in it, '
-      + 'and no attendance figure reads it.',
+      + 'and no attendance figure reads it. The on-the-floor line (onTheFloor.ts, lane W4-3; Jason Q3.1 C, '
+      + 'Q3.2 A, Q3.3 A and Q3.4 A, OD-2026-11-21-006; FN-0 F1) counts a standing mark on a live run: staff '
+      + 'with a membership here are given the names of who counts; a parent, for their own children by the '
+      + 'guardian rule only, a yes or no each; an athlete, a yes or no about themselves. It returns no run, '
+      + 'mark, marker, time or other athlete to a family, and a run tied to a cancelled class is left off a '
+      + 'family\'s line.',
   },
   'behaviour_keys.label': {
     tier: 'organization',

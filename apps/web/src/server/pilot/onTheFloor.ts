@@ -23,7 +23,8 @@
  *     (coach, admin, walk-in) from when it is written; both to the end of
  *     that gym day (FN0-Q2 A).
  *   - A cancelled class's marks, and a run tied to a cancelled class, stay on
- *     this staff line (FN0-Q1 A, App Overwatch on #2160).
+ *     this staff line (FN0-Q1 A, App Overwatch on #2160) and are left off a
+ *     family's line (FN0-Q1 A; FN-0 flag 9, decided at sign-off).
  * Never: a deleted athlete (the roster below), another gym's athlete or run, a
  * mark taken back, a settled run, an absent or excused register mark, a
  * register mark on another day's class. No other record is read: not the
@@ -42,18 +43,26 @@
  * ONE ANSWER OR NONE. The two reads run together and either failing fails the
  * read, so a list built from one source never looks complete (F15).
  *
- * WHO MAY READ: a coach or the gym admin with an ACTIVE staff membership in
- * this gym (staffNoteRoleInOrganization, the rule a mark is written and read
- * under). Anyone else is refused with 403, never handed an empty list: an
- * empty list here reads as "Nobody is counted on the floor right now."
- * Parents and athletes are refused here until FN-2 opens their branches.
- * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
- * route as readers of the staff-only presence record.
+ * WHO MAY READ, AND WHAT EACH IS GIVEN.
+ *   - listOnTheFloorForStaff: a coach or the gym admin with an ACTIVE staff
+ *     membership in this gym (staffNoteRoleInOrganization, the rule a mark is
+ *     written and read under). It returns the gym day, and each counted
+ *     athlete's id and name, in name order (Q3.3 A).
+ *   - onTheFloorForFamily (lane W4-3, FN-2; OD-2026-11-21-006, Q3.2 A and
+ *     Q3.4 A): a parent is given the ids of their own children who count; the
+ *     children are guardianAthleteIds', the guardian rule with its 18 and
+ *     deletion rules inside it, never the request's (FN-0 F6). An athlete is
+ *     given yes or no about themselves only. FN-0 F1: this is the one way a
+ *     fact derived from the staff-only presence record reaches a family, and it
+ *     is that yes or no and nothing else.
+ *   Anyone else is refused with 403, never handed an empty answer: an empty
+ *   staff list reads as "Nobody is counted on the floor right now."
+ *   sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
+ *   route as readers of the presence record.
  *
- * What leaves this module: the gym day, and each counted athlete's id and
- * name, in name order. No source, run, class, coach, method, mark time or
- * count leaves it. The organization and the athlete ids come from the actor
- * and the server's own roster, never from a request.
+ * No source, run, class, coach, method, mark time or count leaves this module,
+ * to anyone. The organization and the athlete ids come from the actor and the
+ * server's own records, never from a request.
  */
 
 import { GYM_TIME_ZONE, gymDayIso } from '../../lib/gymTime';
@@ -62,6 +71,7 @@ import type { ActorIdentity } from './access';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query } from './db';
 import { ForbiddenError } from './errors';
+import { guardianAthleteIds } from './guardianAccess';
 import { closeIdleSessionRuns } from './sessionScriptRuns';
 import { staffNoteRoleInOrganization } from './sessionStaffNotes';
 
@@ -77,8 +87,16 @@ export interface OnTheFloorStaffLine {
   readonly athletes: readonly OnTheFloorAthlete[];
 }
 
-/** Athletes with a standing mark on a live run, less those a later Absent or Excused took off. Ids only. */
-async function markedOnLiveRuns(organizationId: string, athleteIds: readonly string[]): Promise<string[]> {
+/** A parent's own children who count, by id; or an athlete's yes or no about themselves. */
+export type OnTheFloorFamilyAnswer =
+  | { readonly reader: 'parent'; readonly on_the_floor: readonly string[] }
+  | { readonly reader: 'athlete'; readonly on_the_floor: boolean };
+
+/**
+ * Athletes with a standing mark on a live run, less those a later Absent or Excused took off. Ids only.
+ * For a family, a run tied to a cancelled class is left out too (flag 9).
+ */
+async function markedOnLiveRuns(organizationId: string, athleteIds: readonly string[], forFamily: boolean): Promise<string[]> {
   if (athleteIds.length === 0) return [];
   const rows = await query<{ athlete_id: string }>(
     `select distinct m.athlete_id
@@ -97,18 +115,32 @@ async function markedOnLiveRuns(organizationId: string, athleteIds: readonly str
              and later.athlete_id = m.athlete_id
              and later.status in ('absent', 'excused')
              and later.updated_at > m.marked_at
+        )
+        and not (
+          $3::boolean
+          and exists (
+            select 1
+              from pilot.scheduler_classes cancelled
+             where cancelled.organization_id = r.organization_id
+               and cancelled.class_id = r.class_id
+               and cancelled.status = 'cancelled'
+          )
         )`,
-    [organizationId, [...athleteIds]],
+    [organizationId, [...athleteIds], forFamily],
   );
   return rows.map((row) => row.athlete_id);
 }
 
-/** Athletes with a present register mark that counts now, on a class whose gym day is today. Ids only. */
+/**
+ * Athletes with a present register mark that counts now, on a class whose gym day is today. Ids only.
+ * For a family, a cancelled class's marks are left out (FN0-Q1 A).
+ */
 async function presentOnTodaysRegister(
   organizationId: string,
   athleteIds: readonly string[],
   day: string,
   now: Date,
+  forFamily: boolean,
 ): Promise<string[]> {
   if (athleteIds.length === 0) return [];
   const rows = await query<{ athlete_id: string }>(
@@ -125,10 +157,29 @@ async function presentOnTodaysRegister(
         and (
           not (sa.method in ('self', 'parent') or sa.checked_in_by_role in ('athlete', 'parent'))
           or c.start_at <= $5::timestamptz
-        )`,
-    [organizationId, [...athleteIds], GYM_TIME_ZONE, day, now.toISOString()],
+        )
+        and not ($6::boolean and c.status = 'cancelled')`,
+    [organizationId, [...athleteIds], GYM_TIME_ZONE, day, now.toISOString(), forFamily],
   );
   return rows.map((row) => row.athlete_id);
+}
+
+/**
+ * Which of these athletes count now, by either source. The two reads run together and either failing
+ * fails the whole read (F15).
+ */
+async function countedAmong(
+  organizationId: string,
+  athleteIds: readonly string[],
+  day: string,
+  now: Date,
+  forFamily: boolean,
+): Promise<Set<string>> {
+  const [fromRuns, fromRegister] = await Promise.all([
+    markedOnLiveRuns(organizationId, athleteIds, forFamily),
+    presentOnTodaysRegister(organizationId, athleteIds, day, now, forFamily),
+  ]);
+  return new Set([...fromRuns, ...fromRegister]);
 }
 
 /**
@@ -148,15 +199,38 @@ export async function listOnTheFloorForStaff(actor: ActorIdentity, now: Date): P
 
   const roster = await organizationActionableRoster(organizationId);
   const ids = roster.map((athlete) => athlete.athlete_id);
-  const [fromRuns, fromRegister] = await Promise.all([
-    markedOnLiveRuns(organizationId, ids),
-    presentOnTodaysRegister(organizationId, ids, day, now),
-  ]);
-  const counted = new Set([...fromRuns, ...fromRegister]);
+  const counted = await countedAmong(organizationId, ids, day, now, false);
 
   const athletes = roster
     .filter((athlete) => counted.has(athlete.athlete_id))
     .map(({ athlete_id, full_name }) => ({ athlete_id, full_name }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name) || a.athlete_id.localeCompare(b.athlete_id));
   return { day, athletes };
+}
+
+/**
+ * The family line (lane W4-3, FN-2). A parent is given the ids of their own children who count; an athlete,
+ * yes or no about themselves. The same two reads as the staff line, less a cancelled class's marks and a run
+ * tied to one (FN0-Q1 A; flag 9). `now` is the current moment, as for the staff read: it drives the idle close.
+ */
+export async function onTheFloorForFamily(actor: ActorIdentity, now: Date): Promise<OnTheFloorFamilyAnswer> {
+  if (actor.role !== 'parent' && !(actor.role === 'athlete' && actor.athleteId)) {
+    throw new ForbiddenError('Forbidden: only a parent, or an athlete linked to their record, reads this line');
+  }
+  const organizationId = actor.organizationId;
+  // The scope is the server's, never the request's: the guardian rule for a parent (FN-0 F6), the
+  // account's own record for an athlete.
+  const scope = actor.role === 'parent' ? await guardianAthleteIds(organizationId, actor.accountId) : [actor.athleteId as string];
+  // An empty scope matches nothing, never the gym (FN-0 check 1); and nothing is read or settled for it.
+  if (scope.length === 0) return { reader: 'parent', on_the_floor: [] };
+
+  const day = gymDayIso(now);
+  if (!day) throw new Error('ON_THE_FLOOR_DAY_UNRESOLVED');
+  await closeIdleSessionRuns(organizationId, { now });
+
+  const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
+  const ids = scope.filter((id) => live.has(id));
+  const counted = await countedAmong(organizationId, ids, day, now, true);
+  if (actor.role === 'athlete') return { reader: 'athlete', on_the_floor: ids.length === 1 && counted.has(ids[0]) };
+  return { reader: 'parent', on_the_floor: ids.filter((id) => counted.has(id)) };
 }
