@@ -22,7 +22,10 @@
  *   case-insensitive, spaces and invisible formatting as the screen shows
  *   them). That covers a default too: a name may not take another room's
  *   default, and "Use the default" is refused while another room holds that
- *   default as its name. The 409 names the holder by its default name.
+ *   default as its name. The 409 names the holder by its default name. The
+ *   two forms of one card (the athlete's and the family's mentors heading;
+ *   the athlete's and the staff's Sparring Log eyebrow) count as one card and
+ *   may share a name (Overwatch's Q-G A on #2214).
  */
 
 import { isOrganizationAdminRole } from './access';
@@ -33,6 +36,7 @@ import { ConflictError, ForbiddenError, ValidationError } from './errors';
 
 import {
   isRoomNameKey,
+  isSameCard,
   normalizeRoomName,
   ROOM_NAME_DEFAULTS,
   ROOM_NAME_KEYS,
@@ -119,8 +123,9 @@ export async function setRoomName(input: {
     // Q-B A: the name this key will show, against every other name in its list.
     const shown = newName ?? ROOM_NAME_DEFAULTS[key];
     const list = roomNameList(key);
+    // The other form of the same card is not a clash (Overwatch's Q-G A).
     const clash = ROOM_NAME_KEYS.find(
-      (other) => other !== key && roomNameList(other) === list
+      (other) => !isSameCard(other, key) && roomNameList(other) === list
         && roomNameCompareKey(current[other].name) === roomNameCompareKey(shown),
     );
     if (clash) {

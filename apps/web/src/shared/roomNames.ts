@@ -72,6 +72,24 @@ export function roomNameList(key: RoomNameKey): RoomNameList {
   return key.slice(0, key.indexOf(':')) as RoomNameList;
 }
 
+/**
+ * The two forms of one card, for different readers (Q-A A: "the same rooms
+ * seen by other roles"). Overwatch's Q-G A on #2214: for Q-B they count as one
+ * card, so they may share a name; a clash with any other card or a room is
+ * still refused.
+ */
+const OTHER_FORM: Readonly<Partial<Record<RoomNameKey, RoomNameKey>>> = {
+  'card:who-you-train-with': 'card:who-they-train-with',
+  'card:who-they-train-with': 'card:who-you-train-with',
+  'card:your-entry': 'card:coach-entry',
+  'card:coach-entry': 'card:your-entry',
+};
+
+/** Whether two keys are one card (the same key, or the two forms of one card). */
+export function isSameCard(a: RoomNameKey, b: RoomNameKey): boolean {
+  return a === b || OTHER_FORM[a] === b;
+}
+
 /** Q-C A: the longest name, in characters (code points, as the database counts). */
 export const ROOM_NAME_MAX_LENGTH = 40;
 

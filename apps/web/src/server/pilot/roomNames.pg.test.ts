@@ -295,7 +295,11 @@ describe('roomNames.ts against the real table', () => {
       // Another Room Map room's default.
       await expect(set('place:front-desk', '  the FLOOR ')).rejects.toMatchObject({ status: 409, code: 'ROOM_NAME_TAKEN' });
       // Another card's default.
-      await expect(set('card:your-entry', 'coach entry')).rejects.toMatchObject({ status: 409 });
+      await expect(set('card:my-corner', 'coach entry')).rejects.toMatchObject({ status: 409 });
+      // Q-G A: the two forms of one card may share a name.
+      await set('card:coach-entry', 'Your entry');
+      await set('card:who-they-train-with', 'Training partners');
+      await set('card:who-you-train-with', 'Training partners');
       // The 7 rooms are a list of their own: "The Floor" is free there, as "Clinic" is in both lists by default.
       await set('room:office', 'The Floor');
       expect(ROOM_NAME_DEFAULTS['room:clinic']).toBe(ROOM_NAME_DEFAULTS['place:clinic']);
@@ -310,12 +314,15 @@ describe('roomNames.ts against the real table', () => {
       await set('place:front-desk', 'The Floor');
 
       expect(await storedRows(client)).toEqual([
+        { name_key: 'card:coach-entry', display_name: 'Your entry', set_by_account_id: ADMIN_ID },
+        { name_key: 'card:who-they-train-with', display_name: 'Training partners', set_by_account_id: ADMIN_ID },
+        { name_key: 'card:who-you-train-with', display_name: 'Training partners', set_by_account_id: ADMIN_ID },
         { name_key: 'place:floor', display_name: 'The Ring', set_by_account_id: ADMIN_ID },
         { name_key: 'place:front-desk', display_name: 'The Floor', set_by_account_id: ADMIN_ID },
         { name_key: 'room:office', display_name: 'The Floor', set_by_account_id: ADMIN_ID },
       ]);
-      // Refused changes left no audit entry: four accepted changes, four entries.
-      expect(await auditRows(client)).toHaveLength(4);
+      // Refused changes left no audit entry: seven accepted changes, seven entries.
+      expect(await auditRows(client)).toHaveLength(7);
     } finally {
       await client.end();
     }

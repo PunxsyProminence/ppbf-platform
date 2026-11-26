@@ -1,5 +1,6 @@
 import { readRoomNames, setRoomName } from './roomNames';
 import { query, withTransaction } from './db';
+import { ROOM_NAME_DEFAULTS } from '@/src/shared/roomNames';
 
 /*
  * The store's own rules, on a recording client (lane W4-9, RN-1b; the
@@ -114,7 +115,8 @@ test.each([
   ['the same words with two spaces', [{ name_key: 'place:floor', display_name: 'The Ring' }], 'place:front-desk', 'The  Ring', 'The Floor'],
   ['the same words with a non-breaking space', [{ name_key: 'place:floor', display_name: 'The Ring' }], 'place:front-desk', 'The\u00a0Ring', 'The Floor'],
   ['the same words with a zero-width space', [{ name_key: 'place:floor', display_name: 'The Ring' }], 'place:front-desk', 'The Ring\u200b', 'The Floor'],
-  ['the same words in other case', [{ name_key: 'card:your-entry', display_name: 'Entry' }], 'card:coach-entry', 'ENTRY', 'Your entry'],
+  ['the same words in other case, on another card', [{ name_key: 'card:your-entry', display_name: 'Entry' }], 'card:my-corner', 'ENTRY', 'Your entry'],
+  ['another card\'s default (Q-G A: only the two forms of one card may share)', [], 'card:my-corner', 'Who you train with', 'Who you train with'],
   ['a default taken back while another room holds it', [{ name_key: 'place:front-desk', display_name: 'The Floor' }, { name_key: 'place:floor', display_name: 'The Ring' }], 'place:floor', null, 'Front Desk'],
 ])('Q-B A: %s is refused (409) after the lock and before any write, naming the holder by its default', async (_label, stored, key, name, holderDefault) => {
   const calls = recordingClient(stored as Stored[]);
@@ -124,6 +126,20 @@ test.each([
   expect(calls).toHaveLength(2);
   expect(calls[0][0]).toMatch(/for no key update/);
   expect(calls.some(([text]) => /insert into|delete from/i.test(text))).toBe(false);
+});
+
+test.each([
+  ['the mentors heading', 'card:who-they-train-with', 'card:who-you-train-with'],
+  ['the Sparring Log eyebrow', 'card:coach-entry', 'card:your-entry'],
+])('Q-G A: the two forms of %s may share a name, either way round', async (_label, a, b) => {
+  // b already reads "Training partners"; a takes the same name.
+  let calls = recordingClient([{ name_key: b, display_name: 'Training partners' }]);
+  await expect(set(a, 'training PARTNERS')).resolves.toMatchObject({ [a]: { name: 'training PARTNERS', is_default: false } });
+  expect(calls.some(([text]) => /insert into pilot\.organization_room_names/.test(text))).toBe(true);
+  // And a form may take its other form's default.
+  calls = recordingClient([]);
+  await expect(set(a, ROOM_NAME_DEFAULTS[b as keyof typeof ROOM_NAME_DEFAULTS])).resolves.toBeDefined();
+  expect(calls.some(([text]) => /insert into pilot\.organization_room_names/.test(text))).toBe(true);
 });
 
 test('a name another list shows is not a clash, and neither is a room\'s own current name', async () => {
