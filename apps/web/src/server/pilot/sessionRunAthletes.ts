@@ -40,8 +40,12 @@ import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staf
 // (sessionBlockLinks.ts); it now names minors. So listPresentAthletes takes the
 // caller's permitted athlete ids (the gym's live athletes) as a REQUIRED argument and filters in SQL, as
 // listBlocksForRun does: there is no "null means everyone". Athletes, parents,
-// the board and the platform owner have no read of this at all
-// (OD-2026-10-10-003 items 3 and 4); no route for them imports this module.
+// the board and the platform owner have no read of this module
+// (OD-2026-10-10-003 items 3 and 4); no route for them imports it. One fact
+// derived from these rows reaches a family elsewhere: the on-the-floor line
+// (onTheFloor.ts, lane W4-3; OD-2026-11-21-006, FN-0 F1) gives a parent a yes or
+// no for each of their own children, and an athlete one about themselves, and
+// nothing else of a run or a mark.
 //
 // A MARK TAKEN BACK KEEPS ITS ROW (removed_at, removed_by_account_id); marking
 // the athlete again clears them. The row holds the mark's CURRENT state, so
