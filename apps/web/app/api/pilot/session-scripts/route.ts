@@ -116,20 +116,30 @@ function isBlockEdit(value: unknown): value is SessionScriptBlockEdit {
     && typeof edit.end_offset_min === 'number';
 }
 
-const BLOCK_ADD_FIELDS = ['ref', 'kind', 'drill_id', 'block_label', 'start_offset_min', 'end_offset_min'];
+const PLACE_FIELDS = ['ref', 'kind', 'start_offset_min', 'end_offset_min'];
+const BLOCK_ADD_FIELDS = new Map<unknown, readonly string[]>([
+  ['drill', [...PLACE_FIELDS, 'drill_id', 'block_label']],
+  ['text', [...PLACE_FIELDS, 'block_kind', 'block_label', 'text', 'contact_level']],
+  ['copy', [...PLACE_FIELDS, 'block_id', 'block_label']],
+]);
 
-// A block to add (lane W4-5, SP-1a): a library drill, named by `ref` in `order`. Its gym is the
-// principal's; no field names one.
+const isId = (value: unknown) => typeof value === 'string' && value.trim() !== '';
+
+// A block to add (lane W4-5), named by `ref` in `order`: a library drill (SP-1a), a text block whose
+// contact level the coach picks, required (SP-1b, Q1 = C on #2189), or a copy of a block (SP-1b).
+// Its gym is the principal's; no field names one, and a drill or a copy carries no contact level.
 function isBlockAdd(value: unknown): value is SessionScriptBlockAdd {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const add = value as Record<string, unknown>;
-  return Object.keys(add).every((key) => BLOCK_ADD_FIELDS.includes(key))
-    && typeof add.ref === 'string'
-    && add.kind === 'drill'
-    && typeof add.drill_id === 'string' && add.drill_id.trim() !== ''
-    && (add.block_label === undefined || typeof add.block_label === 'string')
-    && typeof add.start_offset_min === 'number'
-    && typeof add.end_offset_min === 'number';
+  const fields = BLOCK_ADD_FIELDS.get(add.kind);
+  if (!fields || !Object.keys(add).every((key) => fields.includes(key))) return false;
+  if (typeof add.ref !== 'string' || typeof add.start_offset_min !== 'number' || typeof add.end_offset_min !== 'number') return false;
+  if (add.kind === 'text') {
+    return typeof add.block_kind === 'string' && typeof add.block_label === 'string'
+      && typeof add.text === 'string' && typeof add.contact_level === 'string';
+  }
+  return isId(add.kind === 'drill' ? add.drill_id : add.block_id)
+    && (add.block_label === undefined || typeof add.block_label === 'string');
 }
 
 function isIdList(value: unknown): value is string[] {
@@ -177,7 +187,9 @@ export async function POST(request: NextRequest) {
 // W4-5, SP-1a) its blocks themselves.
 // { script_id, expected_updated_at, name?,
 //   blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }],
-//   add_blocks?: [{ ref, kind: 'drill', drill_id, block_label?, start_offset_min, end_offset_min }],
+//   add_blocks?: [{ ref, start_offset_min, end_offset_min } and one of
+//     { kind: 'drill', drill_id, block_label? }, { kind: 'copy', block_id, block_label? },
+//     { kind: 'text', block_kind, block_label, text, contact_level }],
 //   remove_block_ids?: [block_id], order?: [block_id or ref, in running order] }.
 // A script that has been delivered is not changed: the edit becomes its next
 // version, and `outcome` says which happened; so does any edit that removes a
@@ -267,8 +279,9 @@ export async function PATCH(request: NextRequest) {
       scriptId: record.script_id.trim(),
       name: record.name,
       blocks: record.blocks as SessionScriptBlockEdit[] | undefined,
-      // Trimmed as POST trims template_id.
-      add: (record.add_blocks as SessionScriptBlockAdd[] | undefined)?.map((add) => ({ ...add, drill_id: add.drill_id.trim() })),
+      // Ids trimmed as POST trims template_id.
+      add: (record.add_blocks as SessionScriptBlockAdd[] | undefined)?.map((add) =>
+        add.kind === 'drill' ? { ...add, drill_id: add.drill_id.trim() } : add.kind === 'copy' ? { ...add, block_id: add.block_id.trim() } : add),
       remove: record.remove_block_ids as string[] | undefined,
       order: record.order as string[] | undefined,
       expectedUpdatedAt: record.expected_updated_at,

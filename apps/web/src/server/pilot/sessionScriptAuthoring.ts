@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
+import { INVISIBLE_FORMAT } from './feedbackSafetyScan';
 import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels';
+import { normalizeCell } from './contentImport/values';
+import { VOCABULARIES } from './contentImport/vocabularies';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { orNotWritten } from '@/src/lib/drillPresentation';
@@ -335,17 +338,52 @@ export interface SessionScriptBlockEdit {
   end_offset_min: number;
 }
 
-/**
- * A block an edit adds (lane W4-5, SP-1a): a drill from the gym's library. `ref` is the caller's
- * name for it in `order` and is not stored. The title is the drill's name unless one is given.
- */
-export interface SessionScriptBlockAdd {
+interface BlockAddPlace {
+  /** The caller's name for the new block in `order`; not stored. */
   ref: string;
-  kind: 'drill';
-  drill_id: string;
-  block_label?: string;
   start_offset_min: number;
   end_offset_min: number;
+}
+
+/**
+ * A block an edit adds (lane W4-5): a drill from the gym's library (SP-1a); a text block, written
+ * by the coach, its contact level picked by the coach (SP-1b, Q1 = C on #2189); or a copy of a
+ * block of any plan of the gym (SP-1b). A drill's or a copy's title is its source's unless given.
+ */
+export type SessionScriptBlockAdd =
+  | (BlockAddPlace & { kind: 'drill'; drill_id: string; block_label?: string })
+  | (BlockAddPlace & { kind: 'text'; block_kind: string; block_label: string; text: string; contact_level: string })
+  | (BlockAddPlace & { kind: 'copy'; block_id: string; block_label?: string });
+
+/** A text block is any kind but a drill round (the migration's ten kinds, :84-86). */
+const TEXT_BLOCK_KINDS: readonly string[] = [
+  'arrival', 'instruction', 'demonstration', 'reset_minute', 'teaching_minute', 'transition', 'conditioning', 'reflection', 'close',
+];
+/** The kinds the table lets hold no text (pilot_ssb_content). */
+const MAY_HOLD_NO_TEXT: readonly string[] = ['transition', 'arrival', 'close'];
+const CONTACT_LADDER: readonly string[] = VOCABULARIES.contact_level.values;
+/** A template step's coach note, which a step carries into its block's Say, has this cap (workoutTemplateEdit.ts MAX_NOTE_TEXT). */
+const MAX_BLOCK_TEXT_LENGTH = 1000;
+
+function cleanAdd(add: SessionScriptBlockAdd): SessionScriptBlockAdd {
+  checkMinutes(add.start_offset_min, add.end_offset_min);
+  if (add.kind !== 'text') {
+    return { ...add, block_label: add.block_label === undefined ? undefined : cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID') };
+  }
+  if (!TEXT_BLOCK_KINDS.includes(add.block_kind)) refuse('SESSION_SCRIPT_BLOCK_KIND_INVALID');
+  // Q1 = C: required, from the ladder, no default -- a text block written for contact work must not read as none.
+  if (!CONTACT_LADDER.includes(add.contact_level)) refuse('SESSION_SCRIPT_BLOCK_CONTACT_INVALID');
+  // Read and measured as a template step's coach note is (normalizeCell: NFC, LF, no edge space); words
+  // that are only invisible characters are no words.
+  const text = normalizeCell(add.text);
+  // Nothing a reader sees: the safety scan's own invisible class (feedbackSafetyScan.ts INVISIBLE_FORMAT --
+  // format characters, default-ignorables such as variation selectors and Hangul fillers, the Braille
+  // blank), as a pain note reads it (painReportNotes.ts), so the two cannot drift (reviewer D; Codex).
+  const empty = text.replace(INVISIBLE_FORMAT, '').trim() === '';
+  if (text.length > MAX_BLOCK_TEXT_LENGTH || (empty && !MAY_HOLD_NO_TEXT.includes(add.block_kind))) {
+    refuse('SESSION_SCRIPT_BLOCK_TEXT_INVALID');
+  }
+  return { ...add, block_label: cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID'), text: empty ? '' : text };
 }
 
 export interface EditedSessionScript {
@@ -517,14 +555,49 @@ async function lockDrills(
   return byId;
 }
 
+/**
+ * The current version of each copied block's drill lineage, keyed by the source's drill id -- taken
+ * as the template editor takes a new item's drill (workoutTemplateEdit.ts; the importer's
+ * withdrawn_drill and step_contact_above_drill rules). Read without a lock so that it joins
+ * lockDrills' one ordered statement, which then checks it is still current and active: a drill the gym
+ * withdrew, or replaced since this read, is refused there. A lineage with none current is refused here.
+ */
+async function copyHeads(client: PoolClient, organizationId: string, drillIds: readonly string[]): Promise<Map<string, string>> {
+  if (drillIds.length === 0) return new Map();
+  const found = await client.query<{ source_id: string; head_id: string }>(
+    `select d.drill_id as source_id, h.drill_id as head_id
+       from pilot.drill_library d
+       join pilot.drill_library h
+         on h.organization_id = d.organization_id and h.lineage_id = d.lineage_id and h.superseded_at is null
+      where d.organization_id = $1 and d.drill_id = any($2::text[])`,
+    [organizationId, [...new Set(drillIds)]],
+  );
+  const heads = new Map(found.rows.map((row) => [row.source_id, row.head_id]));
+  if (drillIds.some((id) => !heads.has(id))) throw new SessionScriptAuthoringError('SESSION_SCRIPT_DRILL_NOT_CURRENT', 409);
+  return heads;
+}
+
+/** The blocks a copy is made from: any block of the gym's plans, this one included. Not locked. */
+async function copySources(client: PoolClient, organizationId: string, blockIds: readonly string[]): Promise<Map<string, SessionScriptBlockRow>> {
+  if (blockIds.length === 0) return new Map();
+  const found = await client.query<SessionScriptBlockRow>(
+    `select * from pilot.session_script_blocks where organization_id = $1 and block_id = any($2::text[])`,
+    [organizationId, [...new Set(blockIds)]],
+  );
+  const byId = new Map(found.rows.map((row) => [row.block_id, row]));
+  if (blockIds.some((id) => !byId.has(id))) refuse('SESSION_SCRIPT_COPY_SOURCE_NOT_FOUND');
+  return byId;
+}
+
 /** A block as the edit leaves it: a stored one (block_id set) or a new one (block_id null). */
 type PlannedBlock = Omit<SessionScriptBlockRow, 'organization_id' | 'script_id' | 'block_id'> & { block_id: string | null };
 
 /**
  * Change a script: its name, its blocks' titles and minutes (a block not named keeps what it has),
- * and (lane W4-5) its blocks: a library drill added, a block removed, the running order. Minutes
- * are stored as sent; the editor proposes them (Q2 = A on #2189). A new drill block carries its
- * drill's own contact level (Q1 = C) and an Explain line naming the drill (FROM_DRILL). When the
+ * and (lane W4-5) its blocks: a block added (a library drill, a text block or a copy), a block
+ * removed, the running order. Minutes are stored as sent; the editor proposes them (Q2 = A on
+ * #2189). Contact (Q1 = C): a drill block carries its drill's own level and an Explain line naming
+ * the drill (FROM_DRILL); a text block the level the coach picked; a copy its source's. When the
  * blocks change, the contact label is raised, never lowered (contactStructureAfter). A plan may
  * be left with no blocks. Coach renderings made from the blocks are re-rendered; the rest stay.
  *
@@ -545,18 +618,18 @@ export async function editSessionScript(
   },
 ): Promise<EditedSessionScript> {
   const edits = cleanBlockEdits(params.blocks ?? []);
-  const adds = (params.add ?? []).map((add) => {
-    checkMinutes(add.start_offset_min, add.end_offset_min);
-    const label = add.block_label === undefined ? undefined : cleanText(add.block_label, 'SESSION_SCRIPT_BLOCK_LABEL_INVALID');
-    return { ...add, block_label: label };
-  });
+  const adds = (params.add ?? []).map(cleanAdd);
   const remove = params.remove ?? [];
   const newName = params.name === undefined ? undefined : cleanText(params.name, 'SESSION_SCRIPT_NAME_INVALID');
 
   return withTransaction(async (client) => {
     // The drills first, then the plan: content import locks drill rows before plan rows, so taking
-    // them the other way round here could deadlock against it.
-    const drills = await lockDrills(client, params.organizationId, params.scriptId, adds.map((add) => add.drill_id));
+    // them the other way round here could deadlock against it. A copy links its drill's current
+    // version, found first (unlocked) so it joins the same single ordered lock (reviewers C and D, #2196).
+    const sources = await copySources(client, params.organizationId, adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])));
+    const heads = await copyHeads(client, params.organizationId, [...sources.values()].flatMap((block) => (block.drill_id === null ? [] : [block.drill_id])));
+    const drillAdds = adds.flatMap((add) => (add.kind === 'drill' ? [add.drill_id] : []));
+    const drills = await lockDrills(client, params.organizationId, params.scriptId, [...drillAdds, ...heads.values()]);
     const script = await lockCurrentScript(client, params);
 
     const stored = await client.query<SessionScriptBlockRow>(
@@ -598,12 +671,34 @@ export async function editSessionScript(
         };
       }
       const add = addByRef.get(id) as (typeof adds)[number];
+      const place = { block_id: null, block_order: index + 1, start_offset_min: add.start_offset_min, end_offset_min: add.end_offset_min };
+      if (add.kind === 'text') {
+        return {
+          ...place, block_label: add.block_label, what_to_say: add.text || null, what_to_explain: null, what_to_watch: null,
+          what_to_fix: null, block_kind: add.block_kind as SessionScriptBlockRow['block_kind'], drill_id: null, scale_level: null,
+          contact_level: add.contact_level,
+        };
+      }
+      if (add.kind === 'copy') {
+        // Everything the source block says, its contact level included (the sizing); a new id, its own
+        // place; its drill's current version (copyHeads, locked in lockDrills), never below its contact.
+        const { block_label, what_to_say, what_to_explain, what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level } =
+          sources.get(add.block_id) as SessionScriptBlockRow;
+        const drill = drill_id === null ? null : (drills.get(heads.get(drill_id) as string) as DrillForBlock);
+        if (!CONTACT_LADDER.includes(contact_level)) refuse('SESSION_SCRIPT_BLOCK_CONTACT_INVALID');
+        if (drill && CONTACT_LADDER.indexOf(contact_level) > CONTACT_LADDER.indexOf(drill.contact_level)) {
+          refuse('SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL');
+        }
+        return {
+          ...place, block_label: add.block_label ?? block_label.slice(0, MAX_TEXT_LENGTH), what_to_say,
+          // The "From the drill" line names the version the block links (audit 2026-10-17 item 4; reviewer C).
+          what_to_explain: drill && what_to_explain?.startsWith(FROM_DRILL) ? `${FROM_DRILL}${drill.name}` : what_to_explain,
+          what_to_watch, what_to_fix, block_kind, drill_id: drill?.drill_id ?? null, scale_level, contact_level,
+        };
+      }
       const drill = drills.get(add.drill_id) as DrillForBlock;
       return {
-        block_id: null,
-        block_order: index + 1,
-        start_offset_min: add.start_offset_min,
-        end_offset_min: add.end_offset_min,
+        ...place,
         block_label: add.block_label ?? (drill.name.trim().slice(0, MAX_TEXT_LENGTH) || `Step ${index + 1}`),
         what_to_say: null,
         what_to_explain: `${FROM_DRILL}${drill.name}`,
@@ -767,6 +862,7 @@ export async function editSessionScript(
           edited_script_id: script.script_id,
           blocks_changed: changed.length,
           blocks_added: adds.length,
+          ...(sources.size > 0 && { copied_from: adds.flatMap((add) => (add.kind === 'copy' ? [add.block_id] : [])) }),
           blocks_removed: remove.length,
           order_changed: orderChanged,
           ...(!hasRun && remove.length > 0 && { new_version_because: 'a block was removed' }),
