@@ -26,16 +26,22 @@ import { useRoomNames } from '@/src/client/roomNames';
  *       and this feature is deliberately nowhere near it.
  *   (b) STRUCTURE ONLY -- read the route metadata that already exists in
  *       buildingMap.ts (path, label, room, which roles hold the door) and
- *       show it grouped by role. Nothing is fetched, nothing is impersonated,
- *       and no athlete, guardian or staff record appears anywhere.
+ *       show it grouped by role. Nothing is fetched for or about any role,
+ *       nothing is impersonated, and no athlete, guardian or staff record
+ *       appears anywhere.
  *
  * This is (b), and the following are load-bearing rather than incidental:
  *
- *   - THIS PAGE PERFORMS NO FETCH. Not to /api/pilot/*, not to anything. The
- *     whole register is a pure function of a module-level constant, so there
- *     is no request to get wrong and no response to leak. Pinned by
- *     page.test.tsx, which fails the render if `fetch` is called at all and
- *     also reads this source for the word.
+ *   - THIS PAGE PERFORMS NO FETCH OF ITS OWN, AND NONE FOR A PREVIEWED ROLE.
+ *     The register is a pure function of a module-level constant, so there is
+ *     no request to get wrong and no response to leak. ONE NAMED EXCEPTION
+ *     (Overwatch's Q-H A on #2212, lane W4-9 RN-2): useRoomNames() reads the
+ *     READER's own gym's room names once, with the reader's own session, from
+ *     src/client/roomNames.ts (not from this file), so the 7 rooms show in the
+ *     gym's words. It never varies with the previewed role. Pinned by
+ *     page.test.tsx: exactly that one GET, with no query and no body, the same
+ *     for every previewed role; any other request fails the render; and this
+ *     source is read for request machinery.
  *   - IT NEVER TOUCHES THE READER'S SESSION. Previewing a role is `useState`
  *     on this page and nothing else. roleSession.ts holds the authoritative
  *     client session as a module-level cache behind the HttpOnly server
