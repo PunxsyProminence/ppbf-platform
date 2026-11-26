@@ -55,6 +55,7 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_456e418b1741b8: '5a716e9cdff90a63a310d72e96184e1ef94c207277dbc8289291d03dbfe010b5', // Iso + Plyo 60-Minute Boxing Session (TL-4; at 746bc1a5)
   wtp_01de3f48606d4c: 'a1cc0a3d368b2e25614bd8a9e4849aee8e443c540f32c292c186f2a855c8993f', // Conditioning session A — SIT (TL-5a; at 746bc1a5)
   wtp_c2c4bec001a56b: 'eca11c360662cbeaad4cef0bc817c25497403baf86a45c8d5f9b7d461010499f', // Phase 1 boxing skill session (TL-5a; at 746bc1a5)
+  wtp_bc964fe230d8f3: '45bcfa11a41f34dff804728c67734429cb6028a1da83bb0dbb88fb78b125bcb5', // Phase 2 archetype session vs. pressure fighter (TL-5b; at 746bc1a5)
 };
 
 /** The lane-linked steps that carry their own stated time as their duration (#2177); a step PR adds its templates here. */

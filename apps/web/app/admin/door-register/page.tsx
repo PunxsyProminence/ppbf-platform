@@ -6,13 +6,13 @@ import ChromeLink from '@/components/ChromeLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import {
   ROOM_BLURB,
-  ROOM_LABEL,
   doorsByRoom,
   visibleDoors,
 } from '@/components/buildingMap';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
 import BackHome from '@/components/BackHome';
+import { useRoomNames } from '@/src/client/roomNames';
 
 /**
  * THE DOOR REGISTER — a map of the building, NOT a window into an account.
@@ -26,16 +26,22 @@ import BackHome from '@/components/BackHome';
  *       and this feature is deliberately nowhere near it.
  *   (b) STRUCTURE ONLY -- read the route metadata that already exists in
  *       buildingMap.ts (path, label, room, which roles hold the door) and
- *       show it grouped by role. Nothing is fetched, nothing is impersonated,
- *       and no athlete, guardian or staff record appears anywhere.
+ *       show it grouped by role. Nothing is fetched for or about any role,
+ *       nothing is impersonated, and no athlete, guardian or staff record
+ *       appears anywhere.
  *
  * This is (b), and the following are load-bearing rather than incidental:
  *
- *   - THIS PAGE PERFORMS NO FETCH. Not to /api/pilot/*, not to anything. The
- *     whole register is a pure function of a module-level constant, so there
- *     is no request to get wrong and no response to leak. Pinned by
- *     page.test.tsx, which fails the render if `fetch` is called at all and
- *     also reads this source for the word.
+ *   - THIS PAGE PERFORMS NO FETCH OF ITS OWN, AND NONE FOR A PREVIEWED ROLE.
+ *     The register is a pure function of a module-level constant, so there is
+ *     no request to get wrong and no response to leak. ONE NAMED EXCEPTION
+ *     (Overwatch's Q-H A on #2212, lane W4-9 RN-2): useRoomNames() reads the
+ *     READER's own gym's room names once, with the reader's own session, from
+ *     src/client/roomNames.ts (not from this file), so the 7 rooms show in the
+ *     gym's words. It never varies with the previewed role. Pinned by
+ *     page.test.tsx: exactly that one GET, with no query and no body, the same
+ *     for every previewed role; any other request fails the render; and this
+ *     source is read for request machinery.
  *   - IT NEVER TOUCHES THE READER'S SESSION. Previewing a role is `useState`
  *     on this page and nothing else. roleSession.ts holds the authoritative
  *     client session as a module-level cache behind the HttpOnly server
@@ -132,6 +138,10 @@ export default function DoorRegisterPage() {
      links and nothing else. */
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const viewerRole = session?.role ?? null;
+  /* The 7 rooms' names in the gym's own words (lane W4-9, RN-2; OW27-40 A).
+     Read once for the READER's own gym with the reader's own session, never
+     for the previewed role (Overwatch's Q-H A on #2212). */
+  const roomNames = useRoomNames();
 
   /* The previewed role. Local state, and local state only: previewing does not
      touch the stored session, so the corridor, the session bar and every API
@@ -219,7 +229,8 @@ export default function DoorRegisterPage() {
                 <div className="empty-title">No role picked yet</div>
                 <p className="empty-msg mx-auto">
                   Choose a role above and the register opens on the doors that role holds, room by
-                  room. Nothing is looked up until you do.
+                  room. Nothing is looked up for the role you pick: the page reads only your own
+                  gym&apos;s room names.
                 </p>
                 <div className="empty-action">
                   <button type="button" onClick={() => setSubject('coach')} className="btn--lever min-h-[44px]">
@@ -261,7 +272,7 @@ export default function DoorRegisterPage() {
                   {groups.map((group) => (
                     <div key={group.room} className="flex flex-wrap items-baseline gap-[var(--s2)]">
                       <dt className="t-label">
-                        {ROOM_LABEL[group.room]} · {group.doors.length}
+                        {roomNames.room(group.room)} · {group.doors.length}
                       </dt>
                       <dd className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         {ROOM_BLURB[group.room]}
@@ -295,7 +306,7 @@ export default function DoorRegisterPage() {
                         const readerCanOpen = openToViewer.has(door.href);
                         return (
                           <tr key={door.href}>
-                            <td>{ROOM_LABEL[group.room]}</td>
+                            <td>{roomNames.room(group.room)}</td>
                             <td>
                               {readerCanOpen ? (
                                 /* Underline stated, ink inherited. The base

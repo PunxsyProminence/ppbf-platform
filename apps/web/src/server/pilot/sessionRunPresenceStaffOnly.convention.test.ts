@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
@@ -72,9 +72,13 @@ const SESSION_NOTE_READERS = [
 // open-gym "here" mark counts as coming on that page, so stoppedComing.ts reads the last standing
 // mark day per athlete that the register does not hold (untied runs, taps that created no register
 // mark, cancelled classes; App Overwatch on #2172), and its one route is the only caller of
-// listStoppedComing.
-// Approved for exactly these two files, the route pinned below to coach, organization_admin and
-// admin (Overwatch, W4-6 GO on #2163, condition 1). Nothing else from the table leaves the module.
+// listStoppedComing. The "reached out" mark (SC-3a-2) goes through the same module and route:
+// setStoppedComingReachedOut reads the athlete's last day they came, from the same read, inside the
+// mark's transaction, and its route's PUT is its only caller (Overwatch on #2163, answer A: still
+// exactly two readers, no separate reached-out route).
+// Approved for exactly these two files, the route's two handlers pinned below to coach,
+// organization_admin and admin (Overwatch, W4-6 GO on #2163, condition 1). Nothing else from the
+// table leaves the module.
 const STOPPED_COMING_READERS = [
   'app/api/pilot/stopped-coming/route.ts',
   'src/server/pilot/stoppedComing.ts',
@@ -184,12 +188,19 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(text).toMatch(/const SESSION_NOTE_READ_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
   });
 
-  it('the stopped-coming route admits only coach, organization admin and the legacy admin name', () => {
+  it('the stopped-coming route admits only coach, organization admin and the legacy admin name, on both handlers', () => {
     const text = source(path.join(WEB_DIR, STOPPED_COMING_READERS[0]));
-    const handlers = Array.from(text.matchAll(HANDLER)).length;
-    expect(handlers).toBe(1);
+    // Two handlers, the list and the reached-out mark (Overwatch on #2163, answer A), each gated once.
+    const handlers = Array.from(text.matchAll(HANDLER));
+    expect(handlers.map((match) => match[1])).toEqual(['GET', 'PUT']);
     expect(text).not.toMatch(/^export\s*(\{|\*)/m);
-    expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.STOPPED_COMING_READ_ROLES\]\s*\)/g))).toHaveLength(1);
+    expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.STOPPED_COMING_READ_ROLES\]\s*\)/g))).toHaveLength(2);
+    const starts = handlers.map((match) => match.index ?? 0);
+    for (const [index, start] of starts.entries()) {
+      const body = text.slice(start, starts[index + 1] ?? text.length);
+      expect(Array.from(body.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.([A-Z_]+)\]\s*\)/g), (match) => match[1]))
+        .toEqual(['STOPPED_COMING_READ_ROLES']);
+    }
     // Defined once, at the start of a line (not in a comment), as exactly the three staff roles.
     expect(Array.from(text.matchAll(/^const STOPPED_COMING_READ_ROLES = (.*)$/gm), (match) => match[1]))
       .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
@@ -199,8 +210,9 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   // of each athlete's last standing mark the register does not hold, inside lastOpenGymDays. Pinned, as the
   // idle sweep's exemption is below, because a new read added to that file would otherwise pass the
   // file-level list unnoticed: the staff notes table is never named, the presence table only in that
-  // one FROM, the module's one value export is listStoppedComing, and it refuses a caller with no
-  // staff membership before anything is read (Overwatch, W4-6 GO, condition 1).
+  // one FROM, the module's two value exports are listStoppedComing and setStoppedComingReachedOut
+  // (Overwatch on #2163, answer A), and each refuses a caller with no staff membership before anything
+  // is read (Overwatch, W4-6 GO, condition 1).
   it('stoppedComing.ts reads one day per athlete from the presence table, in one place, behind the staff refusal', () => {
     const text = source(path.join(PILOT_DIR, 'stoppedComing.ts'));
     const lines = text.split('\n');
@@ -218,19 +230,23 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(block).toContain('from pilot.session_run_athletes m');
     expect(block).toMatch(/select m\.athlete_id, max\(\(m\.marked_at at time zone \$4\)::date\)::text as last_day\n/);
     // Every export but a type is counted (default, re-export, indented, generator, enum alike):
-    // the one there may be is listStoppedComing, which refuses first.
+    // the two there may be are listStoppedComing and setStoppedComingReachedOut, each refusing first.
     const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
-    expect(exports).toHaveLength(1);
+    expect(exports).toHaveLength(2);
     expect(exports[0].startsWith('export async function listStoppedComing(')).toBe(true);
-    // And anywhere on a line: the word appears only on the two exported interfaces and that function.
+    expect(exports[1]).toBe('export async function setStoppedComingReachedOut(');
+    // And anywhere on a line: the word appears only on the two exported interfaces and those functions.
     const exportLines = lines.filter((line) => /\bexport\b/.test(line)).map((line) => line.trim());
-    expect(exportLines).toHaveLength(3);
+    expect(exportLines).toHaveLength(4);
     expect(exportLines.filter((line) => /^export interface \w+ \{$/.test(line))).toHaveLength(2);
     // The doc line that names the table sits in the header, before the first import.
     expect(lines.findIndex((line) => NAMES_A_TABLE.test(line) && line.trim().startsWith('* ')))
       .toBeLessThan(lines.findIndex((line) => /^import /.test(line)));
     expect(text).toMatch(
       /export async function listStoppedComing\(actor: ActorIdentity, today: string\): Promise<StoppedComingList> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
+    );
+    expect(text).toMatch(
+      /export async function setStoppedComingReachedOut\(\n  actor: ActorIdentity,\n  athleteId: string,\n  reachedOut: boolean,\n  today: string,\n\): Promise<ReachedOutOutcome> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
     );
   });
 

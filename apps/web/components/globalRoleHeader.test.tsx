@@ -332,6 +332,10 @@ describe('the safety escalation badge rides the session bar', () => {
     return fetchMock;
   }
 
+  function fetchedUrls(fetchMock: jest.Mock): string[] {
+    return fetchMock.mock.calls.map(([url]) => String(url));
+  }
+
   async function renderAsAsync(role: string | null) {
     mockSnapshot.mockReturnValue(
       role === null ? null : ({ role, expiresAt: Date.now() + 60_000 } as never),
@@ -366,7 +370,10 @@ describe('the safety escalation badge rides the session bar', () => {
     await renderAsAsync('athlete');
 
     expect(screen.queryByText(/Safety/)).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    // No escalation read at all. The one read an athlete's bar makes is the
+    // gym's room names, open to every signed-in member (lane W4-9, RN-2).
+    expect(fetchedUrls(fetchMock).filter((url) => url.includes('/api/pilot/escalations'))).toEqual([]);
+    expect(fetchedUrls(fetchMock).every((url) => url.endsWith('/api/pilot/room-names'))).toBe(true);
   });
 
   test('a board member gets no count either -- the board reads aggregates only', async () => {
@@ -375,7 +382,8 @@ describe('the safety escalation badge rides the session bar', () => {
     await renderAsAsync('board');
 
     expect(screen.queryByText(/Safety/)).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchedUrls(fetchMock).filter((url) => url.includes('/api/pilot/escalations'))).toEqual([]);
+    expect(fetchedUrls(fetchMock).every((url) => url.endsWith('/api/pilot/room-names'))).toBe(true);
   });
 
   test('a signed-out visitor gets nothing, and nothing is fetched', async () => {
