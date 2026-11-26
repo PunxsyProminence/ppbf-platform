@@ -1733,6 +1733,6 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_a2e518921ae281,drl_a5f52ff0aa9d2e,A,false,"Easy movement, the breathing and the log; a shorter stretch set.",Shorter stretch.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_495a8f4a5cd1d4,drl_a5f52ff0aa9d2e,B,true,The cool-down as written.,,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_781188775d020e,drl_a5f52ff0aa9d2e,C,false,"As written, the athlete writing their own log line before the coach reads it.",Athlete-logged.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_a667ff5dde8e30,drl_4845ed05215e9b,A,false,The coach gives the evaluation and the reset.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a667ff5dde8e30,drl_4845ed05215e9b,A,false,The coach gives the evaluation through the loop and calls the reset to stance.,Coach-led.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_a676d01358b016,drl_4845ed05215e9b,B,true,"Evaluate → Reset, as written.",,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_f7a9ea359fa466,drl_4845ed05215e9b,C,false,The athlete gives the evaluation and the reset first; the coach adds or corrects.,Athlete-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f7a9ea359fa466,drl_4845ed05215e9b,C,false,"The athlete gives the evaluation through the loop first, then resets to their stance without a call; the coach adds or corrects.",Athlete-led.,none,,scaffold_needs_coach_review
