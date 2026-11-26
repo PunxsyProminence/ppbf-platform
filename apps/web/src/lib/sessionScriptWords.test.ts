@@ -1,4 +1,5 @@
 import {
+  FROM_DRILL,
   FROM_TEMPLATE,
   authoringStateWords,
   blockCoachingLines,
@@ -41,6 +42,13 @@ describe('explainLine', () => {
   it('labels a line the template step wrote as the template\'s, under both wordings', () => {
     expect(explainLine(`${FROM_TEMPLATE}Warm-up, 3 reps`)).toEqual({ label: 'From the template', value: 'Warm-up, 3 reps' });
     expect(explainLine('From workout template: Friday plan')).toEqual({ label: 'From the template', value: 'Friday plan' });
+  });
+
+  it('labels the line a block added from the library wrote as the drill\'s (lane W4-5)', () => {
+    expect(explainLine(`${FROM_DRILL}Jab Drill`)).toEqual({ label: 'From the drill', value: 'Jab Drill' });
+    // With nothing after it, the line is the plan's empty Explain, as an empty template line is.
+    const empty = { what_to_say: 'Hands up', what_to_explain: FROM_DRILL, what_to_watch: 'x', what_to_fix: 'y' };
+    expect(blockCoachingLines(empty, null)[1]).toEqual({ label: 'Explain', value: 'Not written yet', fromDrill: false });
   });
 
   it('shows a bare section code stored before F-078 in words, with or without its reps', () => {
