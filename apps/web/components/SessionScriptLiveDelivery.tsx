@@ -1521,15 +1521,16 @@ export default function SessionScriptLiveDelivery({
               </ul>
             )}
 
+            {/* The log is locked while a finish is in hand, as the run actions are: a log made now would be
+                sent after the finish, onto a session that has ended (Codex P2 on #2178). Once the finish is
+                kept, the lock is described by the line of the finish, with no words of its own (rounds 20
+                and 21, reviewer B). No apostrophes here: a source-scanning suite tracks quotes. */}
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button
                 type="button"
                 onClick={() => void logIntervention()}
-                // Locked while a finish is in hand, as the run actions are: a log made now would be sent
-                // after the finish, onto a session that has ended (Codex P2 on #2178). Described by the
-                // finish's own line, with no words of its own (round 20, reviewer B).
                 disabled={logBusy || finishInHand || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
-                aria-describedby={finishInHand ? finishLineId : undefined}
+                aria-describedby={finishKept ? finishLineId : undefined}
                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {logBusy ? 'Logging...' : 'Log intervention'}
