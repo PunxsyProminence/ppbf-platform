@@ -117,10 +117,29 @@ function ensureRead(session: string | null): void {
     });
 }
 
+/**
+ * A sign-out, and every sign-in (SignInPanel clears the old session first),
+ * passes through having no session. The screens that show names are unmounted
+ * by then, so their effects never see it: the module listens itself and drops
+ * the names, so the next sign-in reads them again even in the same role on a
+ * shared gym device (Codex P1 on #2215). Subscribed on first use, once.
+ */
+let listening = false;
+function listenForSignOut(): void {
+  if (listening) return;
+  listening = true;
+  subscribeRoleSession(() => {
+    if (getRoleSessionSnapshot() === null && state.session !== null) {
+      publish({ session: null, names: null, started: false });
+    }
+  });
+}
+
 export function useRoomNames(): RoomNameLookup {
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const key = sessionKey(session);
   useEffect(() => {
+    listenForSignOut();
     ensureRead(key);
   }, [key]);
   const names = useSyncExternalStore(
@@ -134,4 +153,5 @@ export function useRoomNames(): RoomNameLookup {
 /** Tests only: forget every read, as a fresh page load would. */
 export function resetRoomNamesForTests(): void {
   state = { session: null, names: null, started: false };
+  listening = false;
 }

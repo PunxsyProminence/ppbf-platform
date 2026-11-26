@@ -139,6 +139,29 @@ test('a route re-verifying the same sign-in (a fresh expiresAt) neither reads ag
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
+test('a sign-out drops the names even with no screen mounted, so the next same-role sign-in reads its own gym (Codex P1 on #2215)', async () => {
+  const fetchMock = jest.fn()
+    .mockResolvedValueOnce(answer({ 'place:front-desk': { name: 'Lobby', is_default: false } }))
+    .mockResolvedValueOnce(answer({ 'place:front-desk': { name: 'Reception', is_default: false } }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  const first = render(<Probe id="a" />);
+  await settle();
+  expect(screen.getByTestId('a').textContent?.startsWith('Lobby|')).toBe(true);
+  // The header unmounts the screens that show names as soon as the session ends.
+  first.unmount();
+  act(() => {
+    session = null;
+    for (const listener of sessionListeners) listener();
+  });
+  // Another account, the same role, on the same device.
+  signIn('coach', 1_000);
+  render(<Probe id="b" />);
+  await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('b').textContent?.startsWith('Reception|')).toBe(true);
+});
+
 test('an answer that arrives after the person signed out is not shown to whoever comes next', async () => {
   let release: (response: Response) => void = () => {};
   const fetchMock = jest.fn()
