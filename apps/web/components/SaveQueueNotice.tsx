@@ -13,7 +13,9 @@ import {
  * What a page that keeps saves says about them (W4 item 7; src/lib/saveQueue.ts):
  *   - the saves still waiting to go through (a polite live region, mounted always so the first
  *     line is announced);
- *   - the saves the server refused, with the screen's own words for why (an alert);
+ *   - the saves the server refused, with the screen's own words for why (an alert), and apart from
+ *     them, under their own heading, the saves whose resend was refused when whether an earlier send
+ *     landed could not be checked: never said to be not saved (Overwatch condition 2 on #2158);
  *   - after the queue dropped unsent saves, how many, with no names, and only to the person who made
  *     them (the queue decides that);
  *   - while the page checks again who is signed in, only how many saves it holds, with no names.
@@ -31,6 +33,7 @@ const LINE =
 export const WAITING_WORDS = 'Not saved yet. This page keeps sending these while it stays open:';
 export const WAITING_COST = 'Closing this page, or signing out, loses them.';
 export const FAILED_WORDS = 'Not saved:';
+export const UNKNOWN_WORDS = 'Not known whether these were saved. Check before doing them again:';
 export function checkingWords(count: number): string {
   return count === 1
     ? 'Not saved: 1 save on this page. It shows again once the page has checked who is signed in.'
@@ -45,6 +48,8 @@ export function notSentWords(count: number): string {
 export default function SaveQueueNotice() {
   const state = useSyncExternalStore(subscribeSaveQueue, readSaveQueue, emptySaveQueueState);
   const failedLine = state.failed.length > 0 || state.notSent > 0;
+  const refused = state.failed.filter((item) => item.known);
+  const unknown = state.failed.filter((item) => !item.known);
   const statusLine = state.waiting.length > 0 || state.checking > 0;
   return (
     <div className={statusLine || failedLine ? 'mt-[var(--s3)] grid gap-[var(--s2)]' : undefined}>
@@ -65,11 +70,23 @@ export default function SaveQueueNotice() {
       {failedLine ? (
         <div role="alert" className={LINE}>
           {state.notSent > 0 ? <p>{notSentWords(state.notSent)}</p> : null}
-          {state.failed.length > 0 ? (
+          {refused.length > 0 ? (
             <>
               <p>{FAILED_WORDS}</p>
               <ul className="mt-[var(--s1)] list-disc pl-[var(--s4)]">
-                {state.failed.map((item, index) => (
+                {refused.map((item, index) => (
+                  <li key={`${index}-${item.label}`}>
+                    {item.label}: {item.words}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {unknown.length > 0 ? (
+            <>
+              <p>{UNKNOWN_WORDS}</p>
+              <ul className="mt-[var(--s1)] list-disc pl-[var(--s4)]">
+                {unknown.map((item, index) => (
                   <li key={`${index}-${item.label}`}>
                     {item.label}: {item.words}
                   </li>
