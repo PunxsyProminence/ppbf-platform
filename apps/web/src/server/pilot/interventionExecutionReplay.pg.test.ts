@@ -445,4 +445,37 @@ describe('one tap, one intervention (F-135)', () => {
     expect(retry.body.item?.lineage_id).toBe(executionId);
     expect(await executionCount()).toBe(before);
   });
+
+  test('the recovery read names each record by the key that started it, also after a correction: another tap of the pair is never taken for this one', async () => {
+    // Two taps of the same pair (this tab's, and another tab's of the same coach) and one with no key.
+    const mine = await logTap({ request_key: 'tap-this-tab' });
+    const otherTab = await logTap({ request_key: 'tap-other-tab' });
+    const keyless = await logTap({});
+    expect(mine.body.item?.request_key).toBe('tap-this-tab');
+
+    const read = await ledger();
+    expect(read.status).toBe(200);
+    const keyOf = (executionId: unknown) => read.body.items?.find((item) => item.execution_id === executionId)?.request_key;
+    expect(keyOf(mine.body.item?.execution_id)).toBe('tap-this-tab');
+    expect(keyOf(otherTab.body.item?.execution_id)).toBe('tap-other-tab');
+    expect(keyOf(keyless.body.item?.execution_id)).toBeNull();
+
+    // A correction mints a new record without the key; it is still named by its lineage's key.
+    const corrected = await answer(executionsRoute.PATCH(new NextRequest(`http://localhost${EXECUTIONS}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'correct', execution_id: mine.body.item?.execution_id,
+        correction_reason: 'the context was controlled, not unknown', trained_context: 'controlled',
+      }),
+    })));
+    expect(corrected.status).toBe(200);
+    expect(corrected.body.item?.request_key).toBe('tap-this-tab');
+    const after = await ledger();
+    const current = after.body.items?.find((item) => item.lineage_id === mine.body.item?.execution_id);
+    expect(current?.execution_id).toBe(corrected.body.item?.execution_id);
+    expect(current?.version).toBe(2);
+    expect(current?.request_key).toBe('tap-this-tab');
+    expect(after.body.items?.filter((item) => item.request_key === 'tap-this-tab')).toHaveLength(1);
+  });
 });

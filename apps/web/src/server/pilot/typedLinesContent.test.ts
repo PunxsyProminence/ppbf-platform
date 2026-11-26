@@ -53,6 +53,8 @@ const LINKED_LINES_SHA256: Record<string, string> = {
   wtp_3557c34e022c31: 'af348054e5f79b77fdf2e644f384beb693da08be5209fbbaaa5ab961d0908fa6', // Wednesday Coach Sheet Defense Day (TL-3a; at 746bc1a5)
   wtp_9fbf7f8edf5016: '444687bba7a13750b9447cf569728336345eac5c5dbb1cedeaedc048b190eee8', // Wednesday Gold Standard Coach Script (TL-3b; at 746bc1a5)
   wtp_456e418b1741b8: '5a716e9cdff90a63a310d72e96184e1ef94c207277dbc8289291d03dbfe010b5', // Iso + Plyo 60-Minute Boxing Session (TL-4; at 746bc1a5)
+  wtp_01de3f48606d4c: 'a1cc0a3d368b2e25614bd8a9e4849aee8e443c540f32c292c186f2a855c8993f', // Conditioning session A — SIT (TL-5a; at 746bc1a5)
+  wtp_c2c4bec001a56b: 'eca11c360662cbeaad4cef0bc817c25497403baf86a45c8d5f9b7d461010499f', // Phase 1 boxing skill session (TL-5a; at 746bc1a5)
 };
 
 /** The lane-linked steps that carry their own stated time as their duration (#2177); a step PR adds its templates here. */
@@ -62,6 +64,7 @@ const TIMED_STEPS: Record<string, number[]> = {
   wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a; the minutes in each step's own title)
   wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b; steps 6 and 7 are controlled sparring)
   wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4; its other linked steps share their block times)
+  wtp_01de3f48606d4c: [1, 3], // Conditioning session A — SIT (TL-5a; details.time, "15 min" and "8 min")
 };
 
 type Row = Record<string, string>;
@@ -239,16 +242,17 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
   it('give each linked step its own stated time as its duration, and label it (Codex P1 and App Overwatch on #2177)', () => {
     // Issuing, timers and presets read duration_minutes, never details (workoutTemplates.ts, WorkoutTemplateItemRow
     // .details). A linked step whose details state a time of its own runs for that many minutes: its block_time range,
-    // or, where it has none of its own, the minutes its block_title states ("(5 MIN)"), either held by no other step of
-    // its template (the title's minutes are matched as written, "(N MIN)"). A time several steps share is the block's,
-    // not a step's; and only a step at contact none or light_technical may hold a duration (the import's rule,
-    // specs/templates.ts). Durations a step states some other way (details.time, or minutes inside its typed line) are
-    // not read here.
+    // or, where it has none of its own, the minutes its block_title states ("(5 MIN)"), or else its details.time when
+    // that states whole minutes ("15 min"; App Overwatch on #2162), each held by no other step of its template (the
+    // title's and time's minutes are matched as written). A time several steps share is the block's, not a step's; and
+    // only a step at contact none or light_technical may hold a duration (the import's rule, specs/templates.ts).
+    // Anything else (a range, seconds, per-round text, minutes inside a typed line) is not read here; the review sheet
+    // lists it.
     const laneIds = new Set(laneDrills.map((drill) => drill.drill_id));
     const detail = (item: Row, key: string) => (item.details ? JSON.parse(item.details)[key] : undefined);
     const holders = new Map<string, number>();
     for (const item of items) {
-      for (const key of ['block_time', 'block_title']) {
+      for (const key of ['block_time', 'block_title', 'time']) {
         const at = `${item.template_id} ${key} ${detail(item, key)}`;
         holders.set(at, (holders.get(at) ?? 0) + 1);
       }
@@ -260,7 +264,10 @@ describe('lane W4-8 drills for the typed steps of the mixed templates (committed
       const title = own(item, 'block_title') ? String(detail(item, 'block_title') ?? '') : '';
       const found = [...title.matchAll(/\((\d{1,2}) MIN\)/g)];
       const minutes = found.length === 1 ? Number(found[0][1]) : 0;
-      return minutes >= 1 && minutes <= 90 ? { text: found[0][0], minutes } : null;
+      if (minutes >= 1 && minutes <= 90) return { text: found[0][0], minutes };
+      const time = own(item, 'time') ? /^(\d{1,2}) min$/.exec(String(detail(item, 'time') ?? '')) : null;
+      const timeMinutes = time ? Number(time[1]) : 0;
+      return timeMinutes >= 1 && timeMinutes <= 90 ? { text: time?.[0] ?? '', minutes: timeMinutes } : null;
     };
     const timed = items.filter((item) => laneIds.has(item.drill_id) && statedTime(item) !== null
       && ['none', 'light_technical'].includes(item.contact_level));
