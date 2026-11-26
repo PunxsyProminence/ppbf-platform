@@ -87,6 +87,11 @@ export function useParentFamilyThreads(): ParentFamilyThreadsState {
   const readsSent = useRef<Set<string>>(new Set());
   // The latest drafts for send(), which runs outside a render.
   const draftsRef = useRef(drafts);
+  // The boxes with a send in flight, held synchronously: two submits in the same tick (a double
+  // press) both run before the `sending` state disables the button, and the post is append-only,
+  // so the second would be a duplicate message (Codex 4704019860 on #2210; as the hub's own
+  // replySendingRef).
+  const sendingKeys = useRef<Set<string>>(new Set());
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
@@ -130,6 +135,8 @@ export function useParentFamilyThreads(): ParentFamilyThreadsState {
       setNotes((held) => ({ ...held, [key]: { text: 'Write a message before sending.', failed: true } }));
       return;
     }
+    if (sendingKeys.current.has(key)) return;
+    sendingKeys.current.add(key);
     setSending((held) => ({ ...held, [key]: true }));
     setNotes((held) => ({ ...held, [key]: undefined }));
     try {
@@ -156,6 +163,7 @@ export function useParentFamilyThreads(): ParentFamilyThreadsState {
         [key]: { text: 'Not sent; your words are still in the box. Check the connection and send again.', failed: true },
       }));
     } finally {
+      sendingKeys.current.delete(key);
       setSending((held) => ({ ...held, [key]: false }));
     }
   }, []);

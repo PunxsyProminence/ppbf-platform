@@ -86,6 +86,41 @@ test('a guardian writes to the coach about the chosen child; the box empties and
   await waitFor(() => expect(reads).toBe(2));
 });
 
+test('two submits of one box in the same tick send it once, for a new message and for writing again (Codex 4704019860)', async () => {
+  let releases: Array<(response: Response) => void> = [];
+  const fetchMock = install(
+    () => jsonResponse({ ok: true, items: [THREAD] }),
+    () => new Promise<Response>((resolve) => { releases.push(resolve); }),
+  );
+  render(<Hub activeChildId="ath_1" />);
+  const againBox = await screen.findByLabelText(/Write again about Second Child/);
+  const newBox = screen.getByLabelText('Your message about First Child');
+  fireEvent.change(newBox, { target: { value: 'Is practice on Saturday?' } });
+  fireEvent.change(againBox, { target: { value: 'Thank you!' } });
+
+  // A double press: both submits land before React re-renders the disabled button.
+  act(() => {
+    fireEvent.submit(newBox.closest('form') as HTMLFormElement);
+    fireEvent.submit(newBox.closest('form') as HTMLFormElement);
+    fireEvent.submit(againBox.closest('form') as HTMLFormElement);
+    fireEvent.submit(againBox.closest('form') as HTMLFormElement);
+  });
+  expect(bodies(fetchMock, '/api/pilot/parent/family-threads')).toEqual([
+    { athlete_id: 'ath_1', text: 'Is practice on Saturday?' },
+    { thread_id: 't1', text: 'Thank you!' },
+  ]);
+
+  // Once a send has answered, the box sends again.
+  await act(async () => {
+    for (const release of releases) release(jsonResponse({ error: 'down' }, false, 500));
+    releases = [];
+  });
+  await act(async () => {
+    fireEvent.submit(newBox.closest('form') as HTMLFormElement);
+  });
+  expect(bodies(fetchMock, '/api/pilot/parent/family-threads')).toHaveLength(3);
+});
+
 test('with no child chosen there is no box, only how to choose one', async () => {
   install(() => jsonResponse({ ok: true, items: [] }));
   render(<Hub activeChildId={null} />);
