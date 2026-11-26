@@ -107,6 +107,12 @@ describe('normalizeRoomName (Q-C A)', () => {
     // Greek capital sigma, small sigma and final sigma.
     expect(same('\u039f\u03a3', '\u03bf\u03c3')).toBe(true);
     expect(same('\u03bf\u03c2', '\u03bf\u03c3')).toBe(true);
+    // The sharp s and the capital sharp s fold to "ss" (Codex P2 on #2214, thread 4712489992).
+    expect(same('Stra\u1e9ee', 'Stra\u00dfe')).toBe(true);
+    expect(same('\u1e9e\u1e9e', 'ssss')).toBe(true);
+    // No placeholder: a typed U+E000 is not the dotless i, and the dotted capital I is not "i".
+    expect(same('K\ue000l\ue000c', 'K\u0131l\u0131c')).toBe(false);
+    expect(same('\u0130stanbul', 'istanbul')).toBe(false);
     // The sharp s folds to "ss".
     expect(same('Stra\u00dfe', 'STRASSE')).toBe(true);
     // The Turkish dotless i, an accent, and a different word do not fold together.
