@@ -918,6 +918,74 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('the type-change retire decides again under its own locks: made a parent again while a coach read\'s retire waits keeps the parent row on (reviewer B)', async () => {
+    const client = await freshDatabase('emailsw_type_back_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_type_back_race'), max: 4 });
+    try {
+      await setEmailAlertSwitch({ ...subject('parent'), switchedOn: true }, NOW);
+      await client.query(`update pilot.accounts set role = 'coach' where account_id = $1`, [PARENT_ID]);
+      await client.query(`update pilot.organization_memberships set role = 'coach' where account_id = $1`, [PARENT_ID]);
+      const asCoach = { organizationId: ORG_ID, accountId: PARENT_ID, role: 'coach' as const, athleteId: null };
+      // One office statement: the account, then the membership, made a parent again.
+      await whileHeld(client, [
+        `with a as (update pilot.accounts set role = 'parent' where account_id = $1 returning account_id)
+         update pilot.organization_memberships m set role = 'parent' from a where m.account_id = a.account_id and m.organization_id = $2`,
+        [PARENT_ID, ORG_ID],
+      ], () => readEmailAlertSwitch(asCoach, NOW));
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'parent', switched_on: true })]);
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach with email on, the gym suspended while a switch-on save waits: 403, the switch kept on, nothing written (T-3 A; reviewer B)', async () => {
+    const client = await freshDatabase('emailsw_gym_on_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_gym_on_race'), max: 4 });
+    try {
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      await expect(whileHeld(
+        client,
+        [`update pilot.organizations set status = 'suspended' where organization_id = $1`, [ORG_ID]],
+        () => setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW),
+      )).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: true, has_off_at: false })]);
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['the record deleted', [`update pilot.athletes set deleted_at = now() where athlete_id = '${ADULT_ATHLETE}'`]],
+    ['the account unlinked', [`update pilot.accounts set athlete_id = null where account_id = '${ADULT_ID}'`]],
+    ['the record deleted and the login deleted and off', [
+      `update pilot.athletes set deleted_at = now() where athlete_id = '${ADULT_ATHLETE}'`,
+      `update pilot.accounts set deleted_at = now(), active_flag = false where account_id = '${ADULT_ID}'`,
+    ]],
+  ] as const)('an adult athlete with email on, %s: the next read retires it and clears the address, audited no_longer_offered (reviewer B)', async (_label, changes) => {
+    const client = await freshDatabase('emailsw_record_gone');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      for (const sql of changes) await client.query(sql);
+      await expect(readEmailAlertSwitch(subject('adult'), NOW)).resolves.toEqual({ offered: false });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ switched_on: false, confirmed_address: null })]);
+      const audits = await auditRows(client);
+      expect(audits.map((row) => row.details.reason)).toEqual(['no_longer_offered']);
+      expect(JSON.stringify(audits)).not.toContain('example.test');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a coach with email on made a volunteer, then a coach again: the switch is kept, paused, and reads on again (T-2 A)', async () => {
     const client = await freshDatabase('emailsw_no_switch_role');
     activeClient = client;
@@ -1120,7 +1188,9 @@ describe('emailAlertSwitches.ts on a real database', () => {
       );
       await office.query('COMMIT');
       await expect(save).rejects.toMatchObject({ status: 403 });
-      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false })]);
+      // The record is gone: the row that held a confirmed address is retired, whatever the login (reviewer B).
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ account_id: ADULT_ID, switched_on: false, confirmed_address: null })]);
+      expect((await auditRows(client)).map((row) => row.details.reason)).toEqual(['no_longer_offered']);
     } finally {
       office.release(true);
       await client.end();
