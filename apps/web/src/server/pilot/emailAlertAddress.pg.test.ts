@@ -499,6 +499,35 @@ describe('the adult athlete\'s alert address on a real database', () => {
     }
   });
 
+  test('a switch save while a code is pending answers code_pending: true, and the code still confirms after it', async () => {
+    const client = await freshDatabase('emailaddr_save_pending');
+    activeClient = client;
+    try {
+      const mail = mailbox();
+      const address = newAddress('pending');
+      await post('adult', address, mail.send);
+      // PUT /me's answer must not hide a code that can still be entered.
+      await expect(setEmailAlertSwitch({ ...subject('adult'), switchedOn: false }, NOW)).resolves.toEqual({
+        offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false, code_pending: true,
+      });
+      expect(await addressRow(client)).toMatchObject({
+        pending_address: address, pending_code_hash: emailAlertCodeHash(ORG_ID, ADULT_ID, address, mail.sent[0].code),
+      });
+      await expect(put('adult', mail.sent[0].code)).resolves.toMatchObject({ address_confirmed: true, code_pending: false });
+      // On with a confirmed address while a second code waits: still pending.
+      const second = mailbox();
+      await post('adult', newAddress('pending'), second.send, at(60_000));
+      await expect(setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, at(60_000))).resolves.toEqual({
+        offered: true, user_type: 'adult_athlete', switched_on: true, address_confirmed: true, code_pending: true,
+      });
+      await expect(put('adult', second.sent[0].code, at(60_000))).resolves.toEqual({
+        offered: true, user_type: 'adult_athlete', switched_on: true, address_confirmed: true, code_pending: false,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a code works once', async () => {
     const client = await freshDatabase('emailaddr_once');
     activeClient = client;
