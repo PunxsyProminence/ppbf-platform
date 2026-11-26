@@ -57,7 +57,7 @@ jest.mock('./db', () => ({
 import { MINT } from './contentImport/ids';
 import { versionId } from './contentImport/datasets/templateScriptVersions';
 import { editWorkoutTemplate, parseWorkoutTemplateEdit } from './workoutTemplateEdit';
-import { getWorkoutTemplateWithItems, issueWorkoutTemplate } from './workoutTemplates';
+import { getWorkoutTemplateWithItems, issueOrder, issueWorkoutTemplate } from './workoutTemplates';
 
 jest.setTimeout(240_000);
 
@@ -398,6 +398,53 @@ describe('editing a workout template', () => {
     // The old version is no longer current, so it cannot be issued again; the new one can.
     expect(await rejection(issue('wtp_issued'))).toMatchObject({ status: 409 });
     expect((await issue(result.template_id)).outcome).toBe('issued');
+  });
+
+  it("carries an owner's nested-step link to its parent's new id, follows a moved parent, and drops a link to a removed one (TL-ORD)", async () => {
+    // details.within_item_id names the item a step sits inside (D-PK73-3); issueOrder issues it straight after.
+    const org = await newGym();
+    await seedDrill(org, 'drl_jab', 'Jab');
+    await seedTemplate(org, 'wtp_nest', 'Nested', 'drl_jab');
+    const v1 = await itemsOf(org, 'wtp_nest');
+    await client.query(
+      `update pilot.workout_template_items set details = jsonb_build_object('within_item_id', $3::text, 'timing', 'end of the warm-up')
+        where organization_id = $1 and item_id = $2`,
+      [org, v1[2].item_id, v1[0].item_id],
+    );
+
+    // A field-only edit carries every item: the link names step 1's new id, and the version issues 1, 3, 2.
+    await edit(org, { template_id: 'wtp_nest', intent: 'New intent.' });
+    const v2Id = versionId('wtp', 'wtp_nest', 2);
+    const v2 = await itemsOf(org, v2Id);
+    expect(v2[2].details).toEqual({ within_item_id: v2[0].item_id, timing: 'end of the warm-up' });
+    expect(v2[0].item_id).toBe(MINT.templateItem(v2Id, '1'));
+    const read2 = await getWorkoutTemplateWithItems(org, v2Id);
+    expect(issueOrder(read2?.items ?? []).map((item) => item.ordinal)).toEqual([1, 3, 2]);
+
+    // An edit that moves the parent: the link follows it to its new place, not to the old ordinal.
+    await edit(org, { template_id: v2Id, items: [{ item_id: v2[1].item_id }, { item_id: v2[0].item_id }, { item_id: v2[2].item_id }] });
+    const v3Id = versionId('wtp', 'wtp_nest', 3);
+    const v3 = await itemsOf(org, v3Id);
+    expect(v3.map((item) => item.block)).toEqual(['technical', 'warmup', 'cooldown']);
+    expect(v3[2].details).toEqual({ within_item_id: v3[1].item_id, timing: 'end of the warm-up' });
+    const read3 = await getWorkoutTemplateWithItems(org, v3Id);
+    expect(issueOrder(read3?.items ?? []).map((item) => item.block)).toEqual(['technical', 'warmup', 'cooldown']);
+
+    // An edit that removes the parent drops the link; the rest of the details stay.
+    await edit(org, { template_id: v3Id, items: [{ item_id: v3[0].item_id }, { item_id: v3[2].item_id }] });
+    const v4 = await itemsOf(org, versionId('wtp', 'wtp_nest', 4));
+    expect(v4[1].details).toEqual({ timing: 'end of the warm-up' });
+
+    // A link naming no item of the edited version (here an id of no template) is carried as it is, not dropped.
+    const v4Id = versionId('wtp', 'wtp_nest', 4);
+    await client.query(
+      `update pilot.workout_template_items set details = jsonb_build_object('within_item_id', 'wti_elsewhere')
+        where organization_id = $1 and item_id = $2`,
+      [org, v4[0].item_id],
+    );
+    await edit(org, { template_id: v4Id, intent: 'Another intent.' });
+    const v5 = await itemsOf(org, versionId('wtp', 'wtp_nest', 5));
+    expect(v5[0].details).toEqual({ within_item_id: 'wti_elsewhere' });
   });
 
   it('writes nothing when nothing really changes', async () => {

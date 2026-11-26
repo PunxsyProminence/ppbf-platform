@@ -7,7 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import DecisionLoopReviewPage from './page';
-import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { handOffArrivalAthlete, POST_TO_FAMILY_SECTION, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 /* A PROBE ON EVERY COMMIT. WorkAxis sits at the foot of the page and renders
    whenever the page does. This stand-in records, after each commit and before
@@ -172,6 +172,20 @@ function installFetch(overrides: Record<string, unknown> = {}) {
     if (key.includes('/api/pilot/coach/athlete-messages')) {
       return jsonResponse({ ok: true, items: [] });
     }
+    // Messages a guardian started to the coach, and the unread line (W4 item 4); none here.
+    if (key.includes('/api/pilot/coach/family-threads/unread') && overrides.familyThreadsUnread) {
+      return (overrides.familyThreadsUnread as () => Response)();
+    }
+    if (key.includes('/api/pilot/coach/family-thread-reads')) {
+      (overrides.familyThreadReads as (() => void) | undefined)?.();
+      return jsonResponse({ ok: true, read: JSON.parse(String(init?.body ?? '{}')) });
+    }
+    if (key.includes('/api/pilot/coach/family-threads?') && overrides.familyThreads) {
+      return (overrides.familyThreads as (url: string) => Response)(key);
+    }
+    if (key.includes('/api/pilot/coach/family-threads')) {
+      return jsonResponse({ ok: true, items: [] });
+    }
     throw new Error(`Unexpected fetch: ${key}`);
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -190,6 +204,109 @@ const originalFetch = global.fetch;
 afterEach(() => {
   global.fetch = originalFetch;
   jest.clearAllMocks();
+});
+
+test('under the Athlete picker, an athlete with unseen family messages is named; a tap chooses them and goes to the family section (W4 item 4)', async () => {
+  installFetch({ familyThreadsUnread: () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath-2', unseen: 2 }] }) });
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+  try {
+    render(<DecisionLoopReviewPage />);
+    const picker = await rosterLoaded();
+    const section = picker.closest('section') as HTMLElement;
+    const addressBefore = window.location.href;
+    fireEvent.click(await within(section).findByRole('button', { name: 'Second Athlete (2 new)' }));
+    await waitFor(() => expect(athletePicker().value).toBe('ath-2'));
+    await waitFor(() => expect(scrolled.map((element) => element.id)).toContain(POST_TO_FAMILY_SECTION));
+    // The page's own selection, never the address: no athlete id in it (Q4.4 A).
+    expect(window.location.href).toBe(addressBefore);
+    expect(window.location.href).not.toContain('ath-2');
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
+test('a tap on the athlete already on screen only goes to the family section: their records are not read again (W4 item 4)', async () => {
+  const fetchMock = installFetch({ familyThreadsUnread: () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath-2', unseen: 2 }] }) });
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+  try {
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-2' } });
+    await screen.findByText('Behavior & Habit Note');
+    const reads = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('/medical-status')).length;
+    const before = reads();
+    fireEvent.click(await within(athletePicker().closest('section') as HTMLElement).findByRole('button', { name: 'Second Athlete (2 new)' }));
+    expect(scrolled.map((element) => element.id)).toEqual([POST_TO_FAMILY_SECTION]);
+    expect(reads()).toBe(before);
+    expect(athletePicker().value).toBe('ath-2');
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
+test('a tap on the athlete on screen while their records are read goes to the family section once they are in (W4 item 4)', async () => {
+  let release: () => void = () => {};
+  let held = false;
+  installFetch({
+    familyThreadsUnread: () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath-2', unseen: 2 }] }),
+    medicalStatus: () => {
+      if (held) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
+      held = true;
+      return new Promise<Response>((resolve) => { release = () => resolve(jsonResponse({ status: null, effectiveStatus: 'no_record' })); });
+    },
+  });
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+  try {
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await rosterLoaded(), { target: { value: 'ath-2' } });
+    fireEvent.click(await within(athletePicker().closest('section') as HTMLElement).findByRole('button', { name: 'Second Athlete (2 new)' }));
+    expect(scrolled).toEqual([]);
+    await act(async () => release());
+    await waitFor(() => expect(scrolled.map((element) => element.id)).toEqual([POST_TO_FAMILY_SECTION]));
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
+test('once the panel records a guardian post as seen, the line under the picker is read again (W4 item 4)', async () => {
+  let unseen = 1;
+  installFetch({
+    familyThreadsUnread: () => jsonResponse({ ok: true, items: unseen ? [{ athlete_id: 'ath-2', unseen }] : [] }),
+    // Only the recorded read clears it: the line must be read again because of it.
+    familyThreadReads: () => {
+      unseen = 0;
+    },
+    familyThreads: () => {
+      return jsonResponse({ ok: true, items: [{
+        thread_id: 't1', athlete_id: 'ath-2', created_at: '2026-11-25T03:00:00.000Z', guardian_name: 'A Guardian',
+        posts: [{ post_id: 'p1', from: 'guardian', staff_name: null, text: 'Is practice on Saturday?', created_at: '2026-11-25T03:00:00.000Z', new_to_me: true }],
+      }] });
+    },
+  });
+  // As a browser does: a watched post that is on screen is reported as soon as it is watched.
+  class OnScreenObserver {
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+    observe(target: Element) {
+      this.callback([{ target, isIntersecting: true, intersectionRatio: 1, intersectionRect: { height: 10 }, rootBounds: { height: 800 } } as unknown as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = OnScreenObserver;
+  try {
+    render(<DecisionLoopReviewPage />);
+    const section = (await rosterLoaded()).closest('section') as HTMLElement;
+    fireEvent.click(await within(section).findByRole('button', { name: 'Second Athlete (1 new)' }));
+    await screen.findByText('Is practice on Saturday?');
+    await waitFor(() => expect(within(section).queryByRole('button', { name: /new\)$/ })).toBeNull());
+  } finally {
+    delete (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+  }
 });
 
 test('logging a behavior note posts entity_type coach_note with a generic note_type, no invented taxonomy', async () => {
@@ -721,6 +838,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
           ],
         });
       }
+      // Messages a guardian started to the coach, and the unread line under the picker (W4 item 4).
+      if (key.includes('/api/pilot/coach/family-threads')) return jsonResponse({ ok: true, items: [] });
       if (key.includes('athleteId=ath-b')) {
         if (options.readB) return options.readB();
         if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
