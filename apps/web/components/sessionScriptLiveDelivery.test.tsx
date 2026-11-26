@@ -10,7 +10,7 @@ import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { RESEND_MS, keepSave, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
@@ -2655,14 +2655,22 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     });
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await tap('Record as completed');
-    await openLog();
-    await logPair();
+    // Another part of the page keeps a save behind the finish (a here tap, which the finish does not
+    // lock; the console's own log is locked while a finish waits).
+    await act(async () => {
+      await keepSave({
+        label: 'Mark an athlete here',
+        send: () => {
+          throw new TypeError('Failed to fetch');
+        },
+      });
+    });
     expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
     await act(async () => {
       refuseFinish?.(jsonResponse({ error: 'SESSION_SCRIPT_RUN_NOT_IN_PROGRESS' }, false, 409));
       await jest.advanceTimersByTimeAsync(0);
     });
-    expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(within(waitingLine() as HTMLElement).getByText('Mark an athlete here')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pause session' })).not.toBeDisabled();
     expect(screen.queryByText(/^Ending this session is not saved yet/)).toBeNull();
     // The finish's own refusal is said on the console, which stays; not in the page's list.
@@ -3201,6 +3209,75 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     const keys = logPostCalls(fetchMock).map((body) => body.request_key);
     expect(keys).toHaveLength(3);
     expect(keys[2]).toBe(keys[0]);
+  });
+
+  // Codex P2 (review 6062374955 on #2178): a log made after a finish is kept would be sent after it and
+  // land on a session that has ended, as the server takes a log on any run. It is locked, as the run
+  // actions are, while the finish waits.
+  it('a kept finish locks the intervention log while it waits: no log is kept or sent after it', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {
+      patch: () => lost(),
+    });
+    await openLog();
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    expect(screen.getByRole('button', { name: 'Log intervention' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    expect(screen.getByText('Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log intervention' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(logPostCalls(fetchMock)).toHaveLength(0);
+    expect(within(waitingLine() as HTMLElement).queryByText(/^Intervention log/)).toBeNull();
+  });
+
+  // Round 20, reviewer B: the finish counts as in hand from the tap, not only once kept. While the page
+  // re-checks who is signed in, the finish waits for that answer, and a log tapped meanwhile must not be
+  // kept after it.
+  it('a finish waiting on the page\'s re-check of who is signed in already locks the log, and the lock is described by the finish\'s line', async () => {
+    jest.useFakeTimers();
+    let asks = 0;
+    let hold: ((response: Response) => void) | undefined;
+    const { fetchMock } = await renderKept(liveRun(), {
+      session: () => {
+        asks += 1;
+        if (asks === 1) return signedIn();
+        return new Promise<Response>((resolve) => {
+          hold = resolve;
+        });
+      },
+      patch: () => lost(),
+    });
+    await openLog();
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    // The role session is written again: the page asks again who is signed in, and the answer waits.
+    await act(async () => {
+      createPersistentRoleSession('coach');
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    const logButton = screen.getByRole('button', { name: 'Log intervention' });
+    expect(logButton).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(logButton);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      hold?.(signedIn());
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(readSaveQueue().waiting).toEqual(['Record as completed']);
+    expect(logPostCalls(fetchMock)).toHaveLength(0);
+    const line = screen.getByText('Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.');
+    expect(screen.getByRole('button', { name: 'Log intervention' }).getAttribute('aria-describedby')).toBe(line.id);
   });
 
   it('a log refused while a kept finish waits behind it is said in the page\'s list: the console goes once the finish lands', async () => {

@@ -86,6 +86,7 @@ import { issueCoachCard } from './coachCards';
 import { query, queryOne, withTransaction } from './db';
 import { markDrillFloorTested } from './drillFloorValidations';
 import { promoteReferenceDrill, updateDrill } from './drills';
+import { listIssuedWorkoutsForAssignments } from './workoutIssues';
 import {
   getWorkoutTemplateWithItems,
   issueWorkoutTemplate,
@@ -514,6 +515,37 @@ describe('issuing a template', () => {
         { step: 1, duration_minutes: 6, rep_count: null },
         { step: 2, duration_minutes: null, rep_count: null },
       ]);
+  });
+
+  test('a step an owner placed inside another is issued, recorded and read back straight after it (TL-ORD, App Overwatch on #2201)', async () => {
+    const gym = await newGym('nested-step');
+    await insertReference(gym, 'ref-run', 'Running Drill');
+    await adopt(gym, 'ref-run', 'Running Drill');
+    // Warm-up, main set, cool-down, and a check the owner placed inside the warm-up (as D-PK73-3's fresh check).
+    await insertTemplate(gym, ['ref-run', 'ref-run', 'ref-run', 'ref-run']);
+    await client.query(
+      `update pilot.workout_template_items set details = '{"within_item_id": "wti_1", "timing": "at the end of the warm-up"}'::jsonb
+        where organization_id = $1 and template_id = $2 and ordinal = 4`,
+      [gym.organizationId, TEMPLATE_ID],
+    );
+
+    const result = await issue(gym);
+    expect(result.outcome).toBe('issued');
+    if (result.outcome !== 'issued') return;
+    expect(result.steps.map((step) => step.item_id)).toEqual(['wti_1', 'wti_4', 'wti_2', 'wti_3']);
+
+    // As recorded: numbered by place, each step still naming the template item it came from.
+    const recorded = await client.query<{ ordinal: number; template_item_id: string; assignment_id: string }>(
+      `select ordinal, template_item_id, assignment_id from pilot.workout_issue_steps
+        where organization_id = $1 order by ordinal`,
+      [gym.organizationId],
+    );
+    expect(recorded.rows.map((row) => [row.ordinal, row.template_item_id])).toEqual([[1, 'wti_1'], [2, 'wti_4'], [3, 'wti_2'], [4, 'wti_3']]);
+
+    // As every screen reads it: the production reader returns the steps in that order.
+    const [workout] = await listIssuedWorkoutsForAssignments(gym.organizationId, result.steps.map((step) => step.assignment.assignment_id));
+    expect(workout.steps.map((step) => step.assignment_id)).toEqual(recorded.rows.map((row) => row.assignment_id));
+    expect(workout.steps.map((step) => step.assignment_id)).toEqual(result.steps.map((step) => step.assignment.assignment_id));
   });
 
   test('inside its transaction an issue takes NO second connection: every statement between BEGIN and COMMIT is on the transaction', async () => {

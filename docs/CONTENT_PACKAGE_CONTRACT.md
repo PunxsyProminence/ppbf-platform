@@ -546,6 +546,7 @@ One row = one item, in order, of one template. Identity: template_id + ordinal. 
 
 Rules:
 
+- A details.within_item_id names the item_id of another item of the same template in this file.
 - details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
 - At least one of drill_id, free_text_drill or a non-empty details.
 - Contact above light_technical carries no duration or rep count.

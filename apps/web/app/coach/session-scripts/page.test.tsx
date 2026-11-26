@@ -875,9 +875,37 @@ describe('a coach-made plan', () => {
     await waitFor(() => expect(listReads()).toBe(2));
   });
 
+  it.each([
+    ['removal', /Because a block was removed, your changes were saved as version 2\. The earlier version is kept as it was\./],
+    ['run', /This plan has been delivered before, so your changes were saved as version 2\./],
+  ])('a new version because of %s says the true reason', async (because, sentence) => {
+    const saved = detail({ script_id: 'scr-friday-v2', version: 2 });
+    editingFetch(() => jsonResponse({ outcome: 'new_version', because, script: saved }));
+    const form = await openAndEdit();
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(sentence);
+    if (because === 'removal') expect(notice).not.toHaveTextContent(/delivered before/);
+  });
+
+  it('a new version with no reason given says only what is true: saved as the next version, the earlier one kept', async () => {
+    const saved = detail({ script_id: 'scr-friday-v2', version: 2 });
+    editingFetch(() => jsonResponse({ outcome: 'new_version', script: saved }));
+    const form = await openAndEdit();
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('Your changes were saved as version 2. The earlier version is kept as it was.');
+    expect(notice).not.toHaveTextContent(/delivered before/);
+    expect(notice).not.toHaveTextContent(/removed/);
+  });
+
   it('a delivered plan is saved as a new version: the page says so, opens that version and starts it', async () => {
     const saved = detail({ script_id: 'scr-friday-v2', version: 2 });
-    const { urls } = editingFetch(() => jsonResponse({ outcome: 'new_version', script: saved }));
+    const { urls } = editingFetch(() => jsonResponse({ outcome: 'new_version', because: 'run', script: saved }));
     const form = await openAndEdit();
 
     fireEvent.click(within(form).getByRole('button', { name: 'Save plan' }));
@@ -976,25 +1004,44 @@ describe('a coach-made plan', () => {
     await waitFor(() => expect(listReads()).toBe(2));
   });
 
-  it('a plain session started while a plan is being edited opens the class screen, and the form is put away unsent', async () => {
-    const plainRun = liveRunRow({ script_id: null, script_version: null, current_block_id: null });
-    const fetchMock = mockFetch((url, init) => {
+  // App Overwatch, A, on #2199: opening a plan or starting a session used to put the form away and lose
+  // its changes without a word. While the editor is open both are disabled, and the page says why.
+  it('while a plan is being edited no plan can be opened and no session started; Cancel and Save bring them back', async () => {
+    mockFetch((url, init) => {
       if (url.includes('/api/pilot/session-scripts/runs')) {
-        if (init?.method === 'POST') return jsonResponse({ run: plainRun });
         return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
       }
-      return url.includes('script_id') ? jsonResponse({ script: detail({ version: 1 }) }) : jsonResponse({ scripts: [FRIDAY] });
+      if (init?.method === 'PATCH') return jsonResponse({ outcome: 'updated', script: detail({ version: 1 }) });
+      return url.includes('script_id') ? jsonResponse({ script: detail({ version: 1 }) }) : jsonResponse({ scripts: [FRIDAY, TUESDAY] });
     });
-    await openAndEdit();
-
-    const plain = screen.getByRole('button', { name: 'Start a plain session' });
+    render(<CoachSessionScriptsPage />);
+    const plain = await screen.findByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(plain).not.toBeDisabled());
-    fireEvent.click(plain);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open plan' }))[0]);
+    await screen.findByText('Arrival and wraps');
+    const sentence = 'Save or cancel your changes to open another plan or start a class.';
+    const closed = () => {
+      expect(screen.getByRole('button', { name: 'Open plan' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Showing plan' })).not.toBeDisabled();
+      expect(plain).not.toBeDisabled();
+      expect(screen.queryByText(sentence)).toBeNull();
+    };
+    closed();
 
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
-    expect(screen.queryByRole('form', { name: 'Edit plan' })).toBeNull();
-    // Nothing of the form was sent: no PATCH of the plan.
-    expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'PATCH')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit minutes and titles' }));
+    await screen.findByRole('form', { name: 'Edit plan' });
+    expect(screen.getByText(sentence)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Showing plan' })).toBeDisabled();
+    expect(plain).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    closed();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit minutes and titles' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save plan' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved.');
+    closed();
   });
 });
 
