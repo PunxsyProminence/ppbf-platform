@@ -802,11 +802,13 @@ describe('workout templates', () => {
       itemRow(template, 2, jab, { item_id: id(template, 2), details: inside(id(template, 1)) }),
       itemRow(template, 3, jab, { item_id: id(template, 3), details: inside(id(template, 3)) }),
       itemRow(template, 4, jab, { item_id: id(template, 4), details: inside(id(other, 1)) }),
+      itemRow(template, 5, jab, { item_id: id(template, 5), details: JSON.stringify({ within_item_id: 42 }) }),
+      itemRow(template, 6, jab, { item_id: id(template, 6), details: inside('') }),
       itemRow(other, 1, jab, { item_id: id(other, 1) }),
       itemRow(other, 2, jab, { item_id: id(other, 2), details: inside(id(other, 1)) }),
     ]));
     expect(planned.blocking.map((finding) => [finding.code, finding.key, finding.message])).toEqual([
-      ['row_rule', template, `template ${template} has a within_item_id that names no other item of it in this file: step 2 (${id(template, 1)}), step 3 (${id(template, 3)}), step 4 (${id(other, 1)})`],
+      ['row_rule', template, `template ${template} has a within_item_id that names no other item of it in this file: step 2 (${id(template, 1)}), step 3 (${id(template, 3)}), step 4 (${id(other, 1)}), step 5 (42), step 6 ("")`],
     ]);
   });
 

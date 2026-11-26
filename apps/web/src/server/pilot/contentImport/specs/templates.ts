@@ -17,15 +17,22 @@ import {
 } from './common';
 import { detailsColumn, detailsRule } from './trainingTracks';
 
-/** An item's details.within_item_id (an owner's step placed inside another, D-PK73-3), or undefined. */
-export function withinItemIdOf(details: string | undefined): string | undefined {
+/** An item's details.within_item_id as written (an owner's step placed inside another, D-PK73-3); null when absent. */
+function withinItemValue(details: string | undefined): unknown {
   try {
     const value: unknown = JSON.parse(details ?? '');
-    const parent = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>).within_item_id : undefined;
-    return typeof parent === 'string' && parent !== '' ? parent : undefined;
+    return value && typeof value === 'object' && !Array.isArray(value) && 'within_item_id' in value
+      ? (value as Record<string, unknown>).within_item_id ?? null
+      : null;
   } catch {
-    return undefined; // a blank cell, or JSON detailsRule names
+    return null; // a blank cell, or JSON detailsRule names
   }
+}
+
+/** An item's details.within_item_id when it is an id (a non-empty string), otherwise undefined. */
+export function withinItemIdOf(details: string | undefined): string | undefined {
+  const parent = withinItemValue(details);
+  return typeof parent === 'string' && parent !== '' ? parent : undefined;
 }
 
 // pilot.workout_templates and pilot.workout_template_items
@@ -152,11 +159,14 @@ export const workoutTemplatesDataset: DatasetSpec = {
           // A new version re-mints every item id and carries the link to the id the file gave its parent
           // (datasets/templates.ts; App Overwatch on #2205, comment 7176799374), so the link must name one.
           description: 'A details.within_item_id names the item_id of another item of the same template in this file.',
+          // The AI intake prompt offers no item_id, so it can draft no such link (aiPrompt.test.ts).
+          inPrompt: false,
           check: (rows) => {
             const ids = new Set(rows.map((row) => row.item_id ?? '').filter((id) => id !== ''));
             const unnamed = rows.flatMap((row) => {
-              const parent = withinItemIdOf(row.details);
-              return parent === undefined || (parent !== row.item_id && ids.has(parent)) ? [] : [`step ${row.ordinal} (${parent})`];
+              const parent = withinItemValue(row.details);
+              if (parent === null || (typeof parent === 'string' && parent !== row.item_id && ids.has(parent))) return [];
+              return [`step ${row.ordinal} (${typeof parent === 'string' && parent !== '' ? parent : JSON.stringify(parent)})`];
             });
             return unnamed.length > 0 ? `has a within_item_id that names no other item of it in this file: ${unnamed.join(', ')}` : null;
           },
