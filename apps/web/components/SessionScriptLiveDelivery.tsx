@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
@@ -452,6 +452,13 @@ export default function SessionScriptLiveDelivery({
     finishKeptNow.current = finishKept;
   }, [finishKept]);
   const isFinishWaiting = useCallback(() => finishKeptNow.current, []);
+  // A finish in hand: kept, or being sent or kept right now (the queue may wait for the page's re-check
+  // of who is signed in, and a one-shot finish is on its way). A log made then would be sent after the
+  // finish and land on an ended session, as the server takes a log on any run (Codex P2, review
+  // 6062374955; round 20, reviewer B): the log is locked for all of it. The ref answers a tap in flight.
+  const finishInHand = finishKept || (actionBusy?.startsWith('finish-') ?? false);
+  const finishAskedNow = useRef(false);
+  const finishLineId = useId();
   // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
   // the badge, the block and the switch's state as saved are the server's.
   const askedNotSaved = [
@@ -717,9 +724,9 @@ export default function SessionScriptLiveDelivery({
   );
 
   const logIntervention = useCallback(async () => {
-    // A kept finish waiting: a log made now would be sent after it and land on an ended session
-    // (Codex P2, review 6062374955 on #2178). The button is locked too; this covers a tap in flight.
-    if (logBusy || finishKeptNow.current) return;
+    // A finish in hand (see finishInHand): a log made now would be sent after it and land on an ended
+    // session. The button is locked too; this covers a tap in flight.
+    if (logBusy || finishKeptNow.current || finishAskedNow.current) return;
     if (!logAthleteId || !logProtocolId) {
       setLogError('Pick an athlete and a protocol first.');
       return;
@@ -1015,6 +1022,7 @@ export default function SessionScriptLiveDelivery({
       if (actionBusy) return;
       setActionBusy(busyKey);
       setActionError('');
+      if (body.action === 'finish') finishAskedNow.current = true;
       try {
         // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in):
         // sent once, and a lost answer read back, as before.
@@ -1069,6 +1077,7 @@ export default function SessionScriptLiveDelivery({
         }
         applyServerRun(payload.run as LiveSessionScriptRun);
       } finally {
+        if (body.action === 'finish') finishAskedNow.current = false;
         setActionBusy(null);
       }
     },
@@ -1516,9 +1525,11 @@ export default function SessionScriptLiveDelivery({
               <button
                 type="button"
                 onClick={() => void logIntervention()}
-                // Locked while a kept finish waits, as the run actions are: the queue would send a log
-                // made now after the finish, onto a session that has ended (Codex P2 on #2178).
-                disabled={logBusy || finishKept || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                // Locked while a finish is in hand, as the run actions are: a log made now would be sent
+                // after the finish, onto a session that has ended (Codex P2 on #2178). Described by the
+                // finish's own line, with no words of its own (round 20, reviewer B).
+                disabled={logBusy || finishInHand || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                aria-describedby={finishInHand ? finishLineId : undefined}
                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {logBusy ? 'Logging...' : 'Log intervention'}
@@ -1626,7 +1637,7 @@ export default function SessionScriptLiveDelivery({
             {settleFieldError && (
               <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{settleFieldError}</p>
             )}
-            <p role="status" className={finishKept ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
+            <p id={finishLineId} role="status" className={finishKept ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
               {finishKept ? 'Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.' : ''}
             </p>
             <div className="flex flex-wrap gap-[var(--s3)]">
