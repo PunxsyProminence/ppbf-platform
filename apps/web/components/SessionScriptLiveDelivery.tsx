@@ -717,7 +717,9 @@ export default function SessionScriptLiveDelivery({
   );
 
   const logIntervention = useCallback(async () => {
-    if (logBusy) return;
+    // A kept finish waiting: a log made now would be sent after it and land on an ended session
+    // (Codex P2, review 6062374955 on #2178). The button is locked too; this covers a tap in flight.
+    if (logBusy || finishKeptNow.current) return;
     if (!logAthleteId || !logProtocolId) {
       setLogError('Pick an athlete and a protocol first.');
       return;
@@ -1514,7 +1516,9 @@ export default function SessionScriptLiveDelivery({
               <button
                 type="button"
                 onClick={() => void logIntervention()}
-                disabled={logBusy || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                // Locked while a kept finish waits, as the run actions are: the queue would send a log
+                // made now after the finish, onto a session that has ended (Codex P2 on #2178).
+                disabled={logBusy || finishKept || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {logBusy ? 'Logging...' : 'Log intervention'}

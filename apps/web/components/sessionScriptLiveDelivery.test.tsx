@@ -3203,6 +3203,31 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(keys[2]).toBe(keys[0]);
   });
 
+  // Codex P2 (review 6062374955 on #2178): a log made after a finish is kept would be sent after it and
+  // land on a session that has ended, as the server takes a log on any run. It is locked, as the run
+  // actions are, while the finish waits.
+  it('a kept finish locks the intervention log while it waits: no log is kept or sent after it', async () => {
+    jest.useFakeTimers();
+    const { fetchMock } = await renderKept(liveRun(), {
+      patch: () => lost(),
+    });
+    await openLog();
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'proto-1' } });
+    expect(screen.getByRole('button', { name: 'Log intervention' })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    expect(screen.getByText('Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log intervention' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log intervention' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(logPostCalls(fetchMock)).toHaveLength(0);
+    expect(within(waitingLine() as HTMLElement).queryByText(/^Intervention log/)).toBeNull();
+  });
+
   it('a log refused while a kept finish waits behind it is said in the page\'s list: the console goes once the finish lands', async () => {
     jest.useFakeTimers();
     let posts = 0;
