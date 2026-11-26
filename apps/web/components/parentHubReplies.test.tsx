@@ -43,6 +43,8 @@ function installFetch(options: { repliesGet?: Handler; repliesPost?: Handler; at
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none unless a test gives some.
+    // W4 item 4: the guardian's own messages to the coach; none here.
+    if (url.includes('/api/pilot/parent/family-threads')) return jsonResponse({ ok: true, items: [] });
     if (url.includes('/api/pilot/parent/athlete-messages')) {
       return jsonResponse({ ok: true, items: options.athleteMessages ?? [], in_scope: 2 });
     }
