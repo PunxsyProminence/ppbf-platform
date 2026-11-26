@@ -223,7 +223,8 @@ export default function DoorRegisterPage() {
                 <div className="empty-title">No role picked yet</div>
                 <p className="empty-msg mx-auto">
                   Choose a role above and the register opens on the doors that role holds, room by
-                  room. Nothing is looked up until you do.
+                  room. Nothing is looked up for the role you pick: the page reads only your own
+                  gym&apos;s room names.
                 </p>
                 <div className="empty-action">
                   <button type="button" onClick={() => setSubject('coach')} className="btn--lever min-h-[44px]">

@@ -124,6 +124,21 @@ test('a new sign-in reads again, and a sign-out drops the last gym\'s names', as
   expect(screen.getByTestId('a').textContent?.startsWith('Reception|')).toBe(true);
 });
 
+test('a route re-verifying the same sign-in (a fresh expiresAt) neither reads again nor drops the names (Codex P2 on #2215)', async () => {
+  const fetchMock = jest.fn().mockResolvedValue(answer({ 'place:front-desk': { name: 'Lobby', is_default: false } }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<Probe id="a" />);
+  await settle();
+  expect(screen.getByTestId('a').textContent?.startsWith('Lobby|')).toBe(true);
+
+  // RoleSessionGate mints a fresh session object with a new expiresAt on every gated route.
+  signIn('coach', 9_999);
+  await settle();
+  expect(screen.getByTestId('a').textContent?.startsWith('Lobby|')).toBe(true);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 test('an answer that arrives after the person signed out is not shown to whoever comes next', async () => {
   let release: (response: Response) => void = () => {};
   const fetchMock = jest.fn()
