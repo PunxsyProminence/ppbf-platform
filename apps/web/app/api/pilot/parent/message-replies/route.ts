@@ -7,7 +7,8 @@
 // POST { note_id, reply_text }: answer one parent message. The note must be a
 // parent message in this gym about a child this guardian is linked to on this
 // request (familyMessageReplies.createFamilyMessageReply); anything else is the
-// same 404. Replies only: a guardian cannot start a message (Q-A A).
+// same 404. Replies only, here: a guardian starts a message of their own at
+// /api/pilot/parent/family-threads (W4 item 4, OW27-24 A).
 //
 // Nothing is sent from here -- no email, no push. Staff read replies under the
 // note on /coach/decision-loop (GET /api/pilot/coach/family-message-replies).

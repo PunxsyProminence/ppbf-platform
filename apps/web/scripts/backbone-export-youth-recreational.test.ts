@@ -555,6 +555,16 @@ describe('the committed youth + recreational rows', () => {
     wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
     wtp_01de3f48606d4c: [1, 3], // Conditioning session A — SIT, 45 min (TL-5a)
   };
+  // Of those, the steps whose contact_level the lane changed by a ruling: Phase 1 step 1 names 'one pre-activation cue
+  // drill', which D-OQ94 rates light_technical (App Overwatch on #2201, comment 7176799736); the frozen Backbone has none.
+  const LANE_W48_CONTACT: Record<string, number[]> = {
+    wtp_c2c4bec001a56b: [1], // Phase 1 boxing skill session, 90 minutes (TL-5a)
+  };
+  it("names duration and contact cells only on lane W4-8's linked steps (the frozen case below ignores any other)", () => {
+    for (const changed of [LANE_W48_DURATIONS, LANE_W48_CONTACT]) {
+      for (const [id, steps] of Object.entries(changed)) expect({ id, outside: steps.filter((step) => !(LANE_W48_STEPS[id] ?? []).includes(step)) }).toEqual({ id, outside: [] });
+    }
+  });
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -576,8 +586,10 @@ describe('the committed youth + recreational rows', () => {
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
     const timed = (row: Record<string, string>) => (LANE_W48_DURATIONS[row.template_id] ?? []).includes(Number(row.ordinal));
-    expect(named.filter(([file]) => file === ITEMS))
-      .toEqual(laneSteps.map((row) => [ITEMS, row.template_id, timed(row) ? 'drill_id, duration_minutes' : 'drill_id']));
+    const rated = (row: Record<string, string>) => (LANE_W48_CONTACT[row.template_id] ?? []).includes(Number(row.ordinal));
+    // The changed cells in the items header's order: drill_id, duration_minutes, contact_level.
+    const cells = (row: Record<string, string>) => ['drill_id', ...(timed(row) ? ['duration_minutes'] : []), ...(rated(row) ? ['contact_level'] : [])].join(', ');
+    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, cells(row)]));
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
       .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
     // A lane template changes in field_labels and, if lane YR drafted it, in exactly its drafted cells (header order).

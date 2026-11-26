@@ -278,8 +278,12 @@ function withoutLaneRs(files: Record<string, string>): Record<string, string> {
  * that took its own stated time as its duration (#2177; its block_time range, its title's minutes or its details.time, #2162) gets its blank duration back, and the template's 'items' label
  * loses the lane's 'duration_minutes' part; no assertion here depends on that part of the restore (those templates are
  * not in this package's plan), which keeps the stripped files equal to the pre-lane files. typedLinesContent.test.ts
- * checks the lane's rows, and reads block times the same way.
+ * checks the lane's rows, and reads block times the same way. A step whose contact level the lane changed by a ruling
+ * (LANE_W48_CONTACT: Phase 1 step 1, light_technical as D-OQ94; App Overwatch on #2201) gets its pre-lane level back,
+ * and its template's 'items' label loses the lane's 'contact_level' part; its 'contact_structure' label loses the
+ * lane's note (a source starting 'lane W4-8').
  */
+const LANE_W48_CONTACT: Record<string, Record<number, string>> = { wtp_c2c4bec001a56b: { 1: 'none' } };
 const LANE_W48_LINE = /typed line of (?:wtp_[0-9a-f]{14} step \d+)(?:, wtp_[0-9a-f]{14} step \d+)*: '([^]*)'$/;
 function withoutLaneW48(files: Record<string, string>): Record<string, string> {
   const laneDrills = new Map(rowsOf(files[DRILLS_CSV]).filter((row) => row.content_class.startsWith('AI DRAFT - lane W4-8')).map((row) => [row.drill_id, row]));
@@ -310,7 +314,8 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
     const timeMinutes = /^(\d{1,2}) min$/.exec(String(details.time ?? ''))?.[1];
     const stated = [blockMinutes(details.block_time), ...(titleMinutes.length === 1 ? titleMinutes : []), ...(timeMinutes ? [timeMinutes] : [])];
     const timed = laneTimed.has(row.template_id) && row.duration_minutes !== '' && stated.includes(row.duration_minutes);
-    return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line, duration_minutes: timed ? '' : row.duration_minutes };
+    const contact = LANE_W48_CONTACT[row.template_id]?.[Number(row.ordinal)] ?? row.contact_level;
+    return { ...row, drill_id: '', free_text_drill: heldInTitle ? '' : line, duration_minutes: timed ? '' : row.duration_minutes, contact_level: contact };
   };
   const linkedTemplates = new Set(rowsOf(files[ITEMS_CSV]).filter((row) => laneDrills.has(row.drill_id)).map((row) => row.template_id));
   const unlabelled = (row: Row): Row => {
@@ -321,6 +326,9 @@ function withoutLaneW48(files: Record<string, string>): Record<string, string> {
     }
     delete labels.items.drill_id;
     if (String(labels.items.duration_minutes?.basis ?? '').startsWith('lane W4-8')) delete labels.items.duration_minutes;
+    if (String(labels.items.contact_level?.basis ?? '').startsWith('lane W4-8')) delete labels.items.contact_level;
+    const structure = labels.contact_structure?.sources;
+    if (Array.isArray(structure)) labels.contact_structure.sources = structure.filter((source: unknown) => !String(source).startsWith('lane W4-8'));
     return { ...row, field_labels: JSON.stringify(labels) };
   };
   const out = { ...files };
