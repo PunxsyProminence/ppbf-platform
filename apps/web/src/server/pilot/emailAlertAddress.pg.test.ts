@@ -84,6 +84,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 ) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-emailaddr';
+const OTHER_ORG_ID = 'org-emailaddr-elsewhere';
 const COACH_ID = 'acct-emailaddr-coach';
 const PARENT_ID = 'acct-emailaddr-parent';
 const ADULT_ID = 'acct-emailaddr-adult';
@@ -464,4 +465,31 @@ describe('the adult athlete\'s alert switch on a real database', () => {
   // The 'deleted' case is the one that catches a read not pinned to this gym:
   // with the gym clause dropped two rows come back, and the 'under 18' case can
   // still pass when this gym's row happens to come first (reviewer B's re-read).
+  test.each([
+    ['under 18', `update pilot.athletes set dob = '2012-01-01' where organization_id = '${ORG_ID}' and athlete_id = '${ADULT_ATHLETE}'`],
+    ['deleted', `update pilot.athletes set deleted_at = now() where organization_id = '${ORG_ID}' and athlete_id = '${ADULT_ATHLETE}'`],
+  ] as const)('A5: a parent account linked to a record that is %s in this gym, with another gym\'s adult under the same athlete id: offered nothing, and a save is 403 with nothing written', async (_label, change) => {
+    const client = await freshDatabase('emailaddr_a5_other_gym');
+    activeClient = client;
+    try {
+      await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [OTHER_ORG_ID]);
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+            emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Athlete', '1990-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+        [OTHER_ORG_ID, ADULT_ATHLETE, COACH_ID],
+      );
+      // One login per record in a gym: the athlete's own login lets go of it first.
+      await client.query('update pilot.accounts set athlete_id = null where account_id = $1', [ADULT_ID]);
+      await client.query('update pilot.accounts set athlete_id = $2 where account_id = $1', [PARENT_ID, ADULT_ATHLETE]);
+      await client.query(change);
+      await expect(readEmailAlertSwitch(subject('parent'), NOW)).resolves.toEqual({ offered: false });
+      await expect(setEmailAlertSwitch({ ...subject('parent'), switchedOn: true }, NOW)).rejects.toMatchObject({ status: 403 });
+      expect(await switchCount(client)).toBe(0);
+      expect(await auditDetails(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
 });
