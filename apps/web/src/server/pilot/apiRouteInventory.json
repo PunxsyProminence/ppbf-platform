@@ -12263,13 +12263,13 @@
       "organization_admin",
       "admin"
     ],
-    "athleteData": false,
+    "athleteData": true,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). tie_class answers the athlete ids it copied to the class register. mark_no_shows (W4 item 7, OVERWATCH 7160191377) takes the athlete ids the screen showed, their class id and a request key: sessionRunClass.ts markSessionNoShowsAbsent marks Absent only those still signed up with no register mark and no session mark that day, on the caller's own live run, still tied to that class, of a class they run (or as an admin); records the tap (key, ids sent, ids marked, when) in an audit event on the run; and answers the athlete ids it marked. A resend of a recorded key is answered with the first answer and writes nothing, after the caller's membership and own-run checks and before the live check, so it also answers once the run has ended; it gives that account only what it was answered before. Every action may carry a request key (W4 item 7, OVERWATCH 7170099938): advance/pause/resume/show_on_wall/finish then go through sessionScriptRuns.ts keyedSessionScriptRunAction and tie_class through setSessionRunClass, which lock the caller's own run, look the key up among the run's audit events before the live check, and record it (with the action's target, never coach notes; a tie with its answer) in the same transaction as the write. A resend of a recorded key writes nothing and answers replayed: the run as it is now (null for a live action on a run since ended), or for a tie the class it holds now and whether it is live. The same key for another change is refused 409 SESSION_RUN_KEY_REUSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12356,7 +12356,7 @@
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names.",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names. Without script_id, the caller's own live run, when tied to a class, also carries that class's no-show athlete ids (sessionRunClass.ts describeRunClass, ids only), empty unless the caller runs the class or is an admin and it has started and is not cancelled (W4 item 7, OVERWATCH 7160191377).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
