@@ -47,13 +47,14 @@ let inTransaction = false;
 let sideClient: Client | null = null;
 // Runs once, committed from the second connection, just before the statement a staff path relies
 // on: the one that writes a reply or a read (alone, or inside the store's transaction after any
-// earlier statement of it), or the one that returns the thread list. A check made in any earlier
+// earlier statement of it), the one that returns the thread list, or the one that counts. A check made in any earlier
 // statement has then already been read (Overwatch on #2179: every check-then-write path).
 let beforeStaffStatement: ((client: Client) => Promise<unknown>) | null = null;
 
 jest.mock('./db', () => {
   const isStaffStatement = (text: string) =>
-    /insert into pilot\.family_thread_(posts|reads)/.test(text) || text.includes('from pilot.family_thread_posts o');
+    /insert into pilot\.family_thread_(posts|reads)/.test(text) || text.includes('from pilot.family_thread_posts o')
+    || text.includes('count(*)::int as unseen');
   const landChange = async (text: string) => {
     if (!beforeStaffStatement || !isStaffStatement(text)) return;
     const change = beforeStaffStatement;
@@ -116,6 +117,7 @@ const OTHER_GYM_GUARDIAN = 'acct-fts-other-guardian';
 const COACH = 'acct-fts-coach';
 const SECOND_COACH = 'acct-fts-coach-b';
 const GYM_ADMIN = 'acct-fts-admin';
+const LEGACY_ADMIN = 'acct-fts-legacy-admin';
 const SEATLESS_COACH = 'acct-fts-seatless';
 const OTHER_GYM_COACH = 'acct-fts-other-coach';
 const CHILD = 'ATH-FTS-CHILD';
@@ -176,6 +178,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [COACH, 'coach', ORG, true],
     [SECOND_COACH, 'coach', ORG, true],
     [GYM_ADMIN, 'organization_admin', ORG, true],
+    [LEGACY_ADMIN, 'admin', ORG, true],
     [SEATLESS_COACH, 'coach', ORG, false],
     [OTHER_GYM_GUARDIAN, 'parent', OTHER_ORG, true],
     [OTHER_GYM_COACH, 'coach', OTHER_ORG, true],
@@ -646,5 +649,137 @@ describe('family threads, the staff half (W4 item 4, PM-1c)', () => {
     await threads.replyInFamilyThread(staff(COACH), { threadId: opened.thread_id, text: `  ${'x'.repeat(2000)}  ` });
     const longest = await client.query(`select max(length(post_text))::int as n from pilot.family_thread_posts`);
     expect(longest.rows).toEqual([{ n: 2000 }]);
+  });
+  test("the unseen count (Q4.5 A): the child's coach and an active covering coach, admins the gym; guardian posts this staff member has not seen, on live athletes", async () => {
+    const client = await freshDatabase('fts_unseen');
+    const first = await open(GUARDIAN);
+    await reply(COACH, first.thread_id); // a staff post: never counted
+    await threads.writeAgainInFamilyThread({ organizationId: ORG, accountId: GUARDIAN, threadId: first.thread_id, text: 'Thank you!' });
+    await open(CO_GUARDIAN);
+    await open(GUARDIAN, SIBLING);
+    await open(OTHER_GYM_GUARDIAN, CHILD, OTHER_ORG);
+    // The second coach covers the sibling now; their cover of the child has ended.
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour'),
+              ($1, $5, $3, $4, now() - interval '2 hours', now() - interval '1 hour')`,
+      [ORG, SIBLING, SECOND_COACH, GYM_ADMIN, CHILD],
+    );
+    // The gym admin also holds an active admin seat in the other gym: only the gym asked about counts.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'organization_admin', true)`,
+      [GYM_ADMIN, OTHER_ORG],
+    );
+    // The seatless coach covers the child now: only the missing seat keeps their count empty.
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+      [ORG, CHILD, SEATLESS_COACH, GYM_ADMIN],
+    );
+    const count = (account: string, role: PilotRole = 'coach', org = ORG) =>
+      threads.countUnseenFamilyThreadPostsForStaff(staff(account, role, org));
+
+    expect(await count(GYM_ADMIN, 'organization_admin', OTHER_ORG)).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(SECOND_COACH)).toEqual([{ athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    // The legacy 'admin' role is an organization admin (roleAlias.ts): the whole gym too.
+    expect(await count(LEGACY_ADMIN, 'admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(OTHER_GYM_COACH, 'coach', OTHER_ORG)).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    expect(await count(SEATLESS_COACH)).toEqual([]);
+
+    // Each staff member's own reads; a staff post is never counted.
+    await threads.recordFamilyThreadReadByStaff(staff(COACH), first.post_id);
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 2 }, { athlete_id: SIBLING, unseen: 1 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }, { athlete_id: SIBLING, unseen: 1 }]);
+
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, SIBLING]);
+    expect(await count(COACH)).toEqual([{ athlete_id: CHILD, unseen: 2 }]);
+    expect(await count(GYM_ADMIN, 'organization_admin')).toEqual([{ athlete_id: CHILD, unseen: 3 }]);
+
+    for (const role of ['parent', 'athlete', 'board', 'platform_owner', 'volunteer', 'staff'] as PilotRole[]) {
+      await expect(count(GUARDIAN, role)).rejects.toThrow('Forbidden');
+    }
+  });
+
+  test("the count's coach scope is access.athleteIdsForCoach's, cover by cover (one rule, written in the counting statement)", async () => {
+    const client = await freshDatabase('fts_scope_pin');
+    await open(GUARDIAN);
+    await open(GUARDIAN, SIBLING);
+    const { athleteIdsForCoach } = await import('./access');
+    const same = async (label: string) => {
+      for (const coach of [COACH, SECOND_COACH]) {
+        const counted = (await threads.countUnseenFamilyThreadPostsForStaff(staff(coach))).map((row) => row.athlete_id);
+        expect([label, coach, counted]).toEqual([label, coach, (await athleteIdsForCoach(ORG, coach)).sort()]);
+      }
+    };
+    await same('no cover');
+    const cover = async (athlete: string, starts: string, ends: string) => client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() + $5::interval, now() + $6::interval)`,
+      [ORG, athlete, SECOND_COACH, GYM_ADMIN, starts, ends],
+    );
+    await cover(CHILD, '1 hour', '2 hours');
+    await same('a cover not started');
+    await cover(CHILD, '-2 hours', '-1 hour');
+    await same('a cover ended');
+    await cover(SIBLING, '-1 hour', '1 hour');
+    await same('a cover running');
+    expect((await athleteIdsForCoach(ORG, SECOND_COACH)).sort()).toEqual([SIBLING]);
+    // A running cover of the other gym's child with the same athlete id: not this gym's child.
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+      [OTHER_ORG, CHILD, SECOND_COACH, OTHER_GYM_COACH],
+    );
+    await same('a running cover in another gym');
+    expect((await athleteIdsForCoach(ORG, SECOND_COACH)).sort()).toEqual([SIBLING]);
+    await client.query(`update pilot.athletes set coach_id = $3 where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, SECOND_COACH]);
+    await same('the child moved to the second coach');
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, SIBLING]);
+    await same('a covered child deleted');
+  });
+
+  test("whom the count nudges, changed just before the count: the child moved to another coach, a cover ended (Q4.5 A, reviewer A on PM-2)", async () => {
+    const client = await freshDatabase('fts_nudge_race');
+    await open(GUARDIAN);
+    await client.query(
+      `insert into pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+      [ORG, CHILD, SECOND_COACH, GYM_ADMIN],
+    );
+    const count = (coach: string) => threads.countUnseenFamilyThreadPostsForStaff(staff(coach));
+    const nudges: Array<[string, string, (db: Client) => Promise<unknown>, (db: Client) => Promise<unknown>]> = [
+      ['the child moved to another coach', COACH,
+        (db) => db.query(`update pilot.athletes set coach_id = $3 where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, SEATLESS_COACH]),
+        (db) => db.query(`update pilot.athletes set coach_id = $3 where organization_id = $1 and athlete_id = $2`, [ORG, CHILD, COACH])],
+      ['the cover ended', SECOND_COACH,
+        (db) => db.query(`update pilot.coach_coverage set expires_at = now() - interval '1 second' where organization_id = $1 and covering_coach_id = $2`, [ORG, SECOND_COACH]),
+        (db) => db.query(`update pilot.coach_coverage set expires_at = now() + interval '1 hour' where organization_id = $1 and covering_coach_id = $2`, [ORG, SECOND_COACH])],
+    ];
+    for (const [label, coach, change, undo] of nudges) {
+      expect([label, await count(coach)]).toEqual([label, [{ athlete_id: CHILD, unseen: 1 }]]);
+      beforeStaffStatement = change;
+      const counted = await count(coach);
+      expect(beforeStaffStatement).toBeNull();
+      expect([label, counted]).toEqual([label, []]);
+      await undo(client);
+      expect([label, await count(coach)]).toEqual([label, [{ athlete_id: CHILD, unseen: 1 }]]);
+    }
+  });
+
+  test("each fact the unseen count relies on, changed just before the count: nothing counted (Overwatch on #2179)", async () => {
+    const client = await freshDatabase('fts_count_race');
+    await open(GUARDIAN);
+    const count = () => threads.countUnseenFamilyThreadPostsForStaff(staff(COACH));
+    expect(await count()).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    for (const [label, , change, undo] of STAFF_FACT_CHANGES) {
+      beforeStaffStatement = change;
+      const counted = await count();
+      expect(beforeStaffStatement).toBeNull();
+      expect([label, counted]).toEqual([label, []]);
+      await undo(client);
+      expect(await count()).toEqual([{ athlete_id: CHILD, unseen: 1 }]);
+    }
   });
 });
