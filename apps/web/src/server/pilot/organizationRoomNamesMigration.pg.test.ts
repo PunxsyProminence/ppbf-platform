@@ -217,14 +217,14 @@ describe('organization room names migration', () => {
   // Each piece of the readiness check, refused on its own and named in the error.
   const ORG_FK = 'organization_room_names_organization_id_fkey';
   const SETTER_FK = 'organization_room_names_set_by_account_id_fkey';
-  const TRIM_CLASS = String.raw` \t\n\v\f\r   -     　﻿`;
+  const TRIM_CLASS = String.raw` \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff`;
   // The shipped display-name CHECK, with its length and its control-character
   // clause as parameters, so a drift case changes one thing only.
   const displayCheck = (maxLength: number, { controls = true } = {}) =>
     `char_length(display_name) between 1 and ${maxLength}
        and display_name !~ '^[${TRIM_CLASS}]'
        and display_name !~ '[${TRIM_CLASS}]$'`
-    + (controls ? String.raw` and display_name !~ '[\u0001-\u001f\u007f-\u009f  ]'` : '');
+    + (controls ? String.raw` and display_name !~ '[\u0001-\u001f\u007f-\u009f\u2028\u2029]'` : '');
   test.each([
     ['key_check_ready', 'a key CHECK that lets capitals in',
       `alter table ${T} drop constraint pilot_org_room_names_key_check,
@@ -337,10 +337,10 @@ describe('organization room names migration', () => {
       const refused = [
         '', ' ', 'Lobby ', ' Lobby', 'x'.repeat(41),
         // Untrimmed by JavaScript's trim() set, not only the ASCII space.
-        ' Lobby', 'Lobby ', 'Lobby　', '﻿Lobby', '\tLobby', 'Lobby\n',
+        '\u00a0Lobby', 'Lobby\u00a0', 'Lobby\u3000', '\ufeffLobby', '\tLobby', 'Lobby\n',
         // Control characters and line breaks anywhere: C0, DEL, C1, U+2028, U+2029.
         'Front\nDesk', 'Front\tDesk', 'Front\rDesk', 'Lobby\u0007x', 'Front\u000bDesk', 'Front\u007fDesk',
-        'Front\u0085Desk', 'Front\u009fDesk', 'Front Desk', 'Front Desk',
+        'Front\u0085Desk', 'Front\u009fDesk', 'Front\u2028Desk', 'Front\u2029Desk',
       ];
       for (const name of refused) {
         await expect(insertName(client, 'place:front-desk', name)).rejects.toMatchObject({ code: '23514' });
@@ -352,10 +352,10 @@ describe('organization room names migration', () => {
         ['place:front-desk', 'L'],
         ['place:family-room', 'x'.repeat(40)],
         ['place:coach-office', 'Coach\'s Corner'],
-        ['place:window', 'é'.repeat(40)],
+        ['place:window', '\u00e9'.repeat(40)],
         ['card:who-they-train-with', 'Their training partners'],
         // Inside a name, a space of any kind is the gym's to choose.
-        ['place:locker', 'Changing Room'],
+        ['place:locker', 'Changing\u00a0Room'],
       ];
       for (const [key, name] of taken) {
         await insertName(client, key, name);

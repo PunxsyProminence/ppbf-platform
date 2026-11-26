@@ -63,9 +63,9 @@ create table if not exists pilot.organization_room_names (
   display_name       text not null
     constraint pilot_org_room_names_display_name_check check (
       char_length(display_name) between 1 and 40
-      and display_name !~ '^[ \t\n\v\f\r   -     　﻿]'
-      and display_name !~ '[ \t\n\v\f\r   -     　﻿]$'
-      and display_name !~ '[\u0001-\u001f\u007f-\u009f  ]'
+      and display_name !~ '^[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'
+      and display_name !~ '[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]$'
+      and display_name !~ '[\u0001-\u001f\u007f-\u009f\u2028\u2029]'
     ),
   set_by_account_id  text null references pilot.accounts(account_id) on delete set null,
   set_at             timestamptz not null default clock_timestamp(),

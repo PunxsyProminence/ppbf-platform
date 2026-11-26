@@ -39,8 +39,8 @@ function sslConfig() {
 // The whitespace JavaScript's trim() removes, as a Postgres regex class (the
 // same class as source_rights_migration.sql and locatorWhitespace.ts), and the
 // control characters and line breaks Q-C refuses, both as code points.
-const TRIM_CLASS = String.raw` \t\n\v\f\r   -     　﻿`;
-const CONTROL_CLASS = String.raw`\u0001-\u001f\u007f-\u009f  `;
+const TRIM_CLASS = String.raw` \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff`;
+const CONTROL_CLASS = String.raw`\u0001-\u001f\u007f-\u009f\u2028\u2029`;
 
 export const EXPECTED_CHECKS = [
   ['pilot_org_room_names_key_check', "CHECK ((name_key ~ '^(place|room|card):[a-z]+(-[a-z]+)*$'::text))"],
