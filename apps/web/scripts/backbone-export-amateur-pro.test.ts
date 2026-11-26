@@ -461,7 +461,8 @@ describe('the committed amateur + pro rows', () => {
   // Lane W4-8, TL-5b (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; GO answer item 2 on #2162): the typed
   // steps of the Phase 2 archetype session vs. a pressure fighter now link the drills the lane wrote for their lines, and
   // the template's 'items' label gains the lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so a rerun
-  // is an exact refusal naming those steps and that label, with or without --allow-overwrite, and writes nothing. With
+  // is an exact refusal naming those steps and that label; with --allow-overwrite the typed-line stop alone still refuses,
+  // naming the steps. Neither run writes anything. With
   // the lane's rows put back as the frozen Backbone holds them, it still regenerates byte for byte. UNVERIFIED where
   // written (no frozen folder); App Overwatch runs this case on the PR's head before merging it (#2162).
   const LANE_W48_TEMPLATE = 'wtp_bc964fe230d8f3';
