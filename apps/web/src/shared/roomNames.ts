@@ -41,6 +41,16 @@ export const CARD_NAME_DEFAULTS = {
 
 export type CardName = keyof typeof CARD_NAME_DEFAULTS;
 
+/**
+ * Doors whose menu label is a card name, so the door and its page title read
+ * one name (OW27-15: "Your Profile" is the /profile door and title;
+ * OD-2026-10-17-001 item 1: "Each menu label matches its page title.").
+ * Every other door keeps its own label (OW27-40 A).
+ */
+export const DOOR_LABEL_KEY: Readonly<Record<string, `card:${CardName}`>> = {
+  '/profile': 'card:your-profile',
+};
+
 /** The three lists. A duplicate name is refused only within one list (Q-B A). */
 export type RoomNameList = 'place' | 'room' | 'card';
 

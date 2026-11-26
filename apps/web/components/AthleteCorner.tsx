@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React from 'react';
 
+import { useRoomNames } from '@/src/client/roomNames';
+
 /**
  * MY CORNER: THE ATHLETE'S DAY, AT THE TOP OF THE SCREEN.
  *
@@ -106,6 +108,8 @@ export default function AthleteCorner({
   afterEnd,
   checkInLineRef,
 }: AthleteCornerProps) {
+  // "My Corner" in the gym's own words (lane W4-9, RN-3; OW27-40 A).
+  const names = useRoomNames();
   const sessionKnown = identityState === 'resolved' && sessionState === 'loaded';
 
   let checkInLine: string;
@@ -125,7 +129,7 @@ export default function AthleteCorner({
 
   return (
     <section aria-label="My corner" className="athlete-corner rounded-[var(--r-lg)]">
-      <h2 className="athlete-corner__title">My Corner</h2>
+      <h2 className="athlete-corner__title">{names.name('card:my-corner')}</h2>
 
       <div className="athlete-corner__grid">
         <div className="athlete-corner__panel athlete-corner__panel--pain" data-section="pain">
