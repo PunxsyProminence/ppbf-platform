@@ -290,8 +290,6 @@ export default function CoachStoppedComingPage() {
       const payload: unknown = await response.json();
       if (!isStoppedComingList(payload)) throw new Error('unexpected answer');
       if (signal?.aborted) return null;
-      // A read that works clears an earlier failure, so the list it read is shown.
-      setFailed(false);
       setList(payload);
       return payload;
     } catch {
