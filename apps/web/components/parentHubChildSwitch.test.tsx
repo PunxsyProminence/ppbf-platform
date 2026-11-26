@@ -48,6 +48,8 @@ function installFetch(
     const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
     if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
+    // W4 item 4: the guardian's own messages to the coach; none here.
+    if (url.includes('/api/pilot/parent/family-threads')) return jsonResponse({ ok: true, items: [] });
 
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1' });
@@ -285,6 +287,8 @@ describe('request ordering when the guardian switches child', () => {
       const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
     if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
+    // W4 item 4: the guardian's own messages to the coach; none here.
+    if (url.includes('/api/pilot/parent/family-threads')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
@@ -357,6 +361,8 @@ describe('request ordering when the guardian switches child', () => {
       const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
     if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
+    // W4 item 4: the guardian's own messages to the coach; none here.
+    if (url.includes('/api/pilot/parent/family-threads')) return jsonResponse({ ok: true, items: [] });
       if (url.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
           items: [
@@ -463,7 +469,7 @@ describe('authored announcements on the parent hub', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
     });
     expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
-    expect(screen.getByText(/What the coaches and gym staff wrote to your family about your child\. You can reply under a message\. Gym announcements for every family are at the top of the hub\./)).toBeTruthy();
+    expect(screen.getByText(/What the coaches and gym staff wrote to your family about your child\. You can reply under a message, or write to the coach first\. Gym announcements for every family are at the top of the hub\./)).toBeTruthy();
     expect(screen.getAllByText('Bring a mouthguard Thursday.')).toHaveLength(1);
     expect(screen.getAllByText('Gym closed Monday for the holiday.')).toHaveLength(1);
     expect(notices.contains(screen.getByText('Bring a mouthguard Thursday.'))).toBe(false);
