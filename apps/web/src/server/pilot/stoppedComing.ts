@@ -53,8 +53,9 @@
  * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
  * the same list. A mark is for a live athlete of this gym (404) who is on the
  * list now, by its own rules (409). Every fact a mark or a take-back rests on
- * is read on the write's transaction with its rows locked (Overwatch on
- * #2206; setStoppedComingReachedOut lists them).
+ * is read on the write's transaction with its rows locked, except two changes
+ * to the last day they came (Overwatch on #2206; setStoppedComingReachedOut
+ * lists both).
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
  * route as readers of the staff-only presence record (Overwatch, W4-6 GO,
  * condition 1).
@@ -265,9 +266,10 @@ export async function setStoppedComingReachedOut(
   }
   return withTransaction(async (client) => {
     // Every fact the write rests on is read here, on this transaction, with its rows locked
-    // (Overwatch on #2206): a change already under way is waited for and then read, and one that
-    // starts later waits for this to commit. Parent rows first: the gym, the staff account and
-    // membership, the athlete, the athlete's program memberships, then (reachedOutMarks.ts) the mark.
+    // (Overwatch on #2206), except the two named above the last-came reads: a change already under
+    // way is waited for and then read, and one that starts later waits for this to commit. Parent
+    // rows first: the gym, the staff account and membership, the athlete, the athlete's program
+    // memberships, then (reachedOutMarks.ts) the mark.
     let policy: StoppedComingPolicy | null = null;
     if (reachedOut) {
       // The gym's number of days. Its one writer, setStoppedComingPolicy, takes this row
