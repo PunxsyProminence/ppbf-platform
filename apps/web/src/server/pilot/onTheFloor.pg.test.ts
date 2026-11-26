@@ -697,17 +697,24 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
 
     // The links go the moment the first count statement is sent: guardianAthleteIds has already read
-    // them, so only a check inside each count statement can see that they are gone.
+    // them, so only a check inside each count statement can see that they are gone. Two more children
+    // turn adult at the same moment (one counted through the register, one through a run), so the 18
+    // rule is applied to the date of birth each statement returns, not only to the earlier scope.
     mockBeforeQuery = {
       match: /from pilot\.session_run_athletes m|from pilot\.scheduler_attendance sa/,
+      // One statement, so it is queued on the client before either count statement is sent.
       run: async () => {
-        await client.query('delete from pilot.guardian_links where organization_id = $1 and athlete_id = any($2::text[])', [
-          gym.organizationId, ['reg', 'run', 'tie'],
-        ]);
+        await client.query(
+          `with unlinked as (
+             delete from pilot.guardian_links where organization_id = $1 and athlete_id = any($2::text[]) returning 1
+           )
+           update pilot.athletes set dob = '2000-01-01' where organization_id = $1 and athlete_id = any($3::text[])`,
+          [gym.organizationId, ['reg', 'run', 'tie'], ['ful', 'fru']],
+        );
       },
     };
     try {
-      expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful']);
+      expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual([]);
       expect(mockBeforeQuery).toBeNull();
     } finally {
       mockBeforeQuery = null;
@@ -733,6 +740,7 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
       await member(gym, 'staff'),
       await member(gym, 'platform_owner'),
       athleteAccount(gym, null), // an athlete account with no athlete record (FN-0 check 8)
+      { ...(await member(gym, 'parent')), accountId: '' }, // a parent with no account id: refused, never unchecked
     ];
     for (const caller of refused) {
       await expect(onTheFloorForFamily(caller, NOW)).rejects.toBeInstanceOf(ForbiddenError);

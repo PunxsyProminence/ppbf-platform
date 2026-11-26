@@ -241,7 +241,7 @@ export async function listOnTheFloorForStaff(actor: ActorIdentity, now: Date): P
  * tied to one (FN0-Q1 A; flag 9). `now` is the current moment, as for the staff read: it drives the idle close.
  */
 export async function onTheFloorForFamily(actor: ActorIdentity, now: Date): Promise<OnTheFloorFamilyAnswer> {
-  if (actor.role !== 'parent' && !(actor.role === 'athlete' && actor.athleteId)) {
+  if (!(actor.role === 'parent' && actor.accountId) && !(actor.role === 'athlete' && actor.athleteId)) {
     throw new ForbiddenError('Forbidden: only a parent, or an athlete linked to their record, reads this line');
   }
   const organizationId = actor.organizationId;

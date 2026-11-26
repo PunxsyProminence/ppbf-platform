@@ -310,7 +310,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     // The family read refuses anyone but a parent, or an athlete with a linked record, first; a parent's
     // children are the guardian rule's (FN-0 F6), never the adults-included sibling's, and never a request's.
     expect(text).toMatch(
-      /export async function onTheFloorForFamily\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorFamilyAnswer> \{\n  if \(actor\.role !== 'parent' && !\(actor\.role === 'athlete' && actor\.athleteId\)\) \{\n    throw new ForbiddenError\(/,
+      /export async function onTheFloorForFamily\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorFamilyAnswer> \{\n  if \(!\(actor\.role === 'parent' && actor\.accountId\) && !\(actor\.role === 'athlete' && actor\.athleteId\)\) \{\n    throw new ForbiddenError\(/,
     );
     expect(Array.from(text.matchAll(/^\s*const scope = (.*)$/gm), (match) => match[1])).toEqual([
       "actor.role === 'parent' ? await guardianAthleteIds(organizationId, actor.accountId) : [actor.athleteId as string];",
@@ -336,6 +336,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     expect(block).toContain("and ($4::text is null or ${guardianLinkedPredicateSql('m.organization_id', 'm.athlete_id', '$4')})");
     const registerBlock = text.slice(text.indexOf('async function presentOnTodaysRegister('), text.indexOf('async function countedAmong('));
     expect(registerBlock).toContain("and ($7::text is null or ${guardianLinkedPredicateSql('sa.organization_id', 'sa.athlete_id', '$7')})");
+    expect(registerBlock).toMatch(/`select distinct sa\.athlete_id, to_char\(a\.dob, 'YYYY-MM-DD'\) as athlete_dob\n/);
     expect(text).toContain('const kept = guardianAccountId === null ? rows : rows.filter((row) => !guardianLinkEnded(row.athlete_dob, now));');
     // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or
     // check-in record, named anywhere in the file.
