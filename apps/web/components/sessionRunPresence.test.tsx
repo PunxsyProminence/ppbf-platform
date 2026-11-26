@@ -1956,6 +1956,73 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByText('2 marked here.')).toBeTruthy();
   });
 
+  // Round 15, reviewer A: the direct path's paint reads again too. A drop while a replay's read is out,
+  // with the session check then unanswered, sends Ben's tap the direct way. The old read comes back stale
+  // and is asked again before Ben's write; when Ben's answer lands, that retry is still out, so the paint
+  // reads again, and the retry's older answer paints over nothing.
+  test('a direct tap while a stale read is asked again keeps its mark: its paint reads the list again', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    let sessionGone = false;
+    let answerBen: (() => void) | undefined;
+    const reads = holdListReads();
+    serveKept({
+      session: () => {
+        if (sessionGone) throw new TypeError('Failed to fetch');
+        return answer({ authenticated: true, account_id: 'acct-a' });
+      },
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        if (send === 2) {
+          reads.state.hold = true;
+          return answer({ outcome: 'marked', replayed: true, live: true });
+        }
+        // Ben's direct send, held until released below.
+        return new Promise<Response>((resolve) => {
+          answerBen = () => {
+            present = [...present, BEN];
+            resolve(answer({ outcome: 'marked' }));
+          };
+        });
+      },
+      present: () => present,
+    });
+    reads.install();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(reads.state.held).toHaveLength(1);
+    // A sign-out while Ada's read is out; the session check then cannot answer, so Ben goes the direct way.
+    await act(async () => {
+      clearRoleSession();
+    });
+    sessionGone = true;
+    await tapKept('Mark here Ben Ortiz');
+    await wait(0);
+    expect(sent).toHaveLength(3);
+    expect(sent[2].body.request_key).toBeUndefined();
+    // The old read comes back stale and is asked again, before Ben's write: that retry is held too.
+    await act(async () => {
+      reads.state.held.splice(0, 1)[0]();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(reads.state.held).toHaveLength(1);
+    // Ben's answer lands with the retry still out; later reads are answered at once.
+    reads.state.hold = false;
+    await act(async () => {
+      answerBen?.();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    // The retry, answered at the server before Ben's write, arrives last.
+    await reads.release();
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+    expect(screen.getByText('2 marked here.')).toBeTruthy();
+  });
+
   // A drop (here a sign-out) while a replay's list is read again: nothing of that answer is shown, not
   // even once the same coach is confirmed again.
   test('a sign-out while a replay\'s list is read again shows nothing of its answer', async () => {
