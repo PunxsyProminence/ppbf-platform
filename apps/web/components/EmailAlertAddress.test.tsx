@@ -106,6 +106,8 @@ test('an adult athlete with no address confirmed and no code waiting sees the ad
   expect(addressField()).toHaveAttribute('type', 'email');
   expect(addressField()).toHaveAttribute('autocomplete', 'email');
   expect(addressField()).toHaveValue('');
+  // The server judges the address: no browser check stops the form first.
+  expect(formOf(addressField())).toHaveAttribute('novalidate');
   expect(screen.getByRole('button', { name: 'Send code' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'On' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Off' })).not.toBeInTheDocument();
@@ -341,6 +343,78 @@ describe('the re-read decides when an answer is lost, unreadable or overtaken', 
     expect(status()).toHaveTextContent(/^Your setting could not be read\.$/);
     expect(addressField()).toHaveValue(TYPED);
     expect(document.activeElement).toBe(pressed);
+  });
+});
+
+describe('a send the server refused is never taken as landed, though the re-read shows a code waiting', () => {
+  test.each([
+    ['any limit', refuse(429, 'EMAIL_ALERT_CODE_LIMIT'), 'Too many codes asked for. Try again later.'],
+    ['a code email not sent', refuse(503, 'EMAIL_ALERT_CODE_NOT_SENT'), 'The code email could not be sent. Try again.'],
+  ])('%s', async (_label, refusal, words) => {
+    mockRoutes({ gets: [answer(athlete()), answer(athlete({ pending: true }))], sendCode: refusal });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Email address for alerts'), { target: { value: TYPED } });
+    const pressed = press('Send code');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(`▲ ${words}`);
+    expect(addressField()).toHaveValue(TYPED);
+    expect(document.activeElement).toBe(pressed);
+  });
+});
+
+test('a failed send whose answer folds the form hands focus to Change address', async () => {
+  mockRoutes({
+    gets: [answer(athlete({ confirmed: true, pending: true })), answer(athlete({ confirmed: true }))],
+    sendCode: refuse(503, 'EMAIL_ALERT_CODE_NOT_SENT'),
+  });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  fireEvent.change(await screen.findByLabelText('Email address for alerts'), { target: { value: TYPED } });
+  press('Send a new code');
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('The code email could not be sent. Try again.');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Change address' })));
+});
+
+test('when Confirm is taken away but the form stays open, focus goes to the address field, not Change address', async () => {
+  mockRoutes({
+    gets: [answer(athlete({ confirmed: true })), answer(athlete({ confirmed: true }))],
+    sendCode: answer(athlete({ confirmed: true, pending: true })),
+    enterCode: refuse(409, 'EMAIL_ALERT_CODE_EXPIRED'),
+  });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByRole('button', { name: 'Change address' });
+  press('Change address');
+  fireEvent.change(addressField(), { target: { value: TYPED } });
+  press('Send code');
+  fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '012345' } });
+  press('Confirm');
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('That code has expired. Ask for a new one.');
+  expect(screen.getByRole('button', { name: 'Change address' })).toHaveAttribute('aria-expanded', 'true');
+  await waitFor(() => expect(document.activeElement).toBe(addressField()));
+});
+
+describe('a click that leaves focus nowhere (as Safari\'s does) hands it to the code field when one is drawn', () => {
+  test('a wrong code with tries left', async () => {
+    mockRoutes({ gets: [answer(athlete({ pending: true }))], enterCode: refuse(409, 'EMAIL_ALERT_CODE_WRONG') });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '012345' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await screen.findByRole('alert');
+    await waitFor(() => expect(document.activeElement).toBe(codeField()));
+  });
+
+  test('On saved while a code waits', async () => {
+    mockRoutes({
+      gets: [answer(athlete({ confirmed: true, pending: true }))],
+      saveSwitch: answer(athlete({ on: true, confirmed: true, pending: true })),
+    });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'On' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(document.activeElement).toBe(codeField()));
   });
 });
 

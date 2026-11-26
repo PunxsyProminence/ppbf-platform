@@ -15,14 +15,12 @@ import EmailAlertAddress, { type AddressState } from './EmailAlertAddress';
  * a 'staff' or 'volunteer' login (403), a first read that fails -- gets
  * nothing at all on this page: no panel, no message, no warning (L1 rule).
  *
- * THE ADULT ATHLETE (EM-2b-3; OW27-38 B). They type an address, the app
- * emails a code to it, and it is used only once they enter that code
- * (EmailAlertAddress). GO condition 3: no On until GET says an address is
- * confirmed (the server answers 409 otherwise). Default 10: confirming never
- * switches on; On stays its own press. Default 9: no answer holds an address,
- * so this panel says only that one is confirmed or that a code is waiting.
- * Their help text says alerts go to the address they confirm, not the one
- * they sign in with (staff's and parents' words are unchanged).
+ * THE ADULT ATHLETE (EM-2b-3; OW27-38 B): their address is used only once
+ * they enter the code emailed to it (EmailAlertAddress). GO condition 3: no
+ * On until GET says an address is confirmed. Default 10: confirming never
+ * switches on. Default 9: no answer holds an address, so this panel says only
+ * that one is confirmed or a code is waiting. Their help text names the
+ * address they confirm, not the one they sign in with.
  *
  * After a save: a refusal (403), or an answer that says no switch is offered,
  * takes the panel away at once, whoever is signed in by then, with nothing said
@@ -89,10 +87,10 @@ const ADDRESS_REFUSALS = new Map<string, string>([
 
 type AddressStep = Exclude<Step, { kind: 'switch' }>;
 
-/** The re-read shows the step's aim met, whatever its own answer was (lost, unreadable, or overtaken by another tab). */
-function landedBy(step: AddressStep, before: AddressState | undefined, read: AddressState | undefined): boolean {
+/** The re-read shows the aim met; a send the server refused never landed (a code waiting is another's). */
+function landedBy(step: AddressStep, refused: boolean, before?: AddressState, read?: AddressState): boolean {
   if (!before || !read) return false;
-  return step.kind === 'address' ? !before.codePending && read.codePending : !before.confirmed && read.confirmed;
+  return step.kind === 'address' ? !refused && !before.codePending && read.codePending : !before.confirmed && read.confirmed;
 }
 
 /** Fixed words for an address step that did not land; read is null when the re-read failed. */
@@ -166,11 +164,12 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
   const section = useRef<HTMLElement | null>(null);
   const [switchSettled, setSwitchSettled] = useState(0);
 
-  // A save whose answer took On and Off away (an adult athlete whose address
-  // is no longer confirmed) hands focus to the address form, not the page.
+  // A save that leaves focus nowhere (On and Off taken away, or a Safari
+  // click) hands it to the code field, else the address field, if drawn.
   useEffect(() => {
     const active = document.activeElement;
-    if (switchSettled && (!active || active === document.body)) section.current?.querySelector('input')?.focus();
+    if (!switchSettled || (active && active !== document.body)) return;
+    (section.current?.querySelector<HTMLElement>('input[inputmode="numeric"]') ?? section.current?.querySelector('input'))?.focus();
   }, [switchSettled]);
 
   useEffect(() => {
@@ -233,7 +232,8 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
           setError(addressFailure(step, status, code, null));
         } else {
           setCurrent(read);
-          landed = landedBy(step, before.address, read.address);
+          const refused = code !== undefined || [400, 409, 429, 503].includes(status ?? 0);
+          landed = landedBy(step, refused, before.address, read.address);
           // A panel now of another user type has no address step to speak of.
           if (!landed && read.address) setError(addressFailure(step, status, code, read.address));
         }

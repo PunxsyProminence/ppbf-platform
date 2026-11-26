@@ -44,22 +44,22 @@ export default function EmailAlertAddress({
   const addressForm = useRef<HTMLFormElement | null>(null);
   const changeButton = useRef<HTMLButtonElement | null>(null);
 
-  // Once a step's answer is drawn, focus never drops to the page: a code just
-  // sent takes it to the code field; if the answer took the pressed Confirm
-  // away (confirmed, or its code used up or gone), it goes to the address
-  // field, or to "Change address" when the form folds -- never to On.
+  // After any answer, focus never drops to the page: a code just sent takes
+  // it to the code field; if the answer took the pressed control away (or a
+  // click left none, as Safari's does), to the code field, the address field
+  // or "Change address", the first drawn -- never to On.
   useEffect(() => {
     if (!focusAfter) return;
     const active = document.activeElement;
     const lost = !active || active === document.body;
     if (focusAfter.to === 'code' && (lost || addressForm.current?.contains(active))) codeInput.current?.focus();
-    else if (lost) (addressInput.current ?? changeButton.current)?.focus();
+    else if (lost) (codeInput.current ?? addressInput.current ?? changeButton.current)?.focus();
   }, [focusAfter]);
 
   const sendCode = async () => {
-    if (!(await onSendCode(address))) return;
-    setCode(''); // the old code is void once a new one is sent
-    setFocusAfter({ to: 'code' });
+    const landed = await onSendCode(address);
+    if (landed) setCode(''); // the old code is void once a new one is sent
+    setFocusAfter({ to: landed ? 'code' : 'lost' });
   };
   const confirm = async () => {
     if (await onConfirm(code)) {
