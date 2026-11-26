@@ -874,6 +874,61 @@ async function assertIssueStillCurrent(
 }
 
 /**
+ * The order a template's steps are issued in (lane W4-8, TL-ORD; App Overwatch
+ * on #2201, comment 7170675682).
+ *
+ * An owner's item placed INSIDE another step carries that step's item id in
+ * `details.within_item_id` (e.g. D-PK73-3's fresh technical check "at the end
+ * of the warm-up", ordinal 5 inside ordinal 1). Its ordinal says nothing about
+ * where it runs, so ordinal order alone would issue it after the cool-down.
+ *
+ *   - A nested step is issued straight after the step it sits inside, after
+ *     that step's own nested steps, several under one step in ordinal order.
+ *   - Every other step keeps its ordinal place.
+ *   - A `within_item_id` that names no step of this template, the step itself,
+ *     or a loop of steps inside each other is not followed: the step keeps its
+ *     own ordinal place. No step is ever dropped or issued twice.
+ *
+ * Pure: the same items in, the same order out; the items are not changed.
+ */
+export function issueOrder<T extends { item_id: string; ordinal: number; details?: Record<string, unknown> | null }>(
+  items: readonly T[],
+): T[] {
+  const byOrdinal = [...items].sort((a, b) => a.ordinal - b.ordinal);
+  const ids = new Set(byOrdinal.map((item) => item.item_id));
+  const named = (item: T): string | null => {
+    const parent = item.details?.within_item_id;
+    return typeof parent === 'string' && parent !== item.item_id && ids.has(parent) ? parent : null;
+  };
+  const parentById = new Map(byOrdinal.map((item) => [item.item_id, named(item)]));
+  // A parent is followed only when its chain of parents reaches a step that
+  // sits inside nothing; a chain that comes back on itself is a loop.
+  const followed = (itemId: string): string | null => {
+    const parent = parentById.get(itemId) ?? null;
+    const seen = new Set([itemId]);
+    for (let at = parent; at !== null; at = parentById.get(at) ?? null) {
+      if (seen.has(at)) return null;
+      seen.add(at);
+    }
+    return parent;
+  };
+  const inside = new Map<string, T[]>();
+  const top: T[] = [];
+  for (const item of byOrdinal) {
+    const parent = followed(item.item_id);
+    if (parent === null) top.push(item);
+    else inside.set(parent, [...(inside.get(parent) ?? []), item]);
+  }
+  const ordered: T[] = [];
+  const place = (item: T) => {
+    ordered.push(item);
+    for (const child of inside.get(item.item_id) ?? []) place(child);
+  };
+  top.forEach(place);
+  return ordered;
+}
+
+/**
  * The answer to a request whose key already names an issue, or null when the
  * key names none. A key is one issue's: sent again with a different athlete or
  * template it is refused, never answered with the other issue and never
@@ -1036,8 +1091,10 @@ export async function issueWorkoutTemplate(params: {
         adopted.push({ drill_id: drill.drill_id, reference_drill_id: reference.drill_id, name: drill.name });
       }
 
+      // Issued in the order the steps run (issueOrder): an owner's nested
+      // step straight after the step it sits inside.
       const steps: TemplateIssuedStep[] = [];
-      for (const item of items) {
+      for (const item of issueOrder(items)) {
         const drillId = item.drill_id === null ? undefined : drillByReference.get(item.drill_id);
         if (!drillId) {
           // Unreachable while planTemplateIssue judges every step; thrown
@@ -1064,18 +1121,26 @@ export async function issueWorkoutTemplate(params: {
       // The workout's shape, on this transaction: block, order, scale level,
       // contact level and coach note per step, each as the template item has
       // it, tied to the assignment that step just became.
+      //
+      // The order is the step's ordinal, which every reader sorts by
+      // (workoutIssues.ts) and shows as "Step N". When issueOrder moved a
+      // nested step, the ordinals no longer run in issued order, so each step
+      // is numbered by its place in the issued workout instead; the template
+      // item it came from stays in template_item_id. When nothing moved, the
+      // template's own ordinals are kept exactly as before.
       const issuedTemplate = { template_id: template.template_id, name: template.name, version: template.version };
       const itemById = new Map(items.map((item) => [item.item_id, item]));
+      const reordered = steps.some((issued, index) => index > 0 && issued.step < steps[index - 1].step);
       const issueId = await recordWorkoutIssue(client, {
         organizationId: params.organizationId,
         athleteId: params.athleteId,
         template: issuedTemplate,
         issuedByAccountId: params.actorAccountId,
         requestKey,
-        steps: steps.map((issued) => {
+        steps: steps.map((issued, index) => {
           const item = itemById.get(issued.item_id) as WorkoutTemplateItemWithDrillHead;
           return {
-            ordinal: item.ordinal,
+            ordinal: reordered ? index + 1 : item.ordinal,
             block: item.block,
             scale_level: item.scale_level,
             contact_level: item.contact_level,
