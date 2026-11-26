@@ -801,20 +801,24 @@ describe('setStoppedComingReachedOut holds every fact it rests on until it commi
     return new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
   }
 
+  type Statements = ReadonlyArray<readonly [string, readonly unknown[]]>;
+
   /**
    * Runs `change` on a second connection and leaves it uncommitted, holding its rows; starts the PUT;
-   * once the PUT waits on a lock in a statement naming `waitsOn`, commits the change, and answers
-   * what the PUT answered. A PUT that finishes without waiting is answered as it is, with the change
-   * then committed: that is the unlocked write these tests exist to catch.
+   * once the PUT waits on a lock in a statement naming `waitsOn`, blocked by that connection
+   * (reviewer J), runs `thenRun` there and commits, and answers what the PUT answered. A PUT that
+   * finishes without waiting is answered as it is, with the change then committed: that is the
+   * unlocked write these tests exist to catch.
    */
   async function putWithChangeInFlight(
     who: ActorIdentity, athleteId: string, reachedOut: boolean, today: string,
-    change: ReadonlyArray<readonly [string, readonly unknown[]]>, waitsOn: RegExp,
+    change: Statements, waitsOn: RegExp, thenRun: Statements = [],
   ): Promise<Answer & { waited: boolean }> {
     const markerPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid as number;
     const other = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
     await other.connect();
     try {
+      const otherPid = (await other.query('select pg_backend_pid() as pid')).rows[0].pid as number;
       await other.query('BEGIN');
       for (const [text, params] of change) await other.query(text, [...params]);
       let settled = false;
@@ -825,14 +829,19 @@ describe('setStoppedComingReachedOut holds every fact it rests on until it commi
       let waited = false;
       for (let attempt = 0; !settled; attempt += 1) {
         await other.query('select pg_stat_clear_snapshot()');
-        const { rows } = await other.query('select wait_event_type, query from pg_stat_activity where pid = $1', [markerPid]);
-        if (rows[0]?.wait_event_type === 'Lock' && waitsOn.test(rows[0].query)) {
+        const { rows } = await other.query(
+          `select wait_event_type, query, $2::int = any(pg_blocking_pids(pid)) as by_other
+             from pg_stat_activity where pid = $1`,
+          [markerPid, otherPid],
+        );
+        if (rows[0]?.wait_event_type === 'Lock' && rows[0].by_other === true && waitsOn.test(rows[0].query)) {
           waited = true;
           break;
         }
         if (attempt > 400) throw new Error(`the PUT neither finished nor waited on ${waitsOn}`);
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
+      for (const [text, params] of thenRun) await other.query(text, [...params]);
       await other.query('COMMIT');
       return { ...(await putting), waited };
     } finally {
@@ -860,7 +869,7 @@ describe('setStoppedComingReachedOut holds every fact it rests on until it commi
     await registerDay(gym, athleteId, dayFrom(today, -40), 'present');
   }
 
-  test('the staff member: a membership ended or an account turned off in flight is waited for and refuses the write (403)', async () => {
+  test('the staff member: a membership ended or an account turned off in flight is waited for and refuses the write (403), with no deadlock', async () => {
     const gym = await newGym('held-staff');
     const today = await gymToday();
     await gone40Days(gym, 'abe', 'Abe Athlete', today);
@@ -876,8 +885,21 @@ describe('setStoppedComingReachedOut holds every fact it rests on until it commi
 
     await expect(putWithChangeInFlight(gym.coach, 'abe', true, today, membershipOff, /organization_memberships/))
       .resolves.toEqual({ status: 403, code: undefined, waited: true });
-    await expect(putWithChangeInFlight(gym.coach2, 'abe', true, today, accountOff, /organization_memberships/))
+    await expect(putWithChangeInFlight(gym.coach2, 'abe', true, today, accountOff, /pilot\.accounts/))
       .resolves.toEqual({ status: 403, code: undefined, waited: true });
+    // Reviewer J: an account turned off as auth.ts does it, the account row and then the membership,
+    // the membership after the mark is already waiting. The mark takes the account first too, so it
+    // waits and is refused; taking the membership first deadlocked (40P01).
+    const memberAccount = await member(gym, 'coach');
+    const membershipAfterWait = [[
+      'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+      [memberAccount.accountId, gym.organizationId],
+    ]] as const;
+    await expect(putWithChangeInFlight(
+      memberAccount, 'abe', true, today,
+      [['update pilot.accounts set active_flag = false where account_id = $1', [memberAccount.accountId]]],
+      /pilot\.accounts/, membershipAfterWait,
+    )).resolves.toEqual({ status: 403, code: undefined, waited: true });
     expect(await marksAndAudits(gym)).toEqual({ marks: [], audits: [] });
     // The control: the same wait, with a change that leaves the admin staff, marks.
     await expect(putWithChangeInFlight(gym.admin, 'abe', true, today, noChange, /organization_memberships/))

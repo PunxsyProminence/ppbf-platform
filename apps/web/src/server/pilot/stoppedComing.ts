@@ -266,8 +266,8 @@ export async function setStoppedComingReachedOut(
   return withTransaction(async (client) => {
     // Every fact the write rests on is read here, on this transaction, with its rows locked
     // (Overwatch on #2206): a change already under way is waited for and then read, and one that
-    // starts later waits for this to commit. Parent rows first: the gym, the staff membership and
-    // account, the athlete, the athlete's program memberships, then (reachedOutMarks.ts) the mark.
+    // starts later waits for this to commit. Parent rows first: the gym, the staff account and
+    // membership, the athlete, the athlete's program memberships, then (reachedOutMarks.ts) the mark.
     let policy: StoppedComingPolicy | null = null;
     if (reachedOut) {
       // The gym's number of days. Its one writer, setStoppedComingPolicy, takes this row
@@ -275,7 +275,11 @@ export async function setStoppedComingReachedOut(
       await client.query('select 1 from pilot.organizations where organization_id = $1 for share', [organizationId]);
       policy = await readStoppedComingPolicy(organizationId, client);
     }
-    // The role is the membership's, as sessionRunAthletes.ts marks a session.
+    // The staff member: the account row first, on its own, then the membership. Every writer of
+    // these two rows takes the account first (auth.ts: "LOCK ORDER: THE ACCOUNT ROW FIRST");
+    // lockStaffMembership's one join took the membership first, and reviewer J saw it deadlock with
+    // an account being turned off. The role is the membership's, as sessionRunAthletes.ts marks a session.
+    await client.query('select 1 from pilot.accounts where account_id = $1 for share', [actor.accountId]);
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
     // The athlete row FOR UPDATE, not FOR SHARE: a soft delete or a "left" flag waits, and so does
