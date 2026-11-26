@@ -318,6 +318,8 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     // What a family is given, pinned to its value and not only its field: the ids of the parent's own
     // children who count, or the athlete's yes or no; never a name, time, run or source with it.
     const familyBlock = text.slice(text.indexOf('export async function onTheFloorForFamily('));
+    // Every return is one of the three below, so a fourth written over several lines cannot hide.
+    expect(Array.from(familyBlock.matchAll(/\breturn\b/g))).toHaveLength(3);
     expect(Array.from(familyBlock.matchAll(/return (\{[^\n]*\});/g), (match) => match[1])).toEqual([
       "{ reader: 'parent', on_the_floor: [] }",
       "{ reader: 'athlete', on_the_floor: ids.length === 1 && counted.has(ids[0]) }",

@@ -620,6 +620,10 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     await tieRun(gym, cancelledTie, 'f-cancelled');
     await tieRun(gym, sentHome, 'f-sent-home');
     await tieRun(gym, fullTie, 'f-full');
+    // Another gym's class with the same id, cancelled there: class ids are unique only per gym, so the
+    // cancelled-tie check must match the run's own gym (Tie still counts).
+    const twin = await newGym(`${label}-twin`);
+    await addClass(twin, 'f-sent-home', TODAY, '14:30', { cancelled: true });
 
     for (const id of ['reg', 'adu', 'del', 'kim']) await registerMark(gym, 'f-now', id, 'present', at(-30));
     await hereMark(gym, untied, 'run', at(-20));
