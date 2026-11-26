@@ -22,6 +22,8 @@
  * the email-alert-switches migration).
  */
 
+import { randomInt } from 'node:crypto';
+
 import type { PoolClient } from 'pg';
 
 import { isMinor } from '@/src/lib/minorAge';
@@ -31,7 +33,9 @@ import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
-import { ConflictError, ForbiddenError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, PilotError, ValidationError } from './errors';
+import { EMAIL_SHAPE } from './graphMailer';
+import { hashToken } from './security';
 
 export interface EmailAlertSwitchSubject {
   readonly organizationId: string;
@@ -49,24 +53,35 @@ export type EmailAlertSwitchState =
     readonly switched_on: boolean;
     /** Adult athletes only: whether an address has been confirmed (EM-2b). */
     readonly address_confirmed?: boolean;
+    /** Adult athletes only: whether a code can still be entered (EM-2b-2). Never an address. */
+    readonly code_pending?: boolean;
   };
 
 /**
  * The user type this account may switch under now, or null. An athlete's age
  * is read through pilot.accounts, so a caller cannot point it at another record.
+ *
+ * A5 (carried from EM-2, #2197): any other account linked to an athlete record
+ * is that athlete's, whatever its role, as the sender reads it
+ * (emailAlertSender.ts recheck): linked to a record under 18, with no date of
+ * birth, deleted or not in this gym, it is offered nothing either.
  */
 export async function emailAlertUserTypeFor(
   subject: EmailAlertSwitchSubject,
   now: Date = new Date(),
 ): Promise<EmailAlertUserType | null> {
   const candidate = emailAlertCandidateUserType(subject.role);
-  if (candidate !== 'adult_athlete') return candidate;
-  const athleteId = subject.athleteId?.trim();
-  if (!athleteId) return null;
+  if (candidate === null) return null;
+  const athleteId = candidate === 'adult_athlete'
+    ? subject.athleteId?.trim()
+    : (await queryOne<{ athlete_id: string | null }>(ACCOUNT_LINK_SQL, [subject.accountId]))?.athlete_id;
+  if (!athleteId) return candidate === 'adult_athlete' ? null : candidate;
   const row = await queryOne<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, athleteId]);
-  if (!row) return null;
-  return isMinor(row.dob, now) ? null : 'adult_athlete';
+  return row && !isMinor(row.dob, now) ? candidate : null;
 }
+
+/** The athlete record an account is linked to, whatever its role (A5). */
+const ACCOUNT_LINK_SQL = 'select athlete_id from pilot.accounts where account_id = $1';
 
 /** The date of birth of the live athlete record linked to this very account in this gym. */
 const LINKED_ATHLETE_DOB_SQL = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
@@ -80,11 +95,17 @@ interface SwitchRow {
   switched_on: boolean;
   address_confirmed: boolean;
   holds_address: boolean;
+  /** The typed address and its code (EM-2b-2): read to check a code, never returned. */
+  pending_address: string | null;
+  pending_code_hash: string | null;
+  code_expires_at: Date | null;
+  code_attempts: number;
 }
 
 const HOLDS_ADDRESS = 'pending_address is not null or pending_code_hash is not null or confirmed_address is not null';
 const SWITCH_ROW_COLUMNS = `user_type, switched_on, confirmed_address is not null as address_confirmed,
-            (${HOLDS_ADDRESS}) as holds_address`;
+            (${HOLDS_ADDRESS}) as holds_address, pending_address, pending_code_hash,
+            pending_code_expires_at as code_expires_at, pending_code_attempts as code_attempts`;
 
 /** The address columns, kept where `keep` is true and cleared where it is not. */
 function addressColumns(keep: string): string {
@@ -96,12 +117,23 @@ function addressColumns(keep: string): string {
 
 type OfferedState = Extract<EmailAlertSwitchState, { offered: true }>;
 
-function stateFrom(userType: EmailAlertUserType, row: SwitchRow | null | undefined): OfferedState {
+function stateFrom(userType: EmailAlertUserType, row: SwitchRow | null | undefined, now: Date): OfferedState {
   // A row saved under another user type (a changed role) is not this switch.
   const same = row && row.user_type === userType ? row : null;
   return userType === 'adult_athlete'
-    ? { offered: true, user_type: userType, switched_on: same?.switched_on ?? false, address_confirmed: same?.address_confirmed ?? false }
+    ? { offered: true, user_type: userType, switched_on: same?.switched_on ?? false,
+      address_confirmed: same?.address_confirmed ?? false, code_pending: codePending(same, now) }
     : { offered: true, user_type: userType, switched_on: same?.switched_on ?? false };
+}
+
+/**
+ * A code that can still be entered: sent, not expired, tries left. GET /me
+ * says so (default 9), so a page never offers a code field that can only be
+ * refused (GO condition 3).
+ */
+function codePending(row: SwitchRow | null, now: Date): boolean {
+  return Boolean(row?.pending_code_hash && row.code_expires_at
+    && row.code_expires_at.getTime() > now.getTime() && row.code_attempts < EMAIL_ALERT_CODE_TRIES);
 }
 
 /**
@@ -111,34 +143,55 @@ function stateFrom(userType: EmailAlertUserType, row: SwitchRow | null | undefin
  * primary key (23505). FOR NO KEY UPDATE holds up no row that only references
  * the account (tabletIdlePolicy.ts's rule).
  */
-async function lockSwitchRow(client: PoolClient, subject: EmailAlertSwitchSubject): Promise<SwitchRow | undefined> {
-  await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
+async function lockSwitchRow(
+  client: PoolClient,
+  subject: EmailAlertSwitchSubject,
+): Promise<{ stored: SwitchRow | undefined; linkedAthleteId: string | null }> {
+  // The account's athlete link is read under its own lock (A5).
+  const account = await client.query<{ athlete_id: string | null }>(
+    'select athlete_id from pilot.accounts where account_id = $1 for no key update',
+    [subject.accountId],
+  );
   const before = await client.query<SwitchRow>(
     `select ${SWITCH_ROW_COLUMNS} from pilot.email_alert_switches
       where organization_id = $1 and account_id = $2 for update`,
     [subject.organizationId, subject.accountId],
   );
-  return before.rows[0];
+  return { stored: before.rows[0], linkedAthleteId: account.rows[0]?.athlete_id ?? null };
 }
 
 /**
  * EVERY CHECK A WRITE RESTS ON, MADE UNDER THE WRITE'S OWN LOCKS (Overwatch and
- * Codex on #2169). Locks this person's rows in the order every other writer
- * takes them -- the athlete row first (FOR SHARE, for an athlete), then the
- * account, then the switch row -- and answers, under those locks, the user type
- * they may switch under now (null if none), their switch row as stored, and
- * whether that row is to be retired (retireReason).
+ * Codex on #2169). Locks this person's rows -- for an athlete, their own
+ * athlete row first (FOR SHARE), then the account, then the switch row -- and
+ * answers, under those locks, the user type they may switch under now (null if
+ * none), their switch row as stored, and whether that row is to be retired
+ * (retireReason).
  * Every writer of an account's state or memberships takes the account row
  * first, role upserts included (auth.ts setAccountActiveStatus and its
  * membership upserts, activation.ts, staffProvisioning.ts, dataDeletion.ts,
- * guardianLoginMove.ts), and every writer of an athlete row locks it before
- * the account (deleteAthleteRecord, the guardian-retirement trigger), so
- * nothing this answer rests on can change until the caller commits:
+ * guardianLoginMove.ts). The writers of an athlete row do not share one order:
+ * deleteAthleteRecord locks the athlete row before that athlete's own account
+ * (this order), but the guardian-retirement trigger
+ * (pilot.cascade_parent_deletion) fires on the guardian's account update and
+ * then locks the children's athlete rows FOR UPDATE -- account first. So only
+ * an athlete's own row is locked here, never a row some other account is
+ * linked to (A5, below). Under these locks nothing this answer rests on can
+ * change until the caller commits:
  *   - the login is active and not deleted;
  *   - its membership in this gym is active, and its role still gives the user
  *     type the session's role gives;
  *   - for an athlete, the record linked to this very account is live and 18
  *     or over (the same read as emailAlertUserTypeFor).
+ * A5 (carried from EM-2 #2197): for anyone else, the record their account is
+ * linked to (the link read under the account lock) is read too, live and 18
+ * or over in this gym, but with a plain read, not locked: locking it before
+ * the account could deadlock with that trigger (40P01, a raw 500), and after
+ * the account it would invert deleteAthleteRecord's order. A date of birth or
+ * deletion committed just after that read can let one save through; that is
+ * safe because the sender re-reads it before every send
+ * (emailAlertSender.ts recheck) and the person's next own read retires the
+ * row.
  * The gym's own status is answered apart (gymActive), as sign-in reads it: the
  * organization row FOR SHARE after the account lock, as parentPasswordSignIn.ts
  * does. Its only writer, setOrganizationStatus, and the gym-setting saves that
@@ -163,7 +216,7 @@ async function lockPerson(
       subject.organizationId, athleteId,
     ]);
   }
-  const stored = await lockSwitchRow(client, subject);
+  const { stored, linkedAthleteId } = await lockSwitchRow(client, subject);
   const gym = await client.query<{ status: string }>(
     'select o.status from pilot.organizations o where o.organization_id = $1 for share',
     [subject.organizationId],
@@ -180,11 +233,13 @@ async function lockPerson(
   const memberRole = member.rows[0]?.role ?? null;
   const memberType = memberRole === null ? null : emailAlertCandidateUserType(memberRole);
   // An athlete's linked record is read whatever the sign-in: a record gone or
-  // under 18 retires the switch even while the login is off.
+  // under 18 retires the switch even while the login is off. So is a record
+  // any other account is linked to (A5; a plain read, see above).
+  const record = candidate === 'adult_athlete' ? athleteId : linkedAthleteId;
   let adult: boolean | null = null;
-  if (candidate === 'adult_athlete') {
-    const athlete = athleteId
-      ? await client.query<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, athleteId])
+  if (candidate === 'adult_athlete' || record) {
+    const athlete = record
+      ? await client.query<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, record])
       : { rows: [] };
     adult = athlete.rows[0] !== undefined && !isMinor(athlete.rows[0].dob, now);
   }
@@ -207,7 +262,8 @@ type RetireReason = 'no_longer_offered' | 'user_type_changed';
  * record is gone. Decided under lockPerson's locks, for a row that is on or
  * holds an address:
  *   - an athlete whose linked record is gone, unlinked or under 18: retired,
- *     whatever their sign-in (A1's guarantee; OD-2026-10-04-010);
+ *     whatever their sign-in (A1's guarantee; OD-2026-10-04-010); so is any
+ *     other account linked to such a record (A5);
  *   - sign-in to this gym off (memberType null): kept, paused (T-3 A). The
  *     sender skips it as sign_in_off, and the gym's own status never retires;
  *   - a role with no switch (volunteer, board, the 'staff' role): kept, paused
@@ -314,9 +370,9 @@ export async function readEmailAlertSwitch(
   // off while this waits keeps it, paused: retireReason.)
   if (row && row.user_type !== userType && (row.switched_on || row.holds_address)) {
     await retireSwitchIfAny(subject, now);
-    return stateFrom(userType, await readRow());
+    return stateFrom(userType, await readRow(), now);
   }
-  return stateFrom(userType, row);
+  return stateFrom(userType, row, now);
 }
 
 export async function setEmailAlertSwitch(
@@ -330,7 +386,7 @@ export async function setEmailAlertSwitch(
   const userType = await emailAlertUserTypeFor(subject, now);
   if (!userType) {
     await retireSwitchIfAny(subject, now);
-    throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+    throw notOffered();
   }
 
   let retiredFirst = false;
@@ -351,21 +407,9 @@ export async function setEmailAlertSwitch(
       current = { ...stored, switched_on: false, address_confirmed: false, holds_address: false };
     }
     try {
-      return await saveSwitch(client, subject, userType, switchedOn, current);
+      return await saveSwitch(client, subject, userType, switchedOn, current, now);
     } catch (error) {
-      // Defensive: a membership row deleted after lockPerson read it, by a
-      // writer that takes neither the account nor the gym row. No writer does
-      // that today: the only delete of membership rows
-      // (scripts/pilot-cleanup-membership-orphans.mjs) removes rows whose
-      // account is already gone, which lockPerson refuses. EM-1a's membership
-      // key then refuses the insert: the same answer as anyone not offered a
-      // switch, not a raw error. Only that key's 23503; anything else stays an
-      // error. The pg suite times it with a held delete.
-      const pgError = error as { code?: unknown; constraint?: unknown };
-      if (pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk') {
-        throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
-      }
-      throw error;
+      throw notOfferedIfMembershipGone(error);
     }
   }).catch(async (error: unknown) => {
     // A write under the new type that ends in a 409 (an adult athlete's row
@@ -386,7 +430,26 @@ export async function setEmailAlertSwitch(
   // under, retires the row; sign-in switched off, a role with no switch, or a
   // request still under the old type leaves it as it was (T-1 A to T-3 A).
   await retireSwitchIfAny(subject, now);
-  throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
+  throw notOffered();
+}
+
+function notOffered(): ForbiddenError {
+  return new ForbiddenError('Forbidden: email alerts are not offered to this account');
+}
+
+/**
+ * Defensive: a membership row deleted after lockPerson read it, by a writer
+ * that takes neither the account nor the gym row. No writer does that today:
+ * the only delete of membership rows
+ * (scripts/pilot-cleanup-membership-orphans.mjs) removes rows whose account is
+ * already gone, which lockPerson refuses. EM-1a's membership key then refuses
+ * the insert: the same answer as anyone not offered a switch, not a raw error.
+ * Only that key's 23503; anything else stays an error. The pg suite times it
+ * with a held delete.
+ */
+function notOfferedIfMembershipGone(error: unknown): unknown {
+  const pgError = error as { code?: unknown; constraint?: unknown };
+  return pgError.code === '23503' && pgError.constraint === 'pilot_email_alert_switch_membership_fk' ? notOffered() : error;
 }
 
 async function saveSwitch(
@@ -395,8 +458,9 @@ async function saveSwitch(
   userType: EmailAlertUserType,
   switchedOn: boolean,
   stored: SwitchRow | undefined,
+  now: Date,
 ): Promise<EmailAlertSwitchState> {
-  const previous = stateFrom(userType, stored);
+  const previous = stateFrom(userType, stored, now);
   // Times and audit describe the row as stored, whatever type it was saved under.
   const storedOn = stored?.switched_on ?? false;
   const retyped = stored !== undefined && stored.user_type !== userType;
@@ -437,7 +501,57 @@ async function saveSwitch(
     ...(retyped && stored ? { previous_user_type: stored.user_type } : {}),
   });
 
-  return userType === 'adult_athlete'
-    ? { offered: true, user_type: userType, switched_on: switchedOn, address_confirmed: previous.address_confirmed === true }
-    : { offered: true, user_type: userType, switched_on: switchedOn };
+  // A switch save leaves the address and its code as they were.
+  return { ...previous, switched_on: switchedOn };
+}
+
+/*
+ * THE ADULT ATHLETE'S ADDRESS (lane W4-1, EM-2b-2). OW27-38 B: an adult
+ * athlete types an address beside their switch; it is used only after they
+ * enter a code the app emails to it; that one code email may say more than
+ * "open the app" (emailAlertCode.ts writes it). Plan #2159 section 8: POST
+ * sends a code, PUT enters it, the tries are capped on the row, no DELETE.
+ * OW27-02 C: an athlete under 18 or with no date of birth (OD-2026-10-04-010)
+ * never stores or confirms an address (L1 rule: nothing new shown to a minor):
+ * the adult check comes before anything is reserved, written, audited or sent,
+ * and again under the write's own locks (lockPerson). "Default N" below is
+ * item N of the defaults Overwatch GO'd on EM-2b (#2159 comment 7189871985).
+ */
+
+/** Jason's Q-1 A: "The code works once and expires in 15 minutes." */
+export const EMAIL_ALERT_CODE_LIFETIME_MS = 15 * 60 * 1000;
+/** Default 3: tries per code; at the cap every try is refused until a new code is sent. */
+export const EMAIL_ALERT_CODE_TRIES = 5;
+
+/** Sends the one code email (emailAlertCode.ts, emailAlertCodeMailer). Injected so tests never reach Graph. */
+export type EmailAlertCodeMailer = (message: { organizationId: string; to: string; code: string }) => Promise<void>;
+
+/** Default 1: six digits from crypto.randomInt, zero-padded. */
+export function newEmailAlertCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/**
+ * Trimmed and lowercased, as a sign-in address is (magicLink.ts
+ * normalizeEmail), or null: empty, over 254 characters, or not the shape the
+ * mailer itself refuses (graphMailer.ts EMAIL_SHAPE).
+ */
+export function normalizeEmailAlertAddress(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const address = raw.trim().toLowerCase();
+  return address.length <= 254 && EMAIL_SHAPE.test(address) ? address : null;
+}
+
+/**
+ * Default 2: the stored form of a code, bound to one gym, account and address
+ * (as activation.ts prefixes its hash), so a code is worth nothing for any
+ * other address, even this person's next one.
+ */
+export function emailAlertCodeHash(organizationId: string, accountId: string, address: string, code: string): string {
+  return hashToken(`email-alert-code:${organizationId}:${accountId}:${address}:${code}`);
+}
+
+/** Default 4: every limit answers exactly this, so no answer says which limit, or anything about the address. */
+export function emailAlertCodeLimitError(): PilotError {
+  return new PilotError(429, 'Too many code emails. Wait a few minutes, then ask again.', 'EMAIL_ALERT_CODE_LIMIT');
 }

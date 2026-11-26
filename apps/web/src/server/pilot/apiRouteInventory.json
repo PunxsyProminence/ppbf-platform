@@ -8865,7 +8865,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "The caller's own email alert switch (lane W4-1 EM-1b; OD-2026-11-19-019, OW27-10 A). Returns { ok: true, offered: false } for an athlete under 18, with no date of birth, with a deleted athlete record or with no athlete record linked to the account (OW27-02 C; OD-2026-10-04-010). WRITES only for such a caller, or one whose user type has changed since their row was saved (T-1 A on #2169): it switches off the row left from before and clears its address, under the same locks as a save, with its audit row in the same transaction (retireSwitchIfAny). That write needs no same-origin or CSRF check (the app has no general one; the two OAuth callbacks check a signed state for their own flow): it takes no fields, touches only the caller's own row, can only switch off a switch the caller is not offered under their user type now, and changes nothing when repeated. Otherwise the user type, on/off and, for an adult athlete, whether an address is confirmed. Returns no address.",
+    "notes": "The caller's own email alert switch (lane W4-1 EM-1b; OD-2026-11-19-019, OW27-10 A). Returns { ok: true, offered: false } for an athlete under 18, with no date of birth, with a deleted athlete record or with no athlete record linked to the account (OW27-02 C; OD-2026-10-04-010), and for any other account linked to an athlete record under 18, with no date of birth, deleted or not in this gym (A5, EM-2b-2: the sender sends such an account nothing). WRITES only for such a caller, or one whose user type has changed since their row was saved (T-1 A on #2169): it switches off the row left from before and clears its address, under the same locks as a save, with its audit row in the same transaction (retireSwitchIfAny). That write needs no same-origin or CSRF check (the app has no general one; the two OAuth callbacks check a signed state for their own flow): it takes no fields, touches only the caller's own row, can only switch off a switch the caller is not offered under their user type now, and changes nothing when repeated. Otherwise the user type, on/off and, for an adult athlete, whether an address is confirmed and code_pending: whether a code sent to a typed address can still be entered (EM-2b-2; not expired, tries left). Returns no address.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8882,7 +8882,7 @@
     "id": "app/api/pilot/email-alerts/me/route.ts#PUT",
     "method": "PUT",
     "path": "/api/pilot/email-alerts/me",
-    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store refuses an athlete under 18 or with no date of birth (403); self-scoped",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store refuses an athlete under 18 or with no date of birth, and any account linked to such a record (A5) (403); self-scoped",
     "rolesAdmitted": [
       "coach",
       "organization_admin",

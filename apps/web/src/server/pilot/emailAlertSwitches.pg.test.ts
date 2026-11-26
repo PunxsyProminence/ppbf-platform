@@ -448,7 +448,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
     activeClient = client;
     try {
       await expect(readEmailAlertSwitch(subject('adult'), NOW)).resolves.toEqual({
-        offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false,
+        offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false, code_pending: false,
       });
       await expect(setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW)).rejects.toMatchObject({ status: 409 });
       expect(await switchRows(client)).toEqual([]);
@@ -468,7 +468,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
         [ORG_ID, ADULT_ID],
       );
       await expect(setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW)).resolves.toEqual({
-        offered: true, user_type: 'adult_athlete', switched_on: true, address_confirmed: true,
+        offered: true, user_type: 'adult_athlete', switched_on: true, address_confirmed: true, code_pending: false,
       });
       expect(await switchRows(client)).toEqual([expect.objectContaining({
         account_id: ADULT_ID, switched_on: true, confirmed_address: 'someone@example.test',
@@ -514,7 +514,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
     try {
       await expect(readEmailAlertSwitch(subject('birthday'), new Date('2026-11-24T17:00:00Z'))).resolves.toEqual({ offered: false });
       await expect(readEmailAlertSwitch(subject('birthday'), NOW)).resolves.toEqual({
-        offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false,
+        offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false, code_pending: false,
       });
     } finally {
       await activeClient.end();
