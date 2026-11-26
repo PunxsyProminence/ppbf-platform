@@ -347,6 +347,19 @@ test('a save whose success cannot be read (a lost body, a captive portal page) r
   expect(gets).toHaveLength(2);
 });
 
+test('a save answered as not offered (now an athlete 18 or over, or no switch) takes the panel away at once, without reading again', async () => {
+  const fetchMock = mockRoute([offered('parent', false), () => Promise.reject(new Error('offline'))], () =>
+    response({ ok: true, offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false }));
+  const { container } = render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await waitFor(() => expect(container).toBeEmptyDOMElement());
+  const gets = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'PUT');
+  expect(gets).toHaveLength(1);
+});
+
 test('a save refused with a 409 is not a refusal of the switch: it reads again and says "not saved" when the setting did not change (reviewer B)', async () => {
   mockRoute([offered('staff', false), offered('staff', false)], () =>
     response({ ok: false, error: 'Conflict' }, 409));
