@@ -152,7 +152,7 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     flipped: `${name} was ${WAS[register.previous_status ?? ''] ?? 'not marked Present'} on the class register; now Present.`,
     // The server skips the register before reading it, so whether the athlete is on it already (their own
     // check-in, another coach's mark) is not said (#2182 round 14, reviewer B).
-    skipped: `${name} is marked here; this tap did not put ${name} on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
+    skipped: `${name} was marked here; this tap did not put ${name} on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
     removed: `${name} is off the class register too.`,
     // The register mark the earlier tap wrote was changed since (any change, any time): the take-back
     // left it (#2182 round 14, reviewer B).
@@ -221,6 +221,11 @@ export default function SessionRunPresence({
   // kept: from a kept tap, so shown only while this page's account is confirmed (a shared tablet).
   const [note, setNote] = useState<{ athleteId: string; text: string; kept?: boolean } | null>(null);
   const latestRead = useRef(0);
+  // The ticket of the newest list read still on its way, if any (#2182 round 14, reviewers A and B).
+  // A mark painted while it is out reads again, so that older answer cannot paint over the mark; and a
+  // newest read whose answer a tap made stale is asked again, so what it would have shown (a replay's
+  // correction) is not lost.
+  const pendingRead = useRef<number | null>(null);
   const headingId = useId();
   // The tied class's register, read beside the run's own marks; untied, nothing is read.
   const registerClassId = tied && classId ? classId : null;
@@ -236,38 +241,47 @@ export default function SessionRunPresence({
   );
 
   const read = useCallback(async () => {
-    const ticket = latestRead.current + 1;
-    latestRead.current = ticket;
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const payload = (await response.json().catch(() => null)) as { present?: unknown; gym?: unknown } | null;
-      if (
-        !response.ok
-        || !payload
-        || !Array.isArray(payload.present)
-        || !Array.isArray(payload.gym)
-        || !payload.present.every(isAthlete)
-        || !payload.gym.every(isAthlete)
-      ) {
-        throw new Error('unreadable');
+    const attempt = async (): Promise<void> => {
+      const ticket = latestRead.current + 1;
+      latestRead.current = ticket;
+      pendingRead.current = ticket;
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => null)) as { present?: unknown; gym?: unknown } | null;
+        if (
+          !response.ok
+          || !payload
+          || !Array.isArray(payload.present)
+          || !Array.isArray(payload.gym)
+          || !payload.present.every(isAthlete)
+          || !payload.gym.every(isAthlete)
+        ) {
+          throw new Error('unreadable');
+        }
+        if (latestRead.current !== ticket) return;
+        setReading({
+          runId,
+          state: 'loaded',
+          gym: payload.gym as Athlete[],
+          present: new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id)),
+        });
+      } catch {
+        if (latestRead.current === ticket) setReading({ runId, state: 'unavailable' });
+      } finally {
+        if (pendingRead.current === ticket) {
+          pendingRead.current = null;
+          // The newest read, answered after a tap made it stale: its answer was dropped, so ask again.
+          if (latestRead.current !== ticket) void attempt();
+        }
       }
-      if (latestRead.current !== ticket) return;
-      setReading({
-        runId,
-        state: 'loaded',
-        gym: payload.gym as Athlete[],
-        present: new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id)),
-      });
-    } catch {
-      if (latestRead.current === ticket) setReading({ runId, state: 'unavailable' });
-    }
+    };
+    return attempt();
   }, [runId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void read();
   }, [read]);
 
@@ -394,7 +408,10 @@ export default function SessionRunPresence({
         resolved.done = true;
         setAskedTaps((taps) => taps.filter((tap) => tap.save !== resolved));
       };
-      const showMark = () => {
+      // What this tap did, painted at once. A list read on its way was asked before this tap was written,
+      // so its answer could paint over this mark: the list is read again (`reread`, or whenever one is on
+      // its way), and that newer read replaces the older one's answer (#2182 round 14, reviewer B).
+      const showMark = (reread: boolean): Promise<void> | undefined => {
         setReading((current) => {
           if (!current || current.runId !== runId || current.state !== 'loaded') return current;
           const next = new Set(current.present);
@@ -403,6 +420,7 @@ export default function SessionRunPresence({
           return { ...current, present: next };
         });
         void readRegister();
+        return reread || pendingRead.current !== null ? read() : undefined;
       };
       return {
         // No name: the line can outlive this list on a shared floor screen. The row names the athlete.
@@ -441,19 +459,19 @@ export default function SessionRunPresence({
           release();
           // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
           if (saveQueueGeneration() !== seen) return undefined;
-          // A resend of this tap, which landed earlier, is answered with the first answer. The server may
-          // hold something else now (another tab or device changed it since), so the list and the register
-          // are read again rather than painting what was tapped (#2182 round 13, reviewer B: the list is
-          // the server's). Awaited: the queue sends the next tap only after this returns, so that tap's
-          // own mark, painted when it lands, is never overwritten by this older read.
+          // A resend of this tap, which landed earlier, is answered with the first answer. The mark is
+          // painted as that answer had it (true when it landed: the row never reverts to unmarked, #2182
+          // round 14, reviewer B), and the list is read again, because another tab or device may have
+          // changed it since (round 13, reviewer B: the list is the server's). That read is awaited, so the
+          // queue sends the next tap only after it lands.
           const replayed = answer?.replayed === true;
           // A resend of this tap, which landed earlier, on a session that has ended since: the console
-          // resyncs, and this list goes with it. Told first, so the read below never delays it.
+          // resyncs, and this list goes with it, so the list is not read again (round 14, reviewer B).
           const runGone = replayed && answer?.live === false;
           if (runGone) onRunNotLive?.();
           if (onPage.current) {
-            if (replayed) await Promise.all([read(), readRegister()]);
-            else showMark();
+            const reading = showMark(replayed && !runGone);
+            if (replayed && !runGone) await reading;
             forgetRefusal(athlete.athlete_id);
           }
           // A drop while the list was read again: nothing of this answer is shown.
@@ -554,6 +572,7 @@ export default function SessionRunPresence({
       setMessage('');
       setNote(null);
       // A read already on its way was asked before this tap: its answer must not paint over this one.
+      // That read is asked again once it comes back (read), so the list still ends up the server's.
       latestRead.current += 1;
       try {
         // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in): sent
@@ -593,6 +612,8 @@ export default function SessionRunPresence({
             else next.delete(athlete.athlete_id);
             return { ...current, present: next };
           });
+          // A list read on its way was asked before this tap was written: read again (pendingRead).
+          if (pendingRead.current !== null) void read();
           // A tap on a tied session writes the class register too: what it now has is read again.
           void readRegister();
           return;

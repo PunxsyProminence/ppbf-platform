@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import SessionRunPresence from './SessionRunPresence';
 import SaveQueueNotice, { FAILED_WORDS, SAVED_CHECK_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { ANSWER_WAIT_MS, RESEND_MS, prepareSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import { unknownOffPage } from './SessionRunClass';
 
 // "Who is here" on the live session screen (audit finding F-067). The server decides who may be
@@ -343,8 +343,8 @@ describe('a session tied to a class', () => {
     [{ effect: 'already_present' }, 'Ada Reyes was already Present on the class register.'],
     [{ effect: 'flipped', previous_status: 'absent' }, 'Ada Reyes was marked Absent on the class register; now Present.'],
     [{ effect: 'flipped', previous_status: 'excused' }, 'Ada Reyes was marked Excused on the class register; now Present.'],
-    [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: the class was cancelled.'],
-    [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.'],
+    [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes was marked here; this tap did not put Ada Reyes on the class register: the class was cancelled.'],
+    [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes was marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.'],
     [{ effect: 'register_newer', status: 'absent' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Absent there. Change it on the register if Ada Reyes is here.'],
     [{ effect: 'register_newer', status: 'excused' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed Excused there. Change it on the register if Ada Reyes is here.'],
     [{ effect: 'register_newer' }, 'Ada Reyes was marked here, but the class register had been changed after your tap, so Ada Reyes stayed as marked there. Change it on the register if Ada Reyes is here.'],
@@ -1254,7 +1254,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     });
   }
   const ADA_KEPT = 'The class register was changed after your tap marked Ada Reyes here, so this take-back did not change it there.';
-  const ADA_SKIPPED = 'Ada Reyes is marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.';
+  const ADA_SKIPPED = 'Ada Reyes was marked here; this tap did not put Ada Reyes on the class register: you no longer run this class.';
 
   test('a take-back the register answered kept, then another athlete\'s tap: the kept words stay named in the alert', async () => {
     jest.useFakeTimers();
@@ -1821,9 +1821,35 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
   });
 
-  // A replay on a session that has ended: the console is told before the list is read, so a slow read
-  // never holds back its resync.
-  test('a replay on a session that has ended tells the live screen before its read comes back', async () => {
+  // A replay on a session that has ended: the console is told, and the list, which goes with the run, is
+  // not read again (round 14, reviewers A and B); the mark shows as the first answer had it meanwhile.
+  test('a replay on a session that has ended reads nothing, tells the live screen, and shows the mark meanwhile', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        return answer({ outcome: 'marked', replayed: true, live: false });
+      },
+      present: () => present,
+    });
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    const readsBefore = presentReads.length;
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(presentReads).toHaveLength(readsBefore);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByText('1 marked here.')).toBeTruthy();
+  });
+
+  // Round 14, reviewer B: while a replay's list is read again, the saved tap shows as its first answer had
+  // it (true when it landed), counted, and not as unmarked.
+  test('while a replay\'s list is read again, its mark shows and is counted', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
     const reads = holdListReads();
@@ -1834,19 +1860,100 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
           return 'lost';
         }
         reads.state.hold = true;
-        return answer({ outcome: 'marked', replayed: true, live: false });
+        return answer({ outcome: 'marked', replayed: true, live: true });
       },
       present: () => present,
     });
     reads.install();
-    const onRunNotLive = jest.fn();
-    await showKept({ onRunNotLive });
+    await showKept();
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
     expect(reads.state.held).toHaveLength(1);
-    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByText('1 marked here.')).toBeTruthy();
+    expect(screen.queryByText(WAITING_ROW)).toBeNull();
     await reads.release();
-    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+  });
+
+  // Round 14, reviewer A (probe S1): the coach taps while a replay's list is read again. The tap makes that
+  // read stale, so its answer is dropped; the list is read again, and what the replay's read would have
+  // shown (another device's mark of Cy in between) still shows.
+  test('a tap while a replay\'s list is read again does not lose the correction: the list is read again', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    const reads = holdListReads();
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        if (send === 2) {
+          // Another device marked Cy in between; Ada's resend is replayed and its read is held.
+          present = [ADA, CY];
+          reads.state.hold = true;
+          return answer({ outcome: 'marked', replayed: true, live: true });
+        }
+        present = [...present, BEN];
+        return answer({ outcome: 'marked' });
+      },
+      present: () => present,
+    });
+    reads.install();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(reads.state.held).toHaveLength(1);
+    // The coach taps Ben while the read is out.
+    await tapKept('Mark here Ben Ortiz');
+    await reads.release();
+    await wait(RESEND_MS);
+    expect(sent).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Cy Marsh' })).toBeTruthy();
+    expect(screen.getByText('3 marked here.')).toBeTruthy();
+  });
+
+  // Round 14, reviewers A (probe S2) and B: a replay's read held past the queue's answer wait. The queue
+  // moves on and Ben's tap lands and is painted while that older read is still out; Ben's paint reads the
+  // list again, and the older read's late answer paints over nothing.
+  test('a replay\'s read that outlasts the queue\'s answer wait never paints over a later tap\'s mark', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    const reads = holdListReads();
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        if (send === 2) {
+          reads.state.hold = true;
+          return answer({ outcome: 'marked', replayed: true, live: true });
+        }
+        present = [...present, BEN];
+        return answer({ outcome: 'marked' });
+      },
+      present: () => present,
+    });
+    reads.install();
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(reads.state.held).toHaveLength(1);
+    // Only that read is held; later reads are answered at once.
+    reads.state.hold = false;
+    await wait(ANSWER_WAIT_MS + RESEND_MS);
+    expect(sent).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+    // The older read, answered at the server before Ben's tap was written, arrives now.
+    await reads.release();
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+    expect(screen.getByText('2 marked here.')).toBeTruthy();
   });
 
   // A drop (here a sign-out) while a replay's list is read again: nothing of that answer is shown, not
