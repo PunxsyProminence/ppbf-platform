@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { BUILDING } from './buildingMap';
+import { DOOR_LABEL_KEY, ROOM_NAME_DEFAULTS } from '@/src/shared/roomNames';
 
 /**
  * EACH MENU LABEL EQUALS ITS PAGE TITLE (Jason 2026-10-17, glossary A; lane U2,
@@ -32,6 +33,7 @@ const TITLE_NOT_LITERAL: Record<string, string> = {
   '/athlete/dashboard': 'AthleteWorkspace prints the open tab group as the h1',
   '/coach/environment/intake-router': 'the shell prints roleLabel "Coach Workspace" as the h1',
   '/workspace': 'the h1 is "<role> Workspace", built from the session role',
+  '/profile': "the h1 is the gym's name for card:your-profile, the key its door reads (lane W4-9, RN-3; pinned below)",
   '/wall': 'the gym TV wall; its heading comes from the wall read',
   '/parent/progression-visibility': "the h1 is <child>'s Progression, built from the chosen child",
   '/parent/video': "the h1 is <child>'s Film (or Your Athlete's Film), built from the chosen child",
@@ -66,7 +68,7 @@ function importedComponents(file: string, source: string): string[] {
 }
 
 /** Pages whose h1 is the shell's roleLabel, a literal prop on the page (RoleStandaloneView prints it as the h1). */
-const SHELL_H1_FROM_ROLE_LABEL = new Set(['/profile']);
+const SHELL_H1_FROM_ROLE_LABEL = new Set<string>([]);
 
 function roleLabelH1s(source: string): string[] {
   return [...source.matchAll(/\broleLabel="([^"]+)"/g)].map((m) => m[1]);
@@ -105,6 +107,19 @@ test.each(CHECKED)('%s: the door "%s" is the page title', (_href, label, titles)
 test('the /profile door reads "Your Profile" (OD-2026-11-20-001, Q11 A; AS-8 plan #2020 Q18 A), not "Your Corner"', () => {
   const door = BUILDING.find((d) => d.href === '/profile');
   expect(door?.label).toBe('Your Profile');
+});
+
+test('the /profile door and its title read one name, renamed or not (lane W4-9, RN-3; OD-2026-10-17-001 item 1)', () => {
+  // The door's menu label is the gym's name for card:your-profile (useRoomNames().door) ...
+  expect(DOOR_LABEL_KEY['/profile']).toBe('card:your-profile');
+  // ... whose default is the door's own label, so the two agree before any rename ...
+  const door = BUILDING.find((d) => d.href === '/profile');
+  expect(ROOM_NAME_DEFAULTS['card:your-profile']).toBe(door?.label);
+  // ... and the page's title and breadcrumb read the same key, so they agree after one.
+  const page = fs.readFileSync(path.join(WEB, 'app', 'profile', 'page.tsx'), 'utf8');
+  expect(page).toContain("names.name('card:your-profile')");
+  expect(page).toContain('roleLabel={title}');
+  expect(page).toContain('breadcrumbs={[{ label: title }]}');
 });
 
 test('each board seat door names its seat page, "<seatLabel> Workspace"', () => {
