@@ -16,12 +16,16 @@ import { apiBase } from '@/lib/apiBase';
  * 'volunteer' login (403), a first read that fails -- gets nothing at all on
  * this page: no panel, no message, no warning (L1 rule).
  *
- * After a save: a refusal (403) takes the panel away at once, whoever is
- * signed in by then, with nothing said (a minor in a stale tab sees nothing
- * new). A signed-out save (401) says so. Any other failure reads the setting
- * again and shows that: no error if the change did land, "not saved" only if
- * it did not. An unknown setting never looks like off: after a save and a read
- * that both failed, neither choice is pressed and the panel says so.
+ * After a save: a refusal (403), or an answer that says no switch is offered,
+ * takes the panel away at once, whoever is signed in by then, with nothing said
+ * (a minor in a stale tab sees nothing new). A signed-out save (401), or a
+ * signed-out read after a failed save, says so, and the choices then send
+ * nothing until the page is reloaded. Any other failure -- a dropped
+ * connection, a server error, a 409, or a success whose answer cannot be read
+ * (a lost body, a captive portal's page) -- reads the setting again and shows
+ * that: no error if the change did land, "not saved" only if it did not. An
+ * unknown setting never looks like off: after a save and a read that both
+ * failed, neither choice is pressed and the panel says so.
  *
  * The route is self-scoped: nothing here names an account, and the PUT body is
  * exactly { switched_on }.
@@ -35,7 +39,7 @@ interface ShownSwitch {
   readonly switchedOn: boolean | null;
 }
 
-type Read = ShownSwitch | 'hidden' | 'failed';
+type Read = ShownSwitch | 'hidden' | 'signed_out' | 'failed';
 
 /** Shown here; adult_athlete waits for EM-2b. */
 const SHOWN_TO: readonly UserType[] = ['staff', 'parent'];
@@ -58,11 +62,14 @@ function fromPayload(payload: unknown): ShownSwitch | 'hidden' {
   return userType ? { userType, switchedOn: body.switched_on } : 'hidden';
 }
 
+const SIGNED_OUT = 'You are signed out. Sign in again to see or change this.';
+
 async function readSwitch(): Promise<Read> {
   try {
     const response = await fetch(`${apiBase()}/api/pilot/email-alerts/me`, { credentials: 'include' });
     // A refusal (a role with no switch) is not a fault: there is nothing to show.
-    if (response.status === 401 || response.status === 403) return 'hidden';
+    if (response.status === 403) return 'hidden';
+    if (response.status === 401) return 'signed_out';
     if (!response.ok) return 'failed';
     return fromPayload(await response.json());
   } catch {
@@ -74,10 +81,11 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
   const [current, setCurrent] = useState<ShownSwitch | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
 
   useEffect(() => {
     void readSwitch().then((read) => {
-      if (read !== 'hidden' && read !== 'failed') setCurrent(read);
+      if (read !== 'hidden' && read !== 'signed_out' && read !== 'failed') setCurrent(read);
     });
   }, []);
 
@@ -94,7 +102,10 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
         body: JSON.stringify({ switched_on: switchedOn }),
       });
       status = response.status;
-      if (response.ok) saved = fromPayload(await response.json().catch(() => null));
+      // A success whose answer cannot be read is not known to be saved: it is
+      // read again below, never taken as "not offered".
+      const body: unknown = response.ok ? await response.json().catch(() => undefined) : undefined;
+      if (body !== undefined) saved = fromPayload(body);
     } catch {
       saved = null;
     }
@@ -107,13 +118,18 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
     } else if (status === 401) {
       // Nothing was saved, and with no session the setting cannot be read.
       setCurrent({ userType, switchedOn: null });
-      setError('You are signed out. Sign in again to see or change this.');
+      setError(SIGNED_OUT);
+      setSignedOut(true);
     } else {
       // Not known to be saved: show what the server holds now, not what was
       // asked for, and say "not saved" only if it really was not.
       const read = await readSwitch();
       if (read === 'hidden') {
         setCurrent(null);
+      } else if (read === 'signed_out') {
+        setCurrent({ userType, switchedOn: null });
+        setError(SIGNED_OUT);
+        setSignedOut(true);
       } else if (read === 'failed') {
         setCurrent({ userType, switchedOn: null });
         setError('That change may not have been saved, and your setting could not be read. Try again.');
@@ -150,10 +166,11 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
             aria-pressed={current.switchedOn === on}
             // aria-disabled, not disabled: a disabled button drops the
             // keyboard focus of the person who just pressed it.
-            aria-disabled={saving}
+            aria-disabled={saving || signedOut}
             className={`${styles.choiceBase} ${current.switchedOn === on ? styles.choiceOn : styles.choiceOff}`}
             onClick={() => {
-              if (!saving && current.switchedOn !== on) void save(current.userType, on);
+              // Signed out: a press could only be refused again (no control that does nothing).
+              if (!saving && !signedOut && current.switchedOn !== on) void save(current.userType, on);
             }}
           >
             {on ? 'On' : 'Off'}

@@ -305,6 +305,60 @@ test('a save refused for want of a session says so, and does not show a setting 
   expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('signed out, the choices are marked unavailable and a press sends nothing more (reviewers A and B, re-read)', async () => {
+  const fetchMock = mockRoute([offered('staff', true)], () => response({ ok: false, error: 'Unauthorized' }, 401));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are on.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+  await screen.findByRole('alert');
+  for (const name of ['On', 'Off']) expect(screen.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(puts(fetchMock)).toHaveLength(1);
+});
+
+test('a save that fails, then a read that finds the session gone, says signed out rather than taking the panel away (reviewers A and B, re-read)', async () => {
+  mockRoute([offered('parent', false), () => response({ ok: false, error: 'Unauthorized' }, 401)], () =>
+    response({ ok: false, error: 'Server error' }, 503));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('You are signed out. Sign in again to see or change this.');
+  expect(screen.getByText('Your setting could not be read.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-disabled', 'true');
+});
+
+test('a save whose success cannot be read (a lost body, a captive portal page) reads the setting again and shows it, with no error (reviewers A and B, re-read)', async () => {
+  const unreadable = { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } } as unknown as Response;
+  const fetchMock = mockRoute([offered('staff', false), offered('staff', true)], () => unreadable);
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  await screen.findByText('Email alerts are on.');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  const gets = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'PUT');
+  expect(gets).toHaveLength(2);
+});
+
+test('a save refused with a 409 is not a refusal of the switch: it reads again and says "not saved" when the setting did not change (reviewer B)', async () => {
+  mockRoute([offered('staff', false), offered('staff', false)], () =>
+    response({ ok: false, error: 'Conflict' }, 409));
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByText('Email alerts are off.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('That change was not saved.');
+  expect(screen.getByText('Email alerts are off.')).toBeInTheDocument();
+});
+
 test('a save and the read after it both failing leaves the setting unknown: neither choice pressed, and it says so', async () => {
   mockRoute([offered('staff', false), () => Promise.reject(new Error('offline'))], () =>
     Promise.reject(new Error('offline')));
