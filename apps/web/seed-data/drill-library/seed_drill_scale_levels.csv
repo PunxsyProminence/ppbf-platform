@@ -1706,3 +1706,33 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_3fd79a16978db8,drl_15ebfe7736b8eb,A,false,"Standing still, deep breathing and relaxing the arms and legs.",No bounce.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_df0f4e1bc3f1e7,drl_15ebfe7736b8eb,B,true,"Light bounce, deep breathing, relax arms and legs, as written.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_321779313bcf3a,drl_15ebfe7736b8eb,C,false,"The athlete leads their own reset, breathing slowing throughout.",Self-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8b0ed86e31f903,drl_db082783ba4f15,A,false,5 minutes easy and the 5 builds; the two 5-second efforts hard but not maximal.,No maximal efforts.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0eca8a5d71c2d6,drl_db082783ba4f15,B,true,The warm-up as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0a5976b0e880f5,drl_db082783ba4f15,C,false,"As written, each build reaching a higher top speed than the last, the last two near maximum.",Steeper builds.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b752f2dae33e54,drl_4f85f40352957b,A,false,"Easy movement until heart rate is under 120, then a short mobility set.",Short mobility.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_9ea9a7d514f03b,drl_4f85f40352957b,B,true,"Easy until heart rate is under 120, then mobility, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_16974754b5b342,drl_4f85f40352957b,C,false,"As written, the athlete reading their own heart rate and noting how long it took to fall under 120.",Athlete-read.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_8d4957342bbe69,drl_f49dc21b0918ef,A,false,The coach takes and writes the readings.,Coach-recorded.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_4dfd38f9336c91,drl_f49dc21b0918ef,B,true,"Speed or power at 7, 17 and 27 seconds of each rep, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_cfa1e915754c6b,drl_f49dc21b0918ef,C,false,"As written, and the athlete also notes each rep's drop from 7 to 27 seconds.",Decline noted.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_1be9ebf6c61674,drl_b7720d791b970b,A,false,"A few reps of the one selected skill, the coach noting.",A few reps.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_007f4bb89d0a18,drl_b7720d791b970b,B,true,The fresh technical check as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_01f876c8034d97,drl_b7720d791b970b,C,false,"As written, and the athlete notes their own check beside the coach's.",Athlete notes too.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_0093ef4223e3be,drl_e7279a0244efa5,A,false,The coach logs the first failure; the athlete only performs.,Coach-logged.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b866d13f0adc2d,drl_e7279a0244efa5,B,true,"Same technical check, first-failure log and regression note, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2fdc009d628d94,drl_e7279a0244efa5,C,false,"As written, and the athlete names their own first failure before the coach's note.",Athlete names it.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2ce677ea870dac,drl_6d21ac893974ec,A,false,"The four parts at an easy pace, the neck holds gentle; in the pre-activation cue drill the athlete braces on the cue with no push, until the brace comes on time every rep.",Easy pace; no push.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_e696cc2140e488,drl_6d21ac893974ec,B,true,The warm-up as written.,,light_technical,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_bc3445c569cab0,drl_6d21ac893974ec,C,false,"As written, the fast feet and the medicine-ball passes at full speed; the jab flurries stay at 50%.",Faster activation.,light_technical,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_35a6fedf77c0e4,drl_6529e148d4b491,A,false,"One theme for every round (a theme may repeat), at a controlled pace.",One theme.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b7073505037b91,drl_6529e148d4b491,B,true,"Five themed rounds with their KPIs, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_b2ee94fe586045,drl_6529e148d4b491,C,false,"As written, the coach counting each round's KPI and telling the athlete the count in the rest.",KPI counted.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_25077fc1b8bc9b,drl_02c1253c606e21,A,false,"Fewer efforts of either option (the coach cuts the count), each still hard.",Fewer efforts.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_2c4ef713fbb1d5,drl_02c1253c606e21,B,true,Either option as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_471f836cbb74dc,drl_02c1253c606e21,C,false,"Both options in one finisher, the bike or treadmill set then the shadow set; the coach trims either set to fit the 8 minutes.",Both options.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a2e518921ae281,drl_a5f52ff0aa9d2e,A,false,"Easy movement, the breathing and the log; a shorter stretch set.",Shorter stretch.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_495a8f4a5cd1d4,drl_a5f52ff0aa9d2e,B,true,The cool-down as written.,,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_781188775d020e,drl_a5f52ff0aa9d2e,C,false,"As written, the athlete writing their own log line before the coach reads it.",Athlete-logged.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a667ff5dde8e30,drl_4845ed05215e9b,A,false,The coach gives the evaluation through the loop and calls the reset to stance.,Coach-led.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_a676d01358b016,drl_4845ed05215e9b,B,true,"Evaluate → Reset, as written.",,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_f7a9ea359fa466,drl_4845ed05215e9b,C,false,"The athlete gives the evaluation through the loop first, then resets to their stance without a call; the coach adds or corrects.",Athlete-led.,none,,scaffold_needs_coach_review

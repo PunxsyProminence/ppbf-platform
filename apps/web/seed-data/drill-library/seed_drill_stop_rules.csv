@@ -1653,3 +1653,18 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_23e9ddbdec8785,drl_5ab30784188e04,1,"Stop the set when the pogos get heavy or slow or the punches lose their snap, and the rest does not bring them back.",drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_a8843e92286c0b,drl_3891ec6a6a49f6,1,"Stop the set when the punches turn into pushes or the hands drop, and the rest does not bring them back.",drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_cac1b3aa93ad59,drl_15ebfe7736b8eb,1,Dizziness or light-headedness: stop the bounce and breathe normally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_f5895485e12f6f,drl_db082783ba4f15,1,Restart the builds when a build starts at full speed instead of rising from easy.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_bad511e577cee8,drl_db082783ba4f15,2,Dizziness or light-headedness: slow to an easy walk and breathe normally; the coach checks before the next part.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_b09535314f0794,drl_4f85f40352957b,1,Dizziness or light-headedness: slow to an easy walk and breathe normally; the coach checks before the next part.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_60958686ddbfdc,drl_f49dc21b0918ef,1,Stop the session when the readings show paced reps (flat from 7 to 27 seconds) instead of all-out attacks.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e2a08a5d5001e7,drl_b7720d791b970b,1,"Stop/regress when guessing, blind reset, stance collapse, guard abandonment, or target-skill disappearance prevents training transfer",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_00f4d88d11a1f0,drl_e7279a0244efa5,1,"Stop/regress when guessing, blind reset, stance collapse, guard abandonment, or target-skill disappearance prevents training transfer",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e7d733e0f45a79,drl_6d21ac893974ec,1,Stop any part that hurts; the coach checks before the athlete goes on.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_4f8c4502ff8709,drl_6d21ac893974ec,2,Stop the set when the push or the bag tap stops being light and controlled; reset the force before continuing.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_a68e84702cc6c4,drl_6d21ac893974ec,3,Stop the set when the brace comes late (after the push) on repeated reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d8e0a6a53d5695,drl_6d21ac893974ec,4,"Stop and regress when the drill becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f52870659f8f3c,drl_6529e148d4b491,1,"If fatigue breaks decisions, downgrade before intensity rises further.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_b859b61f8a626d,drl_6529e148d4b491,2,"If the room loses purpose, simplify before adding.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b9ba70a8c0cad8,drl_02c1253c606e21,1,"Stop the finisher when the efforts stop being high quality (shadow form breaks, or the hard intervals turn into paced ones); do not add more.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_0071b66e2cc4b0,drl_a5f52ff0aa9d2e,1,Dizziness or light-headedness: stop and breathe normally; the coach checks before the athlete goes on.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_bbd075be6944f8,drl_4845ed05215e9b,1,The talk drifts away from the session's one focus or runs past the cool-down's minutes: close it with the reset to stance.,drill_specific,intent_drift
