@@ -6,7 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
-import { keepSave, readSaveQueue, saveQueueAccountConfirmed, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
+import { keepSave, saveQueueAccountConfirmed, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -198,6 +198,7 @@ export default function SessionRunPresence({
   tied = false,
   classId = null,
   onPresentCount,
+  onCountForFinish,
   onRunNotLive,
   isFinishWaiting,
 }: {
@@ -208,6 +209,13 @@ export default function SessionRunPresence({
   classId?: string | null;
   /** The number of athletes marked here, each time the server says so; null while it is not known. */
   onPresentCount?: (count: number | null) => void;
+  /**
+   * The count a finish tapped now should record: the marks as read, with the taps still waiting on this
+   * page applied (Codex P1 on #2182). Kept apart from onPresentCount, which changes only when the
+   * server's marks do, so a reader that reads again on that change still does when a tap lands
+   * (round 21, reviewer A: the no-shows offer).
+   */
+  onCountForFinish?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
   onRunNotLive?: () => void;
   /** Whether a finish is kept and waiting now: once it lands this list goes, so a refusal is said in the page's list. */
@@ -320,8 +328,8 @@ export default function SessionRunPresence({
   // lost is kept and sent again until it goes through, with the milliseconds since the tap, so a late
   // one never undoes an Absent or Excused set after it (Overwatch condition 1, OQ-1's server half).
   // What each kept tap asked, in the order tapped: added once its save is kept, gone with that save's
-  // own answer (a later tap of the same athlete wins), and all cleared once nothing kept waits (a
-  // sign-out drop tells this list nothing otherwise).
+  // own answer (a later tap of the same athlete wins), and all cleared at a drop of the queue (a
+  // sign-out drop answers none of them).
   // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
   // its words to the page's list.
   const onPage = useRef(true);
@@ -399,14 +407,18 @@ export default function SessionRunPresence({
     });
   }, []);
   const asked = useMemo(() => new Map(askedTaps.map((tap) => [tap.athleteId, tap.present])), [askedTaps]);
-  useEffect(
-    () =>
-      subscribeSaveQueue(() => {
-        const state = readSaveQueue();
-        if (state.waiting.length === 0 && state.checking === 0) setAskedTaps((taps) => (taps.length === 0 ? taps : []));
-      }),
-    [],
-  );
+  // Each waiting tap goes with its own answer (release, in keptTap). A drop of the queue (a sign-out,
+  // another account, a 401) answers none of them, so they all go then. Not merely when the queue is
+  // empty: it empties before a saved tap's answer is read, and the count would dip until it is painted
+  // (round 21, reviewer A).
+  useEffect(() => {
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      setAskedTaps((taps) => (taps.length === 0 ? taps : []));
+    });
+  }, []);
   const keptTap = useCallback(
     (athlete: Athlete, present: boolean, resolved: { done: boolean }): KeptSave => {
       let refusalCode: unknown;
@@ -568,10 +580,15 @@ export default function SessionRunPresence({
     [forgetRefusal, isFinishWaiting, onRunNotLive, read, readRegister, runId, tied],
   );
 
+  // The marks as read: what onPresentCount reports, and what the "marked here" line shows.
+  const presentCount = reading.state === 'loaded' ? reading.present.size : null;
+  useEffect(() => {
+    onPresentCount?.(presentCount);
+  }, [onPresentCount, presentCount]);
   // What the finish's "Athletes present" is filled in from: the marks as last read, with the taps still
   // waiting on this page applied in tap order, each athlete's latest last. The queue sends them before
   // a finish tapped after them, so this is the count that stands when that finish lands (Codex P1 on
-  // #2182). The "marked here" line keeps the count as read; the waiting taps have their own line.
+  // #2182). The waiting taps have their own line beside the "marked here" one.
   const countForFinish = useMemo(() => {
     if (reading.state !== 'loaded') return null;
     if (askedTaps.length === 0) return reading.present.size;
@@ -583,8 +600,8 @@ export default function SessionRunPresence({
     return marks.size;
   }, [askedTaps, reading]);
   useEffect(() => {
-    onPresentCount?.(countForFinish);
-  }, [onPresentCount, countForFinish]);
+    onCountForFinish?.(countForFinish);
+  }, [onCountForFinish, countForFinish]);
 
   const mark = useCallback(
     async (athlete: Athlete, present: boolean) => {
@@ -682,8 +699,14 @@ export default function SessionRunPresence({
     // Here first, then those the class register has Present, then everyone else (unless the gym is
     // too big to list), each in the server's name order.
     const rest = matching.filter((athlete) => !isMarked(athlete.athlete_id) && !registerOnly.named.has(athlete.athlete_id));
-    return collapsed ? [...marked, ...fromRegister] : [...marked, ...fromRegister, ...rest];
-  }, [asked, collapsed, needle, reading, registerOnly]);
+    // A large gym's list also keeps in view an athlete whose refused note's words it holds, so the
+    // alert's "back in the box when this athlete's notes are next opened" can be done there (round 21,
+    // reviewer B). For the confirmed account only, as the panel itself is.
+    const holdsWords = (athleteId: string) => accountConfirmed && wordsHeldFor.has(athleteId);
+    return collapsed
+      ? [...marked, ...fromRegister, ...rest.filter((athlete) => holdsWords(athlete.athlete_id))]
+      : [...marked, ...fromRegister, ...rest];
+  }, [accountConfirmed, asked, collapsed, needle, reading, registerOnly, wordsHeldFor]);
   // How many athletes' taps are asked and not saved yet, for the list's own status line.
   // With no list read, every asked tap is counted as waiting.
   const waitingCount = reading.state === 'loaded'

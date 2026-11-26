@@ -1101,10 +1101,15 @@ export default function SessionScriptLiveDelivery({
   const [athletesPresentMarks, setAthletesPresentMarks] = useState<number | null>(null);
   // The tied class was cancelled since the tie: taps stay on the session (the class line says so).
   const [classCancelled, setClassCancelled] = useState(false);
-  const presentFromMarks = useCallback(
+  // The marks as the server holds them: the no-shows offer reads its count again when they change.
+  const presentFromMarks = useCallback((count: number | null) => {
+    setAthletesPresentMarks(count);
+  }, []);
+  // The box is filled in from the marks with the taps still waiting on this page applied: they are
+  // sent before a finish tapped now, so that finish records the marks standing when it lands (#2182).
+  const finishCountFromMarks = useCallback(
     (count: number | null) => {
       setMarksKnown(count !== null);
-      setAthletesPresentMarks(count);
       if (athletesPresentTyped || count === null) return;
       setAthletesPresent(count > 0 ? String(count) : '');
     },
@@ -1434,6 +1439,7 @@ export default function SessionScriptLiveDelivery({
         tied={Boolean(run.class_id) && !classCancelled}
         classId={run.class_id ?? null}
         onPresentCount={presentFromMarks}
+        onCountForFinish={finishCountFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
         isFinishWaiting={isFinishWaiting}
       />

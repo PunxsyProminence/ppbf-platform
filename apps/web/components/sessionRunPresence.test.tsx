@@ -773,7 +773,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     }) as unknown as typeof fetch;
   }
 
-  async function showKept(props: { onRunNotLive?: jest.Mock; finishWaiting?: boolean; tied?: boolean; onPresentCount?: jest.Mock } = {}) {
+  async function showKept(props: { onRunNotLive?: jest.Mock; finishWaiting?: boolean; tied?: boolean; onPresentCount?: jest.Mock; onCountForFinish?: jest.Mock } = {}) {
     const isFinishWaiting = () => props.finishWaiting === true;
     prepareSaveQueue();
     let view: ReturnType<typeof render> | undefined;
@@ -787,6 +787,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
             onRunNotLive={props.onRunNotLive ?? jest.fn()}
             isFinishWaiting={isFinishWaiting}
             onPresentCount={props.onPresentCount}
+            onCountForFinish={props.onCountForFinish}
           />
           <SaveQueueNotice />
         </>,
@@ -1759,10 +1760,12 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
   });
 
-  // Codex P1 on #2182: the finish's "Athletes present" is filled in from this count. A tap still waiting
-  // is sent before a finish tapped after it, so it is counted; the "marked here" line keeps the count as
-  // read. A take-back waiting takes its athlete off the count; a refused tap gives the count back.
-  test('the count for the finish includes the taps still waiting on this page, each athlete\'s latest', async () => {
+  // Codex P1 on #2182: the finish's "Athletes present" is filled in from onCountForFinish. A tap still
+  // waiting is sent before a finish tapped after it, so it is counted there; a take-back waiting takes its
+  // athlete off; a refused tap gives the count back. onPresentCount stays the server's marks and moves
+  // only when a tap lands, so a reader that reads again on it (the no-shows offer) still does (round 21,
+  // reviewer A).
+  test('the count for the finish includes the taps still waiting; the marks count moves only when a tap lands', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [BEN];
     serveKept({
@@ -1778,20 +1781,26 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
       present: () => present,
     });
     const onPresentCount = jest.fn();
-    await showKept({ onPresentCount });
+    const onCountForFinish = jest.fn();
+    await showKept({ onPresentCount, onCountForFinish });
     expect(onPresentCount).toHaveBeenLastCalledWith(1);
-    // Ada marked: waiting, and counted.
+    expect(onCountForFinish).toHaveBeenLastCalledWith(1);
+    // Ada marked: waiting, and counted for the finish; the marks count stays the server's.
     await tapKept('Mark here Ada Reyes');
     expect(screen.getByText('1 marked here.')).toBeTruthy();
-    expect(onPresentCount).toHaveBeenLastCalledWith(2);
-    // Ben unmarked: waiting too, and off the count.
-    await tapKept('Here Ben Ortiz');
+    expect(onCountForFinish).toHaveBeenLastCalledWith(2);
     expect(onPresentCount).toHaveBeenLastCalledWith(1);
-    // Ada's tap lands; Ben's is refused, and the count is the server's again.
+    // Ben unmarked: waiting too, and off the finish's count.
+    await tapKept('Here Ben Ortiz');
+    expect(onCountForFinish).toHaveBeenLastCalledWith(1);
+    // Ada's tap lands: the marks count moves now. Ben's is refused, and both counts are the server's.
     await wait(RESEND_MS);
     await wait(RESEND_MS);
     expect(screen.getByText('2 marked here.')).toBeTruthy();
     expect(onPresentCount).toHaveBeenLastCalledWith(2);
+    expect(onCountForFinish).toHaveBeenLastCalledWith(2);
+    // Neither count dipped as the queue emptied before the landed tap was painted (round 21, reviewer A).
+    expect(onCountForFinish.mock.calls.map(([count]) => count)).not.toContain(0);
   });
 
   /**
@@ -2328,7 +2337,7 @@ test('on the live floor, notes refused with the panel closed are each said, name
 
 // The live list with one notes route: the session answers `account()` (when its promise settles, for a
 // check held out), the list has Ada and Ben marked here, and each note POST gets `notePost(n)`.
-async function showLiveNotes(handlers: { account: () => string | Promise<string>; notePost: (n: number) => 'lost' | 'refused' }) {
+async function showLiveNotes(handlers: { account: () => string | Promise<string>; notePost: (n: number) => 'lost' | 'refused'; gym?: Array<typeof ADA> }) {
   const answer = (body: unknown, status = 200) => {
     const response = { ok: status >= 200 && status < 300, status, json: async () => body, clone: () => response };
     return response as unknown as Response;
@@ -2343,7 +2352,7 @@ async function showLiveNotes(handlers: { account: () => string | Promise<string>
       if (handlers.notePost(posts) === 'lost') throw new TypeError('Failed to fetch');
       return answer({ error: 'That athlete is not marked here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409);
     }
-    if (url === URL_FOR) return answer({ present: [ADA, BEN].map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: [ADA, BEN, CY] });
+    if (url === URL_FOR) return answer({ present: [ADA, BEN].map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: handlers.gym ?? [ADA, BEN, CY] });
     return answer({});
   }) as unknown as typeof fetch;
   prepareSaveQueue();
@@ -2471,6 +2480,37 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
       await jest.advanceTimersByTimeAsync(0);
     });
     expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
+  });
+
+  // Round 21, reviewer B: in a large gym the list is collapsed to those marked here. After the take-back
+  // lands, Ada's row would leave it, and with it the only way to her held words: it stays in view.
+  test('in a large gym, the row of an athlete whose refused note\'s words are held stays in the collapsed list', async () => {
+    const others = Array.from({ length: 30 }, (_, i) => ({ athlete_id: `ath-x${i}`, full_name: `Zed Filler ${String(i).padStart(2, '0')}` }));
+    await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused'), gym: [ADA, BEN, CY, ...others] });
+    expect(screen.queryByRole('button', { name: 'Mark here Cy Marsh' })).toBeNull();
+    await writeNote('Ada Reyes', 'Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Here Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    // Unmarked now, and still in the collapsed list, with her notes.
+    expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark here Cy Marsh' })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('Wrist taped.');
   });
 
   test('another account confirmed on this page clears the named lines and the kept words: nothing reaches the next person\'s box', async () => {
