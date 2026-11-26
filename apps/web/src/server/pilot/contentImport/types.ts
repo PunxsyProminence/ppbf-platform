@@ -130,6 +130,8 @@ export interface RowRule {
 
 export interface GroupRule {
   description: string;
+  /** False keeps the rule out of the AI intake prompt (aiPrompt.ts): a rule about columns the prompt does not offer. */
+  inPrompt?: false;
   /** Finding code when the rule fails; row_rule unless the rule has a name of its own. */
   code?: FindingCode;
   mirrors?: ConstraintRef;

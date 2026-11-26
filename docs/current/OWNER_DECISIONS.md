@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-26-002 | 2026-11-26 | Release of main `94d3b99d` to production while admin@'s lanes wait on usage: PM-2, SP-1b and SP-2a | PRIMARY |  |  |
+| OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, with no screen changed since the last release | PRIMARY |  |  |
 | OD-2026-11-25-005 | 2026-11-25 | W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@ | PRIMARY |  |  |
 | OD-2026-11-25-004 | 2026-11-25 | Release of main `f7d951bf` to production, and the W4 lanes move to admin@ | PRIMARY |  |  |
 | OD-2026-11-25-003 | 2026-11-25 | Usage plan: the W4 lanes go to admin@ when the desktop account runs low, and admin@'s free Full reset is used; the Fable reset is not | PRIMARY |  | yes |
@@ -667,6 +669,46 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-26-002 -- Release of main `94d3b99d` to production while admin@'s lanes wait on usage: PM-2, SP-1b and SP-2a
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-26 04:53:12 UTC, PRIMARY):** *"if we run ouut of usage is there anything else we can work on that Admin@s lanes dont block"*
+
+**Question as App Overwatch put it (2026-11-26, in its reply):** "While admin@'s lanes are out of usage, which should run?" Option A (recommended): stage a release of main `94d3b99d` for Jason's signed-in staging check, plus small Overwatch prep (TL-5a's frozen-Backbone suites and old-worktree cleanup). Option B: A, and also start the room-renaming lane (RN-1 to RN-3) on the desktop account. Option C: only the small prep.
+
+**Jason (2026-11-26 04:56:14 UTC, PRIMARY):** *"A"*
+
+**Then, after App Overwatch gave the staging check list (PM-2 on `/coach/decision-loop`, the session plan editor on `/coach/session-scripts`) and asked "Release main 94d3b99d to production after your staging check?":**
+
+**Jason (2026-11-26 05:10:24 UTC, PRIMARY):** *"Release to production"*
+
+**Ruling:** A, then release. Main `94d3b99d` is released to production.
+
+**Applied (Overwatch, not his words):** merges held from the staging deploy until production finished; no migration in `13a17485..94d3b99d`; deploy-staging run 45758402176 (image `sha256:74e23d5ed517657e9411921152b4734300f863d834a7492e8b6eebf37f1f7edc`, revision `app-ppbf-staging--0000324`); read-only staging checks (pages 200; PM-2's family-threads and unread routes, the session-scripts route and the drill library 401 signed out); deploy-production run 45759856129; the production gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds, 05:12:35 UTC); revision `app-ppbf-production--0000220` at 100% traffic, same image as staging; www home and login returned 200 and the family-threads route 401 signed out. Contains #2209, #2204 (PM-2), #2196 (SP-1b), #2199 (SP-2a). Whether Jason ran the signed-in staging check before his words is not observed by Overwatch; his words came after the check list.
+
+**Status:** recorded 2026-11-26 by PR.
+
+---
+
+## OD-2026-11-26-001 -- Release of main `13a17485` to production now, with no screen changed since the last release
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-26 01:22:19 UTC, PRIMARY):** *"Is anything ready to shipp"*
+
+**Question as App Overwatch put it (2026-11-26, in its reply):** "release main `13a17485` now, or hold?" Option A (recommended): hold, and ship once the first screens merge (PM-2, FN-3, SP-2a). Option B: ship now, so the two migrations and the new routes go live early and the next release is smaller. It said no screen file had changed since the last release, so nothing would look different on the live app.
+
+**Jason (2026-11-26 01:23:48 UTC, PRIMARY):** *"B"*
+
+**Ruling:** B. Main `13a17485` is released to production now.
+
+**Applied (Overwatch, not his words):** staging migrations athlete-reached-out-marks (run 45735517736) and email-alert-sweep-indexes (45735918119, after an AWS-runner timeout on 45735536312); deploy-staging run 45736075767 (image `sha256:118175b6a384a390f9db4740987eb77ab469cdcc82cbfa34743e396ac17f052d`, revision `app-ppbf-staging--0000323`); read-only staging checks (home and login 200, the floor route 401 signed out); production migrations athlete-reached-out-marks (45737043935) and email-alert-sweep-indexes (45737456394); deploy-production run 45737794872; every production gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds); revision `app-ppbf-production--0000219` at 100% traffic, same image as staging; www home and login returned 200 and the floor route 401 signed out. No screen changed, so no signed-in screen check was owed.
+
+**Status:** recorded 2026-11-26 by PR.
 
 ---
 

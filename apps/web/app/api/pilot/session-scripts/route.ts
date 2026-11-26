@@ -9,6 +9,7 @@ import {
   editSessionScript,
   markSessionScriptReviewed,
   setSessionScriptRetired,
+  type SessionScriptBlockAdd,
   type SessionScriptBlockEdit,
 } from '@/src/server/pilot/sessionScriptAuthoring';
 import {
@@ -115,6 +116,36 @@ function isBlockEdit(value: unknown): value is SessionScriptBlockEdit {
     && typeof edit.end_offset_min === 'number';
 }
 
+const PLACE_FIELDS = ['ref', 'kind', 'start_offset_min', 'end_offset_min'];
+const BLOCK_ADD_FIELDS = new Map<unknown, readonly string[]>([
+  ['drill', [...PLACE_FIELDS, 'drill_id', 'block_label']],
+  ['text', [...PLACE_FIELDS, 'block_kind', 'block_label', 'text', 'contact_level']],
+  ['copy', [...PLACE_FIELDS, 'block_id', 'block_label']],
+]);
+
+const isId = (value: unknown) => typeof value === 'string' && value.trim() !== '';
+
+// A block to add (lane W4-5), named by `ref` in `order`: a library drill (SP-1a), a text block whose
+// contact level the coach picks, required (SP-1b, Q1 = C on #2189), or a copy of a block (SP-1b).
+// Its gym is the principal's; no field names one, and a drill or a copy carries no contact level.
+function isBlockAdd(value: unknown): value is SessionScriptBlockAdd {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const add = value as Record<string, unknown>;
+  const fields = BLOCK_ADD_FIELDS.get(add.kind);
+  if (!fields || !Object.keys(add).every((key) => fields.includes(key))) return false;
+  if (typeof add.ref !== 'string' || typeof add.start_offset_min !== 'number' || typeof add.end_offset_min !== 'number') return false;
+  if (add.kind === 'text') {
+    return typeof add.block_kind === 'string' && typeof add.block_label === 'string'
+      && typeof add.text === 'string' && typeof add.contact_level === 'string';
+  }
+  return isId(add.kind === 'drill' ? add.drill_id : add.block_id)
+    && (add.block_label === undefined || typeof add.block_label === 'string');
+}
+
+function isIdList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((id) => typeof id === 'string' && id.trim() !== '');
+}
+
 function authoringError(error: unknown): NextResponse {
   if (error instanceof SessionScriptAuthoringError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
@@ -152,12 +183,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH changes a script's name and its blocks' titles and minutes.
+// PATCH changes a script's name and its blocks' titles and minutes, and (lane
+// W4-5, SP-1a) its blocks themselves.
 // { script_id, expected_updated_at, name?,
-//   blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }] }.
+//   blocks?: [{ block_id, block_label, start_offset_min, end_offset_min }],
+//   add_blocks?: [{ ref, start_offset_min, end_offset_min } and one of
+//     { kind: 'drill', drill_id, block_label? }, { kind: 'copy', block_id, block_label? },
+//     { kind: 'text', block_kind, block_label, text, contact_level }],
+//   remove_block_ids?: [block_id], order?: [block_id or ref, in running order] }.
 // A script that has been delivered is not changed: the edit becomes its next
-// version, and `outcome` says which happened. expected_updated_at is the
-// script's updated_at as the editor read it, and is required: a script another
+// version, and `outcome` says which happened; so does any edit that removes a
+// block, since no block row is ever deleted (Overwatch Q2 = A on #2191).
+// expected_updated_at is the script's updated_at as the editor read it, and is
+// required: a script another
 // coach has saved since is refused (409 SESSION_SCRIPT_CHANGED) rather than
 // overwritten.
 // With `retired: true | false` instead of name and blocks it retires the
@@ -171,7 +209,9 @@ export async function PATCH(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...SESSION_SCRIPT_AUTHOR_ROLES]);
 
-    const record = await bodyRecord(request, ['script_id', 'expected_updated_at', 'name', 'blocks', 'retired', 'reviewed']);
+    const record = await bodyRecord(request, [
+      'script_id', 'expected_updated_at', 'name', 'blocks', 'add_blocks', 'remove_block_ids', 'order', 'retired', 'reviewed',
+    ]);
     if (record instanceof NextResponse) return record;
     if (typeof record.script_id !== 'string' || record.script_id.trim() === '') {
       return badRequest('script_id');
@@ -185,11 +225,21 @@ export async function PATCH(request: NextRequest) {
     if (record.blocks !== undefined && !(Array.isArray(record.blocks) && record.blocks.every(isBlockEdit))) {
       return badRequest('blocks');
     }
+    if (record.add_blocks !== undefined && !(Array.isArray(record.add_blocks) && record.add_blocks.every(isBlockAdd))) {
+      return badRequest('add_blocks');
+    }
+    if (record.remove_block_ids !== undefined && !isIdList(record.remove_block_ids)) {
+      return badRequest('remove_block_ids');
+    }
+    if (record.order !== undefined && !isIdList(record.order)) {
+      return badRequest('order');
+    }
+    const editsContent = ['name', 'blocks', 'add_blocks', 'remove_block_ids', 'order'].some((key) => record[key] !== undefined);
 
     // Marking a plan reviewed is its own request too, for the same reason
     // retiring is (below), and is not mixed with a retire either.
     if (record.reviewed !== undefined) {
-      if (record.reviewed !== true || record.retired !== undefined || record.name !== undefined || record.blocks !== undefined) {
+      if (record.reviewed !== true || record.retired !== undefined || editsContent) {
         return badRequest('reviewed');
       }
       const reviewed = await markSessionScriptReviewed({
@@ -207,7 +257,7 @@ export async function PATCH(request: NextRequest) {
     // no name and no block, and never makes a version, so it is not mixed
     // with an edit that might.
     if (record.retired !== undefined) {
-      if (typeof record.retired !== 'boolean' || record.name !== undefined || record.blocks !== undefined) {
+      if (typeof record.retired !== 'boolean' || editsContent) {
         return badRequest('retired');
       }
       const changed = await setSessionScriptRetired({
@@ -229,10 +279,16 @@ export async function PATCH(request: NextRequest) {
       scriptId: record.script_id.trim(),
       name: record.name,
       blocks: record.blocks as SessionScriptBlockEdit[] | undefined,
+      // Ids trimmed as POST trims template_id.
+      add: (record.add_blocks as SessionScriptBlockAdd[] | undefined)?.map((add) =>
+        add.kind === 'drill' ? { ...add, drill_id: add.drill_id.trim() } : add.kind === 'copy' ? { ...add, block_id: add.block_id.trim() } : add),
+      remove: record.remove_block_ids as string[] | undefined,
+      order: record.order as string[] | undefined,
       expectedUpdatedAt: record.expected_updated_at,
     });
     const script = await getSessionScriptWithDetail(principal.organizationId, edited.script_id);
-    return NextResponse.json({ outcome: edited.outcome, script });
+    // `because` says why a new version was made: 'run' (delivered before) or 'removal' (no block row is deleted).
+    return NextResponse.json({ outcome: edited.outcome, ...(edited.because && { because: edited.because }), script });
   } catch (error) {
     return authoringError(error);
   }
