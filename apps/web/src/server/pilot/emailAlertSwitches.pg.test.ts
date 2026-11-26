@@ -360,6 +360,36 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('a coach made an organization admin, as the role writers do it (account and membership), keeps the switch on: same user type, nothing retired', async () => {
+    const client = await freshDatabase('emailsw_within_staff');
+    activeClient = client;
+    try {
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      await client.query(`update pilot.accounts set role = 'organization_admin' where account_id = $1`, [COACH_ID]);
+      await client.query(
+        `update pilot.organization_memberships set role = 'organization_admin' where account_id = $1 and organization_id = $2`,
+        [COACH_ID, ORG_ID],
+      );
+      // The session after the change acts with the new role (role writers end the old sessions).
+      const promoted = { organizationId: ORG_ID, accountId: COACH_ID, role: 'organization_admin' as const, athleteId: null };
+
+      await expect(readEmailAlertSwitch(promoted, NOW)).resolves.toEqual({ offered: true, user_type: 'staff', switched_on: true });
+      await expect(setEmailAlertSwitch({ ...promoted, switchedOn: true }, NOW)).resolves.toEqual({
+        offered: true, user_type: 'staff', switched_on: true,
+      });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: COACH_ID, user_type: 'staff', switched_on: true, has_on_at: true, has_off_at: false,
+      })]);
+      // No retire, and no change of user type, is recorded.
+      expect((await auditRows(client)).map((row) => row.details)).toEqual([
+        { user_type: 'staff', switched_on: true, previous_switched_on: false },
+        { user_type: 'staff', switched_on: true, previous_switched_on: true },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('an adult athlete is offered the switch but cannot turn it on before an address is confirmed: no row, no audit', async () => {
     const client = await freshDatabase('emailsw_adult');
     activeClient = client;
