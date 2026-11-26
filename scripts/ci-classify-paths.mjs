@@ -91,6 +91,8 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/components/drills/drillDetailView.ts',
   'apps/web/components/operationsAccess.ts',
   'apps/web/components/roleRoutes.ts',
+  // The Room Map rooms' defaults; roomNames.pg.test.ts reaches it through src/shared/roomNames.ts (lane W4-9, RN-1b).
+  'apps/web/components/roomPlaces.ts',
   'apps/web/lib/calendarDay.ts',
   'apps/web/lib/feedbackWording.ts',
   // libraryIntakeRecovery.pg.test.ts (L54) drives the intake client against the routes.
@@ -117,6 +119,8 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/researchClassification.ts',
   'apps/web/src/shared/researchProvenance.ts',
   'apps/web/src/shared/researchQuestionKey.ts',
+  // The renamable names and the name rule; roomNames.pg.test.ts reaches it through roomNames.ts (lane W4-9, RN-1b).
+  'apps/web/src/shared/roomNames.ts',
   'apps/web/src/shared/sessionNoteSemantics.ts',
   'apps/web/src/shared/sessionTypes.ts',
   'apps/web/src/shared/shadowChatLimits.ts',
