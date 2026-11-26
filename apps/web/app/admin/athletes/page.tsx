@@ -946,8 +946,9 @@ function AthleteRecordsConsoleContent() {
                 </p>
                 <p className="t-body mt-[var(--s3)]">
                   Two things it does not do: it does not switch off their sign-in, and it does not take them off their
-                  coach&apos;s lists. To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns it
-                  back on.
+                  coach&apos;s lists, though some lists, such as Stopped Coming and Attendance, leave out anyone
+                  marked as left. To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns
+                  it back on.
                 </p>
               </div>
 

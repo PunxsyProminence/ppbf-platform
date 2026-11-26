@@ -14,9 +14,9 @@ export const runtime = 'nodejs';
  * messaging. There is deliberately no POST here -- a coach/admin sends via
  * the existing POST /api/pilot/intake/domain-upsert
  * (entity_type: 'coach_note', note_type: 'parent_message'), so this route
- * only ever reads. Reply, threading, and any parent-initiated send are
- * explicitly out of scope: real moderation/product decisions, not
- * something this pass guesses at.
+ * only ever reads. A guardian's reply is /api/pilot/parent/message-replies;
+ * a message a guardian starts is /api/pilot/parent/family-threads (W4 item
+ * 4, OW27-24 A).
  *
  * TASK STATE rides on the same read. A message that carries a due date is a
  * parent-support task -- "bring gloves Thursday", "the medical form is still
