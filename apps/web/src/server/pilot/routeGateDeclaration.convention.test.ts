@@ -505,6 +505,15 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'only, and any query field is refused, so no other gym can be named.',
   ],
   [
+    'app/api/pilot/room-names/route.ts#GET',
+    'OPEN BY DESIGN to any signed-in member (lane W4-9, RN-1b; approved by '
+      + 'Overwatch on #2212): every member sees the room and card names of the '
+      + 'gym, so the screens of every member read them. The answer is the words '
+      + 'the gym uses for its rooms and whether each is the default; no person data. The '
+      + 'organization comes from the principal only, and any query field is '
+      + 'refused, so no other gym can be named.',
+  ],
+  [
     'app/api/pilot/profile/me/route.ts#GET',
     'SELF-SCOPED, structurally: there is no account_id parameter and the '
       + 'header records that there must never be one, because "a route that can '
