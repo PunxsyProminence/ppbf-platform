@@ -1739,7 +1739,7 @@ organization_id,scale_id,drill_id,scale_level,is_starting_point,demand_descripti
 {{PPBF_ORG_ID}},scl_ddc1c4c689b985,drl_324847ebccc09f,A,false,"The standard warm-up, then the 3 lateral minutes at an easy, walking pace.",Walking pace.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_d1e25c888aef68,drl_324847ebccc09f,B,true,"The warm-up as written: as standard, plus 3 minutes of lateral movement emphasis.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_3edc28b36066c6,drl_324847ebccc09f,C,false,"As written, the coach calling changes of direction in the lateral minutes, the athlete changing at once.",Called direction changes.,none,,scaffold_needs_coach_review
-{{PPBF_ORG_ID}},scl_7ccde6becf1dc5,drl_f10d64eeeef7f9,A,false,The coach states the problem and the four solutions once.,Coach only.,none,,scaffold_needs_coach_review
+{{PPBF_ORG_ID}},scl_7ccde6becf1dc5,drl_f10d64eeeef7f9,A,false,The coach states the problem only; the four solutions are named as the blocks that drill them start.,Problem only.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_e3b9b41e1de2d3,drl_f10d64eeeef7f9,B,true,"The briefing as written: the problem, then the solutions.",,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_772b4a14c15290,drl_f10d64eeeef7f9,C,false,"As written, then each athlete gives the problem and the four solutions in their own words.",Athletes restate it.,none,,scaffold_needs_coach_review
 {{PPBF_ORG_ID}},scl_6f3fac414ecd65,drl_0adc2ed7fb91aa,A,false,"The partner at 60% for all 6 rounds, the coach naming one solution for each round.",60% throughout; one named solution per round.,controlled_sparring,,scaffold_needs_coach_review

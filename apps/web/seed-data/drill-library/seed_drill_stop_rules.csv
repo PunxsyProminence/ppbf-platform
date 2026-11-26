@@ -1676,5 +1676,6 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_ed354a61226fd3,drl_0adc2ed7fb91aa,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
 {{PPBF_ORG_ID}},stp_3f054a4c6754d2,drl_0adc2ed7fb91aa,4,"Stop the round when the partner's pressure goes past the called intensity, and restate it.",drill_specific,safety
 {{PPBF_ORG_ID}},stp_b155a0d8e93f23,drl_0adc2ed7fb91aa,5,Stop the round when the boxer freezes under forward pressure; simplify to one defensive action plus exit.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0259680fcee994,drl_0adc2ed7fb91aa,6,"If chaos rises above the educational value of the round, intensity is reduced or the round is stopped.",drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_54541b7b631b1a,drl_d50b21c5fba8cb,1,The debrief drifts from the session's one problem or runs past the 10 minutes: close it on one thing to drill next session.,drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_b96b87223da7b6,drl_d50b21c5fba8cb,2,Dizziness or light-headedness: stop; the coach checks before the athlete goes on.,drill_specific,safety
