@@ -132,13 +132,18 @@ async function switchRowsOf(db: Db, accountId: string): Promise<number> {
   return rows.rowCount ?? 0;
 }
 
-/** Every switch row except the purged login's, whole, in a fixed order. */
-async function otherSwitchRows(db: Db, purgedLogin: string): Promise<unknown[]> {
+/** Every switch row except the purged logins', whole, in a fixed order. */
+async function otherSwitchRows(db: Db, purgedLogins: readonly string[]): Promise<unknown[]> {
   const rows = await db.client.query(
-    'select * from pilot.email_alert_switches where account_id <> $1 order by organization_id, account_id',
-    [purgedLogin],
+    'select * from pilot.email_alert_switches where account_id <> all($1::text[]) order by organization_id, account_id',
+    [purgedLogins],
   );
   return rows.rows;
+}
+
+/** Every switch row, whole, in a fixed order. */
+async function allSwitchRows(db: Db): Promise<unknown[]> {
+  return (await db.client.query('select * from pilot.email_alert_switches order by organization_id, account_id')).rows;
 }
 
 async function retiredLogin(db: Db, accountId: string): Promise<{ athlete_id: string | null; deleted: boolean }> {
@@ -193,6 +198,8 @@ async function freshDatabase(name: string): Promise<Db> {
 interface Seeded {
   athleteLogin: string;
   coachNowLogin: string;
+  parentNowLogin: string;
+  liveAtPurgeLogin: string;
   liveAthleteLogin: string;
   elsewhereLogin: string;
   guardian: string;
@@ -203,6 +210,8 @@ interface Seeded {
 const PEOPLE: Seeded = {
   athleteLogin: 'acct-alert-ath',
   coachNowLogin: 'acct-alert-coach-now',
+  parentNowLogin: 'acct-alert-parent-now',
+  liveAtPurgeLogin: 'acct-alert-live-at-purge',
   liveAthleteLogin: 'acct-alert-live',
   elsewhereLogin: 'acct-alert-elsewhere',
   guardian: 'acct-alert-guardian',
@@ -214,8 +223,11 @@ const PEOPLE: Seeded = {
  * An adult athlete deleted three years ago (past the two-year window) whose
  * own login has a switch in this gym holding a typed address with its code
  * and a confirmed one, and a second switch in another gym it is a member of;
- * a second purged athlete whose login has since become a coach's (unlinked
- * by the purge, but that adult's now, so the row stays); a live athlete; an
+ * a second purged athlete whose login has since become a coach's, and a third
+ * whose login has become a guardian's (each unlinked by the purge, but that
+ * adult's now, so the rows stay); a fourth whose own login is still live when
+ * the purge runs (it retires that login, so its row, holding only a typed
+ * address, goes); a live athlete; an
  * athlete in another gym with the SAME athlete id, who is another child; a
  * live guardian of the purged child; and a staff member's own switch. With
  * `withTable` false the table is gone and no switch row is written.
@@ -223,12 +235,15 @@ const PEOPLE: Seeded = {
 async function seed(db: Db, withTable: boolean): Promise<Seeded> {
   const purged = 'ath-alert-gone';
   const purgedStaffNow = 'ath-alert-staff-now';
+  const purgedParentNow = 'ath-alert-parent-now';
+  const purgedLiveLogin = 'ath-alert-live-login';
   const live = 'ath-alert-live';
   const people = PEOPLE;
   const q = (sql: string, params: unknown[]) => db.client.query(sql, params);
 
   for (const [organizationId, athleteId, coachId] of [
-    [ORG_ID, purged, COACH_ID], [ORG_ID, purgedStaffNow, COACH_ID], [ORG_ID, live, COACH_ID],
+    [ORG_ID, purged, COACH_ID], [ORG_ID, purgedStaffNow, COACH_ID], [ORG_ID, purgedParentNow, COACH_ID],
+    [ORG_ID, purgedLiveLogin, COACH_ID], [ORG_ID, live, COACH_ID],
     [OTHER_ORG_ID, purged, OTHER_COACH_ID],
   ]) {
     await q(
@@ -240,6 +255,8 @@ async function seed(db: Db, withTable: boolean): Promise<Seeded> {
   for (const [accountId, role, organizationId, athleteId, deleted] of [
     [people.athleteLogin, 'athlete', ORG_ID, purged, "now() - interval '3 years'"],
     [people.coachNowLogin, 'coach', ORG_ID, purgedStaffNow, 'null'],
+    [people.parentNowLogin, 'parent', ORG_ID, purgedParentNow, 'null'],
+    [people.liveAtPurgeLogin, 'athlete', ORG_ID, purgedLiveLogin, 'null'],
     [people.liveAthleteLogin, 'athlete', ORG_ID, live, 'null'],
     [people.elsewhereLogin, 'athlete', OTHER_ORG_ID, purged, 'null'],
     [people.guardian, 'parent', ORG_ID, null, 'null'],
@@ -252,8 +269,11 @@ async function seed(db: Db, withTable: boolean): Promise<Seeded> {
   }
   for (const [accountId, organizationId, role] of [
     [people.athleteLogin, ORG_ID, 'athlete'],
-    [people.athleteLogin, OTHER_ORG_ID, 'athlete'],
+    // A coach in the other gym: its switch there is a staff one, with no address (reviewers A and B).
+    [people.athleteLogin, OTHER_ORG_ID, 'coach'],
     [people.coachNowLogin, ORG_ID, 'coach'],
+    [people.parentNowLogin, ORG_ID, 'parent'],
+    [people.liveAtPurgeLogin, ORG_ID, 'athlete'],
     [people.liveAthleteLogin, ORG_ID, 'athlete'],
     [people.elsewhereLogin, OTHER_ORG_ID, 'athlete'],
     [people.guardian, ORG_ID, 'parent'],
@@ -281,11 +301,21 @@ async function seed(db: Db, withTable: boolean): Promise<Seeded> {
        values ($1, $2, 'adult_athlete', true, now(), $3, 'code-hash', now() + interval '15 minutes', 1, $4, now())`,
       [ORG_ID, people.athleteLogin, people.typedAddress, people.confirmedAddress],
     );
-    // The same login's switch in the other gym, off, with the confirmed address.
+    // The same login's switch in the other gym, where it is a coach: on, a
+    // staff switch, no address at all. A delete narrowed to rows with an
+    // address, or to adult athletes' rows, leaves it (reviewer B).
     await q(
-      `insert into pilot.email_alert_switches (organization_id, account_id, user_type, confirmed_address, confirmed_at)
-       values ($1, $2, 'adult_athlete', $3, now())`,
-      [OTHER_ORG_ID, people.athleteLogin, people.confirmedAddress],
+      `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at)
+       values ($1, $2, 'staff', true, now())`,
+      [OTHER_ORG_ID, people.athleteLogin],
+    );
+    // The login still live at the purge: off, an address typed and never
+    // confirmed (reviewer B), its code pending.
+    await q(
+      `insert into pilot.email_alert_switches
+         (organization_id, account_id, user_type, pending_address, pending_code_hash, pending_code_expires_at)
+       values ($1, $2, 'adult_athlete', 'typed-live@example.test', 'code-hash', now() + interval '15 minutes')`,
+      [ORG_ID, people.liveAtPurgeLogin],
     );
     for (const [organizationId, accountId, address] of [
       [ORG_ID, people.liveAthleteLogin, 'live@example.test'],
@@ -299,7 +329,9 @@ async function seed(db: Db, withTable: boolean): Promise<Seeded> {
       );
     }
     // User type 'staff' is OW27-10's word for a coach or admin.
-    for (const [accountId, userType] of [[people.guardian, 'parent'], [people.coachNowLogin, 'staff'], [COACH_ID, 'staff']]) {
+    for (const [accountId, userType] of [
+      [people.guardian, 'parent'], [people.coachNowLogin, 'staff'], [people.parentNowLogin, 'parent'], [COACH_ID, 'staff'],
+    ]) {
       await q(
         `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at)
          values ($1, $2, $3, true, now())`,
@@ -311,7 +343,7 @@ async function seed(db: Db, withTable: boolean): Promise<Seeded> {
   await q(
     `update pilot.athletes set deleted_at = now() - interval '3 years'
       where organization_id = $1 and athlete_id = any($2::text[])`,
-    [ORG_ID, [purged, purgedStaffNow]],
+    [ORG_ID, [purged, purgedStaffNow, purgedParentNow, purgedLiveLogin]],
   );
   return people;
 }
@@ -369,15 +401,19 @@ describe('the retention purge and the email alert switches', () => {
     const people = await seed(db, true);
     // CONTROL: the purged login's two rows are there, with both addresses.
     expect(await switchRowsOf(db, people.athleteLogin)).toBe(2);
-    const othersBefore = await otherSwitchRows(db, people.athleteLogin);
-    expect(othersBefore).toHaveLength(5);
+    expect(await switchRowsOf(db, people.liveAtPurgeLogin)).toBe(1);
+    const purgedLogins = [people.athleteLogin, people.liveAtPurgeLogin];
+    const othersBefore = await otherSwitchRows(db, purgedLogins);
+    expect(othersBefore).toHaveLength(6);
+    const everyRowBefore = await allSwitchRows(db);
 
     // The dry run counts them and deletes nothing.
     const dry = await purge(db, false);
     expect(dry.event).toBe('retention.cleanup.dry-run');
-    expect(dry.would_delete_athletes).toBe(2);
-    expect(dry.would_delete_email_alert_switches).toBe(2);
-    expect(await switchRowsOf(db, people.athleteLogin)).toBe(2);
+    expect(dry.would_delete_athletes).toBe(4);
+    expect(dry.would_delete_email_alert_switches).toBe(3);
+    // Row for row, the dry run left every switch as it was (reviewer B).
+    expect(await allSwitchRows(db)).toEqual(everyRowBefore);
     const kept = await db.client.query(
       `select pending_address, confirmed_address from pilot.email_alert_switches
         where organization_id = $1 and account_id = $2`,
@@ -389,30 +425,36 @@ describe('the retention purge and the email alert switches', () => {
     // APPLY: the completion log and the audit row both carry the count.
     const applied = await purge(db, true);
     expect(applied.event).toBe('retention.cleanup.completed');
-    expect(applied.athletes).toBe(2);
-    expect(applied.email_alert_switches_deleted).toBe(2);
+    expect(applied.athletes).toBe(4);
+    expect(applied.email_alert_switches_deleted).toBe(3);
     const audit = await lastAuditDetails(db);
-    expect(audit.athletes_deleted).toBe(2);
-    expect(audit.email_alert_switches_deleted).toBe(2);
+    expect(audit.athletes_deleted).toBe(4);
+    expect(audit.email_alert_switches_deleted).toBe(3);
 
     // The login survives the purge, retired; its switches, in both gyms, do not.
     expect(await retiredLogin(db, people.athleteLogin)).toEqual({ athlete_id: null, deleted: true });
     expect(await switchRowsOf(db, people.athleteLogin)).toBe(0);
+    // The login still live when its child was purged is retired, and its row goes (reviewers A and B).
+    expect(await retiredLogin(db, people.liveAtPurgeLogin)).toEqual({ athlete_id: null, deleted: true });
+    expect(await switchRowsOf(db, people.liveAtPurgeLogin)).toBe(0);
     // No row anywhere still holds either of the athlete's addresses.
     const addresses = await db.client.query(
       `select 1 from pilot.email_alert_switches
         where pending_address = any($1::text[]) or confirmed_address = any($1::text[])`,
-      [[people.typedAddress, people.confirmedAddress]],
+      [[people.typedAddress, people.confirmedAddress, 'typed-live@example.test']],
     );
     expect(addresses.rowCount).toBe(0);
 
     // Every other row is exactly as it was: the live athlete's, the other
     // gym's child with the same athlete id, the guardian's, the staff
-    // member's, and the old login that is a coach's now, which the purge did
-    // unlink but did not retire.
-    expect(await otherSwitchRows(db, people.athleteLogin)).toEqual(othersBefore);
+    // member's, and the old logins that are a coach's and a guardian's now,
+    // which the purge did unlink but did not retire (reviewer A).
+    expect(await otherSwitchRows(db, purgedLogins)).toEqual(othersBefore);
     expect(await retiredLogin(db, people.coachNowLogin)).toEqual({ athlete_id: null, deleted: false });
-    for (const accountId of [people.liveAthleteLogin, people.elsewhereLogin, people.guardian, people.coachNowLogin, COACH_ID]) {
+    expect(await retiredLogin(db, people.parentNowLogin)).toEqual({ athlete_id: null, deleted: false });
+    for (const accountId of [
+      people.liveAthleteLogin, people.elsewhereLogin, people.guardian, people.coachNowLogin, people.parentNowLogin, COACH_ID,
+    ]) {
       expect(await switchRowsOf(db, accountId)).toBe(1);
     }
   });
@@ -423,12 +465,12 @@ describe('the retention purge and the email alert switches', () => {
     const people = await seed(db, false);
 
     const dry = await purge(db, false);
-    expect(dry.would_delete_athletes).toBe(2);
+    expect(dry.would_delete_athletes).toBe(4);
     expect(dry.would_delete_email_alert_switches).toBe(0);
 
     const applied = await purge(db, true);
     expect(applied.event).toBe('retention.cleanup.completed');
-    expect(applied.athletes).toBe(2);
+    expect(applied.athletes).toBe(4);
     expect(applied.email_alert_switches_deleted).toBe(0);
     expect((await lastAuditDetails(db)).email_alert_switches_deleted).toBe(0);
     expect(await retiredLogin(db, people.athleteLogin)).toEqual({ athlete_id: null, deleted: true });
