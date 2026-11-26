@@ -2484,9 +2484,16 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
 
   // Round 21, reviewer B: in a large gym the list is collapsed to those marked here. After the take-back
   // lands, Ada's row would leave it, and with it the only way to her held words: it stays in view.
-  test('in a large gym, the row of an athlete whose refused note\'s words are held stays in the collapsed list', async () => {
+  // Round 22, reviewer B: while the page checks again who is signed in, that row leaves the collapsed list.
+  test('in a large gym, the row of an athlete whose refused note\'s words are held stays in the collapsed list, except while the account is checked again', async () => {
+    let answerAccount: ((account: string) => void) | null = null;
+    let holdAccount = false;
     const others = Array.from({ length: 30 }, (_, i) => ({ athlete_id: `ath-x${i}`, full_name: `Zed Filler ${String(i).padStart(2, '0')}` }));
-    await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused'), gym: [ADA, BEN, CY, ...others] });
+    await showLiveNotes({
+      account: () => (holdAccount ? new Promise<string>((resolve) => { answerAccount = resolve; }) : 'acct-a'),
+      notePost: (n) => (n === 1 ? 'lost' : 'refused'),
+      gym: [ADA, BEN, CY, ...others],
+    });
     expect(screen.queryByRole('button', { name: 'Mark here Cy Marsh' })).toBeNull();
     await writeNote('Ada Reyes', 'Wrist taped.');
     await act(async () => {
@@ -2506,6 +2513,21 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     // Unmarked now, and still in the collapsed list, with her notes.
     expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Mark here Cy Marsh' })).toBeNull();
+    // While the page checks again who is signed in, her row is not in the collapsed list: it may be the next person.
+    holdAccount = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByRole('button', { name: 'Mark here Ada Reyes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
+    holdAccount = false;
+    await act(async () => {
+      answerAccount?.('acct-a');
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    // The same coach confirmed: her row is back, and so are the words.
+    expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
