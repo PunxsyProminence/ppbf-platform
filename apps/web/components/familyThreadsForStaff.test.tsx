@@ -5,6 +5,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { useLayoutEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
@@ -239,6 +240,63 @@ describe('FamilyThreadsForStaff', () => {
     rerender(<FamilyThreadsForStaff athleteId="ath-2" />);
     expect(await screen.findByText('No messages from the family yet.')).toBeInTheDocument();
     expect(screen.queryByText(/for another athlete/)).toBeNull();
+  });
+
+  test('a reply that fails in the same moment the coach moves to another athlete is still told there (Codex 4702043483)', async () => {
+    // Outside act, with React's own scheduling, as in a browser: the failure is released in the commit
+    // that puts the next athlete on screen, so the reply's callbacks run before React's passive effects.
+    const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const wasActEnvironment = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    let release: (response: Response) => void = () => {};
+    const fetchMock = jest.fn((url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (key.endsWith('/api/pilot/coach/family-threads') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => { release = resolve; });
+      }
+      if (key.includes('athlete_id=ath-1')) return Promise.resolve(jsonResponse({ ok: true, items: [THREAD] }));
+      if (key.includes('athlete_id=ath-2')) return Promise.resolve(jsonResponse({ ok: true, items: [] }));
+      throw new Error(`Unexpected fetch: ${key}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    function FailInTheSwitchCommit({ athleteId }: Readonly<{ athleteId: string }>) {
+      useLayoutEffect(() => {
+        if (athleteId === 'ath-2') release(jsonResponse({ error: 'down' }, false, 500));
+      }, [athleteId]);
+      return null;
+    }
+    const until = async <T,>(read: () => T | null | undefined | false): Promise<T> => {
+      for (let waited = 0; waited < 3000; waited += 10) {
+        const value = read();
+        if (value) return value;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('timed out');
+    };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const view = (athleteId: string) => (
+      <>
+        <FamilyThreadsForStaff athleteId={athleteId} />
+        <FailInTheSwitchCommit athleteId={athleteId} />
+      </>
+    );
+    try {
+      root.render(view('ath-1'));
+      const box = await until(() => container.querySelector('textarea'));
+      fireEvent.change(box, { target: { value: 'See you then.' } });
+      fireEvent.click(await until(() => container.querySelector('button[type="submit"]')));
+      await until(() => fetchMock.mock.calls.some((call) => (call[1] as RequestInit | undefined)?.method === 'POST'));
+
+      root.render(view('ath-2'));
+      await until(() => container.textContent?.includes('No messages from the family yet.'));
+      await until(() => container.textContent?.includes('A reply you wrote for another athlete was not sent.'));
+    } finally {
+      root.unmount();
+      container.remove();
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = wasActEnvironment;
+    }
   });
 
   test("after a switch, the last child's messages are not shown while the next child's are read; an unsent reply is kept", async () => {
