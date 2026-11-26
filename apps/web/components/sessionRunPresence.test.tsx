@@ -1758,13 +1758,38 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
   });
 
+  /**
+   * Holds this list's reads in flight once `hold` is set: the server answers at the read (the list as it
+   * is then), and the answer arrives when released. `install` after serveKept.
+   */
+  function holdListReads() {
+    const state = { hold: false, held: [] as Array<() => void> };
+    const install = () => {
+      const served = global.fetch;
+      global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await served(input, init);
+        if (state.hold && String(input) === URL_FOR && (init?.method ?? 'GET') === 'GET') {
+          return new Promise<Response>((resolve) => state.held.push(() => resolve(response)));
+        }
+        return response;
+      }) as unknown as typeof fetch;
+    };
+    const release = async () => {
+      state.hold = false;
+      await act(async () => {
+        state.held.splice(0).forEach((answerNow) => answerNow());
+        await jest.advanceTimersByTimeAsync(0);
+      });
+    };
+    return { state, install, release };
+  }
+
   // The replay's read is awaited before the next kept tap is sent. Otherwise a read the server answered
   // before the next tap was written, arriving after that tap's mark was painted, takes the mark away.
   test('a kept tap waiting behind a replay is sent only after the replay\'s read, and its mark stays', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
-    let holdReads = false;
-    const held: Array<() => void> = [];
+    const reads = holdListReads();
     serveKept({
       tap: (send) => {
         if (send === 1) {
@@ -1773,7 +1798,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
         }
         if (send === 2) {
           // Ada's resend: replayed, and the list read that follows is held in flight.
-          holdReads = true;
+          reads.state.hold = true;
           return answer({ outcome: 'marked', replayed: true, live: true });
         }
         present = [...present, BEN];
@@ -1781,31 +1806,82 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
       },
       present: () => present,
     });
-    const served = global.fetch;
-    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      // The server answers now; the answer arrives when released.
-      const response = await served(input, init);
-      if (holdReads && String(input) === URL_FOR && (init?.method ?? 'GET') === 'GET') {
-        return new Promise<Response>((resolve) => held.push(() => resolve(response)));
-      }
-      return response;
-    }) as unknown as typeof fetch;
+    reads.install();
     await showKept();
     await tapKept('Mark here Ada Reyes');
     await tapKept('Mark here Ben Ortiz');
     await wait(RESEND_MS);
-    expect(held).toHaveLength(1);
+    expect(reads.state.held).toHaveLength(1);
     // Ben's tap waits behind the read.
     expect(sent).toHaveLength(2);
-    holdReads = false;
-    await act(async () => {
-      held.forEach((release) => release());
-      await jest.advanceTimersByTimeAsync(0);
-    });
+    await reads.release();
     await wait(RESEND_MS);
     expect(sent).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+  });
+
+  // A replay on a session that has ended: the console is told before the list is read, so a slow read
+  // never holds back its resync.
+  test('a replay on a session that has ended tells the live screen before its read comes back', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    const reads = holdListReads();
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        reads.state.hold = true;
+        return answer({ outcome: 'marked', replayed: true, live: false });
+      },
+      present: () => present,
+    });
+    reads.install();
+    const onRunNotLive = jest.fn();
+    await showKept({ onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(reads.state.held).toHaveLength(1);
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+    await reads.release();
+    expect(onRunNotLive).toHaveBeenCalledTimes(1);
+  });
+
+  // A drop (here a sign-out) while a replay's list is read again: nothing of that answer is shown, not
+  // even once the same coach is confirmed again.
+  test('a sign-out while a replay\'s list is read again shows nothing of its answer', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    const reads = holdListReads();
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        reads.state.hold = true;
+        return answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'absent' }, replayed: true, live: true });
+      },
+      present: () => present,
+    });
+    reads.install();
+    await showKept({ tied: true });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(reads.state.held).toHaveLength(1);
+    await act(async () => {
+      clearRoleSession();
+    });
+    await reads.release();
+    await act(async () => {
+      createPersistentRoleSession('coach');
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByText(/stayed Absent there/)).toBeNull();
+    expect(screen.queryByText(/class register kept a mark set there/)).toBeNull();
   });
 
   // OVERWATCH 7170099938 on #2178: another tab or device marks the same athlete while this tap's first
