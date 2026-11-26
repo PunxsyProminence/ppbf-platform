@@ -29,7 +29,8 @@ import { query } from './db';
 // Organization totals below are deliberately scalar counts.
 // getAttendanceLast28Days is the one per-athlete set, and it is for STAFF
 // callers only (the coach's athlete view and the staff analytics page,
-// OD-2026-10-17-026 (c)); a board, wall or family surface must not call it.
+// OD-2026-10-17-026 (c); the stopped-coming list, stoppedComing.ts, reads its
+// last present day); a board, wall or family surface must not call it.
 
 /** The status vocabulary the view emits. Narrower than pilot.attendance's
  * unconstrained free text, because the view normalises on the way out. */
