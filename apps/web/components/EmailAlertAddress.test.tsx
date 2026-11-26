@@ -13,7 +13,8 @@
  *   - a minor, or any answer offered: false, sees nothing at all, and a 403 at
  *     any step takes the panel away and says nothing (OW27-02 C, L1);
  *   - every refusal is said in fixed words, the limit's naming no limit
- *     (default 4); signed out, nothing sends;
+ *     (default 4), and nothing is said when the re-read shows the step landed;
+ *     signed out, nothing sends; focus never drops to the page;
  *   - the bodies are exactly { address } and { code }, with the session
  *     cookie, to the API origin's own-account route;
  *   - no address is ever shown back (default 9), only what the athlete types.
@@ -81,6 +82,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const addressField = () => screen.getByLabelText('Email address for alerts');
 const codeField = () => screen.getByLabelText('Six-digit code from the email');
 const status = () => document.querySelector('[aria-live="polite"]');
+const formOf = (field: HTMLElement) => field.closest('form') as HTMLFormElement;
+const unreadable = () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response;
 
 function press(name: string) {
   const button = screen.getByRole('button', { name });
@@ -112,11 +115,12 @@ test('an adult athlete with no address confirmed and no code waiting sees the ad
   expect(screen.getByText(/an email can go to the address you confirm here when certain new things arrive/)).toBeInTheDocument();
   expect(screen.queryByText(/the address you sign in with/)).not.toBeInTheDocument();
   expect(screen.getByText(/It says only “open the app”, with the gym’s name\. It never says what happened or who it is about\./)).toBeInTheDocument();
-  expect(screen.getByText(/The address is used only after you enter that code here\./)).toBeInTheDocument();
+  expect(screen.getByText(/The address is used only after you enter that code here\.$/)).toBeInTheDocument();
+  expect(screen.queryByText(/Until then/)).not.toBeInTheDocument();
   expect(status()).toHaveTextContent(/^Email alerts are off\. No address is confirmed yet\.$/);
 });
 
-test('send code shows the code field; confirm shows On and Off, still off; the bodies are exact; focus stays on the control pressed', async () => {
+test('Enter sends a code and focus goes to the code field; confirm shows On and Off, still off; the bodies are exact', async () => {
   const fetchMock = mockRoutes({
     gets: [answer(athlete())],
     sendCode: answer(athlete({ pending: true })),
@@ -126,12 +130,17 @@ test('send code shows the code field; confirm shows On and Off, still off; the b
   await screen.findByRole('button', { name: 'Send code' });
 
   fireEvent.change(addressField(), { target: { value: TYPED } });
-  const sendButton = press('Send code');
+  const sendButton = screen.getByRole('button', { name: 'Send code' });
+  addressField().focus();
+  // Enter in the field: the form submits, and its default (a page load) is prevented.
+  expect(fireEvent.submit(formOf(addressField()))).toBe(false);
 
   expect(await screen.findByLabelText('Six-digit code from the email')).toHaveAttribute('inputmode', 'numeric');
   expect(codeField()).toHaveAttribute('autocomplete', 'one-time-code');
   expect(screen.getByRole('button', { name: 'Send a new code' })).toBe(sendButton);
-  expect(document.activeElement).toBe(sendButton);
+  await waitFor(() => expect(document.activeElement).toBe(codeField()));
+  expect(addressField()).toHaveValue(TYPED);
+  expect(screen.queryByText(/Until then/)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'On' })).not.toBeInTheDocument();
   expect(status()).toHaveTextContent(/^Email alerts are off\. A code was sent\. Enter it to confirm your address\.$/);
 
@@ -185,6 +194,18 @@ test('reloaded with a code waiting, the athlete sees the code field, Confirm and
   expect(status()).toHaveTextContent(/^Email alerts are off\. A code was sent\. Enter it to confirm your address\.$/);
 });
 
+test('reloaded with an address confirmed and a code waiting for a new one, the athlete sees On and Off and the code form, not Change address', async () => {
+  mockRoutes({ gets: [answer(athlete({ on: true, confirmed: true, pending: true }))] });
+  render(<EmailAlertSwitch styles={STYLES} />);
+
+  expect(await screen.findByLabelText('Six-digit code from the email')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Send a new code' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText(/Until then, the address you confirmed before stays in use\./)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Change address' })).not.toBeInTheDocument();
+});
+
 test('changing a confirmed address keeps On and Off and says the confirmed one stays in use until the new one is (default 5)', async () => {
   const fetchMock = mockRoutes({
     gets: [answer(athlete({ on: true, confirmed: true }))],
@@ -197,10 +218,11 @@ test('changing a confirmed address keeps On and Off and says the confirmed one s
   press('Change address');
   expect(change).toHaveAttribute('aria-expanded', 'true');
   expect(document.activeElement).toBe(change);
+  expect(document.getElementById(String(change.getAttribute('aria-controls')))).toContainElement(addressField());
   fireEvent.change(addressField(), { target: { value: TYPED } });
   press('Send code');
 
-  await screen.findByLabelText('Six-digit code from the email');
+  await waitFor(() => expect(document.activeElement).toBe(codeField()));
   expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByText(/Until then, the address you confirmed before stays in use\./)).toBeInTheDocument();
   expect(status()).toHaveTextContent(/^Email alerts are on\. Your address is confirmed\. A code for a new address is waiting\.$/);
@@ -225,9 +247,14 @@ describe('each refusal is said in fixed words, never the server\'s', () => {
     ['a code email not sent', 'address', refuse(503, 'EMAIL_ALERT_CODE_NOT_SENT'), athlete(),
       'The code email could not be sent. Try again.'],
     ['a malformed address', 'address', refuse(400), athlete({ pending: true }), 'Enter a valid email address.'],
-    ['a server error', 'address', refuse(500), athlete({ pending: true }), 'That may not have gone through. Try again if you need to.'],
-    ['a dropped connection', 'code', () => Promise.reject(new Error('offline')), athlete({ pending: true }),
-      'That may not have gone through. Try again if you need to.'],
+    ['a server error, a code still waiting from before', 'address', refuse(500), athlete({ pending: true }),
+      'That may not have gone through. If no new email comes, send a new code.'],
+    ['a dropped connection, no code waiting now', 'address', () => Promise.reject(new Error('offline')), athlete(),
+      'The code email could not be sent. Try again.'],
+    ['a dropped connection, the code still waiting', 'code', () => Promise.reject(new Error('offline')), athlete({ pending: true }),
+      'That code was not accepted. Try again.'],
+    ['a dropped connection, the code gone', 'code', () => Promise.reject(new Error('offline')), athlete(),
+      'That code was not accepted. Ask for a new one.'],
   ] as const)('%s', async (_label, step, refusal, reread, words) => {
     const fetchMock = mockRoutes({
       gets: [answer(athlete({ pending: true })), answer(reread)],
@@ -236,13 +263,9 @@ describe('each refusal is said in fixed words, never the server\'s', () => {
     render(<EmailAlertSwitch styles={STYLES} />);
     await screen.findByLabelText('Six-digit code from the email');
 
-    if (step === 'code') {
-      fireEvent.change(codeField(), { target: { value: '012345' } });
-      press('Confirm');
-    } else {
-      fireEvent.change(addressField(), { target: { value: TYPED } });
-      press('Send a new code');
-    }
+    fireEvent.change(codeField(), { target: { value: '012345' } });
+    fireEvent.change(addressField(), { target: { value: TYPED } });
+    const pressed = press(step === 'code' ? 'Confirm' : 'Send a new code');
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(`▲ ${words}`);
@@ -251,7 +274,117 @@ describe('each refusal is said in fixed words, never the server\'s', () => {
     await waitFor(() => expect(calls(fetchMock, ME, 'GET')).toHaveLength(2));
     expect(Boolean(screen.queryByLabelText('Six-digit code from the email'))).toBe(reread.code_pending);
     expect(screen.queryByRole('button', { name: 'On' })).not.toBeInTheDocument();
+    // A refusal is not taken as landed: what was typed stays, and focus stays on
+    // the control pressed, or, if the answer took it away, goes to the address field.
+    expect(addressField()).toHaveValue(TYPED);
+    if (reread.code_pending) expect(codeField()).toHaveValue('012345');
+    await waitFor(() => expect(document.activeElement).toBe(pressed.isConnected ? pressed : addressField()));
   });
+});
+
+describe('the re-read decides when an answer is lost, unreadable or overtaken', () => {
+  test('a confirm that landed but whose answer was lost says nothing, and focus goes to Change address', async () => {
+    mockRoutes({ gets: [answer(athlete({ pending: true })), answer(athlete({ confirmed: true }))], enterCode: () => Promise.reject(new Error('offline')) });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '012345' } });
+    fireEvent.change(addressField(), { target: { value: TYPED } });
+    press('Confirm');
+
+    await screen.findByRole('button', { name: 'On' });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Change address' })));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    press('Change address');
+    expect(addressField()).toHaveValue('');
+  });
+
+  test('a code sent with none waiting before, whose answer could not be read, says nothing, and focus goes to the code field', async () => {
+    mockRoutes({ gets: [answer(athlete()), answer(athlete({ pending: true }))], sendCode: unreadable });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Email address for alerts'), { target: { value: TYPED } });
+    press('Send code');
+
+    await waitFor(() => expect(document.activeElement).toBe(codeField()));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(status()).toHaveTextContent(/A code was sent\. Enter it to confirm your address\.$/);
+  });
+
+  test('an expired answer after another tab confirmed the address says nothing', async () => {
+    mockRoutes({ gets: [answer(athlete({ pending: true })), answer(athlete({ confirmed: true }))], enterCode: refuse(409, 'EMAIL_ALERT_CODE_EXPIRED') });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '012345' } });
+    press('Confirm');
+
+    await screen.findByRole('button', { name: 'On' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('a lost answer for a new address, now with no code waiting, says it may not be confirmed', async () => {
+    mockRoutes({
+      gets: [answer(athlete({ confirmed: true, pending: true })), answer(athlete({ confirmed: true }))],
+      enterCode: () => Promise.reject(new Error('offline')),
+    });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '012345' } });
+    press('Confirm');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your new address may not have been confirmed. To be sure, change it again.');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Change address' })));
+  });
+
+  test('an address step whose request and re-read both fail keeps the panel, with the setting unknown', async () => {
+    mockRoutes({ gets: [answer(athlete()), () => Promise.reject(new Error('offline'))], sendCode: () => Promise.reject(new Error('offline')) });
+    render(<EmailAlertSwitch styles={STYLES} />);
+    fireEvent.change(await screen.findByLabelText('Email address for alerts'), { target: { value: TYPED } });
+    const pressed = press('Send code');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That may not have gone through, and your setting could not be read. Try again.');
+    expect(status()).toHaveTextContent(/^Your setting could not be read\.$/);
+    expect(addressField()).toHaveValue(TYPED);
+    expect(document.activeElement).toBe(pressed);
+  });
+});
+
+test('the typed code is emptied when a new code is sent (the old one is void)', async () => {
+  mockRoutes({ gets: [answer(athlete({ pending: true }))], sendCode: answer(athlete({ pending: true })) });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  fireEvent.change(await screen.findByLabelText('Six-digit code from the email'), { target: { value: '111111' } });
+  fireEvent.change(addressField(), { target: { value: TYPED } });
+
+  press('Send a new code');
+
+  await waitFor(() => expect(codeField()).toHaveValue(''));
+  expect(document.activeElement).toBe(codeField());
+});
+
+test('a switch save whose answer takes On and Off away (no address confirmed now) hands focus to the address field', async () => {
+  mockRoutes({ gets: [answer(athlete({ confirmed: true })), answer(athlete())], saveSwitch: refuse(409) });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByRole('button', { name: 'On' });
+
+  press('On');
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('That change was not saved.');
+  expect(screen.queryByRole('button', { name: 'On' })).not.toBeInTheDocument();
+  await waitFor(() => expect(document.activeElement).toBe(addressField()));
+});
+
+test('an athlete somehow on without a confirmed address can still turn it off', async () => {
+  mockRoutes({ gets: [answer(athlete({ on: true }))] });
+  render(<EmailAlertSwitch styles={STYLES} />);
+
+  expect(await screen.findByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('button', { name: 'On' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('signed out, Change address does not open the form', async () => {
+  mockRoutes({ gets: [answer(athlete({ confirmed: true }))], saveSwitch: refuse(401) });
+  render(<EmailAlertSwitch styles={STYLES} />);
+  await screen.findByRole('button', { name: 'On' });
+  press('On');
+  await screen.findByRole('alert');
+
+  expect(press('Change address')).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByLabelText('Email address for alerts')).not.toBeInTheDocument();
 });
 
 test.each([
@@ -369,7 +502,7 @@ test('no address is ever shown back, even one an answer carried; the field holds
   press('Send code');
   await screen.findByLabelText('Six-digit code from the email');
   expect(container.textContent).not.toContain('@');
-  expect(inputValues()).toEqual(['', TYPED]);
+  expect(inputValues()).toEqual([TYPED, '']);
 
   fireEvent.change(codeField(), { target: { value: '012345' } });
   press('Confirm');

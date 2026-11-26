@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import EmailAlertAddress, { type AddressState } from './EmailAlertAddress';
 
@@ -24,18 +24,18 @@ import EmailAlertAddress, { type AddressState } from './EmailAlertAddress';
  * Their help text says alerts go to the address they confirm, not the one
  * they sign in with (staff's and parents' words are unchanged).
  *
- * After any request: a refusal (403), or an answer that says no switch is
- * offered, takes the panel away at once, whoever is signed in by then, with
- * nothing said (a minor in a stale tab sees nothing new). A signed-out request
- * (401), or a signed-out read after a failed one, says so, and the controls
- * then send nothing until the page is reloaded. Any other failure -- a dropped
- * connection, a server error, a 409, a refused code, or a success whose answer
- * cannot be read (a lost body, a captive portal's page) -- reads the setting
- * again and shows that. For the switch: no error if the change did land, "not
- * saved" only if it did not, and after a save and a read that both failed,
- * neither choice is pressed and the panel says so (an unknown setting never
- * looks like off). For the address and code: the error's fixed words, chosen
- * by its code, never the server's text; the 429 says no more than "too many".
+ * After a save: a refusal (403), or an answer that says no switch is offered,
+ * takes the panel away at once, whoever is signed in by then, with nothing said
+ * (a minor in a stale tab sees nothing new). A signed-out save (401), or a
+ * signed-out read after a failed save, says so, and the choices then send
+ * nothing until the page is reloaded. Any other failure -- a dropped
+ * connection, a server error, a 409, or a success whose answer cannot be read
+ * (a lost body, a captive portal's page) -- reads the setting again and shows
+ * that: no error if the change did land, "not saved" only if it did not. An
+ * unknown setting never looks like off: after a save and a read that both
+ * failed, neither choice is pressed and the panel says so. An address or a
+ * code is sent and answered the same way (send(), landedBy), its refusals in
+ * fixed words chosen by error code, never the server's.
  *
  * The routes are self-scoped: nothing here names an account. The bodies are
  * exactly { switched_on }, { address } and { code }.
@@ -45,7 +45,7 @@ type UserType = 'staff' | 'parent' | 'adult_athlete';
 
 interface ShownSwitch {
   readonly userType: UserType;
-  /** null: not known (a save and the read after it both failed, or signed out). */
+  /** null: not known (a save and the read after it both failed). */
   readonly switchedOn: boolean | null;
   /** Adult athletes only, and always for them. */
   readonly address?: AddressState;
@@ -77,23 +77,41 @@ const BUSY_WORDS: Record<Step['kind'], string> = {
 };
 
 /** Fixed words for each refusal the address route names (me/address/route.ts); never the server's text. */
+const NOT_SENT = 'The code email could not be sent. Try again.';
 const ADDRESS_REFUSALS = new Map<string, string>([
   ['EMAIL_ALERT_CODE_WRONG', 'That code is not right. Check the email and try again.'],
   ['EMAIL_ALERT_CODE_EXPIRED', 'That code has expired. Ask for a new one.'],
   ['EMAIL_ALERT_CODE_TRIES_USED', 'That code has had too many tries. Ask for a new one.'],
   // Default 4: one answer for every limit, so these words name none of them.
   ['EMAIL_ALERT_CODE_LIMIT', 'Too many codes asked for. Try again later.'],
-  ['EMAIL_ALERT_CODE_NOT_SENT', 'The code email could not be sent. Try again.'],
+  ['EMAIL_ALERT_CODE_NOT_SENT', NOT_SENT],
 ]);
 
-function addressFailure(step: Step, status: number | null, code: unknown, read: ShownSwitch | null): string {
+type AddressStep = Exclude<Step, { kind: 'switch' }>;
+
+/** The re-read shows the step's aim met, whatever its own answer was (lost, unreadable, or overtaken by another tab). */
+function landedBy(step: AddressStep, before: AddressState | undefined, read: AddressState | undefined): boolean {
+  if (!before || !read) return false;
+  return step.kind === 'address' ? !before.codePending && read.codePending : !before.confirmed && read.confirmed;
+}
+
+/** Fixed words for an address step that did not land; read is null when the re-read failed. */
+function addressFailure(step: AddressStep, status: number | null, code: unknown, read: AddressState | null): string {
   // Default 3: a wrong code that used the last try leaves no code to enter (GET says so).
-  const named = code === 'EMAIL_ALERT_CODE_WRONG' && read?.address && !read.address.codePending
-    ? 'EMAIL_ALERT_CODE_TRIES_USED' : code;
+  const named = code === 'EMAIL_ALERT_CODE_WRONG' && read && !read.codePending ? 'EMAIL_ALERT_CODE_TRIES_USED' : code;
   const refusal = typeof named === 'string' ? ADDRESS_REFUSALS.get(named) : undefined;
   if (refusal) return refusal;
   if (status === 400) return step.kind === 'address' ? 'Enter a valid email address.' : 'Enter the six-digit code from the email.';
-  return 'That may not have gone through. Try again if you need to.';
+  if (!read) return 'That may not have gone through, and your setting could not be read. Try again.';
+  if (step.kind === 'address') {
+    // A code was already waiting, so the re-read cannot tell whether a new one went.
+    return read.codePending ? 'That may not have gone through. If no new email comes, send a new code.' : NOT_SENT;
+  }
+  if (read.codePending) return 'That code was not accepted. Try again.';
+  // A new address was waiting: the old one confirmed now does not say which.
+  return read.confirmed
+    ? 'Your new address may not have been confirmed. To be sure, change it again.'
+    : 'That code was not accepted. Ask for a new one.';
 }
 
 export interface EmailAlertSwitchStyles {
@@ -145,6 +163,15 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
   const [busy, setBusy] = useState<Step['kind'] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  const section = useRef<HTMLElement | null>(null);
+  const [switchSettled, setSwitchSettled] = useState(0);
+
+  // A save whose answer took On and Off away (an adult athlete whose address
+  // is no longer confirmed) hands focus to the address form, not the page.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (switchSettled && (!active || active === document.body)) section.current?.querySelector('input')?.focus();
+  }, [switchSettled]);
 
   useEffect(() => {
     void readSwitch().then((read) => {
@@ -152,7 +179,7 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
     });
   }, []);
 
-  /** Sends one press; true only when the answer is the new state, shown. */
+  /** Sends one press; true only when it is known to have landed. */
   const send = useCallback(async (before: ShownSwitch, step: Step): Promise<boolean> => {
     setBusy(step.kind);
     setError(null);
@@ -168,8 +195,8 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
         body: JSON.stringify(body),
       });
       status = response.status;
-      // A success whose answer cannot be read is not known to have landed: it
-      // is read again below, never taken as "not offered".
+      // A success whose answer cannot be read is not known to be saved: it is
+      // read again below, never taken as "not offered".
       const answer: unknown = await response.json().catch(() => undefined);
       if (response.ok && answer !== undefined) saved = fromPayload(answer);
       if (!response.ok && answer && typeof answer === 'object') code = (answer as { code?: unknown }).code;
@@ -182,8 +209,10 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
       setError(SIGNED_OUT);
       setSignedOut(true);
     };
+    let landed = false;
     if (saved && saved !== 'hidden') {
       setCurrent(saved);
+      landed = true;
     } else if (saved === 'hidden' || status === 403) {
       // Refused, or answered as not offered: no switch for whoever is signed
       // in now, so the panel goes, and nothing more is said (L1 rule).
@@ -191,16 +220,23 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
     } else if (status === 401) {
       signOut();
     } else {
-      // Not known to have landed: show what the server holds now, not what
-      // was asked for.
+      // Not known to be saved: show what the server holds now, not what was
+      // asked for, and say "not saved" only if it really was not.
       const read = await readSwitch();
       if (read === 'hidden') {
         setCurrent(null);
       } else if (read === 'signed_out') {
         signOut();
       } else if (step.kind !== 'switch') {
-        if (read !== 'failed') setCurrent(read);
-        setError(addressFailure(step, status, code, read === 'failed' ? null : read));
+        if (read === 'failed') {
+          setCurrent({ ...before, switchedOn: null });
+          setError(addressFailure(step, status, code, null));
+        } else {
+          setCurrent(read);
+          landed = landedBy(step, before.address, read.address);
+          // A panel now of another user type has no address step to speak of.
+          if (!landed && read.address) setError(addressFailure(step, status, code, read.address));
+        }
       } else if (read === 'failed') {
         setCurrent({ ...before, switchedOn: null });
         setError('That change may not have been saved, and your setting could not be read. Try again.');
@@ -210,7 +246,8 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
       }
     }
     setBusy(null);
-    return Boolean(saved && saved !== 'hidden');
+    if (step.kind === 'switch') setSwitchSettled((count) => count + 1);
+    return landed;
   }, []);
 
   if (!current) return null;
@@ -226,15 +263,15 @@ export default function EmailAlertSwitch({ styles }: { styles: EmailAlertSwitchS
     ? 'Your setting could not be read.'
     : current.switchedOn ? 'Email alerts are on.' : 'Email alerts are off.';
   // Default 9: whether an address is confirmed or a code waits, never which
-  // address. Signed out, it cannot be read, so nothing is said of it.
-  const addressWords = !address || signedOut ? null
+  // address. Unread (signed out, or a read that failed), nothing is said of it.
+  const addressWords = !address || current.switchedOn === null ? null
     : address.confirmed && address.codePending ? 'Your address is confirmed. A code for a new address is waiting.'
       : address.confirmed ? 'Your address is confirmed.'
         : address.codePending ? 'A code was sent. Enter it to confirm your address.' : 'No address is confirmed yet.';
   const status = [busy && BUSY_WORDS[busy], inForce, addressWords].filter(Boolean).join(' ');
 
   return (
-    <section className={styles.panel} aria-labelledby="email-alerts-heading">
+    <section ref={section} className={styles.panel} aria-labelledby="email-alerts-heading">
       <h2 id="email-alerts-heading" className={styles.heading}>Email alerts</h2>
       <p className={styles.help}>
         Off unless you turn it on. When it is on, an email can go to
