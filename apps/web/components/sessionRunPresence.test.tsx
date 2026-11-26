@@ -1705,6 +1705,59 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(presentReads.some((signal) => signal instanceof AbortSignal)).toBe(false);
   });
 
+  // Round 13, reviewer B: the replay is the first answer, not what the server holds now. Another device
+  // took Ada's mark back after this tap landed; the list is read again and shows that, with no
+  // present-tense register note from the old answer.
+  test('a replayed tap after another device took the mark back shows the server\'s list, not the first answer', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        // The other device's take-back, then this tap's resend, answered with its first answer.
+        present = [];
+        return answer({ outcome: 'marked', register: { effect: 'created' }, replayed: true, live: true });
+      },
+      present: () => present,
+    });
+    await showKept({ tied: true });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Here Ada Reyes' })).toBeNull();
+    expect(screen.queryByText('Ada Reyes is Present on the class register.')).toBeNull();
+    expect(screen.getByText('Nobody marked here yet. Tap each athlete in the room.')).toBeTruthy();
+  });
+
+  // The other side of the same rule: the list after a replay is the one read from the server, so a mark
+  // another device made in between shows beside this tap's own (the list is not polled, so only that
+  // read can show it).
+  test('a replayed tap reads the list again: its own mark and another device\'s mark in between both show', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        present = [ADA, BEN];
+        return answer({ outcome: 'marked', replayed: true, live: true });
+      },
+      present: () => present,
+    });
+    await showKept();
+    const readsBefore = presentReads.length;
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(presentReads.length).toBeGreaterThan(readsBefore);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+  });
+
   // OVERWATCH 7170099938 on #2178: another tab or device marks the same athlete while this tap's first
   // answer is lost. The list then shows the athlete marked, but that is not this tap landing.
   test('another tab or device marks the same athlete in between: a resend refused before its key is looked up is not known, never done', async () => {

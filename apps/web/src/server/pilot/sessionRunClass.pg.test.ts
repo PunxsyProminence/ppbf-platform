@@ -95,6 +95,7 @@ import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
 import { setRunAthletePresent } from './sessionRunAthletes';
+import { createRunStaffNote } from './sessionStaffNotes';
 import { describeRunClass, listTieableClasses, markSessionNoShowsAbsent, setSessionRunClass } from './sessionRunClass';
 import {
   finishSessionScriptRun,
@@ -1794,5 +1795,73 @@ describe('a kept here tap is decided by its own request key', () => {
     expect(await keyedTap(gym.coach, runId, gym.ada, 'key-off', false)).toEqual({ ...first, replayed: true, live: true });
     expect(await gymState(gym, runId)).toEqual(after);
     expect((await hereTaps(gym, runId)).map((details) => details.request_key)).toEqual(['key-off']);
+  });
+});
+
+// #2182 round 13, both reviewers: a kept staff note's resend looks its key up before the write locks the
+// athlete's mark. A first send of the same key still being written then, whose commit is followed by a
+// take-back of the mark from another device, makes the resend's write refuse as not present although the
+// note was written. The key is looked up again after that refusal, so the resend reads as landed.
+describe('a kept staff note refused as not present is looked up again by its key', () => {
+  /** Waits until at least `count` lock requests in this database are waiting. */
+  async function waiters(count: number) {
+    for (let tries = 0; tries < 200; tries += 1) {
+      const { rows } = await client.query<{ n: number }>(
+        `select count(*)::int as n from pg_locks l join pg_stat_activity a on a.pid = l.pid
+          where not l.granted and a.datname = current_database()`,
+      );
+      if (rows[0].n >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`test bug: ${count} lock waiters never appeared`);
+  }
+
+  test('a first send that committed before a take-back is found, and the resend answers as landed', async () => {
+    const gym = await newGym('note-key-race');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+
+    // The first send, still being written: the mark row locked and the note inserted, not yet committed.
+    const first = new Client({ connectionString: activeConnectionString as string });
+    await first.connect();
+    try {
+      await first.query('BEGIN');
+      await first.query(
+        `select removed_at from pilot.session_run_athletes where organization_id = $1 and run_id = $2 and athlete_id = $3 for update`,
+        [gym.organizationId, runId, gym.ada],
+      );
+      await first.query(
+        `insert into pilot.session_staff_notes
+           (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note, request_key)
+         values ($1, '00000000-0000-4000-8000-000000000001', $2, $3, $4, 'coach', 'Wrist taped.', 'key-note')`,
+        [gym.organizationId, runId, gym.ada, gym.coach.accountId],
+      );
+      // Another device takes the mark back: it waits on the first send's lock.
+      const takeBack = tap(gym.coach, runId, gym.ada, false);
+      await waiters(1);
+      // The resend: its key lookup misses (not committed yet), then its write waits behind the take-back.
+      const resend = createRunStaffNote({ actor: gym.coach, runId, athleteId: gym.ada, note: 'Wrist taped.', requestKey: 'key-note' });
+      await waiters(2);
+      await first.query('COMMIT');
+      expect(await takeBack).toMatchObject({ outcome: 'unmarked' });
+      // Refused as not present by its write, then found by its key: the first send's note, replayed.
+      expect(await resend).toMatchObject({ note_id: '00000000-0000-4000-8000-000000000001', replayed: true });
+    } finally {
+      await first.end();
+    }
+    const { rows } = await client.query(
+      `select note_id from pilot.session_staff_notes where organization_id = $1 and run_id = $2`,
+      [gym.organizationId, runId],
+    );
+    expect(rows).toEqual([{ note_id: '00000000-0000-4000-8000-000000000001' }]);
+  });
+
+  test('a note refused as not present with no note under its key is still refused', async () => {
+    const gym = await newGym('note-key-none');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    await tap(gym.coach, runId, gym.ada, false);
+    await expect(createRunStaffNote({ actor: gym.coach, runId, athleteId: gym.ada, note: 'Wrist taped.', requestKey: 'key-none' }))
+      .rejects.toMatchObject({ code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' });
   });
 });

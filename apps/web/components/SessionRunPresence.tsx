@@ -433,18 +433,23 @@ export default function SessionRunPresence({
         // unrecorded: not landed. Anything else: not known.
         checkLanded: async () => (refusalCode === 'SESSION_RUN_NOT_LIVE' ? false : null),
         onSaved: async (response) => {
-          release();
-          // The mark at once (no flicker back while the answer is read).
-          if (onPage.current) {
-            showMark();
-            forgetRefusal(athlete.athlete_id);
-          }
           const seen = saveQueueGeneration();
           const answer = response
             ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown; replayed?: unknown; live?: unknown } | null)
             : null;
+          // Released with the mark below, in one render: no flicker back while the answer was read.
+          release();
           // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
           if (saveQueueGeneration() !== seen) return undefined;
+          // A resend of this tap, which landed earlier, is answered with the first answer. The server may
+          // hold something else now (another tab or device changed it since), so the list is read again
+          // rather than painting what was tapped (#2182 round 13, reviewer B: the list is the server's).
+          const replayed = answer?.replayed === true;
+          if (onPage.current) {
+            if (replayed) void read();
+            else showMark();
+            forgetRefusal(athlete.athlete_id);
+          }
           // A resend of this tap, which landed earlier, on a session that has ended since: the console
           // resyncs, and this list goes with it.
           const runGone = answer?.replayed === true && answer.live === false;
@@ -500,7 +505,8 @@ export default function SessionRunPresence({
               return next;
             });
           }
-          setNote({ athleteId: athlete.athlete_id, text: registerWords ? '' : registerNote(name, answer?.register, null), kept: true });
+          // No present-tense row note for a replay: the register may have changed since the first answer.
+          setNote({ athleteId: athlete.athlete_id, text: registerWords || replayed ? '' : registerNote(name, answer?.register, null), kept: true });
           return undefined;
         },
         // Refused: said in this list, where the coach tapped.
@@ -529,7 +535,7 @@ export default function SessionRunPresence({
         },
       };
     },
-    [forgetRefusal, isFinishWaiting, onRunNotLive, readRegister, runId, tied],
+    [forgetRefusal, isFinishWaiting, onRunNotLive, read, readRegister, runId, tied],
   );
 
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
