@@ -1701,6 +1701,9 @@ describe('email alert staff event sources', () => {
     const onA = await threadPost(client, ORG, ATH_A);
     const againOnA = await threadPost(client, ORG, ATH_A, { threadId: onA });
     const staffOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-coach-own', role: 'coach' });
+    // Staff replies of every staff role nudge nobody (reviewer B).
+    const adminOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-admin', role: 'admin' });
+    const orgadminOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-orgadmin', role: 'organization_admin' });
     const onB = await threadPost(client, ORG, ATH_B);
     const onC = await threadPost(client, ORG, ATH_C);
     const onGone = await threadPost(client, ORG, ATH_GONE);
@@ -1714,8 +1717,17 @@ describe('email alert staff event sources', () => {
       [ORG, onB, againOnA],
     );
     const seen = new Set([`acct-ev-admin|${onB}`, `acct-ev-coach-own|${againOnA}`]);
+    // A volunteer covering ATH_A now: not a staff role, so neither counted nor named (reviewer B).
+    await client.query(
+      `insert into pilot.coach_coverage
+         (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, 'acct-ev-volunteer', 'acct-ev-admin', now() - interval '1 hour', now() + interval '1 hour')`,
+      [ORG, ATH_A],
+    );
 
-    const { from, to } = await lastHour(client);
+    // The window ends a second after the last post, so no post can fall past it (reviewer B).
+    const { from } = await lastHour(client);
+    const to = (await client.query<{ to: Date }>(`select clock_timestamp() + interval '1 second' as "to"`)).rows[0].to;
     const source = reachOf(await guardianMessageSource.candidates(from, to), 'guardian_message');
     const guardianPosts: Array<[string, string, string]> = [
       [ORG, ATH_A, onA], [ORG, ATH_A, againOnA], [ORG, ATH_B, onB], [ORG, ATH_C, onC], [ORG, ATH_GONE, onGone],
@@ -1737,8 +1749,40 @@ describe('email alert staff event sources', () => {
       [`${OTHER_ORG}|acct-ev-other-admin`, [otherGym, otherGymB].sort()],
       [`${OTHER_ORG}|acct-ev-other-coach`, [otherGym]],
     ])));
-    expect([...source.values()].flat()).not.toContain(staffOnA);
-    await expectStillReadableAsPage(page, new Set([...guardianPosts.map(([, , id]) => id), staffOnA]), 'guardian_message');
+    for (const staffPost of [staffOnA, adminOnA, orgadminOnA]) expect([...source.values()].flat()).not.toContain(staffPost);
+    await expectStillReadableAsPage(
+      page,
+      new Set([...guardianPosts.map(([, , id]) => id), staffOnA, adminOnA, orgadminOnA]),
+      'guardian_message',
+    );
+  });
+
+  test('guardian_message reads only the posts inside its window, by each post\'s own time: a later post in an earlier thread is in; the window is (from, to] (reviewer B)', async () => {
+    const client = await freshDatabase('emailevents_threads_window');
+    activeClient = client;
+    await threadFixture(client);
+    // The post's time to the microsecond, as text: a JS Date keeps only milliseconds, so a Date
+    // bound would sit just below the post and could not test (from, to] at its edges. The source
+    // passes the bound straight to Postgres, which reads the text as a timestamptz.
+    const createdAt = async (postId: string) =>
+      (await client.query<{ t: string }>('select created_at::text as t from pilot.family_thread_posts where post_id = $1::uuid', [postId]))
+        .rows[0].t as unknown as Date;
+
+    // A thread opened before the window, and a post on another child at its very start.
+    const earlyThread = await threadPost(client, ORG, ATH_A);
+    const atFrom = await threadPost(client, ORG, ATH_C);
+    // Inside: a second post in the earlier thread, and a new thread.
+    const laterInEarlyThread = await threadPost(client, ORG, ATH_A, { threadId: earlyThread });
+    const atTo = await threadPost(client, ORG, ATH_C);
+    // After the window.
+    const after = await threadPost(client, ORG, ATH_C, { threadId: atTo });
+
+    // Bounds at the posts' own times: (from, to] takes atTo and leaves atFrom out.
+    const from = await createdAt(atFrom);
+    const to = await createdAt(atTo);
+    const named = new Set((await guardianMessageSource.candidates(from, to)).map((c) => c.eventId));
+    expect([...named].sort()).toEqual([laterInEarlyThread, atTo].sort());
+    for (const outside of [earlyThread, atFrom, after]) expect(named.has(outside)).toBe(false);
   });
 
   test('a guardian post reaches each switched-on person it nudges, once; one who opened it, or whose cover ended, by the send is skipped', async () => {

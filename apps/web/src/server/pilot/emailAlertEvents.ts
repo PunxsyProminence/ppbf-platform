@@ -1,24 +1,31 @@
 /**
  * WHERE THE EMAIL ALERT'S EVENTS COME FROM (lane W4-1, EM-4a; plan on #2159,
  * section 6). Each source reads one event table and names everyone who can
- * read each new row in the app; the queue (emailAlertQueue.ts) then keeps only
+ * read each new row in the app -- except guardian_message, which names only
+ * those the post nudges (below); the queue (emailAlertQueue.ts) then keeps only
  * those who have switched on and whose gym has the event ticked.
  *
- * A source mirrors its page's read rule (emailAlertEvents.pg.test.ts compares
- * each with the page's own read, person by person), and the same rule is asked
+ * A source mirrors its page's read rule, or for guardian_message the staff
+ * unread count's (emailAlertEvents.pg.test.ts compares each with the page's or
+ * the count's own read, person by person), and the same rule is asked
  * again for the one person and event just before the send
  * (emailAlertEventStillReadable, called by emailAlertSender.ts): someone who
  * can no longer read the row by then -- moved off the athlete, coverage ended,
  * no longer an admin, the athlete deleted (an admin still reads an open
  * escalation about a deleted athlete, so is still sent it) -- is skipped as
  * 'not_offered', the send log's reason for "this event is not for them now".
- * Reach is judged when the sweep reads the row, so someone who can read it
- * only later (coverage granted afterwards) is not emailed for it. The source
+ * Reach is judged each time the sweep reads the row: on its first read, and
+ * again on later ticks while the row is inside the ten-minute overlap
+ * (emailAlertQueue.ts). So someone who can read it only later (coverage
+ * granted afterwards) is emailed for it if that happens within the overlap,
+ * and not after. The source
  * names a membership whatever the account's sign-in; the sender's own
  * re-check refuses anyone who cannot sign in to that gym, and any account
  * linked to an athlete under 18. Times are on the database clock, as the
  * sweep's overlap needs: each row's created_at, set by now() in the inserting
- * transaction, or for gym_notice the moment it goes live (below).
+ * transaction (for guardian_message, the family threads trigger's
+ * clock_timestamp(), later in the same transaction), or for gym_notice the
+ * moment it goes live (below).
  *
  * STAFF (EM-4a):
  *   - safety_escalation: every new row of pilot.safety_escalations, SHADOW
@@ -153,7 +160,10 @@ const PARENT_REPLY: SqlEvent = {
  *   - while the athlete is live, and not once that person has seen the post (a
  *     row in pilot.family_thread_reads), as the count leaves it out then.
  * Written here, not imported, so this lane edits no W4-4 file (Q-2 A);
- * emailAlertEvents.pg.test.ts holds it to the count, person by person.
+ * emailAlertEvents.pg.test.ts holds it to the count, person by person. The
+ * count also checks the staff seat (staffSeatSql: the login active and not
+ * deleted, the gym active); the source leaves those, as every source does, to
+ * the sender's sign-in check, which skips such a person as sign_in_off.
  */
 const GUARDIAN_MESSAGE: SqlEvent = {
   kind: 'guardian_message',
@@ -427,8 +437,9 @@ export const EMAIL_ALERT_EVENT_SOURCES: readonly EmailAlertSource[] = EVENTS.map
 export const EMAIL_ALERT_READ_RULE_KINDS: readonly string[] = EVENTS.map((event) => event.kind);
 
 /**
- * Whether this person can still read this event in the app, asked again just
- * before the send. An event kind no source here knows reads as no.
+ * Whether this person is still one the event's source would name (can still
+ * read it in the app; for guardian_message, is still nudged by it), asked
+ * again just before the send. An event kind no source here knows reads as no.
  */
 export async function emailAlertEventStillReadable(send: SendToCheck): Promise<boolean> {
   const event = EVENTS.find((candidate) => candidate.kind === send.event_kind);
