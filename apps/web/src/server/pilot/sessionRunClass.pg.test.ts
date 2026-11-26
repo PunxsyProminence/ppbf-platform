@@ -1778,6 +1778,10 @@ describe('a kept here tap is decided by its own request key', () => {
     expect(await refusal(keyedTap(gym.coach, runId, gym.ada, 'key-1', false))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
     expect(await gymState(gym, runId)).toEqual(before);
     expect(await refusal(keyedTap(gym.otherCoach, runId, gym.ada, 'key-1'))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    // The same key on the coach's next run is that run's own: written there, not replayed.
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const { run_id: nextRunId } = await start(gym, gym.coach, null);
+    expect(await keyedTap(gym.coach, nextRunId, gym.ada, 'key-1')).toEqual({ outcome: 'marked' });
   });
 
   test('a take-back keyed and resent writes once; a keyless tap is as before and records no key', async () => {
