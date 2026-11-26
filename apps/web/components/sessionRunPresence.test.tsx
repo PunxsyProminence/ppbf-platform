@@ -773,7 +773,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     }) as unknown as typeof fetch;
   }
 
-  async function showKept(props: { onRunNotLive?: jest.Mock; finishWaiting?: boolean; tied?: boolean } = {}) {
+  async function showKept(props: { onRunNotLive?: jest.Mock; finishWaiting?: boolean; tied?: boolean; onPresentCount?: jest.Mock } = {}) {
     const isFinishWaiting = () => props.finishWaiting === true;
     prepareSaveQueue();
     let view: ReturnType<typeof render> | undefined;
@@ -786,6 +786,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
             classId={props.tied === true ? 'class-youth' : null}
             onRunNotLive={props.onRunNotLive ?? jest.fn()}
             isFinishWaiting={isFinishWaiting}
+            onPresentCount={props.onPresentCount}
           />
           <SaveQueueNotice />
         </>,
@@ -1758,6 +1759,41 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
   });
 
+  // Codex P1 on #2182: the finish's "Athletes present" is filled in from this count. A tap still waiting
+  // is sent before a finish tapped after it, so it is counted; the "marked here" line keeps the count as
+  // read. A take-back waiting takes its athlete off the count; a refused tap gives the count back.
+  test('the count for the finish includes the taps still waiting on this page, each athlete\'s latest', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [BEN];
+    serveKept({
+      tap: (send) => {
+        if (send <= 2) return 'lost';
+        if (send === 3) {
+          present = [ADA, BEN];
+          return answer({ outcome: 'marked' });
+        }
+        // Ben's take-back is refused.
+        return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
+      },
+      present: () => present,
+    });
+    const onPresentCount = jest.fn();
+    await showKept({ onPresentCount });
+    expect(onPresentCount).toHaveBeenLastCalledWith(1);
+    // Ada marked: waiting, and counted.
+    await tapKept('Mark here Ada Reyes');
+    expect(screen.getByText('1 marked here.')).toBeTruthy();
+    expect(onPresentCount).toHaveBeenLastCalledWith(2);
+    // Ben unmarked: waiting too, and off the count.
+    await tapKept('Here Ben Ortiz');
+    expect(onPresentCount).toHaveBeenLastCalledWith(1);
+    // Ada's tap lands; Ben's is refused, and the count is the server's again.
+    await wait(RESEND_MS);
+    await wait(RESEND_MS);
+    expect(screen.getByText('2 marked here.')).toBeTruthy();
+    expect(onPresentCount).toHaveBeenLastCalledWith(2);
+  });
+
   /**
    * Holds this list's reads in flight once `hold` is set: the server answers at the read (the list as it
    * is then), and the answer arrives when released. `install` after serveKept.
@@ -2375,6 +2411,42 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     });
     const boxes = screen.getAllByLabelText(/New note/) as HTMLTextAreaElement[];
     expect(boxes.map((box) => box.value)).toContain('Wrist taped.');
+  });
+
+  // Codex P2 on #2182: a note refused as not present because Ada's mark was taken back keeps its words
+  // reachable. Her notes stay on her row after the take-back lands, the words come back into the box,
+  // and a sign-out takes that away with the words.
+  test('a note refused as not present after the mark was taken back keeps its words reachable, until a drop', async () => {
+    await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused') });
+    await writeNote('Ada Reyes', 'Wrist taped.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
+    });
+    // The coach takes Ada's mark back; it is sent after the note's resend, which is refused.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Here Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(RESEND_MS);
+    });
+    expect(screen.getByText(ADA_SAID)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+    // Her notes are still on her row, and the words come back into the box.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('Wrist taped.');
+    // A sign-out takes the panel away with the words.
+    await act(async () => {
+      clearRoleSession();
+    });
+    expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Hide staff notes' })).toBeNull();
   });
 
   test('another account confirmed on this page clears the named lines and the kept words: nothing reaches the next person\'s box', async () => {

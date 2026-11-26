@@ -173,6 +173,7 @@ function refusalText(code: unknown): string {
 }
 
 const NO_REFUSALS: ReadonlyMap<string, string> = new Map();
+const NO_ATHLETES: ReadonlySet<string> = new Set();
 
 /** The key of an athlete's register line in the list's alert, beside their refusal (keyed by id). */
 // The kind and the id are joined by NUL, which no athlete id holds (the routes refuse it and
@@ -338,6 +339,11 @@ export default function SessionRunPresence({
   const [keptRefusals, setKeptRefusals] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
   // Refused new notes' words, by athlete, out of sight until that athlete's notes are opened.
   const [noteWords, setNoteWords] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
+  // Athletes this list has held a refused note's words for: their notes panel stays on their row even
+  // when their mark no longer stands (taken back here or on another device), so the alert's "its words
+  // are back in the box when this athlete's notes are next opened" stays true (Codex P2 on #2182). Only
+  // for the confirmed account, and gone at any drop of the queue, as the words are.
+  const [wordsHeldFor, setWordsHeldFor] = useState<ReadonlySet<string>>(NO_ATHLETES);
   const noteRefusals = useRef(0);
   // They name athletes and hold one person's note text, and come only from kept saves: any drop of the
   // queue (a sign-out, another account, a 401) takes them off the screen at once (a shared floor tablet).
@@ -348,6 +354,7 @@ export default function SessionRunPresence({
       seen = saveQueueGeneration();
       setKeptRefusals(NO_REFUSALS);
       setNoteWords(NO_REFUSALS);
+      setWordsHeldFor(NO_ATHLETES);
       // The row's note holds the last tap's answer (a name, the register, a hold): it goes too.
       setNote(null);
     });
@@ -366,6 +373,7 @@ export default function SessionRunPresence({
     const key = `note${KEY_JOIN}${athlete.athlete_id}${KEY_JOIN}${noteRefusals.current}`;
     setKeptRefusals((current) => new Map(current).set(key, `${athlete.full_name}: ${words}`));
     if (!noteText) return true;
+    setWordsHeldFor((current) => (current.has(athlete.athlete_id) ? current : new Set(current).add(athlete.athlete_id)));
     setNoteWords((current) => {
       const earlier = current.get(athlete.athlete_id);
       return new Map(current).set(athlete.athlete_id, earlier ? `${earlier}\n\n${noteText}` : noteText);
@@ -560,10 +568,23 @@ export default function SessionRunPresence({
     [forgetRefusal, isFinishWaiting, onRunNotLive, read, readRegister, runId, tied],
   );
 
-  const presentCount = reading.state === 'loaded' ? reading.present.size : null;
+  // What the finish's "Athletes present" is filled in from: the marks as last read, with the taps still
+  // waiting on this page applied in tap order, each athlete's latest last. The queue sends them before
+  // a finish tapped after them, so this is the count that stands when that finish lands (Codex P1 on
+  // #2182). The "marked here" line keeps the count as read; the waiting taps have their own line.
+  const countForFinish = useMemo(() => {
+    if (reading.state !== 'loaded') return null;
+    if (askedTaps.length === 0) return reading.present.size;
+    const marks = new Set(reading.present);
+    for (const tap of askedTaps) {
+      if (tap.present) marks.add(tap.athleteId);
+      else marks.delete(tap.athleteId);
+    }
+    return marks.size;
+  }, [askedTaps, reading]);
   useEffect(() => {
-    onPresentCount?.(presentCount);
-  }, [onPresentCount, presentCount]);
+    onPresentCount?.(countForFinish);
+  }, [onPresentCount, countForFinish]);
 
   const mark = useCallback(
     async (athlete: Athlete, present: boolean) => {
@@ -833,21 +854,23 @@ export default function SessionRunPresence({
                         {shownNote && shownNote.athleteId === athlete.athlete_id && shownNote.text ? (
                           <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{shownNote.text}</p>
                         ) : null}
-                        {/* The server's mark, as today: a note is taken only for an athlete marked here. */}
+                        {/* The server's mark, as today: a note is taken only for an athlete marked here. An
+                            athlete whose refused note's words this list holds keeps the panel, to get them
+                            back (the server refuses a new note for them until they are marked again). */}
+                        {reading.present.has(athlete.athlete_id) || (accountConfirmed && wordsHeldFor.has(athlete.athlete_id)) ? (
+                          <SessionStaffNotesPanel
+                            runId={runId}
+                            athleteId={athlete.athlete_id}
+                            buttonLabel={`Staff notes on ${athlete.full_name}`}
+                            keptOnThisPage
+                            isFinishWaiting={isFinishWaiting}
+                            onKeptRefused={(words, noteText) => noteRefused(athlete, words, noteText)}
+                            returnedWords={accountConfirmed ? noteWords.get(athlete.athlete_id) : undefined}
+                            onWordsReturned={() => wordsReturned(athlete.athlete_id)}
+                          />
+                        ) : null}
                         {reading.present.has(athlete.athlete_id) ? (
-                          <>
-                            <SessionStaffNotesPanel
-                              runId={runId}
-                              athleteId={athlete.athlete_id}
-                              buttonLabel={`Staff notes on ${athlete.full_name}`}
-                              keptOnThisPage
-                              isFinishWaiting={isFinishWaiting}
-                              onKeptRefused={(words, noteText) => noteRefused(athlete, words, noteText)}
-                              returnedWords={accountConfirmed ? noteWords.get(athlete.athlete_id) : undefined}
-                              onWordsReturned={() => wordsReturned(athlete.athlete_id)}
-                            />
-                            <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
-                          </>
+                          <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                         ) : null}
                       </li>
                     );
