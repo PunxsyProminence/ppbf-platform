@@ -1758,6 +1758,56 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
   });
 
+  // The replay's read is awaited before the next kept tap is sent. Otherwise a read the server answered
+  // before the next tap was written, arriving after that tap's mark was painted, takes the mark away.
+  test('a kept tap waiting behind a replay is sent only after the replay\'s read, and its mark stays', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    let holdReads = false;
+    const held: Array<() => void> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        if (send === 2) {
+          // Ada's resend: replayed, and the list read that follows is held in flight.
+          holdReads = true;
+          return answer({ outcome: 'marked', replayed: true, live: true });
+        }
+        present = [...present, BEN];
+        return answer({ outcome: 'marked' });
+      },
+      present: () => present,
+    });
+    const served = global.fetch;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // The server answers now; the answer arrives when released.
+      const response = await served(input, init);
+      if (holdReads && String(input) === URL_FOR && (init?.method ?? 'GET') === 'GET') {
+        return new Promise<Response>((resolve) => held.push(() => resolve(response)));
+      }
+      return response;
+    }) as unknown as typeof fetch;
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await tapKept('Mark here Ben Ortiz');
+    await wait(RESEND_MS);
+    expect(held).toHaveLength(1);
+    // Ben's tap waits behind the read.
+    expect(sent).toHaveLength(2);
+    holdReads = false;
+    await act(async () => {
+      held.forEach((release) => release());
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await wait(RESEND_MS);
+    expect(sent).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Here Ben Ortiz' })).toBeTruthy();
+  });
+
   // OVERWATCH 7170099938 on #2178: another tab or device marks the same athlete while this tap's first
   // answer is lost. The list then shows the athlete marked, but that is not this tap landing.
   test('another tab or device marks the same athlete in between: a resend refused before its key is looked up is not known, never done', async () => {

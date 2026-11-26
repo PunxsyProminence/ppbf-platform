@@ -442,18 +442,22 @@ export default function SessionRunPresence({
           // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
           if (saveQueueGeneration() !== seen) return undefined;
           // A resend of this tap, which landed earlier, is answered with the first answer. The server may
-          // hold something else now (another tab or device changed it since), so the list is read again
-          // rather than painting what was tapped (#2182 round 13, reviewer B: the list is the server's).
+          // hold something else now (another tab or device changed it since), so the list and the register
+          // are read again rather than painting what was tapped (#2182 round 13, reviewer B: the list is
+          // the server's). Awaited: the queue sends the next tap only after this returns, so that tap's
+          // own mark, painted when it lands, is never overwritten by this older read.
           const replayed = answer?.replayed === true;
+          // A resend of this tap, which landed earlier, on a session that has ended since: the console
+          // resyncs, and this list goes with it. Told first, so the read below never delays it.
+          const runGone = replayed && answer?.live === false;
+          if (runGone) onRunNotLive?.();
           if (onPage.current) {
-            if (replayed) void read();
+            if (replayed) await Promise.all([read(), readRegister()]);
             else showMark();
             forgetRefusal(athlete.athlete_id);
           }
-          // A resend of this tap, which landed earlier, on a session that has ended since: the console
-          // resyncs, and this list goes with it.
-          const runGone = answer?.replayed === true && answer.live === false;
-          if (runGone) onRunNotLive?.();
+          // A drop while the list was read again: nothing of this answer is shown.
+          if (saveQueueGeneration() !== seen) return undefined;
           const effect = answer?.register?.effect;
           // The register differs from what the coach tapped: it kept a change made after a late mark
           // (register_newer), kept the mark a take-back would have removed (kept), or was not written
