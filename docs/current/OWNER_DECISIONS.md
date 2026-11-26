@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, before any W4 screen has merged | PRIMARY |  |  |
 | OD-2026-11-25-005 | 2026-11-25 | W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@ | PRIMARY |  |  |
 | OD-2026-11-25-004 | 2026-11-25 | Release of main `f7d951bf` to production, and the W4 lanes move to admin@ | PRIMARY |  |  |
 | OD-2026-11-25-003 | 2026-11-25 | Usage plan: the W4 lanes go to admin@ when the desktop account runs low, and admin@'s free Full reset is used; the Fable reset is not | PRIMARY |  | yes |
@@ -667,6 +668,24 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-26-001 -- Release of main `13a17485` to production now, before any W4 screen has merged
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-26 01:22:19 UTC, PRIMARY):** *"Is anything ready to shipp"*
+
+**Question as App Overwatch put it (2026-11-26, in its reply):** "release main `13a17485` now, or hold?" Option A (recommended): hold, and ship once the first screens merge (PM-2, FN-3, SP-2a). Option B: ship now, so the two migrations and the new routes go live early and the next release is smaller. It said no screen file had changed since the last release, so nothing would look different on the live app.
+
+**Jason (2026-11-26 01:23:48 UTC, PRIMARY):** *"B"*
+
+**Ruling:** B. Main `13a17485` is released to production now.
+
+**Applied (Overwatch, not his words):** staging migrations athlete-reached-out-marks (run 45735517736) and email-alert-sweep-indexes (45735918119, after an AWS-runner timeout on 45735536312); deploy-staging run 45736075767 (image `sha256:118175b6a384a390f9db4740987eb77ab469cdcc82cbfa34743e396ac17f052d`, revision `app-ppbf-staging--0000323`); read-only staging checks (home and login 200, the floor route 401 signed out); production migrations athlete-reached-out-marks (45737043935) and email-alert-sweep-indexes (45737456394); deploy-production run 45737794872; every production gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds); revision `app-ppbf-production--0000219` at 100% traffic, same image as staging; www home and login returned 200 and the floor route 401 signed out. No screen changed, so no signed-in screen check was owed.
+
+**Status:** recorded 2026-11-26 by PR.
 
 ---
 
