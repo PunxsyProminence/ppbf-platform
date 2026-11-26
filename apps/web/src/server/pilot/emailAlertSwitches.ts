@@ -9,8 +9,9 @@
  * (OD-2026-10-04-010). Anyone else gets `{ offered: false }` and nothing more
  * (no new warning, L1 rule). What a later change does to a switch already on is
  * retireReason's: an athlete now under 18, with no date of birth, or whose
- * record is deleted or unlinked, and a person whose user type has changed, have
- * the row switched off and its address cleared at their next own read or write
+ * record is deleted or unlinked, has the row switched off and its address
+ * cleared at their next own read or write, and a person whose user type has
+ * changed at their next own read or write under the new type
  * (retireSwitchIfAny); sign-in switched off and a role with no switch only
  * pause it (OVERWATCH 7182466510 on #2169).
  *
@@ -369,7 +370,14 @@ export async function setEmailAlertSwitch(
   }).catch(async (error: unknown) => {
     // A write under the new type that ends in a 409 (an adult athlete's row
     // retyped has no confirmed address) still retires the old row (T-1 A).
-    if (retiredFirst && error instanceof ConflictError) await retireSwitchIfAny(subject, now);
+    if (retiredFirst && error instanceof ConflictError) {
+      // The 409 is the answer; a failure of this retry is logged, not returned instead.
+      await retireSwitchIfAny(subject, now).catch((retryError: unknown) => {
+        console.warn('email alert switch: retire after a 409 failed', {
+          reason: retryError instanceof Error ? retryError.name : 'unknown',
+        });
+      });
+    }
     throw error;
   });
   if (saved) return saved;
