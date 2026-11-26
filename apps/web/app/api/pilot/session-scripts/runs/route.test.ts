@@ -477,7 +477,7 @@ describe('GET runs -- classes', () => {
   });
 
   it('a live run tied to a class carries the class; an untied one does not', async () => {
-    const tiedClass = { class_id: 'class-1', title: 'Youth', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 };
+    const tiedClass = { class_id: 'class-1', title: 'Youth', start_at: 's', end_at: 'e', status: 'open', no_shows: 2, no_show_ids: ['ath-1', 'ath-2'] };
     mockGetLive.mockResolvedValue({ ...liveRun, class_id: 'class-1' });
     mockDescribe.mockResolvedValue(tiedClass as never);
     await expect((await GET(get())).json()).resolves.toEqual({ run: { ...liveRun, class_id: 'class-1' }, class: tiedClass });

@@ -25,6 +25,7 @@ import {
   normalizeStaffDisplayName,
 } from '@/src/shared/staffDisplayName';
 import GymOfficeSafetyStrip from '@/components/GymOfficeSafetyStrip';
+import OnTheFloorStaffLine from '@/components/OnTheFloorStaffLine';
 import { BUILDING } from '@/components/buildingMap';
 import { JOB_BARS } from '@/components/jobBars';
 
@@ -1509,6 +1510,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
         {/* The admin's morning safety check, from home (lane U2, audit UX-A A-2). */}
         <GymOfficeSafetyStrip />
+
+        {/* Who is on the floor now (lane W4-3, FN-3; Jason Q3.3 A): names only, read once on open. */}
+        <OnTheFloorStaffLine />
 
         {/* The plaintext code is intentionally shown once. */}
         {createdAthlete && (
