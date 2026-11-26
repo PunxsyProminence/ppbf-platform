@@ -25,7 +25,7 @@ import type { Room } from '@/components/buildingMap';
 import { apiBase } from '@/lib/apiBase';
 import { getRoleSessionSnapshot, subscribeRoleSession, type RoleSession } from '@/components/roleSession';
 import type { RoomPlace } from '@/components/roomPlaces';
-import { isRoomNameKey, ROOM_NAME_DEFAULTS, type RoomNameKey } from '@/src/shared/roomNames';
+import { DOOR_LABEL_KEY, isRoomNameKey, ROOM_NAME_DEFAULTS, type RoomNameKey } from '@/src/shared/roomNames';
 
 type GymNames = Readonly<Partial<Record<RoomNameKey, string>>>;
 
@@ -36,6 +36,8 @@ export interface RoomNameLookup {
   readonly place: (place: RoomPlace) => string;
   /** One of the 7 rooms' shown name. */
   readonly room: (room: Room) => string;
+  /** A door's menu label: the gym's name when the door is a card (DOOR_LABEL_KEY), else its own label. */
+  readonly door: (door: { readonly href: string; readonly label: string }) => string;
 }
 
 export function roomNameLookup(names: GymNames | null): RoomNameLookup {
@@ -44,6 +46,10 @@ export function roomNameLookup(names: GymNames | null): RoomNameLookup {
     name,
     place: (place) => name(`place:${place}`),
     room: (room) => name(`room:${room}`),
+    door: (door) => {
+      const key = DOOR_LABEL_KEY[door.href];
+      return key ? name(key) : door.label;
+    },
   };
 }
 
