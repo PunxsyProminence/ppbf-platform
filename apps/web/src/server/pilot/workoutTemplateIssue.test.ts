@@ -57,6 +57,9 @@ jest.mock('./progression', () => {
   return { ...actual, assertNewAssignmentMeetsCueRule: jest.fn() };
 });
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { writePilotAuditEvent } from './audit';
 import { issueCoachCard } from './coachCards';
 import { query, queryOne, withTransaction } from './db';
@@ -64,10 +67,11 @@ import { listFloorValidations } from './drillFloorValidations';
 import { getDrillWithDetail, getOtherVersionAdoption, listReferenceLifecycles } from './drillLibraryV3';
 import { updateDrillToReferenceVersion } from './drillVersioning';
 import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferenceDrill } from './drills';
+import { readCsv } from './contentImport/csv';
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
 import { findWorkoutIssueByRequestKey, recordWorkoutIssue, WorkoutIssueRequestKeyTakenError } from './workoutIssues';
-import { issueWorkoutTemplate, listUntestedTemplateDrills, planTemplateIssue } from './workoutTemplates';
+import { issueOrder, issueWorkoutTemplate, listUntestedTemplateDrills, planTemplateIssue } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -1857,5 +1861,175 @@ describe('the head cannot be used: the gym keeps its own running older version (
       await expect(listUntestedTemplateDrills(ORG, [{ drill_id: 'ref-1', head_drill_id: 'ref-2', ordinal: 1 }]))
         .resolves.toEqual([{ reference_drill_id: 'ref-1', name: 'Old Draft', steps: [1] }]);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TL-ORD (lane W4-8; App Overwatch on #2201, comment 7170675682). An owner's
+// step placed INSIDE another step carries that step's item id in
+// details.within_item_id; it is issued straight after that step, not at its
+// ordinal. D-PK73-3 put Conditioning session A's fresh technical check "at the
+// end of the warm-up" and the same check "straight after the main set"; the
+// seed holds them as ordinals 5 and 6, inside ordinals 1 and 2.
+// ---------------------------------------------------------------------------
+
+const SEED_ITEMS = path.resolve(__dirname, '../../../seed-data/workout-templates/seed_workout_template_items.csv');
+const CONDITIONING_A = 'wtp_01de3f48606d4c'; // Conditioning session A — SIT, 45 min
+const PHASE_1_SKILL = 'wtp_c2c4bec001a56b'; // Phase 1 — Foundation / Novice — Boxing skill session, 90 minutes
+
+/** The committed template items, read with the content import's own CSV reader. */
+function committedItems(): { template_id: string; item_id: string; ordinal: number; block: string; details: Record<string, unknown> }[] {
+  const table = readCsv(fs.readFileSync(SEED_ITEMS, 'utf8'));
+  expect(table.problems).toEqual([]);
+  const at = (name: string) => table.header.indexOf(name);
+  return table.records.map(({ cells }) => ({
+    template_id: cells[at('template_id')],
+    item_id: cells[at('item_id')],
+    ordinal: Number(cells[at('ordinal')]),
+    block: cells[at('block')],
+    details: cells[at('details')] ? (JSON.parse(cells[at('details')]) as Record<string, unknown>) : {},
+  }));
+}
+
+function ofTemplate(templateId: string) {
+  return committedItems().filter((row) => row.template_id === templateId);
+}
+
+describe('a step an owner placed inside another is issued straight after it (TL-ORD)', () => {
+  test('Conditioning session A, as committed, issues as warm-up, fresh check, main set, after check, cool-down, record', () => {
+    const items = ofTemplate(CONDITIONING_A);
+    // The owner's placement, as the seed holds it.
+    const byOrdinal = new Map(items.map((row) => [row.ordinal, row]));
+    expect(byOrdinal.get(5)?.details.within_item_id).toBe(byOrdinal.get(1)?.item_id);
+    expect(byOrdinal.get(6)?.details.within_item_id).toBe(byOrdinal.get(2)?.item_id);
+
+    const ordered = issueOrder(items);
+
+    expect(ordered.map((row) => row.ordinal)).toEqual([1, 5, 2, 6, 3, 4]);
+    expect(ordered.map((row) => row.block)).toEqual(['warmup', 'warmup', 'conditioning', 'conditioning', 'cooldown', 'cooldown']);
+  });
+
+  test("the Phase 1 skill session, as committed, keeps its order: step 7 sits inside step 6 and already follows it", () => {
+    const items = ofTemplate(PHASE_1_SKILL);
+    const step7 = items.find((row) => row.ordinal === 7);
+    expect(step7?.details.within_item_id).toBe(items.find((row) => row.ordinal === 6)?.item_id);
+
+    expect(issueOrder(items).map((row) => row.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  test('every committed template issues each of its steps exactly once, and one with no nested step in its ordinal order', () => {
+    const byTemplate = new Map<string, ReturnType<typeof committedItems>>();
+    for (const row of committedItems()) {
+      byTemplate.set(row.template_id, [...(byTemplate.get(row.template_id) ?? []), row]);
+    }
+    let nestedTemplates = 0;
+    for (const [templateId, items] of byTemplate) {
+      const ordered = issueOrder(items);
+      expect({ templateId, ids: [...ordered.map((row) => row.item_id)].sort() })
+        .toEqual({ templateId, ids: items.map((row) => row.item_id).sort() });
+      if (items.some((row) => typeof row.details.within_item_id === 'string')) {
+        nestedTemplates += 1;
+      } else {
+        expect({ templateId, ordinals: ordered.map((row) => row.ordinal) })
+          .toEqual({ templateId, ordinals: [...items].sort((a, b) => a.ordinal - b.ordinal).map((row) => row.ordinal) });
+      }
+    }
+    // The sweep reaches templates with nested owner items (7 on 2026-11-25); a count is not pinned, so a
+    // new nested template in the seed does not fail this case without a code fault.
+    expect(nestedTemplates).toBeGreaterThan(0);
+  });
+
+  test('several steps inside one keep their ordinal order, and a step inside a nested step follows it', () => {
+    const items = [
+      { item_id: 'a', ordinal: 1 },
+      { item_id: 'b', ordinal: 2 },
+      { item_id: 'c', ordinal: 3 },
+      { item_id: 'd', ordinal: 4, details: { within_item_id: 'a' } },
+      { item_id: 'e', ordinal: 5, details: { within_item_id: 'a' } },
+      { item_id: 'f', ordinal: 6, details: { within_item_id: 'd' } },
+    ];
+
+    expect(issueOrder(items).map((row) => row.item_id)).toEqual(['a', 'd', 'f', 'e', 'b', 'c']);
+  });
+
+  test('a within_item_id naming no step, the step itself, or a loop leaves the step at its own ordinal, and no step is lost', () => {
+    const items = [
+      { item_id: 'a', ordinal: 1 },
+      { item_id: 'b', ordinal: 2, details: { within_item_id: 'wti_missing' } },
+      { item_id: 'c', ordinal: 3, details: { within_item_id: 'c' } },
+      { item_id: 'd', ordinal: 4, details: { within_item_id: 'e' } },
+      { item_id: 'e', ordinal: 5, details: { within_item_id: 'd' } },
+      { item_id: 'f', ordinal: 6, details: { within_item_id: 42 } },
+      { item_id: 'g', ordinal: 7, details: null },
+    ];
+
+    expect(issueOrder(items).map((row) => row.item_id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+  });
+
+  test('the issue path issues, records and answers the steps in that order; the workout numbers them by their place', async () => {
+    given({
+      items: [
+        item(1, { block: 'warmup' }),
+        item(2, { block: 'conditioning' }),
+        item(3, { block: 'cooldown' }),
+        item(4, { block: 'warmup', details: { within_item_id: 'wti_1' } }),
+      ],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-1' },
+        'ref-2': { state: 'operational', operational: 'op-2' },
+        'ref-3': { state: 'operational', operational: 'op-3' },
+        'ref-4': { state: 'operational', operational: 'op-4' },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    // The cards, in the order the steps run.
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1', 'op-4', 'op-2', 'op-3']);
+    // The issued workout: numbered by place (every reader sorts by it and shows
+    // "Step N"); the template item each step came from is kept beside it.
+    const [, recorded] = mockRecordIssue.mock.calls[0];
+    expect(recorded.steps.map((step: { ordinal: number; template_item_id: string; block: string }) => [step.ordinal, step.template_item_id, step.block]))
+      .toEqual([[1, 'wti_1', 'warmup'], [2, 'wti_4', 'warmup'], [3, 'wti_2', 'conditioning'], [4, 'wti_3', 'cooldown']]);
+    // The answer and the audit keep each step's template step number, in issued order.
+    expect(result).toMatchObject({ outcome: 'issued' });
+    const steps = (result as { steps: { step: number; item_id: string }[] }).steps;
+    expect(steps.map((step) => [step.step, step.item_id])).toEqual([[1, 'wti_1'], [4, 'wti_4'], [2, 'wti_2'], [3, 'wti_3']]);
+    expect(mockAudit.mock.calls[0][0].details.steps.map((step: { step: number }) => step.step)).toEqual([1, 4, 2, 3]);
+  });
+
+  test('a template with no nested step is recorded with its own ordinals exactly as before, gaps included', async () => {
+    given({
+      items: [item(1), item(3)],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-1' },
+        'ref-3': { state: 'operational', operational: 'op-3' },
+      },
+    });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1', 'op-3']);
+    const [, recorded] = mockRecordIssue.mock.calls[0];
+    expect(recorded.steps.map((step: { ordinal: number; template_item_id: string }) => [step.ordinal, step.template_item_id]))
+      .toEqual([[1, 'wti_1'], [3, 'wti_3']]);
+  });
+
+  test('a nested step that already follows its parent moves nothing: the template ordinals are recorded, gaps included', async () => {
+    given({
+      items: [item(1), item(3), item(5, { details: { within_item_id: 'wti_3' } })],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-1' },
+        'ref-3': { state: 'operational', operational: 'op-3' },
+        'ref-5': { state: 'operational', operational: 'op-5' },
+      },
+    });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1', 'op-3', 'op-5']);
+    const [, recorded] = mockRecordIssue.mock.calls[0];
+    expect(recorded.steps.map((step: { ordinal: number; template_item_id: string }) => [step.ordinal, step.template_item_id]))
+      .toEqual([[1, 'wti_1'], [3, 'wti_3'], [5, 'wti_5']]);
   });
 });
