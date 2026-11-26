@@ -19,7 +19,6 @@ import {
   LAB_LABEL,
   ROOM_PLACE_LABEL,
   ROOM_PLACE_ORDER,
-  roomPlaceOf,
   searchGroupOf,
   searchGroups,
   type RoomPlace,
@@ -360,9 +359,11 @@ export default function CardCatalog() {
   const doors = useMemo(() => {
     if (!trimmed) return grouped.flatMap((group) => group.doors);
     const allowed = new Set(openDoors.map((door) => door.href));
+    // The room as Search shows it: a page filed under Home or Lab shows no room,
+    // so it is never matched by a room's name (OW27-41 A: the name shown).
     const roomNameOf = (href: string) => {
-      const place = roomPlaceOf(href);
-      return place ? roomNames.place(place) : null;
+      const group = searchGroupOf(href, role);
+      return group && group !== 'home' && group !== 'lab' ? roomNames.place(group) : null;
     };
     return searchDoors(role, query, roomNameOf).filter((door) => allowed.has(door.href));
   }, [trimmed, grouped, openDoors, role, query, roomNames]);

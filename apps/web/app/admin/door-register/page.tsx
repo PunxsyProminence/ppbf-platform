@@ -6,13 +6,13 @@ import ChromeLink from '@/components/ChromeLink';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import {
   ROOM_BLURB,
-  ROOM_LABEL,
   doorsByRoom,
   visibleDoors,
 } from '@/components/buildingMap';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
 import BackHome from '@/components/BackHome';
+import { useRoomNames } from '@/src/client/roomNames';
 
 /**
  * THE DOOR REGISTER — a map of the building, NOT a window into an account.
@@ -132,6 +132,10 @@ export default function DoorRegisterPage() {
      links and nothing else. */
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const viewerRole = session?.role ?? null;
+  /* The 7 rooms' names in the gym's own words (lane W4-9, RN-2; OW27-40 A).
+     Read once for the READER's own gym with the reader's own session, never
+     for the previewed role (Overwatch's Q-H A on #2212). */
+  const roomNames = useRoomNames();
 
   /* The previewed role. Local state, and local state only: previewing does not
      touch the stored session, so the corridor, the session bar and every API
@@ -261,7 +265,7 @@ export default function DoorRegisterPage() {
                   {groups.map((group) => (
                     <div key={group.room} className="flex flex-wrap items-baseline gap-[var(--s2)]">
                       <dt className="t-label">
-                        {ROOM_LABEL[group.room]} · {group.doors.length}
+                        {roomNames.room(group.room)} · {group.doors.length}
                       </dt>
                       <dd className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         {ROOM_BLURB[group.room]}
@@ -295,7 +299,7 @@ export default function DoorRegisterPage() {
                         const readerCanOpen = openToViewer.has(door.href);
                         return (
                           <tr key={door.href}>
-                            <td>{ROOM_LABEL[group.room]}</td>
+                            <td>{roomNames.room(group.room)}</td>
                             <td>
                               {readerCanOpen ? (
                                 /* Underline stated, ink inherited. The base

@@ -11,7 +11,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react';
 
 import { searchDoors, visibleDoors } from './buildingMap';
-import { LAB_LABEL, ROOM_PLACE_LABEL, ROOM_PLACE_ORDER, roomPlaceOf, searchGroups, type RoomPlace } from './roomPlaces';
+import { LAB_HREFS, LAB_LABEL, ROOM_PLACE_LABEL, ROOM_PLACE_ORDER, roomPlaceOf, searchGroups, type RoomPlace } from './roomPlaces';
 import { resetRoomNamesForTests } from '@/src/client/roomNames';
 
 let pathname = '/dashboard';
@@ -25,7 +25,9 @@ jest.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-const SESSION = { role: 'coach', expiresAt: 8.64e15 };
+const COACH = { role: 'coach', expiresAt: 8.64e15 };
+const ADMIN = { role: 'admin', expiresAt: 8.64e15 };
+let SESSION = COACH;
 jest.mock('./roleSession', () => ({
   subscribeRoleSession: () => () => {},
   getRoleSessionSnapshot: () => SESSION,
@@ -69,6 +71,7 @@ async function settle() {
 beforeEach(() => {
   resetRoomNamesForTests();
   pathname = '/dashboard';
+  SESSION = COACH;
 });
 
 afterEach(() => {
@@ -144,6 +147,27 @@ describe('on screen', () => {
     const offered = Array.from(dialog.querySelectorAll('li[role="option"] code')).map((code) => code.textContent ?? '');
     expect(offered.sort()).toEqual([...hrefs].sort());
     expect(dialog.textContent).toContain(`in ${NEW_NAME}`);
+  });
+
+  test('for the admin, a page filed under Lab is never found by its underlying room\'s name (it shows "Lab", not the room)', async () => {
+    SESSION = ADMIN;
+    const lab = visibleDoors('admin').map((door) => door.href).filter((href) => LAB_HREFS.has(href) && roomPlaceOf(href));
+    expect(lab.length).toBeGreaterThan(0);
+    const place = roomPlaceOf(lab[0])!;
+    serveNames({ [`place:${place}`]: { name: NEW_NAME, is_default: false } });
+    render(<CardCatalog />);
+    await settle();
+    act(() => {
+      fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    });
+    const dialog = screen.getByRole('dialog');
+    act(() => {
+      fireEvent.change(dialog.querySelector('input') as HTMLInputElement, { target: { value: 'qqqq' } });
+    });
+    const offered = Array.from(dialog.querySelectorAll('li[role="option"] code')).map((code) => code.textContent ?? '');
+    expect(offered.filter((href) => LAB_HREFS.has(href))).toEqual([]);
+    // What it does find is filed under that room, by the name shown.
+    for (const href of offered) expect(roomPlaceOf(href)).toBe(place);
   });
 
   test('the empty-state hint names rooms in the gym\'s words', async () => {
