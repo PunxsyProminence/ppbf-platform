@@ -20,7 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
-| OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, before any W4 screen has merged | PRIMARY |  |  |
+| OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, with no screen changed since the last release | PRIMARY |  |  |
 | OD-2026-11-25-005 | 2026-11-25 | W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@ | PRIMARY |  |  |
 | OD-2026-11-25-004 | 2026-11-25 | Release of main `f7d951bf` to production, and the W4 lanes move to admin@ | PRIMARY |  |  |
 | OD-2026-11-25-003 | 2026-11-25 | Usage plan: the W4 lanes go to admin@ when the desktop account runs low, and admin@'s free Full reset is used; the Fable reset is not | PRIMARY |  | yes |
@@ -671,7 +671,7 @@ and should not try to.
 
 ---
 
-## OD-2026-11-26-001 -- Release of main `13a17485` to production now, before any W4 screen has merged
+## OD-2026-11-26-001 -- Release of main `13a17485` to production now, with no screen changed since the last release
 
 **Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
 
