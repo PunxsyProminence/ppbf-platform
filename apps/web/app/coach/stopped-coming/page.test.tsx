@@ -814,6 +814,56 @@ describe('the "reached out" mark', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
   });
 
+  test('a take-back whose check-read is answered 401: the status line says the outcome, then the signed-out stamp', async () => {
+    const fetchImpl = scriptedFetch({ body: firstMarked(MARK) }, { status: 401, body: {} });
+    await renderPage(fetchImpl);
+    await press(markButton(row(0)));
+
+    await waitFor(() => expect(document.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('signed_out'));
+    expect(puts(fetchImpl)).toHaveLength(0);
+    expect(announced()).toBe(
+      'The mark on Rosa D. could not be checked, so nothing was taken back. '
+      + 'SIGNED OUT: Your session ended — sign in again to read who has stopped coming.',
+    );
+  });
+
+  test('a PUT answered 200 whose read after it is answered 403: the status line says the outcome, then the wrong-door stamp as a read', async () => {
+    const fetchImpl = scriptedFetch({ body: LIST }, { body: { ok: true, outcome: 'marked' } }, { status: 403, body: {} });
+    await renderPage(fetchImpl);
+    await press(markButton(row(0)));
+
+    await waitFor(() => expect(document.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('wrong_door'));
+    expect(announced()).toBe(
+      'Rosa D. was marked as reached out. The list could not be read again. '
+      + 'WRONG DOOR: Not available for this role — who has stopped coming is read by a coach or the gym admin of this gym.',
+    );
+    // The PUT was not refused: the stamp keeps the reading words, on the page and in the status line.
+    expect(pageText()).not.toContain('marking who was reached out');
+    expect((document.querySelector('[data-refusal-stamp]') as HTMLElement).textContent)
+      .toContain('who has stopped coming is read by a coach or the gym admin of this gym.');
+  });
+
+  test.each([
+    ['a read after the PUT that fails', 'mark', [{ body: { ok: true, outcome: 'marked' } }, { status: 500, body: {} }]],
+    ['a read after the PUT answered 403', 'mark', [{ body: { ok: true, outcome: 'marked' } }, { status: 403, body: {} }]],
+    ['a check-read answered 401', 'take back', [{ status: 401, body: {} }]],
+  ] as Array<[string, 'mark' | 'take back', Reply[]]>)(
+    'after %s (%s), the header shows none of the old list\'s values: the gym’s number of days, and no "As of"',
+    async (_label, action, replies) => {
+      const fetchImpl = scriptedFetch({ body: action === 'mark' ? LIST : firstMarked(MARK) }, ...replies);
+      await renderPage(fetchImpl);
+      // While the list is shown, its values are.
+      expect(pageText()).toContain('have not come for 2 weeks or more');
+      expect(pageText()).toContain(`As of ${formatCalendarDay('2026-03-10')}.`);
+      await press(markButton(row(0)));
+
+      await waitFor(() => expect(screen.queryAllByRole('listitem')).toHaveLength(0));
+      await waitFor(() => expect(announced()).not.toBe(''));
+      expect(pageText()).toContain('have not come for the gym’s number of days or more');
+      expect(pageText()).not.toMatch(/2 weeks|As of|so the default|own setting/);
+    },
+  );
+
   test.each([
     ['no reached_out field', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30 }],
     ['a mark with no day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Ana T.' } }],

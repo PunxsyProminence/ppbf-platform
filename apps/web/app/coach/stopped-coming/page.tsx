@@ -257,8 +257,11 @@ function ReachedOutMark({ athlete, busy, onPress }: {
 export default function CoachStoppedComingPage() {
   const [list, setList] = useState<StoppedComingList | null>(null);
   const [refused, setRefused] = useState<PageRefusal | null>(null);
-  // Whether the page's refusal answered a PUT (true) or a read (false).
+  // Whether the page's refusal answered a PUT (true) or a read (false); it chooses the stamp's words.
   const [refusedByPress, setRefusedByPress] = useState(false);
+  // Whether the page's refusal came while a press ran (its PUT, its check-read, or the read after
+  // its PUT); the status line then reads the stamp's words.
+  const [refusedDuringPress, setRefusedDuringPress] = useState(false);
   const [failed, setFailed] = useState(false);
   // The athlete whose mark is on its way, and which step; every row's button waits for it.
   const [busy, setBusy] = useState<Busy | null>(null);
@@ -284,6 +287,7 @@ export default function CoachStoppedComingPage() {
       if (response.status === 401 || response.status === 403) {
         if (signal?.aborted) return null;
         setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
+        if (inFlight.current) setRefusedDuringPress(true);
         return null;
       }
       if (!response.ok) throw new Error('read failed');
@@ -340,6 +344,7 @@ export default function CoachStoppedComingPage() {
     if (response.status === 401 || response.status === 403) {
       setRefused(response.status === 401 ? 'signed_out' : 'wrong_door');
       setRefusedByPress(true);
+      setRefusedDuringPress(true);
       return null;
     }
     // A body that is not JSON (a 204's empty one included) reads as null.
@@ -398,15 +403,16 @@ export default function CoachStoppedComingPage() {
     }
   };
 
-  const gap = list ? gapWords(list.gap_days) : null;
+  // The list is shown once read, unless a read has failed or a page stamp shows; its values are shown only then.
+  const listShown = list !== null && !failed && !refused;
+  const gap = listShown ? gapWords(list.gap_days) : null;
   // The pressed athlete's row, while it is listed and the list is shown; otherwise the outcome shows at the top.
-  const outcomeRow = outcome && list && !refused && !failed
+  const outcomeRow = outcome && listShown
     && list.athletes.some((listed) => listed.athlete_id === outcome.athleteId) ? outcome.athleteId : null;
-  // The status line: a PUT answered 401 or 403 reads the page stamp's words; any other press, its outcome.
-  // A refused first read leaves it empty, as before: the page stamp shows alone.
-  const spoken = refused && refusedByPress
-    ? stampWords(refused, pageStampDetail(refused, true))
-    : outcome ? spokenWords(outcome) : '';
+  // The status line: the press's outcome, if any, then the page stamp's words when the stamp was set
+  // while a press ran. A refused first read leaves it empty: the page stamp shows alone.
+  const stampSpoken = refused && refusedDuringPress ? stampWords(refused, pageStampDetail(refused, refusedByPress)) : '';
+  const spoken = [outcome ? spokenWords(outcome) : '', stampSpoken].filter((words) => words !== '').join(' ');
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -425,7 +431,7 @@ export default function CoachStoppedComingPage() {
               ended. Coming means a present day on a class register, or a &ldquo;here&rdquo; tap the register
               does not hold: open gym, or a class where the tap made no register mark, or that was cancelled.
             </p>
-            {list && !failed ? (
+            {listShown ? (
               <p className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-400)]">
                 {list.is_default
                   ? `The gym has not set its own number of days, so the default, ${gap}, applies.`
@@ -437,7 +443,7 @@ export default function CoachStoppedComingPage() {
 
           {/* Always mounted, so what is put into it is announced (SessionRunPresence's status line). It
               reads every press's outcome, a refusal included, since the copy under a row is aria-hidden;
-              and the page stamp's words after a PUT answered 401 or 403. */}
+              and, after it, the page stamp's words when the stamp was set while a press ran. */}
           <p role="status" className="sr-only">{spoken}</p>
           {/* A press's outcome stays until the next press (Law 7: a refusal is a stamp, not dismissed).
               Here when the pressed athlete's row is not shown; not aria-hidden, as focus may be sent here. */}
