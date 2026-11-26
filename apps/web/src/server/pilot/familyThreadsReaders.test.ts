@@ -21,11 +21,15 @@ const repoRoot = path.resolve(__dirname, '../../../../..');
 
 /** Every non-test file naming either table, as of this PR. */
 const TABLE_FILES: readonly string[] = [
+  // EM-IX-2 (lane W4-1, OVERWATCH 7188512792 on #2217): an index on created_at and its runner's
+  // readiness check, which reads the catalog only; they read no row.
+  'apps/web/scripts/pilot-apply-email-alert-sweep-indexes-2-migration.mjs',
   'apps/web/scripts/pilot-apply-family-threads-migration.mjs',
   // EM-4c (lane W4-1, OVERWATCH 7188512792 on #2217): the guardian_message email source reads a
   // post's gym, athlete, author role, id and time, and whether a staff member has a read row; never the text.
   'apps/web/src/server/pilot/emailAlertEvents.ts',
   'apps/web/src/server/pilot/familyThreads.ts',
+  'infra/azure/pilot_slice_postgres_email_alert_sweep_indexes_2_migration.sql',
   'infra/azure/pilot_slice_postgres_family_threads_migration.sql',
 ];
 
