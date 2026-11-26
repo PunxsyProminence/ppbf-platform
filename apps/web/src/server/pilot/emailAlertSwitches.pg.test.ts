@@ -789,15 +789,17 @@ describe('emailAlertSwitches.ts on a real database', () => {
   });
 
   // OVERWATCH 7182466510: sign-in switched off (T-3 A) or a role with no switch (T-2 A) only
-  // pauses a switch that is on, so a save that races it is refused and writes nothing; a role of
-  // another user type retires it (T-1 A).
+  // pauses a switch that is on, so a save that races it is refused and writes nothing. A role
+  // of another user type retires it only through a read or write under the new type (T-1 A):
+  // this save is still the coach's, so it too is refused only, and the parent's first read
+  // retires the row (the type-change test above).
   test.each([
-    ['the login switched off', 'kept', 'update pilot.accounts set active_flag = false where account_id = $1'],
-    ['the login deleted', 'kept', 'update pilot.accounts set deleted_at = now() where account_id = $1'],
-    ['the membership switched off', 'kept', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = '${ORG_ID}'`],
-    ['the membership made a volunteer', 'kept', `update pilot.organization_memberships set role = 'volunteer' where account_id = $1 and organization_id = '${ORG_ID}'`],
-    ['the membership made a parent', 'retired', `update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = '${ORG_ID}'`],
-  ] as const)('a coach with email on, %s while a save waits: 403, and the switch is %s', async (_label, after, change) => {
+    ['the login switched off', 'update pilot.accounts set active_flag = false where account_id = $1'],
+    ['the login deleted', 'update pilot.accounts set deleted_at = now() where account_id = $1'],
+    ['the membership switched off', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = '${ORG_ID}'`],
+    ['the membership made a volunteer', `update pilot.organization_memberships set role = 'volunteer' where account_id = $1 and organization_id = '${ORG_ID}'`],
+    ['the membership made a parent', `update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = '${ORG_ID}'`],
+  ] as const)('a coach with email on, %s while a save waits: 403, nothing written, the switch kept', async (_label, change) => {
     const client = await freshDatabase('emailsw_on_race');
     activeClient = client;
     activePool = new Pool({ connectionString: connectionStringFor('emailsw_on_race'), max: 4 });
@@ -829,14 +831,31 @@ describe('emailAlertSwitches.ts on a real database', () => {
       } finally {
         office.release(true);
       }
-      const reasons = (await auditRows(client)).map((row) => row.details.reason ?? 'save');
-      if (after === 'kept') {
-        expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: true, has_off_at: false })]);
-        expect(reasons).toEqual(['save']);
-      } else {
-        expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: false, has_off_at: true })]);
-        expect(reasons).toEqual(['save', 'user_type_changed']);
-      }
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: true, has_off_at: false })]);
+      // Only the first save's audit row.
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a switch-on under the new type that ends in a 409 still retires the row left on under another type (T-1 A; reviewer A)', async () => {
+    const client = await freshDatabase('emailsw_retype_409');
+    activeClient = client;
+    try {
+      // A row saved on while this account was a parent (no address: the table allows one only on an adult athlete's row).
+      await client.query(
+        `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at)
+         values ($1, $2, 'parent', true, now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      await expect(setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW)).rejects.toMatchObject({ status: 409 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: ADULT_ID, user_type: 'parent', switched_on: false, has_off_at: true,
+      })]);
+      expect((await auditRows(client)).map((row) => row.details)).toEqual([
+        { user_type: 'parent', switched_on: false, previous_switched_on: true, address_cleared: false, reason: 'user_type_changed' },
+      ]);
     } finally {
       await client.end();
     }

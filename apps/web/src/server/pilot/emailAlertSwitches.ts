@@ -7,8 +7,12 @@
  * ('parent'), and athletes 18 or over ('adult_athlete'), judged on the athlete
  * record linked to this account; no date of birth counts as a minor
  * (OD-2026-10-04-010). Anyone else gets `{ offered: false }` and nothing more
- * (no new warning, L1 rule); a row left from when they were offered one is
- * switched off and its address cleared then (retireSwitchIfAny).
+ * (no new warning, L1 rule). What a later change does to a switch already on is
+ * retireReason's: an athlete now under 18, with no date of birth, or whose
+ * record is deleted or unlinked, and a person whose user type has changed, have
+ * the row switched off and its address cleared at their next own read or write
+ * (retireSwitchIfAny); sign-in switched off and a role with no switch only
+ * pause it (OVERWATCH 7182466510 on #2169).
  *
  * An adult athlete cannot switch on before an address is confirmed (OW27-38 B;
  * GO on #2159, condition 3); the table's CHECK refuses it too. Every change is
@@ -188,7 +192,7 @@ async function lockPerson(
     userType,
     gymActive: gym.rows[0]?.status === 'active',
     stored,
-    retire: retireReason(stored, adult, memberType),
+    retire: retireReason(stored, adult, memberType, candidate),
   };
 }
 
@@ -208,19 +212,24 @@ type RetireReason = 'no_longer_offered' | 'user_type_changed';
  *   - a role with no switch (volunteer, board, the 'staff' role): kept, paused
  *     (T-2 A). The route refuses these roles before the store anyway;
  *   - a role of another user type (staff to parent or back): retired as
- *     user_type_changed (T-1 A). A change and back with no own read between
- *     keeps it: it was never shown off, and nothing was sent meanwhile;
+ *     user_type_changed (T-1 A), by a read or write under the new type only
+ *     (`sessionType` is the type the request is made under). A request still
+ *     under the old type, from a session left over a role change (role writers
+ *     end sessions), is refused and leaves the row for that read. A change and
+ *     back with no own read between keeps it: it was never shown off, and
+ *     nothing was sent meanwhile;
  *   - otherwise kept.
  */
 function retireReason(
   stored: SwitchRow | undefined,
   adult: boolean | null,
   memberType: EmailAlertUserType | null,
+  sessionType: EmailAlertUserType | null,
 ): RetireReason | null {
   if (!stored || (!stored.switched_on && !stored.holds_address)) return null;
   if (adult === false) return 'no_longer_offered';
-  if (memberType === null) return null;
-  return memberType === stored.user_type ? null : 'user_type_changed';
+  if (memberType === null || memberType === stored.user_type) return null;
+  return memberType === sessionType ? 'user_type_changed' : null;
 }
 
 function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Record<string, unknown>) {
@@ -243,7 +252,8 @@ function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Re
  * their next own read or write, the lazy clean-up the escalations read does for
  * ended holds. So does someone whose user type has changed (staff to parent or
  * back, T-1 A on #2169): the row left under the other type is switched off, so
- * an old opt-in never comes back with a later change back. Sign-in switched off
+ * once they have read or saved under the new type, an old opt-in does not come
+ * back with a later change back. Sign-in switched off
  * and a role with no switch only pause it (retireReason). Every case is decided
  * again under the retire's own locks (lockPerson), so a person offered that
  * row's type again by then keeps it. The sender (EM-3) re-checks every person
@@ -299,7 +309,8 @@ export async function readEmailAlertSwitch(
   );
   const row = await readRow();
   // A row left on, or holding an address, under another user type is retired
-  // now (T-1 A on #2169): the page never shows off while a row is on.
+  // now (T-1 A on #2169), so what the page shows off is off. (A sign-in switched
+  // off while this waits keeps it, paused: retireReason.)
   if (row && row.user_type !== userType && (row.switched_on || row.holds_address)) {
     await retireSwitchIfAny(subject, now);
     return stateFrom(userType, await readRow());
@@ -321,6 +332,7 @@ export async function setEmailAlertSwitch(
     throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
   }
 
+  let retiredFirst = false;
   const saved = await withTransaction(async (client) => {
     // Everything the save rests on, again under its own locks (lockPerson):
     // nothing is written unless the person is still offered this user type.
@@ -329,10 +341,12 @@ export async function setEmailAlertSwitch(
     const { userType: underLock, gymActive, stored, retire } = await lockPerson(client, subject, now);
     if (underLock !== userType || (switchedOn && !gymActive)) return null;
     // A row left on under another user type is retired first (T-1 A), so the
-    // save starts from off, under the new type.
+    // save starts from off, under the new type. A 409 below rolls this back
+    // with the save; it is then made again on its own (the catch after).
     let current = stored;
     if (stored && retire === 'user_type_changed') {
       await retireRow(client, subject, stored, retire);
+      retiredFirst = true;
       current = { ...stored, switched_on: false, address_confirmed: false, holds_address: false };
     }
     try {
@@ -352,11 +366,17 @@ export async function setEmailAlertSwitch(
       }
       throw error;
     }
+  }).catch(async (error: unknown) => {
+    // A write under the new type that ends in a 409 (an adult athlete's row
+    // retyped has no confirmed address) still retires the old row (T-1 A).
+    if (retiredFirst && error instanceof ConflictError) await retireSwitchIfAny(subject, now);
+    throw error;
   });
   if (saved) return saved;
   // Refused under the locks. The retire decides again under its own: a record
-  // gone, under 18 or a changed user type retires the row; sign-in switched off
-  // or a role with no switch leaves it as it was (T-2 A, T-3 A).
+  // gone or under 18, or a user type changed to the one this request is made
+  // under, retires the row; sign-in switched off, a role with no switch, or a
+  // request still under the old type leaves it as it was (T-1 A to T-3 A).
   await retireSwitchIfAny(subject, now);
   throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
 }
