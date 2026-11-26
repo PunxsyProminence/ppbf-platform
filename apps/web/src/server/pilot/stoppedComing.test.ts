@@ -66,10 +66,13 @@ let marksRows: Array<{ athlete_id: string; last_day: string }> = [];
 /** The athlete's active_flag as the mark's transaction reads it; null: no row. */
 let activeFlag: boolean | null = true;
 const FLAG = 'select active_flag from pilot.athletes';
+/** The mark's hold on the athlete's membership rows (Codex on #2206). */
+const MEMBERSHIP_LOCK = 'select 1 from pilot.program_memberships where organization_id = $1 and athlete_id = any($2::text[]) for share';
 /** The mark write's transaction client: the list check's two reads and the here-marks read. */
 const txClient = {
   query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]]>(async (sql) => {
     if (String(sql).includes(FLAG)) return { rows: activeFlag === null ? [] : [{ active_flag: activeFlag }] };
+    if (String(sql) === MEMBERSHIP_LOCK) return { rows: [] };
     if (String(sql).includes(MEMBERSHIPS)) return { rows: membershipRows };
     if (String(sql).includes(MARKS)) return { rows: marksRows };
     throw new Error(`test bug: an unexpected read on the transaction: ${sql}`);
@@ -313,14 +316,18 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).resolves.toBe('marked');
 
       const [flag] = onTx(FLAG);
+      const [membershipLock] = onTx(MEMBERSHIP_LOCK);
       const [membership] = onTx(MEMBERSHIPS);
       const [marks] = onTx(MARKS);
       expect(flag.call[1]).toEqual(['org-1', 'a-1']);
+      // Codex on #2206: the athlete's membership rows are held FOR SHARE, on the transaction, before they are read.
+      expect(membershipLock.call[1]).toEqual(['org-1', ['a-1']]);
       expect(membership.call[1]).toEqual(['org-1', ['a-1']]);
       const order = [
         mockLockMembership.mock.invocationCallOrder[0],
         mockLockAthlete.mock.invocationCallOrder[0],
         flag.order,
+        membershipLock.order,
         membership.order,
         mockRegister.mock.invocationCallOrder[0],
         marks.order,

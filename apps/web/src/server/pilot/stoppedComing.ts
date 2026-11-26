@@ -131,6 +131,14 @@ async function athletesWithNoActiveMembership(
   type Row = { athlete_id: string };
   const read = async (text: string, params: unknown[]): Promise<Row[]> =>
     (client ? (await client.query<Row>(text, params)).rows : query<Row>(text, params));
+  if (client) {
+    // On a mark's transaction, hold these membership rows until the mark commits (Codex on #2206):
+    // a status change waits for it, and one already in flight is waited for and then read.
+    await client.query(
+      'select 1 from pilot.program_memberships where organization_id = $1 and athlete_id = any($2::text[]) for share',
+      [organizationId, [...athleteIds]],
+    );
+  }
   const rows = await read(
     `select pm.athlete_id
        from pilot.program_memberships pm

@@ -743,4 +743,45 @@ describe('listStoppedComing on a real database', () => {
     );
     expect(audits.rows).toEqual([{ athlete_id: 'ola' }]);
   });
+
+  // Codex on #2206 (P2): an admin lapsing the athlete's last active membership while the mark's
+  // transaction runs must not leave a mark for an athlete no longer on the list. The mark holds the
+  // membership rows FOR SHARE: a lapse not yet committed makes the mark wait, and once it commits the
+  // mark reads it and is refused. Without the lock the mark reads the old row at once and is written.
+  test('a membership lapse in flight while the mark runs is waited for and refuses the mark (409), nothing written', async () => {
+    const gym = await newGym('race-membership');
+    const today = (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    await addAthlete(gym, 'liv', 'Liv Lapsing');
+    await registerDay(gym, 'liv', day(-40), 'present');
+    await programMembership(gym, 'liv', 'Youth Boxing', 'active');
+    const markerPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    const admin = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await admin.connect();
+    try {
+      await admin.query('BEGIN');
+      await admin.query(
+        `update pilot.program_memberships set status = 'lapsed' where organization_id = $1 and athlete_id = $2`,
+        [gym.organizationId, 'liv'],
+      );
+      const marking = setStoppedComingReachedOut(gym.coach, 'liv', true, today).then(
+        (outcome) => ({ outcome }),
+        (error: { status?: number; code?: string }) => ({ status: error.status, code: error.code }),
+      );
+      for (let attempt = 0; ; attempt += 1) {
+        await admin.query('select pg_stat_clear_snapshot()');
+        const { rows } = await admin.query('select wait_event_type, query from pg_stat_activity where pid = $1', [markerPid]);
+        if (rows[0]?.wait_event_type === 'Lock' && /program_memberships/.test(rows[0].query)) break;
+        if (attempt > 400) throw new Error('the mark never waited on the membership rows');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await admin.query('COMMIT');
+      await expect(marking).resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' });
+    } finally {
+      await admin.query('ROLLBACK').catch(() => {});
+      await admin.end();
+    }
+    const marks = await client.query('select count(*)::int as n from pilot.athlete_reached_out_marks where organization_id = $1', [gym.organizationId]);
+    expect(marks.rows).toEqual([{ n: 0 }]);
+  });
 });
