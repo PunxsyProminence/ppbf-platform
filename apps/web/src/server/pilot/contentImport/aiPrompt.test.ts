@@ -91,9 +91,11 @@ describe('the workout intake prompt asks for what the upload accepts', () => {
           expect(prompt).toContain(`one of: ${VOCABULARIES[column.vocabulary].values.join(', ')}`);
         }
       }
-      for (const rule of [...(spec.unique ?? []), ...(spec.rowRules ?? []), ...(spec.groupRules ?? [])]) {
+      for (const rule of [...(spec.unique ?? []), ...(spec.rowRules ?? []), ...(spec.groupRules ?? []).filter((r) => r.inPrompt !== false)]) {
         expect(prompt).toContain(rule.description);
       }
+      // A rule about a column the prompt does not offer (the nested-step link names an item_id) stays out of it.
+      for (const rule of (spec.groupRules ?? []).filter((r) => r.inPrompt === false)) expect(prompt).not.toContain(rule.description);
     }
     expect(prompt).toContain('duration_minutes (required): a whole number, 1 to 180.');
     expect(prompt).toContain('duration_minutes (optional): a whole number, 1 to 90.');

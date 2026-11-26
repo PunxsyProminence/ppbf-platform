@@ -537,11 +537,19 @@ describe('the committed youth + recreational rows', () => {
     wtp_ed57bea28de0f7: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 5-8 (TL-1b)
     wtp_d861f584584788: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 9-12 (TL-1b)
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (test run 4-5) (TL-2)
+    wtp_1ad3c846b03ecc: [1, 2, 9, 10, 11], // Friday Sparring Coach Sheet (TL-3a)
+    wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday Gold Standard Coach Script (TL-3b)
+    wtp_456e418b1741b8: [6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
   };
-  // Of those, the steps that also took their own clock time (details.block_time) as duration_minutes (Codex P1 and
-  // App Overwatch on #2177): the export would blank that cell too.
+  // Of those, the steps that also took their own stated time (details.block_time, or minutes in the block_title) as
+  // duration_minutes (Codex P1 and App Overwatch on #2177): the export would blank that cell too.
   const LANE_W48_DURATIONS: Record<string, number[]> = {
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+    wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
+    wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b)
+    wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
   };
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {

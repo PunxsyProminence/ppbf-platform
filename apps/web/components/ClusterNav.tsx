@@ -29,6 +29,8 @@ export const COACH_CLUSTERS = {
     '/coach/intelligence',
     '/coach/performance-analytics',
     '/coach/passbook-gaps',
+    // Lane W4-6, SC-2 (Overwatch, W4-6 Q5 A).
+    '/coach/stopped-coming',
     '/coach/athlete-intelligence',
     '/coach/decision-loop',
   ],
