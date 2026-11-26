@@ -115,13 +115,25 @@ export function normalizeRoomName(raw: unknown): RoomNameInput {
 }
 
 /**
+ * Case folding, as Unicode's full case folding does it, from what JavaScript
+ * has (Codex on #2214: toLowerCase alone lets "STRASSE" beside "Strasse" with
+ * the sharp s, and two Greek sigma forms, through as different names).
+ * Upper-casing first applies the special cases (the sharp s to "SS"); then
+ * lower-casing. The Turkish dotless i is kept apart, as folding keeps it: it
+ * reads differently from "i". NFC again after, as the fold can split letters.
+ */
+function foldCase(text: string): string {
+  return text.replace(/\u0131/g, '\ue000').toUpperCase().toLowerCase().replace(/\ue000/g, '\u0131').normalize('NFC');
+}
+
+/**
  * How two names are compared for Q-B's duplicate rule (trimmed and
  * case-insensitive), so that two names that read the same on screen count as
  * one (Q-B A's own text: "two Search groups can never read the same"):
- * invisible formatting is dropped, and every run of spaces of any kind (a
- * browser shows two spaces, or a non-breaking space, as one) becomes one
- * space. Only the comparison changes; the name is stored as given.
+ * invisible formatting is dropped, every run of spaces of any kind (a browser
+ * shows two spaces, or a non-breaking space, as one) becomes one space, and
+ * case is folded. Only the comparison changes; the name is stored as given.
  */
 export function roomNameCompareKey(name: string): string {
-  return name.normalize('NFC').replace(INVISIBLE_FORMAT, '').replace(/\s+/gu, ' ').trim().toLowerCase();
+  return foldCase(name.normalize('NFC').replace(INVISIBLE_FORMAT, '').replace(/\s+/gu, ' ').trim());
 }

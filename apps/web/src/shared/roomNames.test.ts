@@ -102,6 +102,19 @@ describe('normalizeRoomName (Q-C A)', () => {
     expect(roomNameCompareKey('The Rings')).not.toBe('the ring');
   });
 
+  test('case is folded the Unicode way (Codex on #2214), and letters that read differently stay apart', () => {
+    const same = (a: string, b: string) => roomNameCompareKey(a) === roomNameCompareKey(b);
+    // Greek capital sigma, small sigma and final sigma.
+    expect(same('\u039f\u03a3', '\u03bf\u03c3')).toBe(true);
+    expect(same('\u03bf\u03c2', '\u03bf\u03c3')).toBe(true);
+    // The sharp s folds to "ss".
+    expect(same('Stra\u00dfe', 'STRASSE')).toBe(true);
+    // The Turkish dotless i, an accent, and a different word do not fold together.
+    expect(same('K\u0131l\u0131c', 'Kilic')).toBe(false);
+    expect(same('Caf\u00e9', 'Cafe')).toBe(false);
+    expect(same('Lobby', 'Lobbies')).toBe(false);
+  });
+
   test('takes up to 40 characters, counted as code points', () => {
     expect(ROOM_NAME_MAX_LENGTH).toBe(40);
     expect(normalizeRoomName('x'.repeat(40))).toEqual({ ok: true, name: 'x'.repeat(40) });
