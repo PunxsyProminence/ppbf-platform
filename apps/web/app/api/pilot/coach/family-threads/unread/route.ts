@@ -1,8 +1,9 @@
 // GET /api/pilot/coach/family-threads/unread -- per athlete, how many guardian
 // messages this staff member has not seen (W4 item 4, Q4.5 A): the child's
-// coach and active covering coaches (athleteIdsForCoach), organization admins
-// and admins across the gym, as /api/pilot/escalations scopes. Ids and counts
-// only; the decision loop names the athletes from its own roster.
+// coach and active covering coaches (athleteIdsForCoach's rule, read inside the
+// counting statement), organization admins and admins across the gym, as
+// /api/pilot/escalations scopes. Ids and counts only; the decision loop names
+// the athletes from its own roster.
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
@@ -70,9 +70,14 @@ export default function FamilyThreadsForStaff({
   // A reply that failed for another athlete than the one on screen: told here until the coach goes back.
   const [elsewhere, setElsewhere] = useState<{ athleteId: string; text: string } | null>(null);
   const seq = useRef(0);
-  // The athlete on screen now, for a reply that answers after a switch.
+  // The athlete on screen now, for a reply that answers after a switch. Set in the commit that puts
+  // the athlete on screen (a layout effect), not in a passive effect: a reply's callback can run
+  // between that commit and the passive effects, and would then compare against the athlete before
+  // (Codex 4702043483 on #2204). Each async path carries the athlete it was started for: the list
+  // read (the sequence and the athlete tag on what it read), the seen record (its visit's own set),
+  // and the reply (sentFor, compared with this ref).
   const onScreen = useRef(athleteId);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onScreen.current = athleteId;
   }, [athleteId]);
   const listRef = useRef<HTMLDivElement>(null);
