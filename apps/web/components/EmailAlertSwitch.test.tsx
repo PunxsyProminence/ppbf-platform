@@ -6,10 +6,10 @@
  * The email alert switch on /profile (lane W4-1, EM-2).
  *
  * What must hold:
- *   - it is shown only to staff and parents the route offers a switch to;
- *     an athlete 18 or over waits for EM-2b (GO on #2159, condition 3), and an
- *     athlete under 18, a refused role or a failed first read see nothing at
- *     all (L1 rule: no new message, warning or gate);
+ *   - it is shown only to those the route offers a switch to; an athlete
+ *     under 18, a refused role or a failed first read see nothing at all (L1
+ *     rule: no new message, warning or gate). The adult athlete's part
+ *     (EM-2b-3) is EmailAlertAddress.test.tsx;
  *   - a save sends exactly { switched_on } to the self-scoped route, naming no
  *     account;
  *   - a failed save shows what the server holds, never what was asked for, and
@@ -212,7 +212,8 @@ test('pressing the choice already in force sends nothing', async () => {
 test.each([
   ['an athlete under 18 (not offered)', () => response({ ok: true, offered: false })],
   ['offered: false, whatever else the answer carries', () => response({ ok: true, offered: false, user_type: 'staff', switched_on: false })],
-  ['an athlete 18 or over (their switch comes with EM-2b)', offered('adult_athlete', false)],
+  // EM-2b-3: an adult athlete is shown the panel (EmailAlertAddress.test.tsx), but only with both address fields.
+  ['an adult athlete answer without address_confirmed and code_pending', offered('adult_athlete', false)],
   ['a role the route refuses (403)', () => response({ ok: false, error: 'Forbidden' }, 403)],
   ['a first read that fails (500)', () => response({ ok: false }, 500)],
   ['a first read that throws', () => Promise.reject(new Error('offline'))],
@@ -347,7 +348,7 @@ test('a save whose success cannot be read (a lost body, a captive portal page) r
   expect(gets).toHaveLength(2);
 });
 
-test('a save answered as not offered (now an athlete 18 or over, or no switch) takes the panel away at once, without reading again', async () => {
+test('a save answered with a state this panel cannot show (an adult athlete with no code_pending) takes the panel away at once, without reading again', async () => {
   const fetchMock = mockRoute([offered('parent', false), () => Promise.reject(new Error('offline'))], () =>
     response({ ok: true, offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false }));
   const { container } = render(<EmailAlertSwitch styles={STYLES} />);
