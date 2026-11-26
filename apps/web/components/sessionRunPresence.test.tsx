@@ -2417,7 +2417,12 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
   // reachable. Her notes stay on her row after the take-back lands, the words come back into the box,
   // and a sign-out takes that away with the words.
   test('a note refused as not present after the mark was taken back keeps its words reachable, until a drop', async () => {
-    await showLiveNotes({ account: () => 'acct-a', notePost: (n) => (n === 1 ? 'lost' : 'refused') });
+    let answerAccount: ((account: string) => void) | null = null;
+    let holdAccount = false;
+    await showLiveNotes({
+      account: () => (holdAccount ? new Promise<string>((resolve) => { answerAccount = resolve; }) : 'acct-a'),
+      notePost: (n) => (n === 1 ? 'lost' : 'refused'),
+    });
     await writeNote('Ada Reyes', 'Wrist taped.');
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Hide staff notes' }));
@@ -2435,18 +2440,37 @@ describe('refused live-floor notes kept by the list (W4 item 7, OQ-4)', () => {
     });
     expect(screen.getByText(ADA_SAID)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mark here Ada Reyes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeTruthy();
+    // While the page checks again who is signed in, her notes are not offered: it may be the next person.
+    holdAccount = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
+    holdAccount = false;
+    await act(async () => {
+      answerAccount?.('acct-a');
+      await jest.advanceTimersByTimeAsync(0);
+    });
     // Her notes are still on her row, and the words come back into the box.
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
       await jest.advanceTimersByTimeAsync(0);
     });
     expect((screen.getByLabelText(/New note/) as HTMLTextAreaElement).value).toBe('Wrist taped.');
-    // A sign-out takes the panel away with the words.
+    // A sign-out takes the panel away with the words, and the same coach back does not bring it back.
     await act(async () => {
       clearRoleSession();
     });
     expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Hide staff notes' })).toBeNull();
+    await act(async () => {
+      createPersistentRoleSession('coach');
+      window.dispatchEvent(new Event('focus'));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByRole('button', { name: 'Staff notes on Ada Reyes' })).toBeNull();
   });
 
   test('another account confirmed on this page clears the named lines and the kept words: nothing reaches the next person\'s box', async () => {
