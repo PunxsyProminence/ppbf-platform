@@ -570,7 +570,8 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'onTheFloor.ts#onTheFloorForFamily',
     ],
     note:
-      'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
+      'Which athletes a coach marked present in one session run (audit finding F-067). Staff only, but '
+      + 'for the one on-the-floor yes or no below: '
       + 'the delivering coach writes, while the run is live, with an active staff membership here AND '
       + 'assertActorCanAccessAthlete for that athlete; coach and organization admin of the gym read, '
       + 'and the read returns only live athletes of the caller\'s own organization, filtered in SQL '

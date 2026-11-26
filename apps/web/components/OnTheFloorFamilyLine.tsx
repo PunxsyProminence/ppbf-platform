@@ -6,7 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 /**
  * THE "ON THE FLOOR NOW" LINE, for a parent and an athlete (lane W4-3, FN-2;
  * W4 item 3, Jason Q3.2 A and Q3.4 A). It reads GET /api/pilot/on-the-floor
- * (onTheFloor.ts, onTheFloorForFamily) once, when the page opens; a refresh of
+ * (the family branch of onTheFloor.ts) once, when the page opens; a refresh of
  * the page reads it again. Nothing polls and nothing is pushed live (FN0-Q2 A).
  *
  * THE WORDS are Jason's (FN0-Q2 A, OD-2026-11-25-002) and App Overwatch's QA A

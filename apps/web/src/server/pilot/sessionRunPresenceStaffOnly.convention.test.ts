@@ -315,6 +315,14 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       "actor.role === 'parent' ? await guardianAthleteIds(organizationId, actor.accountId) : [actor.athleteId as string];",
     ]);
     expect(text).not.toMatch(/linkedAthleteIdsIncludingAdults/);
+    // What a family is given, pinned to its value and not only its field: the ids of the parent's own
+    // children who count, or the athlete's yes or no; never a name, time, run or source with it.
+    const familyBlock = text.slice(text.indexOf('export async function onTheFloorForFamily('));
+    expect(Array.from(familyBlock.matchAll(/return (\{[^\n]*\});/g), (match) => match[1])).toEqual([
+      "{ reader: 'parent', on_the_floor: [] }",
+      "{ reader: 'athlete', on_the_floor: ids.length === 1 && counted.has(ids[0]) }",
+      "{ reader: 'parent', on_the_floor: ids.filter((id) => counted.has(id)) }",
+    ]);
     // A family is never counted from a cancelled class, or a run tied to one (FN0-Q1 A; flag 9); staff are.
     expect(Array.from(text.matchAll(/countedAmong\(organizationId, ids, day, now, (true|false)\)/g), (match) => match[1])).toEqual(['false', 'true']);
     // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or

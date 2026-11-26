@@ -23,13 +23,17 @@ export const dynamic = 'force-dynamic';
  * every athlete id come from the session and the server's records, and query
  * fields are refused, so a request cannot name an athlete or a gym.
  *
- * A FAMILY'S FAILURE is one fixed text, whatever the cause, and carries no id
- * (FN-0 F15): the shared error helper can pass a message through.
+ * A FAMILY'S FAILURE, once the session is resolved as a parent's or an
+ * athlete's, is one fixed text whatever the cause, and carries no id (FN-0
+ * F15): the shared error helper can pass a message through. A refusal by the
+ * session gate itself comes first and keeps the gate's own message, which
+ * names no athlete.
  *
  * It reads the staff-only presence record and today's class register, and
- * settles idle runs first (onTheFloor.ts). This route path is not a family
- * one; sessionRunPresenceStaffOnly.convention.test.ts pins this route, its
- * module and these five roles as that record's one family-facing reader.
+ * settles idle runs first (onTheFloor.ts). Its path is outside the family
+ * paths sessionRunPresenceStaffOnly.convention.test.ts sweeps, so that test
+ * pins this route, its module and these five roles by name, as the record's
+ * one family-facing reader.
  */
 
 const ON_THE_FLOOR_READ_ROLES = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'] as const;
