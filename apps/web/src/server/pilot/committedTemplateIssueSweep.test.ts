@@ -312,9 +312,8 @@ const COACH_RUN: Record<string, number[]> = {
  * when its template's typed steps are drills. Template id -> its typed steps
  * (ordinals).
  */
-const TYPED_IN_MIXED: Record<string, number[]> = {
-  wtp_bc964fe230d8f3: [1, 2, 6, 9], // Phase 2 — Competitive Amateur — Archetype tactical session — vs. press
-};
+// Empty since lane W4-8's TL-5b: every typed step of the 11 mixed templates links a library drill.
+const TYPED_IN_MIXED: Record<string, number[]> = {};
 
 /**
  * Library drills that refuse the issue, each waiting on coach text: no
