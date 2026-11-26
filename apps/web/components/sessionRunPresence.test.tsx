@@ -836,10 +836,12 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await wait(RESEND_MS);
     expect(sent).toHaveLength(2);
     for (const call of sent) {
-      expect(call.body).toEqual({ athlete_id: 'ath-1', present: true, tapped_ms_ago: expect.any(Number), page_id: expect.any(String) });
+      expect(call.body).toEqual({ athlete_id: 'ath-1', present: true, tapped_ms_ago: expect.any(Number), page_id: expect.any(String), request_key: expect.any(String) });
       expect(call.signal).toBeInstanceOf(AbortSignal);
     }
     expect(sent[1].body.tapped_ms_ago as number).toBeGreaterThanOrEqual(RESEND_MS);
+    // The tap's own key, the same on the resend (OVERWATCH 7170099938 on #2178).
+    expect(sent[1].body.request_key).toBe(sent[0].body.request_key);
     expect(screen.getByText('1 marked here.')).toBeTruthy();
     expect(waitingLine()).toBeNull();
     expect(screen.queryByText(WAITING_ROW)).toBeNull();
@@ -869,9 +871,8 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     let present: Array<typeof ADA> = [];
     serveKept({
       tap: (send) => {
-        // Both first sends are lost; on the way back both are refused; Ada's next tap goes through.
-        if (send <= 2) return 'lost';
-        if (send <= 4) return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
+        // Both first sends are refused; Ada's next tap goes through.
+        if (send <= 2) return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
         present = [ADA];
         return answer({ outcome: 'marked' });
       },
@@ -946,7 +947,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByText('One here tap is not saved yet.')).toBeTruthy();
   });
 
-  test('an unmark whose send is lost is kept and said; a refused resend the server shows as unmarked reads as done', async () => {
+  test('an unmark whose send is lost is kept and said; a resend of an unmark that landed is answered as replayed and reads as done', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [ADA];
     serveKept({
@@ -955,14 +956,15 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
           present = [];
           return 'lost';
         }
-        return answer({ error: 'SOMETHING_ELSE' }, 409);
+        // The key is recorded: the server answers with the first answer and writes nothing.
+        return answer({ outcome: 'unmarked', replayed: true, live: true });
       },
       present: () => present,
     });
     await showKept();
     await tapKept('Here Ada Reyes');
     expect(screen.getByText('Unmarked here: not saved yet. This page keeps sending it while it stays open.')).toBeTruthy();
-    expect(sent[0].body).toEqual({ athlete_id: 'ath-1', present: false, tapped_ms_ago: expect.any(Number), page_id: expect.any(String) });
+    expect(sent[0].body).toEqual({ athlete_id: 'ath-1', present: false, tapped_ms_ago: expect.any(Number), page_id: expect.any(String), request_key: expect.any(String) });
     await wait(RESEND_MS);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('Nobody marked here yet. Tap each athlete in the room.')).toBeTruthy();
@@ -977,7 +979,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(onRunNotLive).toHaveBeenCalledTimes(1);
   });
 
-  test('a resend refused as no longer live whose check finds the mark reads as done and still tells the live screen', async () => {
+  test('a resend of a tap that landed, on a session that has ended since, is answered as replayed: done, and it tells the live screen', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
     serveKept({
@@ -986,7 +988,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
           present = [ADA];
           return 'lost';
         }
-        return answer({ error: 'SESSION_RUN_NOT_LIVE' }, 409);
+        return answer({ outcome: 'marked', replayed: true, live: false });
       },
       present: () => present,
     });
@@ -1184,11 +1186,11 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
 
   // Round 14, reviewer A (OBSERVED): a kept tap refused because the run has ended hands the run back to
   // the console, which then goes with this list; its words go to the page's list, as the no-shows tap's do.
-  test('a kept tap whose resend is refused as no longer live, and cannot be checked, is listed as not known in the page\'s list', async () => {
+  test('a kept tap whose resend is refused as not found, before its key is looked up, is listed as not known in the page\'s list', async () => {
     jest.useFakeTimers();
     let reads = 0;
     serveKept({
-      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_NOT_LIVE' }, 409)),
+      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_NOT_FOUND' }, 404)),
       present: () => {
         reads += 1;
         return reads === 1 ? [] : 'fail';
@@ -1207,7 +1209,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     jest.useFakeTimers();
     let reads = 0;
     serveKept({
-      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_NOT_LIVE' }, 409)),
+      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_NOT_FOUND' }, 404)),
       present: () => {
         reads += 1;
         return reads === 1 ? [] : 'fail';
@@ -1481,7 +1483,35 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
   });
 
   // Round 13, reviewer B: refused as no longer live, then found landed: the list goes with the run.
-  test('a kept tap found landed after a resend refused as no longer live says what to check in the page\'s list', async () => {
+  test('a kept tap replayed after the session ended says what to check in the page\'s list, from the first answer', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        // The first answer, replayed: the register kept an Absent set after the tap.
+        return answer({ outcome: 'marked', register: { effect: 'register_newer', status: 'absent' }, replayed: true, live: false });
+      },
+      present: () => present,
+    });
+    const onRunNotLive = jest.fn();
+    await showKept({ tied: true, onRunNotLive });
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(onRunNotLive).toHaveBeenCalled();
+    expect(screen.getByText(SAVED_CHECK_WORDS)).toBeTruthy();
+    expect(screen.getByText(
+      'Mark an athlete here: saved for Ada Reyes, but the class register kept a mark set there after the tap; change it on the register if Ada Reyes is here.',
+    )).toBeTruthy();
+  });
+
+  // OVERWATCH 7170099938 on #2178: another tab or device marks the same athlete while this tap's first
+  // answer is lost, and the session then ends. The list shows the athlete marked, but that is not this
+  // tap landing: refused after its key was found unrecorded, it is not saved, and nothing is read.
+  test('another tab or device marks the same athlete in between and the session ends: a resend refused as no longer live is listed as not saved', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
     serveKept({
@@ -1495,14 +1525,13 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
       present: () => present,
     });
     const onRunNotLive = jest.fn();
-    await showKept({ tied: true, onRunNotLive });
+    await showKept({ onRunNotLive });
     await tapKept('Mark here Ada Reyes');
     await wait(RESEND_MS);
     expect(onRunNotLive).toHaveBeenCalled();
-    expect(screen.getByText(SAVED_CHECK_WORDS)).toBeTruthy();
-    expect(screen.getByText(
-      'Mark an athlete here: saved for Ada Reyes, but whether the class register has Ada Reyes Present is not known; check the class register. And whether Ada Reyes is on a Training Hold could not be read.',
-    )).toBeTruthy();
+    expect(screen.getByText('Mark an athlete here: This session has already ended, so nothing was saved.')).toBeTruthy();
+    expect(screen.queryByText(SAVED_CHECK_WORDS)).toBeNull();
+    expect(presentReads.some((signal) => signal instanceof AbortSignal)).toBe(false);
   });
 
   test('on an untied list, a kept tap that lands with no register answer adds no register line', async () => {
@@ -1654,7 +1683,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     expect(screen.getByText(`Mark an athlete here: ${unknownOffPage('Check who is marked here on the class screen.')}`)).toBeTruthy();
   });
 
-  test('a refused RESEND that the server shows had landed reads as marked (condition 2), read with the queue\'s signal', async () => {
+  test('a resend of a tap that landed is answered as replayed and reads as marked (condition 2), with nothing read to decide it', async () => {
     jest.useFakeTimers();
     let present: Array<typeof ADA> = [];
     serveKept({
@@ -1664,7 +1693,7 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
           present = [ADA];
           return 'lost';
         }
-        return answer({ error: 'SOMETHING_ELSE' }, 409);
+        return answer({ outcome: 'marked', replayed: true, live: true });
       },
       present: () => present,
     });
@@ -1673,7 +1702,30 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await wait(RESEND_MS);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('1 marked here.')).toBeTruthy();
-    expect(presentReads[presentReads.length - 1]).toBeInstanceOf(AbortSignal);
+    expect(presentReads.some((signal) => signal instanceof AbortSignal)).toBe(false);
+  });
+
+  // OVERWATCH 7170099938 on #2178: another tab or device marks the same athlete while this tap's first
+  // answer is lost. The list then shows the athlete marked, but that is not this tap landing.
+  test('another tab or device marks the same athlete in between: a resend refused before its key is looked up is not known, never done', async () => {
+    jest.useFakeTimers();
+    let present: Array<typeof ADA> = [];
+    serveKept({
+      tap: (send) => {
+        if (send === 1) {
+          present = [ADA];
+          return 'lost';
+        }
+        // Refused before the tap's key is looked up (the route's role gate, say).
+        return answer({ error: 'FORBIDDEN' }, 403);
+      },
+      present: () => present,
+    });
+    await showKept();
+    await tapKept('Mark here Ada Reyes');
+    await wait(RESEND_MS);
+    expect(screen.getByRole('alert').textContent).toMatch(/Mark Ada Reyes here: the server refused it when it was sent again and could not be checked, so it is not known/);
+    expect(presentReads.some((signal) => signal instanceof AbortSignal)).toBe(false);
   });
 
   test('a refused RESEND that could not be checked says the outcome is not known, on this list', async () => {
@@ -1768,8 +1820,12 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
 
   test('a refusal after this list has gone is said in the page\'s list, its reason after the save\'s name', async () => {
     jest.useFakeTimers();
+    let refuse: ((response: Response) => void) | undefined;
     serveKept({
-      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403)),
+      // The first send's refusal comes back only after the list has gone.
+      tap: () => new Promise<Response>((resolve) => {
+        refuse = resolve;
+      }),
       present: () => [],
     });
     const view = await showKept();
@@ -1777,14 +1833,17 @@ describe('here taps kept on a flaky connection (W4 item 7, OQ-4)', () => {
     await act(async () => {
       view.rerender(<SaveQueueNotice />);
     });
-    await wait(RESEND_MS);
+    await act(async () => {
+      refuse?.(answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403));
+      await jest.advanceTimersByTimeAsync(0);
+    });
     expect(screen.getByText('Mark an athlete here: This account cannot mark that athlete here. Nothing was saved.')).toBeTruthy();
   });
 
   test('a refusal while a kept finish waits is said in the page\'s list: the console goes once the finish lands', async () => {
     jest.useFakeTimers();
     serveKept({
-      tap: (send) => (send === 1 ? 'lost' : answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403)),
+      tap: () => answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403),
       present: () => [],
     });
     await showKept({ finishWaiting: true });
@@ -1816,7 +1875,7 @@ test('on the live floor, notes refused with the panel closed are each said, name
         posts += 1;
         // The first note's first send is lost; every send after is refused.
         if (posts === 1) throw new TypeError('Failed to fetch');
-        return answer({ error: 'That athlete is not marked here.' }, 409);
+        return answer({ error: 'That athlete is not marked here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409);
       }
       // A tap of Ada is refused: its words sit beside her notes' refusals, never in their place.
       if (url === URL_FOR && init?.method === 'POST') return answer({ error: 'x', code: 'SESSION_RUN_ATHLETE_NOT_PERMITTED' }, 403);
@@ -1893,7 +1952,7 @@ async function showLiveNotes(handlers: { account: () => string | Promise<string>
       if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
       posts += 1;
       if (handlers.notePost(posts) === 'lost') throw new TypeError('Failed to fetch');
-      return answer({ error: 'That athlete is not marked here.' }, 409);
+      return answer({ error: 'That athlete is not marked here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409);
     }
     if (url === URL_FOR) return answer({ present: [ADA, BEN].map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: [ADA, BEN, CY] });
     return answer({});
@@ -2124,7 +2183,7 @@ test('a sign-out clears the kept words of refused notes as well as the lines: no
         if ((init?.method ?? 'GET') === 'GET') return answer({ ok: true, note_max: 2000, notes: [] });
         posts += 1;
         if (posts === 1) throw new TypeError('Failed to fetch');
-        return answer({ error: 'That athlete is not marked here.' }, 409);
+        return answer({ error: 'That athlete is not marked here.', code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' }, 409);
       }
       if (url === URL_FOR) return answer({ present: [{ ...ADA, marked_at: 'x' }], gym: [ADA, BEN, CY] });
       return answer({});

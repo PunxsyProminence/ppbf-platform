@@ -1707,3 +1707,88 @@ describe('a kept run action or tie is decided by its own request key', () => {
     }]);
   });
 });
+
+// OVERWATCH 7170099938 on #2178, carried to OQ-4's kept here taps: whether a tap's earlier send landed is
+// decided by its own request key, recorded on the run with the tap's first answer, never by the mark
+// matching the tap, which another tab or device tapping the same athlete would also give.
+describe('a kept here tap is decided by its own request key', () => {
+  const keyedTap = (by: ActorIdentity, runId: string, athleteId: string, requestKey: string, present = true) =>
+    setRunAthletePresent({ actor: by, runId, athleteId, present, requestKey });
+
+  /** The here taps' key records on a run, oldest first. */
+  async function hereTaps(gym: Gym, runId: string) {
+    const { rows } = await client.query<{ details: Record<string, unknown> }>(
+      `select details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2 and details->>'action' = 'here_tap'
+        order by audit_id`,
+      [gym.organizationId, runId],
+    );
+    return rows.map((row) => row.details);
+  }
+
+  test('a tap whose answer is lost: the resend is answered with the first answer, replayed, and two resends at once write nothing', async () => {
+    const gym = await newGym('tap-key-lost');
+    const { run_id: runId } = await start(gym, gym.coach);
+    const first = await keyedTap(gym.coach, runId, gym.ada, 'key-ada');
+    expect(first).toEqual({ outcome: 'marked', register: { effect: 'created' } });
+    const landed = await gymState(gym, runId);
+    await letTheClockMove();
+    const resent = await Promise.all([keyedTap(gym.coach, runId, gym.ada, 'key-ada'), keyedTap(gym.coach, runId, gym.ada, 'key-ada')]);
+    for (const again of resent) expect(again).toEqual({ ...first, replayed: true, live: true });
+    expect(await gymState(gym, runId)).toEqual(landed);
+    // The record keeps the athlete nested: it is not read as activity on the athlete's own session.
+    expect(await hereTaps(gym, runId)).toEqual([{
+      run_id: runId, action: 'here_tap', request_key: 'key-ada', asked: { athlete_id: gym.ada, present: true }, answer: first,
+    }]);
+  });
+
+  test('another tab or device marks the same athlete first: this send, landing later, is its own no-op, recorded and replayed', async () => {
+    const gym = await newGym('tap-key-same');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-a')).toEqual({ outcome: 'unchanged' });
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-a')).toEqual({ outcome: 'unchanged', replayed: true, live: true });
+    expect((await hereTaps(gym, runId)).map((details) => details.request_key)).toEqual(['key-a']);
+  });
+
+  test('another tab or device marks the same athlete and the session ends: a key never recorded is refused, never replayed', async () => {
+    const gym = await newGym('tap-key-ended');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const before = await gymState(gym, runId);
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ada, 'key-never'))).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(before);
+  });
+
+  test('a tap that landed before the session ended is replayed after it, saying the run is no longer live', async () => {
+    const gym = await newGym('tap-key-after');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-ada')).toEqual({ outcome: 'marked' });
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-ada')).toEqual({ outcome: 'marked', replayed: true, live: false });
+  });
+
+  test('the same key for another athlete or the other way is refused and writes nothing; another coach gets not-found', async () => {
+    const gym = await newGym('tap-key-reuse');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await keyedTap(gym.coach, runId, gym.ada, 'key-1');
+    const before = await gymState(gym, runId);
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ben, 'key-1'))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ada, 'key-1', false))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(before);
+    expect(await refusal(keyedTap(gym.otherCoach, runId, gym.ada, 'key-1'))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+  });
+
+  test('a take-back keyed and resent writes once; a keyless tap is as before and records no key', async () => {
+    const gym = await newGym('tap-key-untap');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    const first = await keyedTap(gym.coach, runId, gym.ada, 'key-off', false);
+    expect(first).toEqual({ outcome: 'unmarked', register: { effect: 'removed' } });
+    const after = await gymState(gym, runId);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-off', false)).toEqual({ ...first, replayed: true, live: true });
+    expect(await gymState(gym, runId)).toEqual(after);
+    expect((await hereTaps(gym, runId)).map((details) => details.request_key)).toEqual(['key-off']);
+  });
+});

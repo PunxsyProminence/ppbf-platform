@@ -385,25 +385,6 @@ export default function SessionRunPresence({
       }),
     [],
   );
-  // Who is marked here, for a kept tap's landed check: null when it cannot be read.
-  const readPresent = useCallback(
-    async (signal: AbortSignal): Promise<Set<string> | null> => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
-          method: 'GET',
-          credentials: 'include',
-          signal,
-        });
-        const payload = (await response.json().catch(() => null)) as { present?: unknown } | null;
-        if (!response.ok || !payload || !Array.isArray(payload.present) || !payload.present.every(isAthlete)) return null;
-        return new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id));
-      } catch {
-        return null;
-      }
-    },
-    [runId],
-  );
-
   const keptTap = useCallback(
     (athlete: Athlete, present: boolean, resolved: { done: boolean }): KeptSave => {
       let refusalCode: unknown;
@@ -429,12 +410,13 @@ export default function SessionRunPresence({
         // With this page's id: the run's own no-shows tap from this page came before it in tap order
         // (the queue's order), so the register lets it win over that tap's untouched Absent; one from
         // the coach's other tab or device does not (condition 1; round 12, reviewer A).
-        send: ({ signal, msSinceMade, pageId }) =>
+        // With the tap's own request key, the same on every resend: the server records it with the tap.
+        send: ({ signal, msSinceMade, pageId, requestKey }) =>
           fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade, page_id: pageId }),
+            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade, page_id: pageId, request_key: requestKey }),
             signal,
           }),
         // A yes is a yes, whatever its body (as today); the route's own refusals are a no; anything else proves nothing.
@@ -445,15 +427,13 @@ export default function SessionRunPresence({
           refusalCode = payload?.code ?? payload?.error;
           return 'refused';
         },
-        // A refused resend: is the mark what this tap asked? (Each tap sets a state, so a repeat changes nothing.)
-        checkLanded: async (signal) => {
-          const now = await readPresent(signal);
-          return now === null ? null : now.has(athlete.athlete_id) === present;
-        },
+        // A refused resend, decided by this tap's own key alone (OVERWATCH 7170099938 on #2178): never by
+        // the mark matching what was tapped, which another tab or device tapping the same athlete would
+        // also give. Refused as no longer live, which the server says only after finding the key
+        // unrecorded: not landed. Anything else: not known.
+        checkLanded: async () => (refusalCode === 'SESSION_RUN_NOT_LIVE' ? false : null),
         onSaved: async (response) => {
           release();
-          // Refused as no longer live, yet the check found the mark: the session has still ended.
-          if (refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND') onRunNotLive?.();
           // The mark at once (no flicker back while the answer is read).
           if (onPage.current) {
             showMark();
@@ -461,17 +441,21 @@ export default function SessionRunPresence({
           }
           const seen = saveQueueGeneration();
           const answer = response
-            ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null)
+            ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown; replayed?: unknown; live?: unknown } | null)
             : null;
           // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
           if (saveQueueGeneration() !== seen) return undefined;
+          // A resend of this tap, which landed earlier, on a session that has ended since: the console
+          // resyncs, and this list goes with it.
+          const runGone = answer?.replayed === true && answer.live === false;
+          if (runGone) onRunNotLive?.();
           const effect = answer?.register?.effect;
           // The register differs from what the coach tapped: it kept a change made after a late mark
           // (register_newer), kept the mark a take-back would have removed (kept), or was not written
           // (skipped). Said where a burst or a finish cannot lose it (round 13, A).
           const registerDiffers = effect === 'register_newer' || effect === 'kept' || effect === 'skipped';
-          // On a tied session a tap that came back with no register answer (its answer was lost and a
-          // resend changed nothing, or the check found it): what the register holds is not known.
+          // On a tied session a tap that came back with no register answer (it changed nothing: the mark
+          // already stood, from another tab or device): what the register holds is not known.
           const registerUnknown = tied && !answer?.register;
           // The hold is read with the register's answer: a mark here whose answer was lost cannot say
           // whether the athlete is on a Training Hold, so it says that, in the existing words: an unknown
@@ -482,8 +466,7 @@ export default function SessionRunPresence({
           // page's list, under "Saved, with something to check" (round 12, A and B), naming the athlete
           // (OVERWATCH 7170005958: the page's list has the named alert's protection, and unnamed lines
           // could not tell staff who is on a Training Hold). Waiting and refusal lines stay unnamed.
-          // The run gone (refused as such, the check then finding the tap landed): this list goes too.
-          const runGone = refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND';
+          // The run gone (this tap landed, and the session ended since): this list goes too.
           if (!onPage.current || isFinishWaiting?.() || runGone) {
             const skippedWhy = NOT_ADDED[answer?.register?.reason ?? ''] ?? 'it could not be added';
             const who = athlete.full_name;
@@ -546,7 +529,7 @@ export default function SessionRunPresence({
         },
       };
     },
-    [forgetRefusal, isFinishWaiting, onRunNotLive, readPresent, readRegister, runId, tied],
+    [forgetRefusal, isFinishWaiting, onRunNotLive, readRegister, runId, tied],
   );
 
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;

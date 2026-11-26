@@ -177,26 +177,6 @@ export default function SessionStaffNotesPanel(
     }
   }, [athleteId, subjectId, subjectKey]);
 
-  // The notes as the server has them now, for a kept write's landed check: null when they cannot be read.
-  const readNotes = useCallback(
-    async (signal: AbortSignal): Promise<NoteRow[] | null> => {
-      try {
-        const response = await fetch(
-          `${apiBase()}${ROUTE}?${subjectKey}=${encodeURIComponent(subjectId)}&athlete_id=${encodeURIComponent(athleteId)}`,
-          { method: 'GET', credentials: 'include', signal },
-        );
-        const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-        if (!response.ok || !payload || payload.ok !== true || !Array.isArray(payload.notes) || !payload.notes.every(isNoteRow)) {
-          return null;
-        }
-        return payload.notes as NoteRow[];
-      } catch {
-        return null;
-      }
-    },
-    [athleteId, subjectId, subjectKey],
-  );
-
   const toggle = useCallback(() => {
     setEditing(null);
     setRemoving(null);
@@ -225,7 +205,7 @@ export default function SessionStaffNotesPanel(
     (
       request: { url: string; method: string; body?: unknown },
       failed: { heading: string; verb: string },
-      what: { text: string; before: ReadonlySet<string> | null },
+      what: { text: string },
       resolved: { done: boolean; counted: boolean },
     ): KeptSave => {
       let reason = '';
@@ -265,17 +245,14 @@ export default function SessionStaffNotesPanel(
           if (payload?.code === 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED') ownKeyUsed = true;
           return 'refused';
         },
-        // A refused resend: do the notes now show what this write asked?
-        checkLanded: async (signal) => {
+        // A refused resend, decided by this note's own request key alone (OVERWATCH 7170099938 on #2178):
+        // never by a note with the same words, which another tab or device writing the same note would
+        // also give. The server says this key already added a note (edited since): it landed. Refused
+        // after the server's key lookup found nothing: it did not land. Anything else: not known.
+        checkLanded: async () => {
           if (ownKeyUsed) return true;
-          // Refused after the server's key lookup found nothing: it did not land.
           if (refusedCode === 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT') return false;
-          const notes = await readNotes(signal);
-          if (notes === null) return null;
-          const text = what.text.trim();
-          if (what.before === null) return null;
-          const before = what.before;
-          return notes.some((row) => row.own && !before.has(row.note_id) && row.note === text);
+          return null;
         },
         onSaved: () => {
           settle();
@@ -312,7 +289,7 @@ export default function SessionStaffNotesPanel(
         },
       };
     },
-    [isFinishWaiting, onKeptRefused, read, readNotes],
+    [isFinishWaiting, onKeptRefused, read],
   );
 
   const write = useCallback(
@@ -329,9 +306,8 @@ export default function SessionStaffNotesPanel(
         if (keptOnThisPage && kind === 'add') {
           // Kept: done at once (the draft clears), so a second tap is a new note, not this one twice.
           // Not kept (the page does not know who is signed in): sent once, as before.
-          const before = reading.state === 'loaded' ? new Set(reading.notes.map((row) => row.note_id)) : null;
           const resolved = { done: false, counted: false };
-          if ((await keepSave(keptAdd(request, failed, { text: what.text, before }, resolved))) === 'kept') {
+          if ((await keepSave(keptAdd(request, failed, { text: what.text }, resolved))) === 'kept') {
             if (!resolved.done) {
               resolved.counted = true;
               setWaitingWrites((count) => count + 1);
@@ -383,7 +359,7 @@ export default function SessionStaffNotesPanel(
         setBusy(null);
       }
     },
-    [keptAdd, keptOnThisPage, read, reading],
+    [keptAdd, keptOnThisPage, read],
   );
 
   const add = () => write(

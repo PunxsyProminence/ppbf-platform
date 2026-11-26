@@ -361,3 +361,52 @@ describe('POST page_id', () => {
     expect(mockSet).not.toHaveBeenCalled();
   });
 });
+
+// OVERWATCH 7170099938 on #2178: a kept here tap carries its own request key, and the module decides a
+// resend by it; a resend of a recorded key is answered with the first answer, replayed.
+describe('POST request_key', () => {
+  it('hands the module the key; without it, or with null, none, exactly as before', async () => {
+    await post({ athlete_id: 'ath-1', present: true, request_key: 'key-1' });
+    await post({ athlete_id: 'ath-1', present: true });
+    await post({ athlete_id: 'ath-1', present: true, request_key: null });
+    expect(mockSet.mock.calls[0][0]).toEqual(expect.objectContaining({ requestKey: 'key-1' }));
+    expect(mockSet.mock.calls[1][0]).not.toHaveProperty('requestKey');
+    expect(mockSet.mock.calls[2][0]).not.toHaveProperty('requestKey');
+  });
+
+  it('answers a replay with replayed and live, and a first answer without them', async () => {
+    mockSet.mockResolvedValueOnce({ outcome: 'marked', replayed: true, live: false });
+    const replay = await post({ athlete_id: 'ath-1', present: true, request_key: 'key-1' });
+    await expect(replay.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, replayed: true, live: false });
+    mockSet.mockResolvedValueOnce({ outcome: 'marked' });
+    const first = await post({ athlete_id: 'ath-1', present: true, request_key: 'key-2' });
+    await expect(first.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true });
+  });
+
+  it('takes a key of 200 characters, and a surrogate pair', async () => {
+    expect((await post({ athlete_id: 'ath-1', present: true, request_key: 'k'.repeat(200) })).status).toBe(200);
+    expect((await post({ athlete_id: 'ath-1', present: true, request_key: `k-${String.fromCharCode(0xd83e, 0xdd4a)}` })).status).toBe(200);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '  '],
+    ['too long', 'k'.repeat(201)],
+    ['a number', 7],
+    ['with a NUL', `k${String.fromCharCode(0)}1`],
+    ['with a lone high surrogate', `k${String.fromCharCode(0xd800)}`],
+    ['with a lone low surrogate', `k${String.fromCharCode(0xdc00)}`],
+  ])('refuses a request_key that is %s, and marks nothing', async (_label, value) => {
+    const response = await post({ athlete_id: 'ath-1', present: true, request_key: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'request_key' });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('answers the same key sent for another tap with 409 and its code', async () => {
+    mockSet.mockRejectedValueOnce(new SessionScriptRunError('SESSION_RUN_KEY_REUSED', 409));
+    const response = await post({ athlete_id: 'ath-1', present: false, request_key: 'key-1' });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_RUN_KEY_REUSED' });
+  });
+});
