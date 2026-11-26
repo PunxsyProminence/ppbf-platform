@@ -69,9 +69,19 @@ interface State {
   readonly session: string | null;
   readonly names: GymNames | null;
   readonly started: boolean;
+  /** When the last read failed (Date.now()), or null. */
+  readonly failedAt: number | null;
 }
 
-let state: State = { session: null, names: null, started: false };
+/**
+ * Overwatch's Q-J A on #2215: the defaults show while the read is on its way;
+ * after a failed read, the next screen that mounts reads again, at most once
+ * every 30 seconds, instead of keeping the defaults until the next sign-in.
+ */
+export const ROOM_NAMES_RETRY_AFTER_MS = 30_000;
+
+const EMPTY: State = { session: null, names: null, started: false, failedAt: null };
+let state: State = EMPTY;
 const listeners = new Set<() => void>();
 
 function publish(next: State): void {
@@ -100,9 +110,16 @@ function sessionKey(session: RoleSession | null): string | null {
 
 /** Reads the names once for this sign-in; a second caller for the same sign-in waits on the first. */
 function ensureRead(session: string | null): void {
-  if (state.session === session && (state.started || session === null)) return;
-  publish({ session, names: null, started: session !== null });
+  if (state.session === session) {
+    if (session === null) return;
+    const retryDue = state.failedAt !== null && Date.now() - state.failedAt >= ROOM_NAMES_RETRY_AFTER_MS;
+    if (state.started && !retryDue) return;
+  }
+  publish({ session, names: null, started: session !== null, failedAt: null });
   if (session === null || typeof fetch !== 'function') return;
+  const failed = () => {
+    if (state.session === session) publish({ ...state, failedAt: Date.now() });
+  };
   // Inside the chain, so a fetch that throws as it is called is caught like one that fails.
   Promise.resolve()
     .then(() => fetch(`${apiBase()}/api/pilot/room-names`, { credentials: 'include', cache: 'no-store' }))
@@ -110,10 +127,14 @@ function ensureRead(session: string | null): void {
     .then((body) => {
       // The person signed out or someone else signed in meanwhile: not theirs.
       if (state.session !== session) return;
-      publish({ ...state, names: gymNamesFrom(body) });
+      const names = gymNamesFrom(body);
+      // A refused read, or an answer that is not names, is a failure too.
+      if (names === null) failed();
+      else publish({ ...state, names, failedAt: null });
     })
     .catch(() => {
-      // The defaults stay; the next sign-in reads again.
+      // The defaults stay; a screen mounting 30 s or more later reads again.
+      failed();
     });
 }
 
@@ -130,7 +151,7 @@ function listenForSignOut(): void {
   listening = true;
   subscribeRoleSession(() => {
     if (getRoleSessionSnapshot() === null && state.session !== null) {
-      publish({ session: null, names: null, started: false });
+      publish(EMPTY);
     }
   });
 }
@@ -152,6 +173,6 @@ export function useRoomNames(): RoomNameLookup {
 
 /** Tests only: forget every read, as a fresh page load would. */
 export function resetRoomNamesForTests(): void {
-  state = { session: null, names: null, started: false };
+  state = EMPTY;
   listening = false;
 }

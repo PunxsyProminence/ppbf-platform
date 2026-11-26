@@ -162,6 +162,33 @@ test('a sign-out drops the names even with no screen mounted, so the next same-r
   expect(screen.getByTestId('b').textContent?.startsWith('Reception|')).toBe(true);
 });
 
+test('after a failed read, a screen mounting 30 s or more later reads again, and not sooner (Q-J A on #2215)', async () => {
+  let now = 1_000_000;
+  jest.spyOn(Date, 'now').mockImplementation(() => now);
+  const fetchMock = jest.fn()
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValueOnce(answer({ 'place:front-desk': { name: 'Lobby', is_default: false } }));
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  const first = render(<Probe id="a" />);
+  await settle();
+  expect(screen.getByTestId('a').textContent).toBe(DEFAULTS_TEXT);
+  first.unmount();
+
+  now += 10_000;
+  const second = render(<Probe id="b" />);
+  await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('b').textContent).toBe(DEFAULTS_TEXT);
+  second.unmount();
+
+  now += 20_000;
+  render(<Probe id="c" />);
+  await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('c').textContent?.startsWith('Lobby|')).toBe(true);
+});
+
 test('an answer that arrives after the person signed out is not shown to whoever comes next', async () => {
   let release: (response: Response) => void = () => {};
   const fetchMock = jest.fn()
