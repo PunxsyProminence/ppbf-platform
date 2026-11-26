@@ -886,6 +886,38 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('an adult athlete with email on whose date of birth is corrected to under 18 as their login is switched off, while a save waits: retired, address cleared (the record decides before the sign-in)', async () => {
+    const client = await freshDatabase('emailsw_minor_and_off_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_minor_and_off_race'), max: 4 });
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      // One office transaction: the athlete row first, then the login, as the writers lock them.
+      await expect(whileHeld(
+        client,
+        [
+          `with corrected as (update pilot.athletes set dob = '2012-01-01' where athlete_id = $1 returning 1)
+           update pilot.accounts set active_flag = false where account_id = $2`,
+          [ADULT_ATHLETE, ADULT_ID],
+        ],
+        () => setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW),
+      )).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: ADULT_ID, switched_on: false, confirmed_address: null, pending_address: null,
+      })]);
+      const audits = await auditRows(client);
+      expect(audits.map((row) => row.details.reason)).toEqual(['no_longer_offered']);
+      expect(JSON.stringify(audits)).not.toContain('example.test');
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a coach with email on made a volunteer, then a coach again: the switch is kept, paused, and reads on again (T-2 A)', async () => {
     const client = await freshDatabase('emailsw_no_switch_role');
     activeClient = client;
