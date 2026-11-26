@@ -10,6 +10,7 @@ import ParentAssignmentList from './ParentAssignmentList';
 import ParentObservations from './ParentObservations';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
+import OnTheFloorFamilyLine from './OnTheFloorFamilyLine';
 import GymWallModule from './GymWallModule';
 import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
@@ -1450,6 +1451,13 @@ export default function ParentHub() {
               voice -- the chalkboard, which is right below this -- not
               restated in --t-xs chrome at the top of every role's dashboard. */}
         </div>
+
+        {/* WHO IS ON THE FLOOR NOW (lane W4-3, FN-2; Jason Q3.2 A): a line for each of the guardian's
+            own children who counts, by the hub's own label, read once when the page opens; nothing for
+            a child who does not (no mark is not absence). */}
+        {!childrenLoading && children.length > 0 ? (
+          <OnTheFloorFamilyLine reader="parent" childList={childLabels(children, []).map(({ id, label }) => ({ id, name: label }))} />
+        ) : null}
 
         {/* This hub asks for its own surface. 'parent_hub' draws what an
             author addressed to guardians, and the read includes 'everywhere'
