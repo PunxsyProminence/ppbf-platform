@@ -7,6 +7,7 @@ import AthleteAchievements from './AthleteAchievements';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import ParentProgressSummary, { type SupportTasks } from './ParentProgressSummary';
 import ParentAssignmentList from './ParentAssignmentList';
+import ParentFamilyThreads, { useParentFamilyThreads } from './ParentFamilyThreads';
 import ParentObservations from './ParentObservations';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
@@ -187,8 +188,10 @@ function countsByChild(
   childList: ReadonlyArray<{ id: string; name: string }>,
   allMessages: ReadonlyArray<ParentMessage>,
   counted: (message: ParentMessage) => boolean,
+  // Counted elsewhere, per child: the gym's unseen replies to the guardian's own messages (W4 item 4).
+  extra: ReadonlyMap<string, number> = new Map(),
 ): ChildCount[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, number>(extra);
   for (const message of allMessages) {
     if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
   }
@@ -459,6 +462,9 @@ export default function ParentHub() {
   // panel). Best-effort, own effect, own state -- same doctrine as the
   // Safety & Consent card above: a failed read leaves the rest of the hub
   // working, it just shows no messages.
+  // The guardian's own messages to the coach and the gym's replies (W4 item 4): read once the hub
+  // opens, so the summary tile can count unseen replies; shown on the Messages tab.
+  const familyThreads = useParentFamilyThreads();
   const [messages, setMessages] = useState<ParentMessage[]>([]);
   // Whether the messages read actually answered. Neither surface that reads
   // it may render an unanswered read as an absence of messages: the SUMMARY
@@ -1603,7 +1609,9 @@ export default function ParentHub() {
           tasksDue={messagesLoaded && rosterAnswered ? countsByChild(children, messages, isOpenTask) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded && ownReadsLoaded && rosterAnswered ? countsByChild(children, messages, isNewToMe) : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded && rosterAnswered && familyThreads.unseenByChild
+            ? countsByChild(children, messages, isNewToMe, familyThreads.unseenByChild)
+            : null}
         />
 
         {/* TAB CONTENT */}
@@ -1976,6 +1984,7 @@ export default function ParentHub() {
                 usage={[
                   'Read each message the coaches wrote to your family',
                   'Reply under a message to answer the gym',
+                  'Write to the coach about your child, and read the reply under it',
                   'Tick a to-do as Done when it is done',
                   'Share what you see at home on the Observations tab'
                 ]}
@@ -1988,8 +1997,14 @@ export default function ParentHub() {
               {/* What this tab holds, always on screen (FC-07): only what was
                   written to this family; gym announcements are not here. */}
               <p className="t-body">
-                What the coaches and gym staff wrote to your family about your child. You can reply under a message. Gym announcements for every family are at the top of the hub.
+                What the coaches and gym staff wrote to your family about your child. You can reply under a message, or write to the coach first. Gym announcements for every family are at the top of the hub.
               </p>
+
+              <ParentFamilyThreads
+                threads={familyThreads}
+                childNames={new Map(children.filter((child) => child.name && child.name !== 'Unknown').map((child) => [child.id, child.name.trim()]))}
+                activeChildId={activeChildId}
+              />
 
               {/* A read that did not answer is not an empty inbox.
                   `messagesLoaded` stays false when /api/pilot/parent/messages

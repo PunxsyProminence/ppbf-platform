@@ -4,7 +4,7 @@ import { getAttendanceLast28Days } from './attendancePrecedence';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { readCurrentReachedOut, setReachedOutMark } from './reachedOutMarks';
-import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
+import { lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
 import { readStoppedComingPolicy } from './stoppedComingPolicy';
 
 /*
@@ -24,7 +24,6 @@ jest.mock('./db', () => ({ query: jest.fn(), withTransaction: jest.fn() }));
 jest.mock('./sessionStaffNotes', () => ({
   staffNoteRoleInOrganization: jest.fn(),
   lockStaffMembership: jest.fn(),
-  lockLiveAthlete: jest.fn(),
 }));
 jest.mock('./coachAthleteRoster', () => ({ organizationActionableRoster: jest.fn() }));
 jest.mock('./attendancePrecedence', () => ({ getAttendanceLast28Days: jest.fn() }));
@@ -35,7 +34,6 @@ const mockQuery = query as jest.Mock;
 const mockTransaction = withTransaction as jest.Mock;
 const mockStaffRole = staffNoteRoleInOrganization as jest.Mock;
 const mockLockMembership = lockStaffMembership as jest.Mock;
-const mockLockAthlete = lockLiveAthlete as jest.Mock;
 const mockRoster = organizationActionableRoster as jest.Mock;
 const mockRegister = getAttendanceLast28Days as jest.Mock;
 const mockPolicy = readStoppedComingPolicy as jest.Mock;
@@ -63,13 +61,23 @@ const MEMBERSHIPS = 'from pilot.program_memberships pm';
 const MARKS = 'from pilot.session_run_athletes m';
 let membershipRows: Array<{ athlete_id: string }> = [];
 let marksRows: Array<{ athlete_id: string; last_day: string }> = [];
-/** The athlete's active_flag as the mark's transaction reads it; null: no row. */
-let activeFlag: boolean | null = true;
-const FLAG = 'select active_flag from pilot.athletes';
+/** The athlete row as the write's transaction locks and reads it; null: no row. */
+let athleteRow: { deleted_at: string | null; active_flag: boolean } | null = null;
+/** Overwatch on #2206: the gym row, held before the gym's number of days is read. */
+const GYM_LOCK = 'select 1 from pilot.organizations where organization_id = $1 for share';
+/** Reviewer J: the staff account row on its own, before the membership, the order its writers take. */
+const ACCOUNT_LOCK = 'select 1 from pilot.accounts where account_id = $1 for share';
+/** The athlete row FOR UPDATE: deleted, left, and every new row naming the athlete wait on it. */
+const ATHLETE_LOCK = 'select deleted_at, active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2 for update';
+/** The mark's hold on the athlete's membership rows (Codex on #2206). */
+const MEMBERSHIP_LOCK = 'select 1 from pilot.program_memberships where organization_id = $1 and athlete_id = any($2::text[]) for share';
 /** The mark write's transaction client: the list check's two reads and the here-marks read. */
 const txClient = {
   query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]]>(async (sql) => {
-    if (String(sql).includes(FLAG)) return { rows: activeFlag === null ? [] : [{ active_flag: activeFlag }] };
+    if (String(sql) === GYM_LOCK) return { rows: [{}] };
+    if (String(sql) === ACCOUNT_LOCK) return { rows: [{}] };
+    if (String(sql) === ATHLETE_LOCK) return { rows: athleteRow ? [athleteRow] : [] };
+    if (String(sql) === MEMBERSHIP_LOCK) return { rows: [] };
     if (String(sql).includes(MEMBERSHIPS)) return { rows: membershipRows };
     if (String(sql).includes(MARKS)) return { rows: marksRows };
     throw new Error(`test bug: an unexpected read on the transaction: ${sql}`);
@@ -94,7 +102,7 @@ beforeEach(() => {
   mockRegister.mockResolvedValue(new Map());
   membershipRows = [];
   marksRows = [];
-  activeFlag = true;
+  athleteRow = { deleted_at: null, active_flag: true };
   mockQuery.mockImplementation(async (sql: string) => {
     if (String(sql).includes(MEMBERSHIPS)) return membershipRows;
     if (String(sql).includes(MARKS)) return marksRows;
@@ -103,7 +111,6 @@ beforeEach(() => {
   mockReadMarks.mockResolvedValue(new Map());
   mockTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(txClient));
   mockLockMembership.mockResolvedValue('coach');
-  mockLockAthlete.mockResolvedValue(true);
   mockSetMark.mockResolvedValue('marked');
 });
 
@@ -273,10 +280,15 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
     mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
     mockLockMembership.mockResolvedValueOnce(null);
     await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject({ status: 403 });
-    expect(mockLockAthlete).not.toHaveBeenCalled();
-    mockLockAthlete.mockResolvedValueOnce(false);
-    await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject({ status: 404 });
-    expect(mockLockAthlete).toHaveBeenCalledWith(txClient, 'org-1', 'a-1');
+    expect(onTx(ATHLETE_LOCK)).toHaveLength(0);
+    // Soft-deleted, or no row, as the transaction reads it under its lock: 404, whatever the roster said.
+    for (const row of [{ deleted_at: '2026-11-24T12:00:00Z', active_flag: true }, null]) {
+      for (const reachedOut of [true, false]) {
+        athleteRow = row;
+        await expect(setStoppedComingReachedOut(coach, 'a-1', reachedOut, TODAY)).rejects.toMatchObject({ status: 404 });
+      }
+    }
+    expect(onTx(ATHLETE_LOCK).map(({ call }) => call[1])).toEqual(Array(4).fill(['org-1', 'a-1']));
     expect(mockRegister).not.toHaveBeenCalled();
     expect(mockSetMark).not.toHaveBeenCalled();
   });
@@ -307,20 +319,32 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
   describe('a mark only for an athlete on the list now, by the list\'s rules (409, nothing written); reviewers J and K', () => {
     const refused = { status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' };
 
-    test('the whole list check runs on the transaction, after both locks and before the day reads (reviewer J, round 2)', async () => {
+    test('the whole list check runs on the transaction, each fact under its lock, parents first, before the day reads (reviewer J; Overwatch on #2206)', async () => {
       mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]);
       mockRegister.mockResolvedValue(register({ 'a-1': daysAgo(30) }));
       await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).resolves.toBe('marked');
 
-      const [flag] = onTx(FLAG);
+      const [gymLock] = onTx(GYM_LOCK);
+      const [accountLock] = onTx(ACCOUNT_LOCK);
+      const [athleteLock] = onTx(ATHLETE_LOCK);
+      const [membershipLock] = onTx(MEMBERSHIP_LOCK);
       const [membership] = onTx(MEMBERSHIPS);
       const [marks] = onTx(MARKS);
-      expect(flag.call[1]).toEqual(['org-1', 'a-1']);
+      expect(gymLock.call[1]).toEqual(['org-1']);
+      // The gym's number of days is read on the transaction, after its row is held; never on the pool.
+      expect(mockPolicy.mock.calls).toEqual([['org-1', txClient]]);
+      expect(accountLock.call[1]).toEqual(['acct-coach']);
+      expect(athleteLock.call[1]).toEqual(['org-1', 'a-1']);
+      // Codex on #2206: the athlete's membership rows are held FOR SHARE, on the transaction, before they are read.
+      expect(membershipLock.call[1]).toEqual(['org-1', ['a-1']]);
       expect(membership.call[1]).toEqual(['org-1', ['a-1']]);
       const order = [
+        gymLock.order,
+        mockPolicy.mock.invocationCallOrder[0],
+        accountLock.order,
         mockLockMembership.mock.invocationCallOrder[0],
-        mockLockAthlete.mock.invocationCallOrder[0],
-        flag.order,
+        athleteLock.order,
+        membershipLock.order,
         membership.order,
         mockRegister.mock.invocationCallOrder[0],
         marks.order,
@@ -332,15 +356,14 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
 
     it.each([
       ['marked as left (read on the transaction, whatever the roster said before it)', false, []],
-      ['no row on the transaction', null, []],
       ['only lapsed or ended memberships (read on the transaction)', true, [{ athlete_id: 'a-1' }]],
     ])('%s: refused (409) before the days are read or the mark is touched', async (_label, flag, lapsed) => {
       mockRoster.mockResolvedValue([athlete('a-1', 'Ada')]); // the roster, before the transaction, says active
-      activeFlag = flag;
+      athleteRow = { deleted_at: null, active_flag: flag };
       membershipRows = lapsed;
       await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).rejects.toMatchObject(refused);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
-      expect(onTx(FLAG)).toHaveLength(1);
+      expect(onTx(ATHLETE_LOCK)).toHaveLength(1);
       expect(mockQuery).not.toHaveBeenCalled();
       expect(mockRegister).not.toHaveBeenCalled();
       expect(mockSetMark).not.toHaveBeenCalled();
@@ -370,15 +393,19 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       expect(mockSetMark).toHaveBeenCalledWith(txClient, expect.objectContaining({ lastCameDay: daysAgo(21), reachedOut: true }));
     });
 
-    test('a take-back needs no list check: no policy or membership read, even for an athlete marked as left', async () => {
+    test('a take-back needs no list check: no policy or membership read, even for an athlete marked as left; the athlete row is still held', async () => {
       mockRoster.mockResolvedValue([athlete('a-left', 'Dee', false)]);
       mockRegister.mockResolvedValue(register({ 'a-left': TODAY }));
       mockSetMark.mockResolvedValue('taken_back');
-      activeFlag = false;
+      athleteRow = { deleted_at: null, active_flag: false };
       await expect(setStoppedComingReachedOut(coach, 'a-left', false, TODAY)).resolves.toBe('taken_back');
       expect(mockPolicy).not.toHaveBeenCalled();
       expect(mockQuery).not.toHaveBeenCalled();
-      expect([...onTx(FLAG), ...onTx(MEMBERSHIPS)]).toEqual([]);
+      expect([...onTx(GYM_LOCK), ...onTx(MEMBERSHIPS)]).toEqual([]);
+      // The take-back rests on the staff member and the last day they came: the account, then the
+      // membership, then the athlete row (FOR UPDATE), each before the day is read.
+      expect(onTx(ACCOUNT_LOCK)[0].order).toBeLessThan(mockLockMembership.mock.invocationCallOrder[0]);
+      expect(onTx(ATHLETE_LOCK)[0].order).toBeLessThan(onTx(MARKS)[0].order);
       expect(mockSetMark).toHaveBeenCalledWith(txClient, expect.objectContaining({ lastCameDay: TODAY, reachedOut: false }));
     });
   });

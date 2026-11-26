@@ -743,4 +743,263 @@ describe('listStoppedComing on a real database', () => {
     );
     expect(audits.rows).toEqual([{ athlete_id: 'ola' }]);
   });
+
+  // Codex on #2206 (P2): an admin lapsing the athlete's last active membership while the mark's
+  // transaction runs must not leave a mark for an athlete no longer on the list. The mark holds the
+  // membership rows FOR SHARE: a lapse not yet committed makes the mark wait, and once it commits the
+  // mark reads it and is refused. Without the lock the mark reads the old row at once and is written.
+  test('a membership lapse in flight while the mark runs is waited for and refuses the mark (409), nothing written', async () => {
+    const gym = await newGym('race-membership');
+    const today = (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+    const day = (offset: number) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    await addAthlete(gym, 'liv', 'Liv Lapsing');
+    await registerDay(gym, 'liv', day(-40), 'present');
+    await programMembership(gym, 'liv', 'Youth Boxing', 'active');
+    const markerPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    const admin = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await admin.connect();
+    try {
+      await admin.query('BEGIN');
+      await admin.query(
+        `update pilot.program_memberships set status = 'lapsed' where organization_id = $1 and athlete_id = $2`,
+        [gym.organizationId, 'liv'],
+      );
+      const marking = setStoppedComingReachedOut(gym.coach, 'liv', true, today).then(
+        (outcome) => ({ outcome }),
+        (error: { status?: number; code?: string }) => ({ status: error.status, code: error.code }),
+      );
+      for (let attempt = 0; ; attempt += 1) {
+        await admin.query('select pg_stat_clear_snapshot()');
+        const { rows } = await admin.query('select wait_event_type, query from pg_stat_activity where pid = $1', [markerPid]);
+        if (rows[0]?.wait_event_type === 'Lock' && /program_memberships/.test(rows[0].query)) break;
+        if (attempt > 400) throw new Error('the mark never waited on the membership rows');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await admin.query('COMMIT');
+      await expect(marking).resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST' });
+    } finally {
+      await admin.query('ROLLBACK').catch(() => {});
+      await admin.end();
+    }
+    const marks = await client.query('select count(*)::int as n from pilot.athlete_reached_out_marks where organization_id = $1', [gym.organizationId]);
+    expect(marks.rows).toEqual([{ n: 0 }]);
+  });
+});
+
+// Overwatch on #2206 (after Codex's P2): every fact a mark or a take-back rests on is read on the
+// write's transaction with its rows locked, so a change on a second connection between the checks
+// and the write is either waited for and read, or waits for the write. One test per fact.
+describe('setStoppedComingReachedOut holds every fact it rests on until it commits', () => {
+  type Answer = { outcome: string } | { status?: number; code?: string };
+
+  /** The gym-local day now, by the database's clock: a here mark or register mark "today" is on it. */
+  async function gymToday(): Promise<string> {
+    return (await client.query(`select (clock_timestamp() at time zone 'America/New_York')::date::text as day`)).rows[0].day as string;
+  }
+
+  function dayFrom(today: string, offset: number): string {
+    return new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+  }
+
+  type Statements = ReadonlyArray<readonly [string, readonly unknown[]]>;
+
+  /**
+   * Runs `change` on a second connection and leaves it uncommitted, holding its rows; starts the PUT;
+   * once the PUT waits on a lock in a statement naming `waitsOn`, blocked by that connection
+   * (reviewer J), runs `thenRun` there and commits, and answers what the PUT answered. A PUT that
+   * finishes without waiting is answered as it is, with the change then committed: that is the
+   * unlocked write these tests exist to catch.
+   */
+  async function putWithChangeInFlight(
+    who: ActorIdentity, athleteId: string, reachedOut: boolean, today: string,
+    change: Statements, waitsOn: RegExp, thenRun: Statements = [],
+  ): Promise<Answer & { waited: boolean }> {
+    const markerPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    const other = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await other.connect();
+    try {
+      const otherPid = (await other.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+      await other.query('BEGIN');
+      for (const [text, params] of change) await other.query(text, [...params]);
+      let settled = false;
+      const putting = setStoppedComingReachedOut(who, athleteId, reachedOut, today).then(
+        (outcome): Answer => ({ outcome }),
+        (error: { status?: number; code?: string }): Answer => ({ status: error.status, code: error.code }),
+      ).finally(() => { settled = true; });
+      let waited = false;
+      for (let attempt = 0; !settled; attempt += 1) {
+        await other.query('select pg_stat_clear_snapshot()');
+        const { rows } = await other.query(
+          `select wait_event_type, query, $2::int = any(pg_blocking_pids(pid)) as by_other
+             from pg_stat_activity where pid = $1`,
+          [markerPid, otherPid],
+        );
+        if (rows[0]?.wait_event_type === 'Lock' && rows[0].by_other === true && waitsOn.test(rows[0].query)) {
+          waited = true;
+          break;
+        }
+        if (attempt > 400) throw new Error(`the PUT neither finished nor waited on ${waitsOn}`);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      for (const [text, params] of thenRun) await other.query(text, [...params]);
+      await other.query('COMMIT');
+      return { ...(await putting), waited };
+    } finally {
+      await other.query('ROLLBACK').catch(() => {});
+      await other.end();
+    }
+  }
+
+  async function marksAndAudits(gym: Gym) {
+    return {
+      marks: (await client.query(
+        'select athlete_id, cleared_kind from pilot.athlete_reached_out_marks where organization_id = $1 order by athlete_id, marked_at',
+        [gym.organizationId],
+      )).rows,
+      audits: (await client.query(
+        `select details->>'athlete_id' as athlete_id, event_type from pilot.audit_events
+          where organization_id = $1 and entity_type = 'athlete_reached_out_mark' order by audit_id`,
+        [gym.organizationId],
+      )).rows,
+    };
+  }
+
+  async function gone40Days(gym: Gym, athleteId: string, name: string, today: string) {
+    await addAthlete(gym, athleteId, name);
+    await registerDay(gym, athleteId, dayFrom(today, -40), 'present');
+  }
+
+  test('the staff member: a membership ended or an account turned off in flight is waited for and refuses the write (403), with no deadlock', async () => {
+    const gym = await newGym('held-staff');
+    const today = await gymToday();
+    await gone40Days(gym, 'abe', 'Abe Athlete', today);
+    const membershipOff = [[
+      'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+      [gym.coach.accountId, gym.organizationId],
+    ]] as const;
+    const accountOff = [['update pilot.accounts set active_flag = false where account_id = $1', [gym.coach2.accountId]]] as const;
+    const noChange = [[
+      'update pilot.organization_memberships set active_flag = true where account_id = $1 and organization_id = $2',
+      [gym.admin.accountId, gym.organizationId],
+    ]] as const;
+
+    await expect(putWithChangeInFlight(gym.coach, 'abe', true, today, membershipOff, /organization_memberships/))
+      .resolves.toEqual({ status: 403, code: undefined, waited: true });
+    await expect(putWithChangeInFlight(gym.coach2, 'abe', true, today, accountOff, /pilot\.accounts/))
+      .resolves.toEqual({ status: 403, code: undefined, waited: true });
+    // Reviewer J: an account turned off as auth.ts does it, the account row and then the membership,
+    // the membership after the mark is already waiting. The mark takes the account first too, so it
+    // waits and is refused; taking the membership first deadlocked (40P01).
+    const memberAccount = await member(gym, 'coach');
+    const membershipAfterWait = [[
+      'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+      [memberAccount.accountId, gym.organizationId],
+    ]] as const;
+    await expect(putWithChangeInFlight(
+      memberAccount, 'abe', true, today,
+      [['update pilot.accounts set active_flag = false where account_id = $1', [memberAccount.accountId]]],
+      /pilot\.accounts/, membershipAfterWait,
+    )).resolves.toEqual({ status: 403, code: undefined, waited: true });
+    expect(await marksAndAudits(gym)).toEqual({ marks: [], audits: [] });
+    // The control: the same wait, with a change that leaves the admin staff, marks.
+    await expect(putWithChangeInFlight(gym.admin, 'abe', true, today, noChange, /organization_memberships/))
+      .resolves.toEqual({ outcome: 'marked', waited: true });
+  });
+
+  test('the athlete row: a soft delete or a "left" flag in flight is waited for and refuses the write (404, 409), nothing written', async () => {
+    const gym = await newGym('held-athlete');
+    const today = await gymToday();
+    await gone40Days(gym, 'dee', 'Dee Deleted', today);
+    await gone40Days(gym, 'lea', 'Lea Leaving', today);
+    const set = (column: string, value: string, athleteId: string) => [[
+      `update pilot.athletes set ${column} = ${value} where organization_id = $1 and athlete_id = $2`,
+      [gym.organizationId, athleteId],
+    ]] as const;
+
+    await expect(putWithChangeInFlight(gym.coach, 'dee', true, today, set('deleted_at', 'now()', 'dee'), /pilot\.athletes/))
+      .resolves.toEqual({ status: 404, code: undefined, waited: true });
+    await expect(putWithChangeInFlight(gym.coach, 'lea', true, today, set('active_flag', 'false', 'lea'), /pilot\.athletes/))
+      .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST', waited: true });
+    expect(await marksAndAudits(gym)).toEqual({ marks: [], audits: [] });
+  });
+
+  test('program memberships: a first membership recorded lapsed in flight is waited for and refuses the mark (409), nothing written', async () => {
+    // Codex's P2 is the lapse of an existing membership (the test above this describe). An athlete
+    // with no membership has no row to hold: the new row's foreign key check waits on the athlete row.
+    const gym = await newGym('held-first-membership');
+    const today = await gymToday();
+    await gone40Days(gym, 'fin', 'Fin First', today);
+    const firstLapsed = [[
+      `insert into pilot.program_memberships
+         (organization_id, membership_id, athlete_id, program_name, status, started_on, created_by_account_id)
+       values ($1, gen_random_uuid()::text, $2, 'Youth Boxing', 'lapsed', $3::date, $4)`,
+      [gym.organizationId, 'fin', dayFrom(today, -100), gym.admin.accountId],
+    ]] as const;
+
+    await expect(putWithChangeInFlight(gym.coach, 'fin', true, today, firstLapsed, /pilot\.athletes/))
+      .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST', waited: true });
+    expect(await marksAndAudits(gym)).toEqual({ marks: [], audits: [] });
+  });
+
+  test("the gym's number of days: a change in flight is waited for and read (409 at 56 days; marks when put back to the default)", async () => {
+    const gym = await newGym('held-days');
+    const today = await gymToday();
+    await addAthlete(gym, 'gia', 'Gia Gone');
+    await registerDay(gym, 'gia', dayFrom(today, -20), 'present');
+    // As setStoppedComingPolicy saves: the gym row FOR NO KEY UPDATE first, then the setting.
+    const save = (sql: string, params: readonly unknown[]) => [
+      ['select 1 from pilot.organizations where organization_id = $1 for no key update', [gym.organizationId]],
+      [sql, params],
+    ] as const;
+    const to56 = save(
+      `insert into pilot.organization_stopped_coming_policy (organization_id, gap_days, set_by_account_id, set_at)
+       values ($1, 56, $2, clock_timestamp())`,
+      [gym.organizationId, gym.admin.accountId],
+    );
+    const backToDefault = save('delete from pilot.organization_stopped_coming_policy where organization_id = $1', [gym.organizationId]);
+
+    // Gone 20 days: listed at the default 14, not at 56.
+    await expect(putWithChangeInFlight(gym.coach, 'gia', true, today, to56, /pilot\.organizations/))
+      .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST', waited: true });
+    expect(await marksAndAudits(gym)).toEqual({ marks: [], audits: [] });
+    await expect(putWithChangeInFlight(gym.coach, 'gia', true, today, backToDefault, /pilot\.organizations/))
+      .resolves.toEqual({ outcome: 'marked', waited: true });
+  });
+
+  test('the last day they came: a register mark or a here mark made in flight is waited for and read (mark 409; take-back not_marked)', async () => {
+    const gym = await newGym('held-came');
+    const today = await gymToday();
+    for (const [id, name] of [['rex', 'Rex Register'], ['hal', 'Hal Here'], ['tia', 'Tia Taken']]) {
+      await gone40Days(gym, id, name, today);
+    }
+    // A class today, committed, for the register mark; a run, committed, for the here marks.
+    await classWithMark(gym, 'class-today', today, 'tia', 'absent');
+    const run = (await startSessionScriptRun(gym.organizationId, gym.coach.accountId, {})).run_id;
+    const registerPresent = [[
+      `insert into pilot.scheduler_attendance
+         (organization_id, attendance_id, class_id, athlete_id, status, method,
+          checked_in_by_role, checked_in_by_account_id, checked_in_at)
+       values ($1, 'sa-today-rex', 'class-today', 'rex', 'present', 'coach_override', 'coach', $2, now())`,
+      [gym.organizationId, gym.coach.accountId],
+    ]] as const;
+    const here = (athleteId: string) => [[
+      `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+       values ($1, $2, $3, $4, 'coach')`,
+      [gym.organizationId, run, athleteId, gym.coach.accountId],
+    ]] as const;
+
+    await expect(putWithChangeInFlight(gym.coach, 'rex', true, today, registerPresent, /pilot\.athletes/))
+      .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST', waited: true });
+    await expect(putWithChangeInFlight(gym.coach, 'hal', true, today, here('hal'), /pilot\.athletes/))
+      .resolves.toEqual({ status: 409, code: 'NOT_ON_STOPPED_COMING_LIST', waited: true });
+    // Tia is marked today; she then comes today, in flight while the mark is taken back. Once she
+    // has come, today's mark is not newer than her last day, so there is no mark to take back.
+    await expect(setStoppedComingReachedOut(gym.coach, 'tia', true, today)).resolves.toBe('marked');
+    await expect(putWithChangeInFlight(gym.coach2, 'tia', false, today, here('tia'), /pilot\.athletes/))
+      .resolves.toEqual({ outcome: 'not_marked', waited: true });
+    expect(await marksAndAudits(gym)).toEqual({
+      marks: [{ athlete_id: 'tia', cleared_kind: null }],
+      audits: [{ athlete_id: 'tia', event_type: 'create' }],
+    });
+  });
 });

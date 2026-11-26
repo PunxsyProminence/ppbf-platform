@@ -847,9 +847,17 @@ export async function writeSessionRegisterPresent(
   organizationId: string,
   mark: Pick<SchedulerAttendance, 'class_id' | 'athlete_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
   now: string,
-  // A tap made EARLIER (copied when a session is tied mid-way): an Absent or Excused set on the
-  // register after it is a later register change, and it wins ('register_newer').
+  // A tap made EARLIER (copied when a session is tied mid-way, or kept in the open page and sent
+  // late): an Absent or Excused set on the register after it is a later register change, and it
+  // wins ('register_newer').
   tappedAt?: string,
+  // The tapping run. An Absent that run's own no-shows tap wrote, untouched since (on that tap's
+  // class, still Absent, and still at that tap's time: every register write sets updated_at), is never a later register
+  // change: the page sends its
+  // kept saves one at a time in tap order, so a here tap landing after it was tapped after it, and
+  // here wins (OD-2026-10-21-004 ruling 1). Two times worked out from two requests are each off by
+  // their request's delay and are not compared (review of #2165; round 13 of #2178).
+  runId?: string,
 ): Promise<SessionRegisterWrite> {
   const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
   let previous: SchedulerAttendance['status'] | undefined;
@@ -867,11 +875,20 @@ export async function writeSessionRegisterPresent(
     );
     if (inserted.rows[0]) return { effect: 'created', updated_at: inserted.rows[0].updated_at };
     const { rows } = await client.query<{ status: SchedulerAttendance['status']; newer: boolean }>(
-      `select status, ($4::timestamptz is not null and updated_at > $4::timestamptz) as newer
-         from pilot.scheduler_attendance
-        where organization_id = $1 and class_id = $2 and athlete_id = $3
+      `select a.status,
+              ($4::timestamptz is not null and a.updated_at > $4::timestamptz
+               and not exists (
+                 select 1 from pilot.audit_events e
+                  where e.organization_id = a.organization_id and e.entity_type = 'session_script_run'
+                    and e.entity_id = $5 and e.details->>'action' = 'mark_no_shows'
+                    and e.details->>'class_id' = a.class_id
+                    and e.details->'marked_athlete_ids' ? a.athlete_id
+                    and (e.details->>'marked_at')::timestamptz = a.updated_at
+                    and a.status = 'absent')) as newer
+         from pilot.scheduler_attendance a
+        where a.organization_id = $1 and a.class_id = $2 and a.athlete_id = $3
           for update`,
-      [...params.slice(0, 3), tappedAt ?? null],
+      [...params.slice(0, 3), tappedAt ?? null, runId ?? null],
     );
     previous = rows[0]?.status;
     newer = rows[0]?.newer === true;
@@ -917,14 +934,17 @@ export async function undoSessionRegisterPresent(
  * (Rec.)"): ONE TAP by the coach marks Absent every athlete signed up for the class who has no
  * register mark at all. Never automatic: only that tap calls this. An athlete with any mark
  * (Present, Absent, Excused, a family's own check-in) is left as they are, and so is anyone in
- * `exceptAthleteIds` (marked here on the session). A mark landing at the same moment wins: the
- * insert does nothing on a conflict. Returns the athletes it marked.
+ * `exceptAthleteIds` (marked here on the session). Only athletes in `namedAthleteIds` are marked:
+ * the set the coach's screen showed when they tapped, so a resent tap never reaches an athlete who
+ * signed up or lost a mark later (W4 item 7, OVERWATCH 7160191377). A mark landing at the same
+ * moment wins: the insert does nothing on a conflict. Returns the athletes it marked.
  */
 export async function markClassNoShowsAbsent(
   client: PoolClient,
   organizationId: string,
   mark: Pick<SchedulerAttendance, 'class_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
   exceptAthleteIds: readonly string[],
+  namedAthleteIds: readonly string[],
   now: string,
 ): Promise<string[]> {
   const { rows } = await client.query<{ athlete_id: string }>(
@@ -937,18 +957,22 @@ export async function markClassNoShowsAbsent(
                from pilot.scheduler_registrations r
               where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
                 and ${athleteNotDeletedSql('r')}
-                and r.athlete_id <> all($7::text[])) signed_up
+                and r.athlete_id <> all($7::text[])
+                and r.athlete_id = any($8::text[])) signed_up
      on conflict (organization_id, class_id, athlete_id) do nothing
      returning athlete_id`,
-    [organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now, [...exceptAthleteIds]],
+    [
+      organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now,
+      [...exceptAthleteIds], [...namedAthleteIds],
+    ],
   );
   return rows.map((row) => row.athlete_id).sort();
 }
 
-/** How many athletes the no-shows tap would mark now: signed up, no register mark, not excepted. */
-export async function countClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<number> {
-  const row = await queryOne<{ n: number }>(
-    `select count(distinct r.athlete_id)::int as n
+/** Who the no-shows tap would mark now: signed up, no register mark, not excepted. Sorted. */
+export async function listClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select distinct r.athlete_id
        from pilot.scheduler_registrations r
       where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
         and ${athleteNotDeletedSql('r')}
@@ -959,5 +983,5 @@ export async function countClassNoShows(organizationId: string, classId: string,
         )`,
     [organizationId, classId, [...exceptAthleteIds]],
   );
-  return row?.n ?? 0;
+  return rows.map((row) => row.athlete_id).sort();
 }

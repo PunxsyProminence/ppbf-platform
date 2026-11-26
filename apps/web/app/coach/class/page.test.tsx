@@ -12,6 +12,9 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import CoachClassPage from './page';
 import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
+import { WAITING_WORDS } from '@/components/SaveQueueNotice';
+import { createPersistentRoleSession } from '@/components/roleSession';
+import { resetSaveQueueForTests } from '@/src/lib/saveQueue';
 
 const gate: { roles: readonly string[] | null } = { roles: null };
 jest.mock('@/components/RoleSessionGate', () => ({
@@ -235,10 +238,38 @@ test('a live session on arrival: the console and Gym TVs, no Start, and nothing 
   expect(screen.getByLabelText('Gym TVs (marker)')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
   expect(posts).toEqual([]);
-  // The one POST the console makes on load is the SHADOW queue's count (CoachLiveTiles), a read.
+  // The POSTs the page makes on load are reads: the SHADOW queue's count (CoachLiveTiles), and the
+  // kept-save queue's account check (W4 item 7; the session route takes only POST).
   const otherPosts = fetchMock.mock.calls.filter(([url, init]) => (init as RequestInit | undefined)?.method === 'POST'
-    && String(url) !== '/api/pilot/shadow/review-projection');
+    && String(url) !== '/api/pilot/shadow/review-projection'
+    && !String(url).endsWith('/api/pilot/auth/session'));
   expect(otherPosts).toEqual([]);
+});
+
+test('the screen names the saves this page keeps: a pause sent on a lost connection is listed as not saved yet (W4 item 7)', async () => {
+  resetSaveQueueForTests();
+  createPersistentRoleSession('coach');
+  serve({
+    live: () => jsonResponse({ run: plainRun() }),
+    patch: () => {
+      throw new TypeError('Failed to fetch');
+    },
+  });
+  const base = global.fetch;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => (String(input).endsWith('/api/pilot/auth/session')
+    ? jsonResponse({ authenticated: true, account_id: 'acct_coach_1' })
+    : base(input, init))) as unknown as typeof fetch;
+  await open();
+
+  const pause = await screen.findByRole('button', { name: 'Pause session' });
+  await act(async () => {
+    fireEvent.click(pause);
+  });
+  const waiting = (await screen.findByText(WAITING_WORDS)).closest('[role="status"]') as HTMLElement;
+  expect(within(waiting).getByText('Pause session')).toBeInTheDocument();
+  act(() => {
+    resetSaveQueueForTests();
+  });
 });
 
 test('a failed live-session check says a session may exist, and Start stays off, as it says', async () => {

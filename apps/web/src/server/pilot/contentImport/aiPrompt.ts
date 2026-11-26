@@ -115,7 +115,7 @@ function fileSection(spec: FileSpec, number: number, linking: boolean): string[]
   const columns = promptColumns(spec);
   const rules = [
     ...(spec.unique ?? []).map((rule) => rule.description),
-    ...(spec.groupRules ?? []).map((rule) => rule.description),
+    ...(spec.groupRules ?? []).filter((rule) => rule.inPrompt !== false).map((rule) => rule.description),
     ...(spec.rowRules ?? []).map((rule) => rule.description),
   ];
   return [

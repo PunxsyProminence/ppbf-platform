@@ -52,9 +52,10 @@
  * empty list: an empty list here reads as "nobody has stopped coming". A
  * coach's reach is the whole gym (access.ts), so a coach and the gym admin see
  * the same list. A mark is for a live athlete of this gym (404) who is on the
- * list now, by its own rules (409; all but the gym's number of days read on
- * the write's transaction); the staff membership and the live athlete are checked again
- * under lock in the write, as sessionRunAthletes.ts does.
+ * list now, by its own rules (409). Every fact a mark or a take-back rests on
+ * is read on the write's transaction with its rows locked, except two changes
+ * to the last day they came (Overwatch on #2206; setStoppedComingReachedOut
+ * lists both).
  * sessionRunPresenceStaffOnly.convention.test.ts pins this module and its one
  * route as readers of the staff-only presence record (Overwatch, W4-6 GO,
  * condition 1).
@@ -77,8 +78,8 @@ import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ConflictError, ForbiddenError, NotFoundError } from './errors';
 import { type ReachedOut, type ReachedOutOutcome, readCurrentReachedOut, setReachedOutMark } from './reachedOutMarks';
-import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
-import { readStoppedComingPolicy, type StoppedComingGapDays } from './stoppedComingPolicy';
+import { lockStaffMembership, staffNoteRoleInOrganization } from './sessionStaffNotes';
+import { readStoppedComingPolicy, type StoppedComingGapDays, type StoppedComingPolicy } from './stoppedComingPolicy';
 
 export interface StoppedComingAthlete {
   readonly athlete_id: string;
@@ -131,6 +132,14 @@ async function athletesWithNoActiveMembership(
   type Row = { athlete_id: string };
   const read = async (text: string, params: unknown[]): Promise<Row[]> =>
     (client ? (await client.query<Row>(text, params)).rows : query<Row>(text, params));
+  if (client) {
+    // On a mark's transaction, hold these membership rows until the mark commits (Codex on #2206):
+    // a status change waits for it, and one already in flight is waited for and then read.
+    await client.query(
+      'select 1 from pilot.program_memberships where organization_id = $1 and athlete_id = any($2::text[]) for share',
+      [organizationId, [...athleteIds]],
+    );
+  }
   const rows = await read(
     `select pm.athlete_id
        from pilot.program_memberships pm
@@ -255,26 +264,44 @@ export async function setStoppedComingReachedOut(
   if (!(await organizationActionableRoster(organizationId)).some((row) => row.athlete_id === athleteId)) {
     throw new NotFoundError('Athlete not found.');
   }
-  const policy = reachedOut ? await readStoppedComingPolicy(organizationId) : null;
   return withTransaction(async (client) => {
-    // Both again, under lock, as sessionRunAthletes.ts marks a session: membership and account,
-    // then the athlete row, then (in reachedOutMarks.ts) the mark row. The role is the membership's.
+    // Every fact the write rests on is read here, on this transaction, with its rows locked
+    // (Overwatch on #2206), except the two named above the last-came reads: a change already under
+    // way is waited for and then read, and one that starts later waits for this to commit. Parent
+    // rows first: the gym, the staff account and membership, the athlete, the athlete's program
+    // memberships, then (reachedOutMarks.ts) the mark.
+    let policy: StoppedComingPolicy | null = null;
+    if (reachedOut) {
+      // The gym's number of days. Its one writer, setStoppedComingPolicy, takes this row
+      // FOR NO KEY UPDATE before it saves, a first save included, so FOR SHARE holds it.
+      await client.query('select 1 from pilot.organizations where organization_id = $1 for share', [organizationId]);
+      policy = await readStoppedComingPolicy(organizationId, client);
+    }
+    // The staff member: the account row first, on its own, then the membership. Every writer of
+    // these two rows takes the account first (auth.ts: "LOCK ORDER: THE ACCOUNT ROW FIRST");
+    // lockStaffMembership's one join took the membership first, and reviewer J saw it deadlock with
+    // an account being turned off. The role is the membership's, as sessionRunAthletes.ts marks a session.
+    await client.query('select 1 from pilot.accounts where account_id = $1 for share', [actor.accountId]);
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
-    if (!(await lockLiveAthlete(client, organizationId, athleteId))) throw new NotFoundError('Athlete not found.');
-    // The list check on this transaction (reviewer J), all but the gym's number of days (read just
-    // before): a "left" flag or a lapsed membership committed before this point is seen.
-    if (policy) {
-      const flag = await client.query<{ active_flag: boolean }>(
-        'select active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2',
-        [organizationId, athleteId],
-      );
-      if (flag.rows[0]?.active_flag !== true
-        || (await athletesWithNoActiveMembership(organizationId, [athleteId], client)).has(athleteId)) {
-        throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
-      }
+    // The athlete row FOR UPDATE, not FOR SHARE: a soft delete or a "left" flag waits, and so does
+    // every new row that names this athlete, since its foreign key check takes this row FOR KEY
+    // SHARE: a first program membership, a register mark, a here mark.
+    const athlete = await client.query<{ deleted_at: string | null; active_flag: boolean }>(
+      'select deleted_at, active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2 for update',
+      [organizationId, athleteId],
+    );
+    if (!athlete.rows[0] || athlete.rows[0].deleted_at !== null) throw new NotFoundError('Athlete not found.');
+    // For a mark, the list's own rules (reviewer J): not left, and an active membership where any is recorded.
+    if (policy && (athlete.rows[0].active_flag !== true
+      || (await athletesWithNoActiveMembership(organizationId, [athleteId], client)).has(athleteId))) {
+      throw new ConflictError(NOT_LISTED, 'NOT_ON_STOPPED_COMING_LIST');
     }
     // The last day they came, from both sources, on this transaction (Overwatch on #2163, answer A).
+    // Held by the athlete row: a new register or here mark, and a change to a standing here mark or
+    // its run's class (sessionRunAthletes.ts and sessionRunClass.ts take the athlete row first). Not
+    // held, as #2206 records: a status change to an existing register row, or a class cancelled or
+    // restored. Their writers take no athlete lock.
     const register = await getAttendanceLast28Days(organizationId, [athleteId], today, client);
     const openGym = await lastOpenGymDays(organizationId, [athleteId], today, client);
     const lastCameDay = laterDay(register.get(athleteId)?.last_present_day ?? null, openGym.get(athleteId) ?? null);

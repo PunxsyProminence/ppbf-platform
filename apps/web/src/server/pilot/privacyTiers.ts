@@ -566,6 +566,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunClass.ts#markSessionNoShowsAbsent',
       'sessionRunClass.ts#describeRunClass',
       'stoppedComing.ts#listStoppedComing',
+      'onTheFloor.ts#listOnTheFloorForStaff',
       'stoppedComing.ts#setStoppedComingReachedOut',
     ],
     note:
