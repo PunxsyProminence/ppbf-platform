@@ -1,16 +1,19 @@
 import crypto from 'node:crypto';
 
 import {
+  confirmEmailAlertAddress,
   emailAlertCodeHash,
   emailAlertCodeLimitError,
   emailAlertUserTypeFor,
   newEmailAlertCode,
   normalizeEmailAlertAddress,
   readEmailAlertSwitch,
+  requestEmailAlertAddressCode,
   setEmailAlertSwitch,
 } from './emailAlertSwitches';
 import { queryOne, withTransaction } from './db';
 import { ForbiddenError } from './errors';
+import { getRateLimitStatus } from './rateLimit';
 import { hashToken } from './security';
 
 /*
@@ -182,5 +185,48 @@ describe('the address code, without a database', () => {
   it('default 4: the one limit answer names no limit and no address', () => {
     expect(emailAlertCodeLimitError()).toMatchObject({ status: 429, code: 'EMAIL_ALERT_CODE_LIMIT' });
     expect(emailAlertCodeLimitError().message).toBe(emailAlertCodeLimitError().message);
+  });
+
+  // pilot.athletes.dob is NOT NULL, so the pg suite cannot store this case (OD-2026-10-04-010).
+  it('an athlete whose date of birth reads as null: POST and PUT are 403 with nothing reserved, opened, written or sent', async () => {
+    const sendCode = jest.fn();
+    const address = 'nodob@example.test';
+    mockQueryOne.mockResolvedValueOnce({ dob: null }).mockResolvedValueOnce(null);
+    await expect(requestEmailAlertAddressCode({ ...athlete, address }, sendCode, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    mockQueryOne.mockResolvedValueOnce({ dob: null }).mockResolvedValueOnce(null);
+    await expect(confirmEmailAlertAddress({ ...athlete, code: '123456' }, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(sendCode).not.toHaveBeenCalled();
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(getRateLimitStatus(`email_alert_code_address:${hashToken(address)}`).count).toBe(0);
+  });
+
+  // L1: the adult check comes first, so a minor's answer never depends on what they typed.
+  it('a malformed address or code from an adult is the worded 400 after the adult check, with nothing opened, reserved or sent', async () => {
+    const sendCode = jest.fn();
+    mockQueryOne.mockResolvedValue({ dob: '2000-03-14' });
+    await expect(requestEmailAlertAddressCode({ ...athlete, address: 'not an address' }, sendCode, NOW))
+      .rejects.toMatchObject({ status: 400, message: 'Enter a valid email address' });
+    for (const code of ['12345', '1234567', 'abcdef', 123456, null]) {
+      await expect(confirmEmailAlertAddress({ ...athlete, code }, NOW))
+        .rejects.toMatchObject({ status: 400, message: 'Enter the six-digit code from the email' });
+    }
+    expect(mockQueryOne.mock.calls.every((call) => /join pilot\.athletes/.test(call[0]))).toBe(true);
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(sendCode).not.toHaveBeenCalled();
+  });
+
+  it('a malformed address or code from an athlete with no date of birth is the plain 403, as a well-formed one is', async () => {
+    const sendCode = jest.fn();
+    mockQueryOne.mockImplementation(async (sql: string) => (/join pilot\.athletes/.test(sql) ? { dob: null } : null));
+    for (const attempt of [
+      () => requestEmailAlertAddressCode({ ...athlete, address: 'not an address' }, sendCode, NOW),
+      () => requestEmailAlertAddressCode({ ...athlete, address: 'well.formed@example.test' }, sendCode, NOW),
+      () => confirmEmailAlertAddress({ ...athlete, code: '12' }, NOW),
+      () => confirmEmailAlertAddress({ ...athlete, code: '123456' }, NOW),
+    ]) {
+      await expect(attempt()).rejects.toThrow(new ForbiddenError('Forbidden: email alerts are not offered to this account'));
+    }
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(sendCode).not.toHaveBeenCalled();
   });
 });

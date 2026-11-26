@@ -111,9 +111,18 @@ export function emailAlertSenderDependencies(
   };
 }
 
-async function gymShortName(organizationId: string): Promise<string> {
+/**
+ * The gym's names: this gym's stored profile's short and legal name
+ * (getOrganizationProfile; outside production with no row, its development
+ * profile), or, when production has no profile to read, its name of record
+ * (pilot.organizations) for both. Not the sign-in email's read, which names
+ * the operating gym's profile and has no such fallback. Exported for the
+ * alert address code's email too (emailAlertCode.ts, EM-2b-2).
+ */
+export async function gymNames(organizationId: string): Promise<{ shortName: string; legalName: string }> {
   try {
-    return (await getOrganizationProfile(organizationId)).shortName;
+    const { shortName, legalName } = await getOrganizationProfile(organizationId);
+    return { shortName, legalName };
   } catch (error) {
     if (!(error instanceof OrganizationProfileUnavailableError)) throw error;
   }
@@ -121,7 +130,12 @@ async function gymShortName(organizationId: string): Promise<string> {
     'select organization_name from pilot.organizations where organization_id = $1',
     [organizationId],
   );
-  return row?.organization_name ?? '';
+  const name = row?.organization_name ?? '';
+  return { shortName: name, legalName: name };
+}
+
+export async function gymShortName(organizationId: string): Promise<string> {
+  return (await gymNames(organizationId)).shortName;
 }
 
 type SkipReason = 'switched_off' | 'gym_unticked' | 'sign_in_off' | 'not_offered' | 'no_address';

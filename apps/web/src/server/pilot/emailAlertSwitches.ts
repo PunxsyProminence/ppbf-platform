@@ -16,10 +16,11 @@
  * pause it (OVERWATCH 7182466510 on #2169).
  *
  * An adult athlete cannot switch on before an address is confirmed (OW27-38 B;
- * GO on #2159, condition 3); the table's CHECK refuses it too. Every change is
- * audited in the same transaction. No address field is audited; the audit row
- * names the account by its id, which can itself be the sign-in address (see
- * the email-alert-switches migration).
+ * GO on #2159, condition 3); the table's CHECK refuses it too. The address and
+ * its code are EM-2b-2's (requestEmailAlertAddressCode, below). Every change is
+ * audited in the same transaction. No address field and no code is audited;
+ * the audit row names the account by its id, which can itself be the sign-in
+ * address (see the email-alert-switches migration).
  */
 
 import { randomInt } from 'node:crypto';
@@ -33,8 +34,9 @@ import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
-import { ConflictError, ForbiddenError, PilotError, ValidationError } from './errors';
-import { EMAIL_SHAPE } from './graphMailer';
+import { ConflictError, ForbiddenError, PilotError, ServiceUnavailableError, ValidationError } from './errors';
+import { EMAIL_SHAPE, MailSendError } from './graphMailer';
+import { reserveAttempts } from './rateLimit';
 import { hashToken } from './security';
 
 export interface EmailAlertSwitchSubject {
@@ -522,6 +524,11 @@ async function saveSwitch(
 export const EMAIL_ALERT_CODE_LIFETIME_MS = 15 * 60 * 1000;
 /** Default 3: tries per code; at the cap every try is refused until a new code is sent. */
 export const EMAIL_ALERT_CODE_TRIES = 5;
+/** Default 4(b): one person, one code email a minute. */
+const CODE_RESEND_MS = 60 * 1000;
+/** Default 4(c): one person, five code emails a day in each gym. */
+const CODE_EMAILS_PER_DAY = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Sends the one code email (emailAlertCode.ts, emailAlertCodeMailer). Injected so tests never reach Graph. */
 export type EmailAlertCodeMailer = (message: { organizationId: string; to: string; code: string }) => Promise<void>;
@@ -554,4 +561,266 @@ export function emailAlertCodeHash(organizationId: string, accountId: string, ad
 /** Default 4: every limit answers exactly this, so no answer says which limit, or anything about the address. */
 export function emailAlertCodeLimitError(): PilotError {
   return new PilotError(429, 'Too many code emails. Wait a few minutes, then ask again.', 'EMAIL_ALERT_CODE_LIMIT');
+}
+
+/** The adult check before anything else: anyone else gets the plain 403 once any leftover is retired. */
+async function refuseUnlessAdultAthlete(subject: EmailAlertSwitchSubject, now: Date): Promise<void> {
+  if ((await emailAlertUserTypeFor(subject, now)) === 'adult_athlete') return;
+  await retireSwitchIfAny(subject, now);
+  throw notOffered();
+}
+
+/**
+ * lockPerson for an address write: null unless the person is offered an adult
+ * athlete's switch under the locks, in an active gym (default 12, as a
+ * switch-on is). A row left on under another user type is retired first (T-1
+ * A), as a save does. Returns the row as stored before any retire.
+ */
+async function lockAdultAthlete(client: PoolClient, subject: EmailAlertSwitchSubject, now: Date) {
+  const { userType, gymActive, stored, retire } = await lockPerson(client, subject, now);
+  if (userType !== 'adult_athlete' || !gymActive) return null;
+  if (stored && retire === 'user_type_changed') await retireRow(client, subject, stored, retire);
+  return { stored, row: stored?.user_type === 'adult_athlete' ? stored : undefined };
+}
+
+/** Clears the typed address and its code, audited with why. */
+async function clearPendingCode(client: PoolClient, subject: EmailAlertSwitchSubject, details: Record<string, unknown>) {
+  await client.query(
+    `update pilot.email_alert_switches
+        set pending_address = null, pending_code_hash = null, pending_code_expires_at = null, pending_code_attempts = 0
+      where organization_id = $1 and account_id = $2`,
+    [subject.organizationId, subject.accountId],
+  );
+  await audit(client, subject, { user_type: 'adult_athlete', ...details });
+}
+
+function codeExpired(row: SwitchRow | undefined, now: Date): boolean {
+  return Boolean(row?.code_expires_at && row.code_expires_at.getTime() <= now.getTime());
+}
+
+/**
+ * Default 4(b) and (c), read under the row lock: whether this person may have
+ * another code email now. (b): a code's send time is its expiry less its
+ * lifetime, so the minute restarts after a confirm or a voided send, while
+ * (c) still holds and counts every send, failed ones too. (c) counts this
+ * feature's own audit rows (the entity index serves it), comparing the app's
+ * clock with the database-stamped created_at: a skew of seconds under NTP,
+ * nothing against a day.
+ */
+async function personLimited(client: PoolClient, subject: EmailAlertSwitchSubject, row: SwitchRow | undefined, now: Date) {
+  const lastSentMs = row?.code_expires_at ? row.code_expires_at.getTime() - EMAIL_ALERT_CODE_LIFETIME_MS : null;
+  const tooSoon = lastSentMs !== null && now.getTime() < lastSentMs + CODE_RESEND_MS;
+  const sent = await client.query<{ n: number }>(
+    `select count(*)::int as n from pilot.audit_events
+      where organization_id = $1 and entity_type = 'email_alert_switch' and entity_id = $2
+        and details->>'address_action' = 'code_sent' and created_at > $3`,
+    [subject.organizationId, subject.accountId, new Date(now.getTime() - DAY_MS)],
+  );
+  return tooSoon || sent.rows[0].n >= CODE_EMAILS_PER_DAY;
+}
+
+/**
+ * POST: emails a code to the address typed. Default 5: a confirmed address
+ * stays in use until the new one is confirmed, and a new POST replaces the
+ * typed address and voids its code. Default 6: whether the address is anyone's
+ * sign-in address is never looked up, so no answer, timing or log line can say
+ * (magicLink.ts's rule). Default 11: an expired, unconfirmed address is
+ * cleared here. Default 13: a send that fails voids its code only while it is
+ * still the newest, and answers 503. L1: the adult check comes before the
+ * address is even read, so a minor's answer never depends on what they typed.
+ */
+export async function requestEmailAlertAddressCode(
+  subject: EmailAlertSwitchSubject & { readonly address: unknown },
+  sendCode: EmailAlertCodeMailer,
+  now: Date = new Date(),
+): Promise<EmailAlertSwitchState> {
+  await refuseUnlessAdultAthlete(subject, now);
+  const address = normalizeEmailAlertAddress(subject.address);
+  if (!address) throw new ValidationError('Enter a valid email address');
+  // Default 4(a): the address's own budget, the sign-in link's limiter
+  // (rateLimit.ts), keyed by hashToken (security.ts): an unkeyed SHA-256 of
+  // the address. Better than sign-in's buckets, which hold the raw address,
+  // but not secret: anyone who can read the buckets can test a guessed
+  // address against it.
+  const addressKey = `email_alert_code_address:${hashToken(address)}`;
+
+  // This person's own limits first, so a person held by them never spends
+  // the address's budget: else one athlete, inside their own minute, could
+  // keep any address they chose from ever being confirmed.
+  const checked = await withTransaction(async (client) => {
+    const person = await lockAdultAthlete(client, subject, now);
+    if (!person) return 'refused' as const;
+    if (codeExpired(person.row, now)) await clearPendingCode(client, subject, { address_action: 'expired_cleared' });
+    return (await personLimited(client, subject, person.row, now)) ? 'limited' as const : 'open' as const;
+  });
+  if (checked === 'refused') {
+    await retireSwitchIfAny(subject, now);
+    throw notOffered();
+  }
+  if (checked === 'limited') throw emailAlertCodeLimitError();
+  if ((await reserveAttempts([addressKey])).isLimited) throw emailAlertCodeLimitError();
+
+  const code = newEmailAlertCode();
+  const codeHash = emailAlertCodeHash(subject.organizationId, subject.accountId, address, code);
+  const outcome = await withTransaction(async (client) => {
+    // Everything again under the write's own locks: a POST of this person's
+    // that landed meanwhile is the 60 seconds' to refuse.
+    const person = await lockAdultAthlete(client, subject, now);
+    if (!person) return 'refused' as const;
+    const { stored, row } = person;
+    if (await personLimited(client, subject, row, now)) return 'limited' as const;
+    // One statement whether or not a row exists: the proposed row is off, so
+    // every CHECK passes on it, and an existing row keeps its switch and any
+    // confirmed address (default 5).
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches as s
+           (organization_id, account_id, user_type, pending_address, pending_code_hash, pending_code_expires_at)
+         values ($1, $2, 'adult_athlete', $3, $4, $5)
+         on conflict (organization_id, account_id) do update set
+           user_type = 'adult_athlete',
+           pending_address = excluded.pending_address,
+           pending_code_hash = excluded.pending_code_hash,
+           pending_code_expires_at = excluded.pending_code_expires_at,
+           pending_code_attempts = 0`,
+        [subject.organizationId, subject.accountId, address, codeHash, new Date(now.getTime() + EMAIL_ALERT_CODE_LIFETIME_MS)],
+      );
+    } catch (error) {
+      throw notOfferedIfMembershipGone(error);
+    }
+    await audit(client, subject, {
+      user_type: 'adult_athlete',
+      address_action: 'code_sent',
+      ...(stored && stored.user_type !== 'adult_athlete' ? { previous_user_type: stored.user_type } : {}),
+    });
+    return { ...stateFrom('adult_athlete', row, now), code_pending: true };
+  });
+  if (outcome === 'refused') {
+    await retireSwitchIfAny(subject, now);
+    throw notOffered();
+  }
+  if (outcome === 'limited') throw emailAlertCodeLimitError();
+
+  // Asked once more just before Graph: a date of birth corrected after the
+  // commit sends nothing, and the code is voided while it is still the newest.
+  // If the question itself cannot be answered, nothing is sent either, and the
+  // code is voided the same way, so no code stands pending without its email
+  // (GO condition 3; reviewer A's re-read).
+  let stillAdult: boolean;
+  try {
+    stillAdult = (await emailAlertUserTypeFor(subject, now)) === 'adult_athlete';
+  } catch (error) {
+    await voidCodeIfNewest(subject, codeHash, 'send_failed').catch((voidError: unknown) => {
+      console.error('email alert code: voiding an unsent code failed', { errorClass: errorClass(voidError) });
+    });
+    console.error('email alert code: the age check before sending failed', { errorClass: errorClass(error) });
+    throw new ServiceUnavailableError('The code email could not be sent. Try again in a few minutes.', 'EMAIL_ALERT_CODE_NOT_SENT');
+  }
+  if (!stillAdult) {
+    await voidCodeIfNewest(subject, codeHash, 'no_longer_offered');
+    await retireSwitchIfAny(subject, now);
+    throw notOffered();
+  }
+  // Sent after the commit, so no lock waits on Graph.
+  try {
+    await sendCode({ organizationId: subject.organizationId, to: address, code });
+  } catch (error) {
+    await voidCodeIfNewest(subject, codeHash, 'send_failed').catch((voidError: unknown) => {
+      console.error('email alert code: voiding an unsent code failed', { errorClass: errorClass(voidError) });
+    });
+    // Shape only: never the address, the code or a message that could carry them.
+    console.error('email alert code: the code email was not sent', {
+      errorClass: errorClass(error),
+      reason: error instanceof MailSendError ? error.reason : null,
+      statusCode: error instanceof MailSendError ? error.statusCode ?? null : null,
+      // Shape-checked by the mailer so it cannot be an address (extractGraphErrorCode).
+      graphErrorCode: error instanceof MailSendError ? error.graphErrorCode ?? null : null,
+    });
+    throw new ServiceUnavailableError('The code email could not be sent. Try again in a few minutes.', 'EMAIL_ALERT_CODE_NOT_SENT');
+  }
+  return outcome;
+}
+
+function errorClass(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
+/**
+ * Default 13: the code whose email failed, or was not sent, is voided only
+ * while it is still the newest, compared by hash under the row lock, so a
+ * later POST's code is never touched. The account then switch row, lockPerson's
+ * order.
+ */
+async function voidCodeIfNewest(subject: EmailAlertSwitchSubject, codeHash: string, reason: string): Promise<void> {
+  await withTransaction(async (client) => {
+    const { stored } = await lockSwitchRow(client, subject);
+    if (stored?.pending_code_hash === codeHash) {
+      await clearPendingCode(client, subject, { address_action: 'code_voided', reason });
+    }
+  });
+}
+
+type ConfirmRefusal = 'expired' | 'tries_used' | 'wrong';
+
+const CONFIRM_REFUSALS: Record<ConfirmRefusal, () => ConflictError> = {
+  expired: () => new ConflictError('No code is waiting, or it has expired. Ask for a new one.', 'EMAIL_ALERT_CODE_EXPIRED'),
+  tries_used: () => new ConflictError('That code has had too many tries. Ask for a new one.', 'EMAIL_ALERT_CODE_TRIES_USED'),
+  wrong: () => new ConflictError('That code is not right. Check the email and try again.', 'EMAIL_ALERT_CODE_WRONG'),
+};
+
+/**
+ * PUT: enters the code. Right, the typed address becomes the confirmed one.
+ * Default 10: confirming never switches the alert on (OD-2026-11-19-019); On
+ * stays its own press (setEmailAlertSwitch). A wrong code costs one of the
+ * row's tries; an expired one is cleared (default 11).
+ */
+export async function confirmEmailAlertAddress(
+  subject: EmailAlertSwitchSubject & { readonly code: unknown },
+  now: Date = new Date(),
+): Promise<EmailAlertSwitchState> {
+  await refuseUnlessAdultAthlete(subject, now);
+  // After the adult check (L1): a minor's answer never depends on what they typed.
+  const code = typeof subject.code === 'string' ? subject.code.trim() : '';
+  if (!/^\d{6}$/.test(code)) throw new ValidationError('Enter the six-digit code from the email');
+
+  const outcome = await withTransaction(async (client): Promise<'refused' | ConfirmRefusal | OfferedState> => {
+    const person = await lockAdultAthlete(client, subject, now);
+    if (!person) return 'refused';
+    const { row } = person;
+    if (!row?.pending_code_hash || !row.pending_address || !row.code_expires_at) return 'expired';
+    if (codeExpired(row, now)) {
+      await clearPendingCode(client, subject, { address_action: 'expired_cleared' });
+      return 'expired';
+    }
+    if (row.code_attempts >= EMAIL_ALERT_CODE_TRIES) return 'tries_used';
+    if (emailAlertCodeHash(subject.organizationId, subject.accountId, row.pending_address, code) !== row.pending_code_hash) {
+      await client.query(
+        `update pilot.email_alert_switches set pending_code_attempts = pending_code_attempts + 1
+          where organization_id = $1 and account_id = $2`,
+        [subject.organizationId, subject.accountId],
+      );
+      await audit(client, subject, { user_type: 'adult_athlete', address_action: 'code_wrong', tries: row.code_attempts + 1 });
+      return 'wrong';
+    }
+    await client.query(
+      `update pilot.email_alert_switches
+          set confirmed_address = pending_address, confirmed_at = clock_timestamp(),
+              pending_address = null, pending_code_hash = null, pending_code_expires_at = null, pending_code_attempts = 0
+        where organization_id = $1 and account_id = $2`,
+      [subject.organizationId, subject.accountId],
+    );
+    await audit(client, subject, {
+      user_type: 'adult_athlete',
+      address_action: 'confirmed',
+      replaced_confirmed: row.address_confirmed,
+      switched_on: row.switched_on,
+    });
+    return { offered: true, user_type: 'adult_athlete', switched_on: row.switched_on, address_confirmed: true, code_pending: false };
+  });
+  if (outcome === 'refused') {
+    await retireSwitchIfAny(subject, now);
+    throw notOffered();
+  }
+  if (typeof outcome === 'string') throw CONFIRM_REFUSALS[outcome]();
+  return outcome;
 }
