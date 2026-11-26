@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { keepSave, readSaveQueue, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
-import { type RunClassView, fetchLiveRunClass, fetchRunClass, goneWords, unknownOffPage, unknownOutcomeWords } from './SessionRunClass';
+import { type RunClassView, fetchRunClass, goneWords, unknownOffPage, unknownOutcomeWords } from './SessionRunClass';
 
 // The End Session offer on a session tied to a class (OD-2026-10-21-004 ruling 3, Jason: "A: Offer
 // it (Rec.)"): one tap marks Absent everyone signed up for the class who has no mark. Never
@@ -26,8 +26,6 @@ const REFUSED_AFTER_KEY = new Set([
   'SESSION_CLASS_NOT_YOURS',
   'SESSION_CLASS_NOT_STARTED',
 ]);
-// The key landed with other names: what this tap's names got is not known.
-const KEY_REUSED = 'SESSION_NO_SHOWS_KEY_REUSED';
 
 type Read = { state: 'loading' } | { state: 'failed' } | { state: 'loaded'; view: RunClassView | null };
 
@@ -65,13 +63,11 @@ export default function SessionNoShows({
     };
   }, [runId, classId, presentCount, attempt]);
 
-  // done: how many this tap marked; null when the server shows it landed without saying how many.
-  const showMarked = useCallback((done: number | null) => {
-    setResult(done === null
-      ? 'None of the athletes this tap named is still listed as a no-show.'
-      : done === 0
-        ? 'Nobody this tap named needed marking.'
-        : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
+  // done: how many this tap marked, as the server answered (a resend of a key that landed, the first answer).
+  const showMarked = useCallback((done: number) => {
+    setResult(done === 0
+      ? 'Nobody this tap named needed marking.'
+      : `${done} signed-up ${done === 1 ? 'athlete was' : 'athletes were'} marked Absent on the class register.`);
     setAttempt((count) => count + 1);
   }, []);
   // A kept tap not yet saved: the button waits too, so the same tap is not kept twice. A sign-out
@@ -124,27 +120,16 @@ export default function SessionNoShows({
         refusal = (await response.clone().json().catch(() => ({}))) as typeof refusal;
         return response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429 ? 'refused' : 'unknown';
       },
-      // Not landed when the server refused after looking the key up. Otherwise landed if none of the
-      // names sent is still a no-show of this class on this run, and not known if not. When the live run is another run
-      // or none, or is tied to another class now, that class's no-shows are not read here: not known,
-      // never "not saved" (condition 2; round 14, reviewer B).
-      checkLanded: async (signal) => {
-        if (refusal.error === KEY_REUSED) return null;
-        if (refusal.error && REFUSED_AFTER_KEY.has(refusal.error)) return false;
-        const now = await fetchLiveRunClass(signal).catch(() => null);
-        if (now === null || now.runId !== runId || !now.view || now.view.class_id !== classId) return null;
-        // A name still listed does not prove the tap never landed (a mark taken off since, a sign-up
-        // cancelled and made again): not known (round 15, reviewer A).
-        return now.view.no_show_ids.some((id) => named.includes(id)) ? null : true;
-      },
+      // Decided by this tap's own key alone: not landed when the server refused after looking the key
+      // up and finding it unrecorded; anything else (the key used for other names included) not known.
+      // Never read from the class's no-shows, which another tab or device marking the same athletes
+      // would empty too (OVERWATCH 7170099938 on #2178).
+      checkLanded: async () => (refusal.error !== undefined && REFUSED_AFTER_KEY.has(refusal.error) ? false : null),
       onSaved: (response) => {
         resolved.done = true;
         setWaiting(false);
+        if (!response) return;
         void (async () => {
-          if (!response) {
-            showMarked(null);
-            return;
-          }
           // A resend of a send that landed is answered with that send's answer.
           const payload = (await response.json().catch(() => ({}))) as { marked?: string[] };
           showMarked(payload.marked?.length ?? 0);

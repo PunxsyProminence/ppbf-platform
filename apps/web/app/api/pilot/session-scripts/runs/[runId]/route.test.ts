@@ -5,6 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   SessionScriptRunError,
   finishSessionScriptRun,
+  keyedSessionScriptRunAction,
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
@@ -25,6 +26,7 @@ jest.mock('@/src/server/pilot/sessionRunClass', () => ({
 jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   ...jest.requireActual('@/src/server/pilot/sessionScriptRuns'),
   finishSessionScriptRun: jest.fn(),
+  keyedSessionScriptRunAction: jest.fn(),
   moveSessionScriptRunCursor: jest.fn(),
   pauseSessionScriptRun: jest.fn(),
   resumeSessionScriptRun: jest.fn(),
@@ -39,6 +41,7 @@ const mockFinish = jest.mocked(finishSessionScriptRun);
 const mockShowOnWall = jest.mocked(setSessionScriptRunShowOnWall);
 const mockTie = jest.mocked(setSessionRunClass);
 const mockNoShows = jest.mocked(markSessionNoShowsAbsent);
+const mockKeyed = jest.mocked(keyedSessionScriptRunAction);
 
 const RUN_ID = 'ssrun_1';
 
@@ -403,10 +406,18 @@ describe('tie_class and mark_no_shows', () => {
     const response = await patch({ action: 'tie_class', class_id: ' class-1 ' });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }], released: [] });
-    expect(mockTie).toHaveBeenCalledWith(ACTOR, RUN_ID, 'class-1');
+    expect(mockTie).toHaveBeenCalledWith(ACTOR, RUN_ID, 'class-1', null);
     mockTie.mockResolvedValue({ class_id: null, copied: [], released: [] });
     await patch({ action: 'tie_class', class_id: null });
-    expect(mockTie).toHaveBeenLastCalledWith(ACTOR, RUN_ID, null);
+    expect(mockTie).toHaveBeenLastCalledWith(ACTOR, RUN_ID, null, null);
+  });
+
+  it('passes the tie\'s request key, and answers a resend of a recorded key as the module does', async () => {
+    mockTie.mockResolvedValue({ class_id: 'class-2', copied: [], released: [], replayed: true, live: true });
+    const response = await patch({ action: 'tie_class', class_id: 'class-1', request_key: 'key-tie' });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ class_id: 'class-2', copied: [], released: [], replayed: true, live: true });
+    expect(mockTie).toHaveBeenCalledWith(ACTOR, RUN_ID, 'class-1', 'key-tie');
   });
 
   it.each([[{ action: 'tie_class' }], [{ action: 'tie_class', class_id: '' }], [{ action: 'tie_class', class_id: 7 }]])(
@@ -514,5 +525,101 @@ describe('tie_class and mark_no_shows', () => {
     }
     expect(mockTie).not.toHaveBeenCalled();
     expect(mockNoShows).not.toHaveBeenCalled();
+  });
+});
+
+// OVERWATCH 7170099938 on #2178: every run action may carry the kept save's request key, and with one
+// goes through the keyed module call, which decides a resend by that key alone.
+describe('a run action with a request key', () => {
+  const KEYED_ACTOR = { organizationId: 'org-1', accountId: 'acct-coach', role: 'coach' };
+
+  beforeEach(() => {
+    mockKeyed.mockResolvedValue({ run: liveRun, replayed: false });
+  });
+
+  it.each([
+    [{ action: 'advance', to_block_id: ' blk-3 ' }, { action: 'advance', toBlockId: 'blk-3' }],
+    [{ action: 'pause' }, { action: 'pause' }],
+    [{ action: 'resume' }, { action: 'resume' }],
+    [{ action: 'show_on_wall', show: false }, { action: 'show_on_wall', show: false }],
+    [
+      { action: 'finish', run_state: 'abandoned', blocks_completed: 2, deviation_note: 'cut short' },
+      {
+        action: 'finish',
+        input: {
+          runState: 'abandoned', blocksCompleted: 2, athletesPresent: null, resetProtocolUsed: undefined,
+          deviationNote: 'cut short', whatWorked: undefined, whatDidNot: undefined,
+        },
+      },
+    ],
+  ])('%j goes through the keyed call with its key and what it asked, never the plain one', async (body, asked) => {
+    const response = await patch({ ...body, request_key: 'key-1' });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ run: liveRun });
+    expect(mockKeyed).toHaveBeenCalledWith(KEYED_ACTOR, RUN_ID, 'key-1', asked);
+    for (const plain of [mockAdvance, mockPause, mockResume, mockShowOnWall, mockFinish]) expect(plain).not.toHaveBeenCalled();
+  });
+
+  it('answers a resend of a recorded key as replayed, with the run as it is now or none', async () => {
+    mockKeyed.mockResolvedValueOnce({ run: liveRun, replayed: true });
+    await expect((await patch({ action: 'pause', request_key: 'key-1' })).json()).resolves.toEqual({ run: liveRun, replayed: true });
+    mockKeyed.mockResolvedValueOnce({ run: null, replayed: true });
+    const ended = await patch({ action: 'resume', request_key: 'key-2' });
+    expect(ended.status).toBe(200);
+    await expect(ended.json()).resolves.toEqual({ run: null, replayed: true });
+  });
+
+  it('without a key, goes through the plain call as before', async () => {
+    await patch({ action: 'pause' });
+    expect(mockPause).toHaveBeenCalledWith('org-1', 'acct-coach', RUN_ID);
+    expect(mockKeyed).not.toHaveBeenCalled();
+  });
+
+  const NUL = String.fromCharCode(0);
+  const LONE_HIGH = String.fromCharCode(0xd800);
+  it.each([
+    ['', 'empty'],
+    [' ', 'blank'],
+    [null, 'null'],
+    [7, 'a number'],
+    ['k'.repeat(201), 'over 200 characters'],
+    [`key${NUL}`, 'with a NUL'],
+    [`key${LONE_HIGH}`, 'with an unpaired surrogate'],
+  ] as Array<[unknown, string]>)('refuses a key %j (%s) on every action before touching the module', async (key) => {
+    for (const body of [
+      { action: 'advance', to_block_id: 'blk-3' },
+      { action: 'pause' },
+      { action: 'resume' },
+      { action: 'show_on_wall', show: true },
+      { action: 'finish' },
+      { action: 'tie_class', class_id: 'class-1' },
+    ]) {
+      const response = await patch({ ...body, request_key: key });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'request_key:expected text of 1 to 200 characters' });
+    }
+    expect(mockKeyed).not.toHaveBeenCalled();
+    expect(mockTie).not.toHaveBeenCalled();
+    for (const plain of [mockAdvance, mockPause, mockResume, mockShowOnWall, mockFinish]) expect(plain).not.toHaveBeenCalled();
+  });
+
+  it('takes a key of 200 characters, and a surrogate pair', async () => {
+    expect((await patch({ action: 'pause', request_key: 'k'.repeat(200) })).status).toBe(200);
+    expect((await patch({ action: 'pause', request_key: `key-${String.fromCharCode(0xd83e, 0xdd4a)}` })).status).toBe(200);
+    expect(mockKeyed).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers the same key sent for another change with 409, its code and plain message', async () => {
+    mockKeyed.mockRejectedValueOnce(new SessionScriptRunError('SESSION_RUN_KEY_REUSED', 409));
+    const response = await patch({ action: 'show_on_wall', show: true, request_key: 'key-1' });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_RUN_KEY_REUSED', message: expect.stringMatching(/already sent for another change/) });
+  });
+
+  it('still refuses another field and a bad target before the key is used', async () => {
+    expect((await patch({ action: 'pause', request_key: 'key-1', show: true })).status).toBe(400);
+    expect((await patch({ action: 'show_on_wall', show: 'true', request_key: 'key-1' })).status).toBe(400);
+    expect((await patch({ action: 'finish', run_state: 'done', request_key: 'key-1' })).status).toBe(400);
+    expect(mockKeyed).not.toHaveBeenCalled();
   });
 });

@@ -192,10 +192,20 @@ function blockItems(): HTMLElement[] {
   return screen.queryAllByRole('listitem').filter((item) => !tiles?.contains(item));
 }
 
-function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+function patchBodies(fetchMock: jest.Mock): Array<Record<string, unknown>> {
   return fetchMock.mock.calls
     .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/') && !String(call[0]).endsWith('/timer') && !String(call[0]).endsWith('/athletes'))
     .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
+}
+
+/** What each run PATCH asked, without its request key (patchKeys reads those). */
+function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+  return patchBodies(fetchMock).map((body) => Object.fromEntries(Object.entries(body).filter(([field]) => field !== 'request_key')));
+}
+
+/** The request key each run PATCH carried (a kept save sends its own on every send). */
+function patchKeys(fetchMock: jest.Mock): unknown[] {
+  return patchBodies(fetchMock).map((body) => body.request_key);
 }
 
 function logPostCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
@@ -2040,6 +2050,10 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
 
     await wait(RESEND_MS);
     expect(patchCalls(fetchMock)).toEqual([{ action: 'pause' }, { action: 'pause' }]);
+    // The save's own key, the same on the resend (OVERWATCH 7170099938).
+    const keys = patchKeys(fetchMock);
+    expect(typeof keys[0]).toBe('string');
+    expect(keys[1]).toBe(keys[0]);
     for (const signal of signalsTo(fetchMock, isRunPatch)) expect(signal).toBeInstanceOf(AbortSignal);
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
     expect(waitingLine()).toBeNull();
@@ -2104,41 +2118,225 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(patchCalls(fetchMock)).toHaveLength(1);
   });
 
-  it('a refused RESEND that the server shows had landed reads as saved, never as failed (condition 2)', async () => {
+  it('a resend of a send that landed is answered as replayed: saved with the run it names, never failed (condition 2)', async () => {
     jest.useFakeTimers();
     let sends = 0;
+    let reads = 0;
     const { fetchMock } = await renderKept(liveRun(), {
       patch: () => {
         sends += 1;
         if (sends === 1) throw new TypeError('Failed to fetch');
-        return jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409);
+        return jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }), replayed: true });
       },
-      runsGet: () => jsonResponse({ run: liveRun({ is_paused: true, paused_at: 'x' }) }),
+      runsGet: () => {
+        reads += 1;
+        return jsonResponse({ run: liveRun() });
+      },
     });
     await tap('Pause session');
     await wait(RESEND_MS);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('PAUSED')).toBeInTheDocument();
-    const reads = signalsTo(fetchMock, (url) => url.endsWith('/api/pilot/session-scripts/runs'));
-    expect(reads.length).toBeGreaterThan(0);
-    for (const signal of reads) expect(signal).toBeInstanceOf(AbortSignal);
+    expect(patchKeys(fetchMock)[1]).toBe(patchKeys(fetchMock)[0]);
+    expect(reads).toBe(0);
   });
 
-  it('a refused RESEND the server could not be checked for says the outcome is not known, on the console', async () => {
+  it('a resend of a live action that landed, answered with no run because the session has ended since, is saved and the console resyncs', async () => {
     jest.useFakeTimers();
     let sends = 0;
+    const { onRunGone } = await renderKept(liveRun(), {
+      patch: () => {
+        sends += 1;
+        if (sends === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({ run: null, replayed: true });
+      },
+      runsGet: () => jsonResponse({ run: null }),
+    });
+    await tap('Pause session');
+    await wait(RESEND_MS);
+    expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    expect(screen.queryByText(UNKNOWN_WORDS)).toBeNull();
+  });
+
+  it('a refused RESEND not decided by its key says the outcome is not known, on the console, and reads nothing to decide it', async () => {
+    jest.useFakeTimers();
+    let sends = 0;
+    let reads = 0;
     await renderKept(liveRun(), {
       patch: () => {
         sends += 1;
         if (sends === 1) throw new TypeError('Failed to fetch');
         return jsonResponse({ error: 'SESSION_SCRIPT_RUN_ALREADY_PAUSED' }, false, 409);
       },
-      runsGet: () => jsonResponse({}, false, 500),
+      runsGet: () => {
+        reads += 1;
+        return jsonResponse({}, false, 500);
+      },
     });
     await tap('Pause session');
     await wait(RESEND_MS);
     expect(screen.getByRole('alert').textContent).toContain('Pause session: the server refused it when it was sent again and could not be checked');
     expect(screen.queryByText(FAILED_WORDS)).toBeNull();
+    expect(reads).toBe(0);
+  });
+
+  // OVERWATCH 7170099938 (Codex P2 4698738015): another tab or device makes the same change while the
+  // first send's answer is lost. The server shows the state this save asked for, but that is not this
+  // save landing: the resend is decided by its own key, so it is never read as saved from that state.
+  describe('another tab or device makes the same change in between: decided by the key, never by the state', () => {
+    const SAME_CHANGE: Array<[string, () => Promise<void>, Partial<LiveSessionScriptRun>]> = [
+      ['advance', async () => tap('Next block'), { current_block_id: 'blk-3' }],
+      ['pause', async () => tap('Pause session'), { is_paused: true, paused_at: 'x' }],
+      ['show_on_wall', async () => tap('Allow on a TV', 'switch'), { show_on_wall: true }],
+    ];
+
+    it.each(SAME_CHANGE)('%s: a resend refused before its key is looked up is not known, not saved', async (_action, act1, same) => {
+      jest.useFakeTimers();
+      let sends = 0;
+      let reads = 0;
+      await renderKept(liveRun(), {
+        patch: () => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          // Refused before the run's key is looked up (the route's role gate, say).
+          return jsonResponse({ error: 'FORBIDDEN' }, false, 403);
+        },
+        // The other device's change: the run shows what this save asked.
+        runsGet: () => {
+          reads += 1;
+          return jsonResponse({ run: liveRun(same) });
+        },
+      });
+      await act1();
+      await wait(RESEND_MS);
+      expect(screen.getByRole('alert').textContent).toMatch(/the server refused it when it was sent again and could not be checked, so it is not known/);
+      expect(reads).toBe(0);
+    });
+
+    it('resume: a resend refused before its key is looked up is not known, not saved', async () => {
+      jest.useFakeTimers();
+      let sends = 0;
+      let reads = 0;
+      await renderKept(liveRun({ is_paused: true, paused_at: 'x' }), {
+        patch: () => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          return jsonResponse({ error: 'FORBIDDEN' }, false, 403);
+        },
+        runsGet: () => {
+          reads += 1;
+          return jsonResponse({ run: liveRun() });
+        },
+      });
+      await tap('Resume session');
+      await wait(RESEND_MS);
+      expect(screen.getByRole('alert').textContent).toContain('Resume session: the server refused it when it was sent again and could not be checked');
+      expect(reads).toBe(0);
+    });
+
+    it('finish: another device finished the run the same way, the resend is refused as no longer live, and this console never claims the finish', async () => {
+      jest.useFakeTimers();
+      let sends = 0;
+      let settledReads = 0;
+      const { onSettled, onRunGone } = await renderKept(liveRun(), {
+        patch: () => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          // The key was never recorded: refused after the lookup, so this finish never landed.
+          return jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409);
+        },
+        // The other device's finish, the same outcome this one asked.
+        finishedGet: () => {
+          settledReads += 1;
+          return jsonResponse({ runs: [{ run_id: 'ssrun_1', script_id: 'scr-friday', run_state: 'completed' }] });
+        },
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      fireEvent.change(screen.getByLabelText('What worked'), { target: { value: 'Slip line clicked.' } });
+      await tap('Record as completed');
+      await wait(RESEND_MS);
+      expect(onSettled).not.toHaveBeenCalled();
+      expect(settledReads).toBe(0);
+      expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      // Known not saved, and named in the page's list, which stays when the console goes: what was
+      // entered when ending it was lost (round 17, reviewers A and B). The notes are not repeated.
+      expect(readSaveQueue().failed).toEqual([{
+        label: 'Record as completed',
+        words: 'This tap did not end the session: the session had already ended when it reached the server. What was entered with it was not recorded.',
+        known: true,
+      }]);
+      const list = screen.getByRole('alert');
+      expect(within(list).getByText(FAILED_WORDS)).toBeInTheDocument();
+      expect(list.textContent).not.toContain('Slip line clicked');
+    });
+
+    it('finish: refused on its first send because the session had already ended is named in the page\'s list as not saved', async () => {
+      jest.useFakeTimers();
+      const { onSettled, onRunGone } = await renderKept(liveRun(), {
+        patch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409),
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await tap('Record as abandoned');
+      await wait(0);
+      expect(onSettled).not.toHaveBeenCalled();
+      expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      expect(readSaveQueue().failed).toEqual([expect.objectContaining({ label: 'Record as abandoned', known: true })]);
+    });
+
+    it('finish: a resend refused as not found, before its key is looked up, is named in the page\'s list as not known', async () => {
+      jest.useFakeTimers();
+      let sends = 0;
+      const { onSettled } = await renderKept(liveRun(), {
+        patch: () => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          return jsonResponse({ error: 'SESSION_RUN_NOT_FOUND' }, false, 404);
+        },
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await tap('Record as completed');
+      await wait(RESEND_MS);
+      expect(onSettled).not.toHaveBeenCalled();
+      expect(readSaveQueue().failed).toEqual([{
+        label: 'Record as completed',
+        words: unknownOffPage('Check this session under Finished sessions.'),
+        known: false,
+      }]);
+      expect(screen.getByText(UNKNOWN_WORDS)).toBeInTheDocument();
+    });
+
+    it('a pause refused because the session is no longer live is not added to the page\'s list: the console says the session ended', async () => {
+      jest.useFakeTimers();
+      const { onRunGone } = await renderKept(liveRun(), {
+        patch: () => jsonResponse({ error: 'SESSION_RUN_NOT_LIVE' }, false, 409),
+        runsGet: () => jsonResponse({ run: null }),
+      });
+      await tap('Pause session');
+      await wait(0);
+      expect(onRunGone).toHaveBeenCalledWith(RUN_GONE);
+      expect(readSaveQueue().failed).toEqual([]);
+    });
+
+    it('finish: a resend of a finish that landed is answered as replayed with the settled run, and the console settles it', async () => {
+      jest.useFakeTimers();
+      let sends = 0;
+      const { onSettled, onRunGone } = await renderKept(liveRun(), {
+        patch: (body) => {
+          sends += 1;
+          if (sends === 1) throw new TypeError('Failed to fetch');
+          return jsonResponse({ run: { ...liveRun(), run_state: body.run_state, ended_at: 'x' }, replayed: true });
+        },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+      await tap('Record as abandoned');
+      await wait(RESEND_MS);
+      expect(onSettled).toHaveBeenCalledWith(expect.objectContaining({ run_state: 'abandoned' }));
+      expect(onRunGone).not.toHaveBeenCalled();
+    });
   });
 
   it('a run action refused because the session is no longer live reads the server again, as today', async () => {
@@ -3035,23 +3233,41 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
 
   it('a run action refused while a kept finish waits behind it is said in the page\'s list, not on the console', async () => {
     jest.useFakeTimers();
-    let shows = 0;
+    let moves = 0;
     await renderKept(liveRun(), {
       patch: (body) => {
         if (body.action === 'finish') return new Promise<Response>(() => {});
-        shows += 1;
-        return shows === 1 ? lost() : jsonResponse({ error: 'SESSION_SCRIPT_RUN_BLOCK_NOT_IN_SCRIPT' }, false, 422);
+        moves += 1;
+        // Refused after the key was looked up and found unrecorded: not landed.
+        return moves === 1 ? lost() : jsonResponse({ error: 'SESSION_RUN_BLOCK_NOT_IN_SCRIPT' }, false, 422);
       },
-      // The landed check finds the TV still not allowed: refused, not landed.
-      runsGet: () => jsonResponse({ run: liveRun() }),
     });
-    await tap('Allow on a TV', 'switch');
+    await tap('Next block');
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await tap('Record as completed');
     await wait(RESEND_MS);
     const alert = within(screen.getByRole('alert'));
     expect(alert.getByText(FAILED_WORDS)).toBeInTheDocument();
-    expect(alert.getByText(/^Allow on a TV: on: /)).toBeInTheDocument();
+    expect(alert.getByText(/^Move to Conditioning finish: /)).toBeInTheDocument();
+  });
+
+  it('a run action whose resend is refused, not decided by its key, while a kept finish waits is listed apart, with where to check', async () => {
+    jest.useFakeTimers();
+    let shows = 0;
+    await renderKept(liveRun(), {
+      patch: (body) => {
+        if (body.action === 'finish') return new Promise<Response>(() => {});
+        shows += 1;
+        return shows === 1 ? lost() : jsonResponse({ error: 'FORBIDDEN' }, false, 403);
+      },
+    });
+    await tap('Allow on a TV', 'switch');
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await tap('Record as completed');
+    await wait(RESEND_MS);
+    expect(screen.getByText(UNKNOWN_WORDS)).toBeInTheDocument();
+    expect(screen.getByText(`Allow on a TV: on: ${unknownOffPage('Check the session on the class screen before doing it again.')}`)).toBeInTheDocument();
+    expect(screen.queryByText(FAILED_WORDS)).toBeNull();
   });
 
   it('a log whose outcome is not known while a kept finish waits is listed apart in the page\'s list, with where to check', async () => {

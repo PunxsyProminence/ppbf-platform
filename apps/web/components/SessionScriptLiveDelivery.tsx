@@ -13,7 +13,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
-import SessionRunClass, { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
+import SessionRunClass, { goneWords, unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import {
   keepSave,
@@ -167,6 +167,13 @@ function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun
       return null;
   }
 }
+
+// A kept run action's refusals that the server gives only after looking up the action's request key
+// and finding it unrecorded (keyedSessionScriptRunAction): the action never landed. Any other refusal
+// of a resend leaves it not known. Decided by the key alone, never by the run's state matching what
+// was asked, which another tab or device making the same change would also produce (OVERWATCH
+// 7170099938, Codex P2 4698738015 on #2178).
+const RUN_REFUSED_AFTER_KEY = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_HAS_NO_SCRIPT', 'SESSION_RUN_BLOCK_NOT_IN_SCRIPT']);
 
 /** Nothing kept is waiting on this page (saved, refused, or dropped at a sign-out). */
 function queueIdle(): boolean {
@@ -914,15 +921,15 @@ export default function SessionScriptLiveDelivery({
   );
 
   // A run action kept on the open page (W4 item 7, OQ-3; OW27-35 A): sent now, or after the saves
-  // before it, and resent until it goes through, with the waiting words meanwhile. Each sets a target
-  // state, so a resend changes nothing more (OQ-1's repeat proofs; Overwatch condition 3). A refused
-  // RESEND is checked against what the server holds before any failed words (condition 2).
+  // before it, and resent until it goes through, with the waiting words meanwhile. Every send carries
+  // the save's own request key: the server records it with the action and answers a resend of a key
+  // it holds as saved (`replayed`), writing nothing more. A refused RESEND is decided by that key
+  // before any failed words (condition 2): RUN_REFUSED_AFTER_KEY means it never landed, and any other
+  // refusal leaves it not known.
   const keptRunAction = useCallback(
     (body: Record<string, unknown>, resolved: { done: boolean }): KeptSave => {
       const blocks = detail?.blocks ?? [];
       let refusal: { error?: string } = {};
-      let settledByCheck: SettledRunSummary | null = null;
-      let liveByCheck: LiveSessionScriptRun | null = null;
       const label = runActionLabel(body, blocks);
       // What this save asked goes with its own answer, saved or refused.
       const releaseAsked = () => {
@@ -932,52 +939,38 @@ export default function SessionScriptLiveDelivery({
       };
       return {
         label,
-        send: ({ signal }) =>
+        send: ({ signal, requestKey }) =>
           fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`, {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify({ ...body, request_key: requestKey }),
             signal,
           }),
         answerOf: async (response) => {
-          const payload = (await response.clone().json().catch(() => ({}))) as { run?: unknown; error?: string };
+          const payload = (await response.clone().json().catch(() => ({}))) as { run?: unknown; replayed?: unknown; error?: string };
           // 408 and 429 say "not now", not "no": sent again, as the queue's default does.
           if (isRefusal(response.status) && response.status !== 408 && response.status !== 429) {
             refusal = payload;
             return 'refused';
           }
-          // A yes without the run proves nothing: it is sent again (it sets a state).
-          return response.ok && payload.run ? 'saved' : 'unknown';
+          // A yes without the run proves nothing (it is sent again: it sets a state), unless it says an
+          // earlier send of this key landed: a live action on a run that has ended since has no run.
+          return response.ok && (payload.run || payload.replayed === true) ? 'saved' : 'unknown';
         },
-        checkLanded: async (signal) => {
-          if (body.action === 'finish') {
-            const settled = await readSettledRun(signal);
-            if (settled === 'unreadable') return null;
-            settledByCheck = settled && settled.run_state === body.run_state ? settled : null;
-            return settledByCheck !== null;
-          }
-          const live = await readLiveRun(signal);
-          if (live === 'unreadable') return null;
-          const found = live !== null && live.run_id === run.run_id && savedRunWords(body, live, blocks) !== null;
-          liveByCheck = found ? live : null;
-          return found;
-        },
+        // Decided by this save's own key: no read of the run, whose state another tab or device could match.
+        checkLanded: async () => (refusal.error !== undefined && RUN_REFUSED_AFTER_KEY.has(refusal.error) ? false : null),
         onSaved: (response) => {
           releaseAsked();
           void (async () => {
-            if (response === null) {
-              // Landed after all (the check found it): show what the server holds.
-              if (body.action === 'finish') {
-                if (settledByCheck) settledByThisConsole(settledByCheck);
-                return;
-              }
-              // The run as the check read it: a later read could show a newer save's state first.
-              if (liveByCheck) applyServerRun(liveByCheck);
+            const payload = response
+              ? ((await response.json().catch(() => ({}))) as { run?: LiveSessionScriptRun | SessionScriptRunRow | null; replayed?: unknown })
+              : {};
+            if (!payload.run) {
+              // An earlier send landed, and the run has ended since (not here): the console resyncs.
+              if (payload.replayed === true) void resyncAfterNotLive();
               return;
             }
-            const payload = (await response.json().catch(() => ({}))) as { run?: LiveSessionScriptRun | SessionScriptRunRow };
-            if (!payload.run) return;
             if (body.action === 'finish') settledByThisConsole(payload.run);
             else applyServerRun(payload.run as LiveSessionScriptRun);
           })();
@@ -988,7 +981,14 @@ export default function SessionScriptLiveDelivery({
           if (settledHere.current) return undefined;
           if (refusal.error === 'SESSION_RUN_NOT_LIVE' || refusal.error === 'SESSION_RUN_NOT_FOUND') {
             void resyncAfterNotLive();
-            return undefined;
+            if (body.action !== 'finish') return undefined;
+            // A finish the session ended without (another tab or device, the idle close) loses what was
+            // entered when ending it. The console only says the session has ended and then goes, so the
+            // page's list names this finish too: not saved, or not known (round 17, reviewers A and B).
+            // The coach's notes themselves are never repeated there.
+            return landed === null
+              ? unknownOffPage('Check this session under Finished sessions.')
+              : `This tap did not end the session: ${goneWords(refusal.error)}. What was entered with it was not recorded.`;
           }
           // A refused resend that could not be checked: whether an earlier send landed is not known.
           const reason = describeRunError(refusal.error, response.status);
@@ -1002,7 +1002,7 @@ export default function SessionScriptLiveDelivery({
         },
       };
     },
-    [applyServerRun, detail, readLiveRun, readSettledRun, resyncAfterNotLive, run.run_id, settledByThisConsole],
+    [applyServerRun, detail, resyncAfterNotLive, run.run_id, settledByThisConsole],
   );
 
   const mutateRun = useCallback(
