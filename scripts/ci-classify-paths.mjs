@@ -110,6 +110,8 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/adultPathwayStages.ts',
   'apps/web/src/shared/coachDevelopment.ts',
   'apps/web/src/shared/coachDisplayName.ts',
+  // Who may have an email alert switch; emailAlertSwitches.pg.test.ts reaches it through emailAlertSwitches.ts (lane W4-1, EM-1b).
+  'apps/web/src/shared/emailAlerts.ts',
   'apps/web/src/shared/enjoyment.ts',
   'apps/web/src/shared/organizationProfile.ts',
   'apps/web/src/shared/painNote.ts',
