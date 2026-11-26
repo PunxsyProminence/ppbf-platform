@@ -21,8 +21,10 @@ import {
   ROOM_PLACE_ORDER,
   searchGroupOf,
   searchGroups,
+  type RoomPlace,
   type SearchGroupKey,
 } from './roomPlaces';
+import { useRoomNames } from '@/src/client/roomNames';
 import type { ClubRole } from './roleRoutes';
 import { isTypingTarget } from './shortcuts';
 import useGymSound from './useGymSound';
@@ -91,11 +93,18 @@ export function openSearchAt(group: SearchGroupKey | null): void {
   window.dispatchEvent(new CustomEvent(OPEN_SEARCH_EVENT, { detail: { group } }));
 }
 
-/** A Search group's name: Home, a Room Map room, or Lab. */
-export function searchGroupLabel(key: SearchGroupKey): string {
+/**
+ * A Search group's name: Home, a Room Map room, or Lab. A room reads the
+ * gym's own name when `placeName` is given (useRoomNames().place; lane W4-9,
+ * RN-2), else the Room Map's.
+ */
+export function searchGroupLabel(
+  key: SearchGroupKey,
+  placeName: (place: RoomPlace) => string = (place) => ROOM_PLACE_LABEL[place],
+): string {
   if (key === 'home') return 'Home';
   if (key === 'lab') return LAB_LABEL;
-  return ROOM_PLACE_LABEL[key];
+  return placeName(key);
 }
 
 /** A row that runs something. */
@@ -335,7 +344,10 @@ export default function CardCatalog() {
   /* ---- results ---------------------------------------------------------- */
   // Every page this person may be offered: the door list with the held seats.
   const openDoors = useMemo(() => visibleDoors(role, { boardSeats: heldSeats }), [role, heldSeats]);
-  const grouped = useMemo(() => searchGroups(openDoors, role), [openDoors, role]);
+  // The gym's names for its rooms (lane W4-9, RN-2): the groups, the "in ..." tags,
+  // the hint and typed Search all use the name shown (OW27-41 A, Q-E A).
+  const roomNames = useRoomNames();
+  const grouped = useMemo(() => searchGroups(openDoors, role, roomNames.place), [openDoors, role, roomNames]);
 
   const trimmed = query.trim().toLowerCase();
   // The page you are on, marked in the list (the corridor menu used to).
@@ -347,8 +359,14 @@ export default function CardCatalog() {
   const doors = useMemo(() => {
     if (!trimmed) return grouped.flatMap((group) => group.doors);
     const allowed = new Set(openDoors.map((door) => door.href));
-    return searchDoors(role, query).filter((door) => allowed.has(door.href));
-  }, [trimmed, grouped, openDoors, role, query]);
+    // The room as Search shows it: a page filed under Home or Lab shows no room,
+    // so it is never matched by a room's name (OW27-41 A: the name shown).
+    const roomNameOf = (href: string) => {
+      const group = searchGroupOf(href, role);
+      return group && group !== 'home' && group !== 'lab' ? roomNames.place(group) : null;
+    };
+    return searchDoors(role, query, roomNameOf).filter((door) => allowed.has(door.href));
+  }, [trimmed, grouped, openDoors, role, query, roomNames]);
 
   const matchedActs = useMemo(
     () => (trimmed ? acts.filter((a) => actMatches(a, trimmed)) : acts.filter((a) => !a.hidden)),
@@ -575,7 +593,7 @@ export default function CardCatalog() {
             <div className="catalog-empty-glyph" aria-hidden="true">⌾</div>
             <b>Nothing filed under that</b>
             <span>
-              Try a room ({ROOM_PLACE_ORDER.slice(0, 3).map((key) => ROOM_PLACE_LABEL[key]).join(', ')}…), a layer number,
+              Try a room ({ROOM_PLACE_ORDER.slice(0, 3).map((key) => roomNames.place(key)).join(', ')}…), a layer number,
               a word from the surface you want, or a verb like “print” or “sign out”.
             </span>
           </div>
@@ -614,6 +632,7 @@ export default function CardCatalog() {
                     active={actCount + i === cursor}
                     showRoom
                     role={role}
+                    placeName={roomNames.place}
                     onPick={() => go(door)}
                     onHover={() => setCursor(actCount + i)}
                   />
@@ -678,9 +697,10 @@ export default function CardCatalog() {
 }
 
 function CatalogRow({
-  door, idx, active, showRoom, role, current, onPick, onHover,
+  door, idx, active, showRoom, role, current, placeName, onPick, onHover,
 }: {
   door: Door; idx: number; active: boolean; showRoom?: boolean; role?: ClubRole | null; current?: boolean;
+  placeName?: (place: RoomPlace) => string;
   onPick: () => void; onHover: () => void;
 }) {
   const group = showRoom ? searchGroupOf(door.href, role ?? null) : null;
@@ -708,7 +728,7 @@ function CatalogRow({
         {/* "in", so a room that shares a page's name (the Operations room
             and the Operations hub) is never read as that page. */}
         {showRoom && group && (
-          <span className="catalog-room-tag" style={{ fontSize: 'var(--t-xs)', whiteSpace: 'normal' }}>in {searchGroupLabel(group)}</span>
+          <span className="catalog-room-tag" style={{ fontSize: 'var(--t-xs)', whiteSpace: 'normal' }}>in {searchGroupLabel(group, placeName)}</span>
         )}
         <code style={{ overflowWrap: 'anywhere' }}>{door.href}</code>
       </div>

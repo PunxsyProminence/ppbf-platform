@@ -7,6 +7,7 @@ import { openSearchAt, searchGroupLabel } from './CardCatalog';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import { doorForPath } from './buildingMap';
 import { searchGroupOf } from './roomPlaces';
+import { useRoomNames } from '@/src/client/roomNames';
 
 /**
  * THE CORRIDOR: WHERE YOU ARE STANDING.
@@ -31,11 +32,13 @@ export default function Corridor() {
 
   const here = useMemo(() => doorForPath(pathname), [pathname]);
   const group = here ? searchGroupOf(here.href, role) : null;
+  // The room in the gym's own words, as Search names it (lane W4-9, RN-2).
+  const roomNames = useRoomNames();
 
   // Signed out there is no Search to open, so there is no plate.
   if (!role) return null;
 
-  const room = group ? searchGroupLabel(group) : 'All pages';
+  const room = group ? searchGroupLabel(group, roomNames.place) : 'All pages';
   const where = here ? `${room}, ${here.label}` : room;
 
   return (

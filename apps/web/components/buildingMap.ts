@@ -843,8 +843,19 @@ export function doorsByRoom(role: ClubRole | null): Array<{ room: Room; doors: D
  * Rank doors against a query. Subsequence match on label first (so "wtmpl"
  * finds "Workout Templates"), then keywords, then href. Exact prefix wins.
  * Returns every door when the query is empty, so the catalog opens as a browse.
+ *
+ * `roomNameOf`, when given, names the room a door is in as Search shows it
+ * (the gym's name where it has one; lane W4-9, RN-2). A door whose room's
+ * shown name contains the query is found below every match on the door's own
+ * words (Overwatch's Q-E A on #2212: "a low-ranked match on the room's shown
+ * name"). An old room name is not matched (OW27-41 A), unless a door's own
+ * keywords already hold it.
  */
-export function searchDoors(role: ClubRole | null, query: string): Door[] {
+export function searchDoors(
+  role: ClubRole | null,
+  query: string,
+  roomNameOf?: (href: string) => string | null,
+): Door[] {
   const visible = visibleDoors(role);
   const q = query.trim().toLowerCase();
   if (!q) return visible;
@@ -860,6 +871,7 @@ export function searchDoors(role: ClubRole | null, query: string): Door[] {
     else if (hay.includes(q)) score = 60;
     else if (isSubsequence(q, label)) score = 40;
     else if (isSubsequence(q, hay)) score = 20;
+    else if (roomNameOf?.(door.href)?.toLowerCase().includes(q)) score = 10;
 
     if (score >= 0) {
       // Shorter labels win ties: "Shadow" should outrank "Shadow Console".
