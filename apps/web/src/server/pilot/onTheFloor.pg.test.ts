@@ -26,6 +26,8 @@ let activeClient: Client | null = null;
 let mockFailQuery: RegExp | null = null;
 /** When set, every transaction fails before its first statement (the idle close's path). */
 let mockFailTransactions = false;
+/** When set, runs once just before the first query whose SQL matches (a change committed mid-read). */
+let mockBeforeQuery: { match: RegExp; run: () => Promise<void> } | null = null;
 
 function mockInjectedFailure(): Error {
   return Object.assign(new Error('injected failure for the test'), { code: 'XX000' });
@@ -35,6 +37,11 @@ jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
     if (mockFailQuery?.test(text)) throw mockInjectedFailure();
+    if (mockBeforeQuery?.match.test(text)) {
+      const hook = mockBeforeQuery;
+      mockBeforeQuery = null;
+      await hook.run();
+    }
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
@@ -683,6 +690,31 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     // A parent with a child in scope does run the close first, as the staff line does (F13).
     expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
     expect(await runState(gym, forgotten)).toBe('abandoned');
+  });
+
+  test('a guardian link removed after the scope is read, before the line is counted, is not counted (App Overwatch on #2192)', async () => {
+    const { gym, parentA } = await familyGym('link-removed');
+    expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
+
+    // The links go the moment the first count statement is sent: guardianAthleteIds has already read
+    // them, so only a check inside each count statement can see that they are gone.
+    mockBeforeQuery = {
+      match: /from pilot\.session_run_athletes m|from pilot\.scheduler_attendance sa/,
+      run: async () => {
+        await client.query('delete from pilot.guardian_links where organization_id = $1 and athlete_id = any($2::text[])', [
+          gym.organizationId, ['reg', 'run', 'tie'],
+        ]);
+      },
+    };
+    try {
+      expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful']);
+      expect(mockBeforeQuery).toBeNull();
+    } finally {
+      mockBeforeQuery = null;
+    }
+    // The athlete's own line and the staff line are not the guardian's, and do not change.
+    expect(await onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).toEqual({ reader: 'athlete', on_the_floor: true });
+    expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toContain('Reg');
   });
 
   test('anyone but a parent, or an athlete linked to a record, is refused (403) before anything is read or closed', async () => {

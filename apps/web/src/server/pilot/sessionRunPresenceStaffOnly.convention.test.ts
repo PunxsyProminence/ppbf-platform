@@ -289,8 +289,9 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const block = text.slice(text.indexOf('async function markedOnLiveRuns('), text.indexOf('async function presentOnTodaysRegister('));
     expect(block.length).toBeGreaterThan(0);
     expect(block).toContain('from pilot.session_run_athletes m');
-    // The one thing selected from it: the athlete id, once each.
-    expect(block).toMatch(/`select distinct m\.athlete_id\n/);
+    // The one thing selected from it: the athlete id, once each (the date of birth beside it is the
+    // athlete's own row, for the guardian rule's 18 test).
+    expect(block).toMatch(/`select distinct m\.athlete_id, to_char\(a\.dob, 'YYYY-MM-DD'\) as athlete_dob\n/);
     // Every export but a type is counted: the two there may be are listOnTheFloorForStaff and
     // onTheFloorForFamily (FN-2), and each refuses first.
     const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
@@ -326,7 +327,16 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       "{ reader: 'parent', on_the_floor: ids.filter((id) => counted.has(id)) }",
     ]);
     // A family is never counted from a cancelled class, or a run tied to one (FN0-Q1 A; flag 9); staff are.
-    expect(Array.from(text.matchAll(/countedAmong\(organizationId, ids, day, now, (true|false)\)/g), (match) => match[1])).toEqual(['false', 'true']);
+    // A parent's line passes the guardian's account, so each count statement checks the link itself.
+    expect(Array.from(text.matchAll(/countedAmong\(organizationId, ids, day, now, (true|false), (\w+)\)/g), (match) => `${match[1]} ${match[2]}`))
+      .toEqual(['false null', 'true guardian']);
+    expect(text).toMatch(/\n  const guardian = actor\.role === 'parent' \? actor\.accountId : null;\n/);
+    // The guardian's link is checked in the same statement that counts the child (App Overwatch on
+    // #2192, the #2179 rule), in both reads, and the 18 rule is applied to the date of birth each returns.
+    expect(block).toContain("and ($4::text is null or ${guardianLinkedPredicateSql('m.organization_id', 'm.athlete_id', '$4')})");
+    const registerBlock = text.slice(text.indexOf('async function presentOnTodaysRegister('), text.indexOf('async function countedAmong('));
+    expect(registerBlock).toContain("and ($7::text is null or ${guardianLinkedPredicateSql('sa.organization_id', 'sa.athlete_id', '$7')})");
+    expect(text).toContain('const kept = guardianAccountId === null ? rows : rows.filter((row) => !guardianLinkEnded(row.athlete_dob, now));');
     // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or
     // check-in record, named anywhere in the file.
     const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
@@ -340,7 +350,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       "import { organizationActionableRoster } from './coachAthleteRoster';",
       "import { query } from './db';",
       "import { ForbiddenError } from './errors';",
-      "import { guardianAthleteIds } from './guardianAccess';",
+      "import { guardianAthleteIds, guardianLinkEnded, guardianLinkedPredicateSql } from './guardianAccess';",
       "import { closeIdleSessionRuns } from './sessionScriptRuns';",
       "import { staffNoteRoleInOrganization } from './sessionStaffNotes';",
     ]);

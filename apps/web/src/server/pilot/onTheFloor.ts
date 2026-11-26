@@ -51,7 +51,10 @@
  *   - onTheFloorForFamily (lane W4-3, FN-2; OD-2026-11-21-006, Q3.2 A and
  *     Q3.4 A): a parent is given the ids of their own children who count; the
  *     children are guardianAthleteIds', the guardian rule with its 18 and
- *     deletion rules inside it, never the request's (FN-0 F6). An athlete is
+ *     deletion rules inside it, never the request's (FN-0 F6); and each of
+ *     the two reads checks the link again in its own statement
+ *     (guardianLinkedPredicateSql, App Overwatch on #2192), so a link removed
+ *     during the read is not counted. An athlete is
  *     given yes or no about themselves only. FN-0 F1: this is the one way a
  *     fact derived from the staff-only presence record reaches a family, and it
  *     is that yes or no and nothing else.
@@ -71,7 +74,7 @@ import type { ActorIdentity } from './access';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query } from './db';
 import { ForbiddenError } from './errors';
-import { guardianAthleteIds } from './guardianAccess';
+import { guardianAthleteIds, guardianLinkEnded, guardianLinkedPredicateSql } from './guardianAccess';
 import { closeIdleSessionRuns } from './sessionScriptRuns';
 import { staffNoteRoleInOrganization } from './sessionStaffNotes';
 
@@ -92,17 +95,32 @@ export type OnTheFloorFamilyAnswer =
   | { readonly reader: 'parent'; readonly on_the_floor: readonly string[] }
   | { readonly reader: 'athlete'; readonly on_the_floor: boolean };
 
+/** One counted row: the athlete, and their date of birth from the same statement (the 18 rule, for a parent). */
+interface CountedRow {
+  readonly athlete_id: string;
+  readonly athlete_dob: string | null;
+}
+
 /**
- * Athletes with a standing mark on a live run, less those a later Absent or Excused took off. Ids only.
- * For a family, a run tied to a cancelled class is left out too (flag 9).
+ * Athletes with a standing mark on a live run, less those a later Absent or Excused took off.
+ * For a family, a run tied to a cancelled class is left out too (flag 9). For a parent, only a child
+ * linked to them now, checked in this same statement (guardianLinkedPredicateSql; App Overwatch on
+ * #2192, 7196804750), with the child's date of birth for the 18 rule.
  */
-async function markedOnLiveRuns(organizationId: string, athleteIds: readonly string[], forFamily: boolean): Promise<string[]> {
+async function markedOnLiveRuns(
+  organizationId: string,
+  athleteIds: readonly string[],
+  forFamily: boolean,
+  guardianAccountId: string | null,
+): Promise<CountedRow[]> {
   if (athleteIds.length === 0) return [];
-  const rows = await query<{ athlete_id: string }>(
-    `select distinct m.athlete_id
+  return query<CountedRow>(
+    `select distinct m.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as athlete_dob
        from pilot.session_run_athletes m
        join pilot.session_script_runs r
          on r.organization_id = m.organization_id and r.run_id = m.run_id
+       join pilot.athletes a
+         on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
       where m.organization_id = $1
         and m.athlete_id = any($2::text[])
         and m.removed_at is null
@@ -125,15 +143,16 @@ async function markedOnLiveRuns(organizationId: string, athleteIds: readonly str
                and cancelled.class_id = r.class_id
                and cancelled.status = 'cancelled'
           )
-        )`,
-    [organizationId, [...athleteIds], forFamily],
+        )
+        and ($4::text is null or ${guardianLinkedPredicateSql('m.organization_id', 'm.athlete_id', '$4')})`,
+    [organizationId, [...athleteIds], forFamily, guardianAccountId],
   );
-  return rows.map((row) => row.athlete_id);
 }
 
 /**
- * Athletes with a present register mark that counts now, on a class whose gym day is today. Ids only.
- * For a family, a cancelled class's marks are left out (FN0-Q1 A).
+ * Athletes with a present register mark that counts now, on a class whose gym day is today.
+ * For a family, a cancelled class's marks are left out (FN0-Q1 A). For a parent, only a child linked
+ * to them now, checked in this same statement, with the child's date of birth for the 18 rule.
  */
 async function presentOnTodaysRegister(
   organizationId: string,
@@ -141,13 +160,16 @@ async function presentOnTodaysRegister(
   day: string,
   now: Date,
   forFamily: boolean,
-): Promise<string[]> {
+  guardianAccountId: string | null,
+): Promise<CountedRow[]> {
   if (athleteIds.length === 0) return [];
-  const rows = await query<{ athlete_id: string }>(
-    `select distinct sa.athlete_id
+  return query<CountedRow>(
+    `select distinct sa.athlete_id, to_char(a.dob, 'YYYY-MM-DD') as athlete_dob
        from pilot.scheduler_attendance sa
        join pilot.scheduler_classes c
          on c.organization_id = sa.organization_id and c.class_id = sa.class_id
+       join pilot.athletes a
+         on a.organization_id = sa.organization_id and a.athlete_id = sa.athlete_id
       where sa.organization_id = $1
         and sa.athlete_id = any($2::text[])
         and sa.status = 'present'
@@ -158,15 +180,17 @@ async function presentOnTodaysRegister(
           not (sa.method in ('self', 'parent') or sa.checked_in_by_role in ('athlete', 'parent'))
           or c.start_at <= $5::timestamptz
         )
-        and not ($6::boolean and c.status = 'cancelled')`,
-    [organizationId, [...athleteIds], GYM_TIME_ZONE, day, now.toISOString(), forFamily],
+        and not ($6::boolean and c.status = 'cancelled')
+        and ($7::text is null or ${guardianLinkedPredicateSql('sa.organization_id', 'sa.athlete_id', '$7')})`,
+    [organizationId, [...athleteIds], GYM_TIME_ZONE, day, now.toISOString(), forFamily, guardianAccountId],
   );
-  return rows.map((row) => row.athlete_id);
 }
 
 /**
  * Which of these athletes count now, by either source. The two reads run together and either failing
- * fails the whole read (F15).
+ * fails the whole read (F15). For a parent (guardianAccountId), each statement holds only children
+ * linked to them in its own snapshot, and a child 18 or over by the date of birth it returned is
+ * dropped (guardianLinkEnded, the guardian rule's one age test).
  */
 async function countedAmong(
   organizationId: string,
@@ -174,12 +198,15 @@ async function countedAmong(
   day: string,
   now: Date,
   forFamily: boolean,
+  guardianAccountId: string | null,
 ): Promise<Set<string>> {
   const [fromRuns, fromRegister] = await Promise.all([
-    markedOnLiveRuns(organizationId, athleteIds, forFamily),
-    presentOnTodaysRegister(organizationId, athleteIds, day, now, forFamily),
+    markedOnLiveRuns(organizationId, athleteIds, forFamily, guardianAccountId),
+    presentOnTodaysRegister(organizationId, athleteIds, day, now, forFamily, guardianAccountId),
   ]);
-  return new Set([...fromRuns, ...fromRegister]);
+  const rows = [...fromRuns, ...fromRegister];
+  const kept = guardianAccountId === null ? rows : rows.filter((row) => !guardianLinkEnded(row.athlete_dob, now));
+  return new Set(kept.map((row) => row.athlete_id));
 }
 
 /**
@@ -199,7 +226,7 @@ export async function listOnTheFloorForStaff(actor: ActorIdentity, now: Date): P
 
   const roster = await organizationActionableRoster(organizationId);
   const ids = roster.map((athlete) => athlete.athlete_id);
-  const counted = await countedAmong(organizationId, ids, day, now, false);
+  const counted = await countedAmong(organizationId, ids, day, now, false, null);
 
   const athletes = roster
     .filter((athlete) => counted.has(athlete.athlete_id))
@@ -230,7 +257,8 @@ export async function onTheFloorForFamily(actor: ActorIdentity, now: Date): Prom
 
   const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
   const ids = scope.filter((id) => live.has(id));
-  const counted = await countedAmong(organizationId, ids, day, now, true);
+  const guardian = actor.role === 'parent' ? actor.accountId : null;
+  const counted = await countedAmong(organizationId, ids, day, now, true, guardian);
   if (actor.role === 'athlete') return { reader: 'athlete', on_the_floor: ids.length === 1 && counted.has(ids[0]) };
   return { reader: 'parent', on_the_floor: ids.filter((id) => counted.has(id)) };
 }
