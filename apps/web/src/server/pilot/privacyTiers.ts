@@ -567,6 +567,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunClass.ts#describeRunClass',
       'stoppedComing.ts#listStoppedComing',
       'onTheFloor.ts#listOnTheFloorForStaff',
+      'stoppedComing.ts#setStoppedComingReachedOut',
       'onTheFloor.ts#onTheFloorForFamily',
     ],
     note:
@@ -585,7 +586,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'standing mark the register does not hold (an untied run, a tap that created no register mark, or a cancelled '
       + 'class) as coming, for coach and organization admin with a staff '
       + 'membership here; it returns that day per athlete, never the run, the mark or who else was in it, '
-      + 'and no attendance figure reads it. The on-the-floor line (onTheFloor.ts, lane W4-3; Jason Q3.1 C, '
+      + 'and no attendance figure reads it. The same module\'s reached-out write '
+      + '(setStoppedComingReachedOut) reads that day for one athlete, on its own transaction, to refuse a '
+      + 'mark for an athlete not on the list and to tell a stale mark from a newer one; it answers one '
+      + 'outcome word. '
+      + 'The on-the-floor line (onTheFloor.ts, lane W4-3; Jason Q3.1 C, '
       + 'Q3.2 A, Q3.3 A and Q3.4 A, OD-2026-11-21-006; FN-0 F1) counts a standing mark on a live run: staff '
       + 'with a membership here are given the names of who counts; a parent, for their own children by the '
       + 'guardian rule only, a yes or no each; an athlete, a yes or no about themselves. It returns no run, '
