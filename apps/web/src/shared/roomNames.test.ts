@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { ROOM_LABEL } from '@/components/buildingMap';
 import { ROOM_PLACE_LABEL, ROOM_PLACE_ORDER } from '@/components/roomPlaces';
 
@@ -93,6 +96,12 @@ describe('normalizeRoomName (Q-C A)', () => {
     expect(roomNameCompareKey('CAFE\u0301')).toBe(roomNameCompareKey('caf\u00e9'));
   });
 
+  test('Q-B compares names as they read on screen: case, runs of spaces of any kind and invisible formatting aside', () => {
+    const same = ['The Ring', 'the ring', ' THE RING ', 'The  Ring', 'The\u00a0Ring', 'The\u3000Ring', 'The Ring\u200b', 'The\u200d Ring'];
+    for (const name of same) expect(roomNameCompareKey(name)).toBe('the ring');
+    expect(roomNameCompareKey('The Rings')).not.toBe('the ring');
+  });
+
   test('takes up to 40 characters, counted as code points', () => {
     expect(ROOM_NAME_MAX_LENGTH).toBe(40);
     expect(normalizeRoomName('x'.repeat(40))).toEqual({ ok: true, name: 'x'.repeat(40) });
@@ -107,10 +116,50 @@ describe('normalizeRoomName (Q-C A)', () => {
     }
   });
 
+  test('a name made only of invisible formatting is blank, so it means the default too', () => {
+    expect(normalizeRoomName('\u200b')).toEqual({ ok: true, name: null });
+    expect(normalizeRoomName(' \u200d\u2060 ')).toEqual({ ok: true, name: null });
+    expect(normalizeRoomName('Lobby\u200b')).toEqual({ ok: true, name: 'Lobby\u200b' });
+  });
+
   test('refuses a lone surrogate, and anything that is not text', () => {
     expect(normalizeRoomName('A\ud83eB')).toEqual({ ok: false, error: 'A name cannot contain broken characters.' });
     for (const raw of [7, true, ['Lobby'], { name: 'Lobby' }]) {
       expect(normalizeRoomName(raw)).toEqual({ ok: false, error: 'A name must be text.' });
     }
+  });
+});
+
+describe('the name rule and the table CHECK use the same characters, for every code point', () => {
+  // The migration's own classes, read from the file, so a change to either side is seen here.
+  const sql = fs.readFileSync(
+    path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_room_names_migration.sql'),
+    'utf8',
+  );
+  const leading = /display_name !~ '\^\[([^\]]+)\]'/.exec(sql);
+  const trailing = /display_name !~ '\[([^\]]+)\]\$'/.exec(sql);
+  const control = /display_name !~ '\[([^\]^$]+)\]'\s*\n/.exec(sql);
+
+  test('the migration states the three classes, the two trim classes the same', () => {
+    expect(leading?.[1]).toBeDefined();
+    expect(trailing?.[1]).toBe(leading?.[1]);
+    expect(control?.[1]).toBeDefined();
+  });
+
+  test('the trim class is exactly what JavaScript\'s trim() removes, and the control class exactly Cc plus U+2028 and U+2029 (NUL aside, which text cannot hold)', () => {
+    // Postgres ARE and JavaScript read these escapes the same way inside a class.
+    const trimClass = new RegExp(`^[${leading?.[1]}]$`, 'u');
+    const controlClass = new RegExp(`^[${control?.[1]}]$`, 'u');
+    const jsControl = /^[\p{Cc}\u2028\u2029]$/u;
+    const trimMismatch: string[] = [];
+    const controlMismatch: string[] = [];
+    for (let cp = 1; cp <= 0x10ffff; cp += 1) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const ch = String.fromCodePoint(cp);
+      if (trimClass.test(ch) !== (ch.trim() === '')) trimMismatch.push(cp.toString(16));
+      if (controlClass.test(ch) !== jsControl.test(ch)) controlMismatch.push(cp.toString(16));
+    }
+    expect(trimMismatch).toEqual([]);
+    expect(controlMismatch).toEqual([]);
   });
 });

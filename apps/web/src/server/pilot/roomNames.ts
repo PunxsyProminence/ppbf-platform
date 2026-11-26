@@ -18,10 +18,11 @@
  *   no line breaks or control characters); blank or null puts the default
  *   back, and the row is deleted;
  * - Q-B A: no two names in one list (the Room Map rooms, the 7 rooms, the
- *   card names) read the same, compared trimmed and case-insensitive, after
- *   the change. That covers a default too: a name may not take another room's
+ *   card names) read the same after the change (roomNameCompareKey: trimmed,
+ *   case-insensitive, spaces and invisible formatting as the screen shows
+ *   them). That covers a default too: a name may not take another room's
  *   default, and "Use the default" is refused while another room holds that
- *   default as its name. The 409 names the room that holds it.
+ *   default as its name. The 409 names the holder by its default name.
  */
 
 import { isOrganizationAdminRole } from './access';
@@ -123,8 +124,9 @@ export async function setRoomName(input: {
         && roomNameCompareKey(current[other].name) === roomNameCompareKey(shown),
     );
     if (clash) {
+      // Named by its default, which the gym admin can recognise whatever it reads now.
       throw new ConflictError(
-        `"${shown}" is already the name of another room in this list (${clash}). Choose a different name.`,
+        `"${shown}" is already used by another name in this list (the one that is "${ROOM_NAME_DEFAULTS[clash]}" by default). Choose a different name.`,
         'ROOM_NAME_TAKEN',
       );
     }

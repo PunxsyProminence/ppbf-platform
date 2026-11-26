@@ -260,19 +260,17 @@ describe('roomNames.ts against the real table', () => {
     }
   });
 
-  test.each(['coach', 'athlete', 'parent', 'platform_owner', 'board', 'volunteer', 'staff'])(
-    'a %s cannot rename, and nothing is written or audited',
-    async (role) => {
-      activeClient = await freshDatabase(`roomnamesmod_role_${role}`);
-      try {
-        await expect(set('place:front-desk', 'Lobby', { role })).rejects.toMatchObject({ status: 403 });
-        expect(await storedRows(activeClient)).toEqual([]);
-        expect(await auditRows(activeClient)).toEqual([]);
-      } finally {
-        await activeClient.end();
-      }
-    },
-  );
+  // Every other role is pinned in roomNames.test.ts, before any database is touched.
+  test('a coach cannot rename, and nothing is written or audited', async () => {
+    activeClient = await freshDatabase('roomnamesmod_role_coach');
+    try {
+      await expect(set('place:front-desk', 'Lobby', { role: 'coach' })).rejects.toMatchObject({ status: 403 });
+      expect(await storedRows(activeClient)).toEqual([]);
+      expect(await auditRows(activeClient)).toEqual([]);
+    } finally {
+      await activeClient.end();
+    }
+  });
 
   test('a key off the list, or a name that breaks Q-C, is refused with 400 and nothing is written', async () => {
     activeClient = await freshDatabase('roomnamesmod_refused');
@@ -386,6 +384,72 @@ describe('roomNames.ts against the real table', () => {
           [ORG_ID, raw],
         )).rejects.toMatchObject({ code: '23514' });
       }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('two saves at once cannot both pass Q-B: the second waits on the gym row, then sees the first and is refused', async () => {
+    activeClient = await freshDatabase('roomnamesmod_concurrent');
+    const client = activeClient;
+    const other = new Client({ connectionString: connectionStringFor('roomnamesmod_concurrent') });
+    await other.connect();
+    try {
+      // Another admin's save, mid-transaction, holding the gym row as setRoomName does.
+      await other.query('BEGIN');
+      await other.query('select 1 from pilot.organizations where organization_id = $1 for no key update', [ORG_ID]);
+      const pending = set('place:window', 'ring');
+      // Give the second save time to reach the lock; it must wait there, not read past it.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await other.query(
+        `insert into pilot.organization_room_names (organization_id, name_key, display_name, set_by_account_id)
+         values ($1, 'place:locker', 'Ring', $2)`,
+        [ORG_ID, ADMIN_ID],
+      );
+      await other.query('COMMIT');
+      await expect(pending).rejects.toMatchObject({ status: 409 });
+      expect(await storedRows(client)).toEqual([{ name_key: 'place:locker', display_name: 'Ring', set_by_account_id: ADMIN_ID }]);
+    } finally {
+      await other.query('ROLLBACK').catch(() => {});
+      await other.end();
+      await client.end();
+    }
+  });
+
+  test('for every code point, the table refuses a name exactly when the name rule would trim or refuse it', async () => {
+    activeClient = await freshDatabase('roomnamesmod_codepoints');
+    const client = activeClient;
+    try {
+      // The CHECK as Postgres holds it, evaluated over every code point but NUL
+      // and the surrogates, at the start, at the end and in the middle of a name.
+      const { rows: [{ def }] } = await client.query(
+        `select pg_get_constraintdef(oid) as def from pg_constraint
+          where conname = 'pilot_org_room_names_display_name_check'`,
+      );
+      const expression = String(def).replace(/^CHECK \(/, '').replace(/\)$/, '');
+      const refusedBy = async (build: string) => {
+        const { rows: [{ cps }] } = await client.query(
+          `select coalesce(array_agg(c.cp order by c.cp), '{}') as cps
+             from (select g as cp from generate_series(1, 1114111) g where g < 55296 or g > 57343) c,
+                  lateral (select ${build} as display_name) v
+            where not (${expression})`,
+        );
+        return (cps as number[]).map(Number);
+      };
+      const ruleRefuses = (wrap: (ch: string) => string) => {
+        const out: number[] = [];
+        for (let cp = 1; cp <= 0x10ffff; cp += 1) {
+          if (cp >= 0xd800 && cp <= 0xdfff) continue;
+          const raw = wrap(String.fromCodePoint(cp));
+          const result = normalizeRoomName(raw);
+          // Refused, or stored only after trimming: either way the raw form must not reach the table.
+          if (!result.ok || result.name !== raw.normalize('NFC')) out.push(cp);
+        }
+        return out;
+      };
+      expect(await refusedBy(`chr(c.cp) || 'x'`)).toEqual(ruleRefuses((ch) => `${ch}x`));
+      expect(await refusedBy(`'x' || chr(c.cp)`)).toEqual(ruleRefuses((ch) => `x${ch}`));
+      expect(await refusedBy(`'x' || chr(c.cp) || 'x'`)).toEqual(ruleRefuses((ch) => `x${ch}x`));
     } finally {
       await client.end();
     }

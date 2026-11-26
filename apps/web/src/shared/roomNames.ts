@@ -26,7 +26,7 @@
  * is never refused by the database.
  */
 
-import { ROOM_LABEL, type Room } from '@/components/buildingMap';
+import { ROOM_LABEL, ROOM_ORDER, type Room } from '@/components/buildingMap';
 import { ROOM_PLACE_LABEL, ROOM_PLACE_ORDER, type RoomPlace } from '@/components/roomPlaces';
 
 /** The card names, in the order a settings list would show them. */
@@ -46,7 +46,6 @@ export type RoomNameList = 'place' | 'room' | 'card';
 
 export type RoomNameKey = `place:${RoomPlace}` | `room:${Room}` | `card:${CardName}`;
 
-const ROOM_ORDER = Object.keys(ROOM_LABEL) as Room[];
 const CARD_ORDER = Object.keys(CARD_NAME_DEFAULTS) as CardName[];
 
 /** Every renamable name: the Room Map rooms in their order, the 7 rooms, then the card names. */
@@ -84,6 +83,10 @@ export const ROOM_NAME_MAX_LENGTH = 40;
 const CONTROL_OR_LINE_BREAK = /[\p{Cc}\u2028\u2029]/u;
 // A lone surrogate is not text: the database would store U+FFFD in its place.
 const LONE_SURROGATE = /\p{Cs}/u;
+// Invisible formatting (a zero-width space, a joiner, a direction mark). Kept
+// in a stored name, but a name made of nothing else reads as blank, and two
+// names that differ only by it read the same.
+const INVISIBLE_FORMAT = /\p{Cf}/gu;
 
 export type RoomNameInput =
   | { readonly ok: true; readonly name: string | null }
@@ -91,16 +94,16 @@ export type RoomNameInput =
 
 /**
  * A gym's name as typed, made ready to store. null, undefined or a blank
- * string mean "use the default" (name: null). Otherwise the name is trimmed
- * and NFC-normalized (so two spellings of the same letters compare equal), and
- * refused if it is over 40 characters or carries a control character or line
- * break.
+ * string (blank includes a string of only invisible formatting) mean "use the
+ * default" (name: null). Otherwise the name is trimmed and NFC-normalized (so
+ * two spellings of the same letters compare equal), and refused if it is over
+ * 40 characters or carries a control character or line break.
  */
 export function normalizeRoomName(raw: unknown): RoomNameInput {
   if (raw === null || raw === undefined) return { ok: true, name: null };
   if (typeof raw !== 'string') return { ok: false, error: 'A name must be text.' };
   const name = raw.normalize('NFC').trim();
-  if (!name) return { ok: true, name: null };
+  if (!name.replace(INVISIBLE_FORMAT, '').trim()) return { ok: true, name: null };
   if (CONTROL_OR_LINE_BREAK.test(name)) {
     return { ok: false, error: 'A name cannot contain line breaks or control characters.' };
   }
@@ -111,7 +114,14 @@ export function normalizeRoomName(raw: unknown): RoomNameInput {
   return { ok: true, name };
 }
 
-/** How two names are compared for Q-B's duplicate rule: trimmed and case-insensitive. */
+/**
+ * How two names are compared for Q-B's duplicate rule (trimmed and
+ * case-insensitive), so that two names that read the same on screen count as
+ * one (Q-B A's own text: "two Search groups can never read the same"):
+ * invisible formatting is dropped, and every run of spaces of any kind (a
+ * browser shows two spaces, or a non-breaking space, as one) becomes one
+ * space. Only the comparison changes; the name is stored as given.
+ */
 export function roomNameCompareKey(name: string): string {
-  return name.normalize('NFC').trim().toLowerCase();
+  return name.normalize('NFC').replace(INVISIBLE_FORMAT, '').replace(/\s+/gu, ' ').trim().toLowerCase();
 }
