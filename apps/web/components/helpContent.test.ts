@@ -75,6 +75,9 @@ test('the parent guide names the live task feed and lists no Parent Hub section 
   // Replies to coach messages are built (#1542, FC-03).
   expect(parent).toMatch(/has its own reply box/);
   expect(parent).not.toMatch(/feed yet: [^.]*reply to coach/);
+  // A guardian can write first (W4 item 4, OW27-24 A); only they and the gym's staff see it.
+  expect(parent).toMatch(/You can also write to the coach first/);
+  expect(parent).toMatch(/only you and the gym’s staff see it and the replies/);
 });
 
 test('the athlete guide does not call live pages placeholders', () => {
