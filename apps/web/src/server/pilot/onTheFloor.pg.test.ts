@@ -205,7 +205,7 @@ function athleteAccount(gym: Gym, athleteId: string | null): ActorIdentity {
 }
 
 /** A class at `startLocal` gym time on `day` (one hour long). */
-async function addClass(gym: Gym, classId: string, day: string, startLocal: string, { cancelled = false } = {}) {
+async function addClass(gym: Gym, classId: string, day: string, startLocal: string, { cancelled = false, full = false } = {}) {
   await client.query(
     `insert into pilot.scheduler_classes
        (organization_id, class_id, title, start_at, end_at, location, capacity,
@@ -214,7 +214,7 @@ async function addClass(gym: Gym, classId: string, day: string, startLocal: stri
              ($3 || ' ' || $4)::timestamp at time zone 'America/New_York',
              ($3 || ' ' || $4)::timestamp at time zone 'America/New_York' + interval '1 hour',
              'Main floor', 20, $5, $5, $6)`,
-    [gym.organizationId, classId, day, startLocal, gym.coach.accountId, cancelled ? 'cancelled' : 'open'],
+    [gym.organizationId, classId, day, startLocal, gym.coach.accountId, cancelled ? 'cancelled' : full ? 'full' : 'open'],
   );
 }
 
@@ -576,6 +576,9 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
    *   Run   a mark on an untied live run                              counts (FN-0 F1: the new fact)
    *   Cxr   a present mark on a cancelled class                       staff only (FN0-Q1 A)
    *   Cxu   a mark on a run tied to a cancelled class                 staff only (flag 9)
+   *   Tie   a mark on a run tied to an open class, no register mark   counts (only a cancelled tie is left out)
+   *   Ful   a present mark on a full class                            counts (full is not cancelled)
+   *   Fru   a mark on a run tied to a full class                      counts
    *   Exc   a run mark, then Excused on the run's class               nobody (FN0-Q6 A)
    *   Eve   a parent's own mark on the 18:00 class                    nobody yet (FN0-Q2 A)
    *   Non   no mark                                                   nobody
@@ -589,38 +592,47 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     const gym = await newGym(label);
     for (const [id, name, dob] of [
       ['reg', 'Reg', '2012-01-01'], ['run', 'Run', '2012-01-01'], ['cxr', 'Cxr', '2012-01-01'],
-      ['cxu', 'Cxu', '2012-01-01'], ['exc', 'Exc', '2012-01-01'], ['eve', 'Eve', '2012-01-01'], ['non', 'Non', '2012-01-01'],
+      ['cxu', 'Cxu', '2012-01-01'], ['tie', 'Tie', '2012-01-01'], ['ful', 'Ful', '2012-01-01'], ['fru', 'Fru', '2012-01-01'],
+      ['exc', 'Exc', '2012-01-01'], ['eve', 'Eve', '2012-01-01'], ['non', 'Non', '2012-01-01'],
       ['adu', 'Adu', '2000-01-01'], ['kim', 'Kim', '2012-01-01'],
     ] as const) {
       await addAthlete(gym, id, name, { dob });
     }
     await addAthlete(gym, 'del', 'Del', { deleted: true });
 
-    const [coachB, coachC, coachD] = [await member(gym, 'coach'), await member(gym, 'coach'), await member(gym, 'coach')];
+    const [coachB, coachC, coachD, coachE] = [
+      await member(gym, 'coach'), await member(gym, 'coach'), await member(gym, 'coach'), await member(gym, 'coach'),
+    ];
     // Every run is started before any clock is set: a start sweeps idle runs on the real clock.
     const untied = await liveRun(gym, gym.coach);
     const cancelledTie = await liveRun(gym, coachB);
     const sentHome = await liveRun(gym, coachC);
     const forgotten = await liveRun(gym, coachD); // idle past 3 hours, no marks
-    for (const runId of [untied, cancelledTie, sentHome]) await setRunStart(gym, runId, at(-30));
+    const fullTie = await liveRun(gym, coachE);
+    for (const runId of [untied, cancelledTie, sentHome, fullTie]) await setRunStart(gym, runId, at(-30));
     await setRunStart(gym, forgotten, at(-300));
 
     await addClass(gym, 'f-now', TODAY, '14:00');
     await addClass(gym, 'f-cancelled', TODAY, '13:00', { cancelled: true });
     await addClass(gym, 'f-sent-home', TODAY, '14:30');
     await addClass(gym, 'f-evening', TODAY, '18:00');
+    await addClass(gym, 'f-full', TODAY, '14:00', { full: true });
     await tieRun(gym, cancelledTie, 'f-cancelled');
     await tieRun(gym, sentHome, 'f-sent-home');
+    await tieRun(gym, fullTie, 'f-full');
 
     for (const id of ['reg', 'adu', 'del', 'kim']) await registerMark(gym, 'f-now', id, 'present', at(-30));
     await hereMark(gym, untied, 'run', at(-20));
     await registerMark(gym, 'f-cancelled', 'cxr', 'present', at(-90));
     await hereMark(gym, cancelledTie, 'cxu', at(-20));
     await hereMark(gym, sentHome, 'exc', at(-20));
+    await hereMark(gym, sentHome, 'tie', at(-20)); // the open class's register holds no mark for her
+    await registerMark(gym, 'f-full', 'ful', 'present', at(-30));
+    await hereMark(gym, fullTie, 'fru', at(-20));
     await registerMark(gym, 'f-sent-home', 'exc', 'excused', at(-10));
     await registerMark(gym, 'f-evening', 'eve', 'present', at(-60), 'parent');
 
-    const parentA = await parentOf(gym, ['reg', 'run', 'cxr', 'cxu', 'exc', 'eve', 'non', 'adu', 'del']);
+    const parentA = await parentOf(gym, ['reg', 'run', 'cxr', 'cxu', 'tie', 'ful', 'fru', 'exc', 'eve', 'non', 'adu', 'del']);
     const parentB = await parentOf(gym, ['kim']);
     return { gym, parentA, parentB, forgotten };
   }
@@ -633,18 +645,18 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     const a = await onTheFloorForFamily(parentA, NOW);
     expect(Object.keys(a).sort()).toEqual(['on_the_floor', 'reader']);
     expect(a.reader).toBe('parent');
-    expect(ids(a)).toEqual(['reg', 'run']);
+    expect(ids(a)).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
     expect(ids(await onTheFloorForFamily(parentB, NOW))).toEqual(['kim']);
 
     // The same gym's staff line keeps the cancelled class's mark and the run tied to it (FN0-Q1 A), the
     // adult, and the other family's child; it never had the sent-home, early or unmarked children.
-    expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toEqual(['Adu', 'Cxr', 'Cxu', 'Kim', 'Reg', 'Run']);
+    expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toEqual(['Adu', 'Cxr', 'Cxu', 'Fru', 'Ful', 'Kim', 'Reg', 'Run', 'Tie']);
   });
 
   test('an athlete is answered yes or no about themselves only, by the family rules', async () => {
     const { gym } = await familyGym('athletes');
     const expected: Record<string, boolean> = {
-      reg: true, run: true, adu: true, kim: true,
+      reg: true, run: true, adu: true, kim: true, tie: true, ful: true, fru: true,
       cxr: false, cxu: false, exc: false, eve: false, non: false, del: false,
     };
     for (const [id, onFloor] of Object.entries(expected)) {
@@ -665,7 +677,7 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     expect(await runState(gym, forgotten)).toBe('in_progress');
 
     // A parent with a child in scope does run the close first, as the staff line does (F13).
-    expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['reg', 'run']);
+    expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
     expect(await runState(gym, forgotten)).toBe('abandoned');
   });
 
