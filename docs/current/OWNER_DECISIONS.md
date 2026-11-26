@@ -20,11 +20,19 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-26-002 | 2026-11-26 | Release of main `94d3b99d` to production while admin@'s lanes wait on usage: PM-2, SP-1b and SP-2a | PRIMARY |  |  |
+| OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, with no screen changed since the last release | PRIMARY |  |  |
+| OD-2026-11-25-005 | 2026-11-25 | W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@ | PRIMARY |  |  |
+| OD-2026-11-25-004 | 2026-11-25 | Release of main `f7d951bf` to production, and the W4 lanes move to admin@ | PRIMARY |  |  |
+| OD-2026-11-25-003 | 2026-11-25 | Usage plan: the W4 lanes go to admin@ when the desktop account runs low, and admin@'s free Full reset is used; the Fable reset is not | PRIMARY |  | yes |
+| OD-2026-11-25-002 | 2026-11-25 | The "on the floor now" line: when a family's own mark counts, its words, and a later Absent or Excused (FN0-Q2 A, FN0-Q6 A) | PRIMARY |  |  |
+| OD-2026-11-25-001 | 2026-11-25 | Build the rest of W4 fast: five W4 build lanes and a privacy review at once, as cloud sessions on the desktop account, Sonnet work on admin@, and release main `348e126d` | PRIMARY |  |  |
+| OD-2026-11-24-007 | 2026-11-24 | The no-new-lanes hold is lifted | PRIMARY |  |  |
 | OD-2026-11-24-006 | 2026-11-24 | Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging | PRIMARY |  |  |
 | OD-2026-11-24-005 | 2026-11-24 | Delete the earlier GitHub edit-history revisions of the texts rewritten in general terms | PRIMARY |  |  |
 | OD-2026-11-24-004 | 2026-11-24 | Release of main `7a0d2da4ce906eac3a1b1a2ee0f50bd489169d0c` to production; App Overwatch approves the gate when Jason's click does not register within 60 seconds | PRIMARY |  |  |
 | OD-2026-11-24-003 | 2026-11-24 | The SHADOW chat hidden-topic gap is fixed before the release goes to production | PRIMARY |  |  |
-| OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY |  |  |
+| OD-2026-11-24-002 | 2026-11-24 | Account roles from 2026-11-24, and no new lanes | PRIMARY | partly replaced by OD-2026-11-24-007 (the no-new-lanes hold; the account roles stand) (2026-11-24) |  |
 | OD-2026-11-24-001 | 2026-11-24 | Every AI runs a 30-minute check and posts its questions to a named recipient | PRIMARY |  |  |
 | OD-2026-11-23-008 | 2026-11-23 | The next release waits for the sign-in work, with four add-ons | PRIMARY |  |  |
 | OD-2026-11-23-007 | 2026-11-23 | The sign-in page: parents first, "Sign In" heading, password label, one PIN form, Microsoft errors say where, change-PIN words (SIGNIN-FIX Q2 to Q8) | PRIMARY |  |  |
@@ -664,6 +672,157 @@ and should not try to.
 
 ---
 
+## OD-2026-11-26-002 -- Release of main `94d3b99d` to production while admin@'s lanes wait on usage: PM-2, SP-1b and SP-2a
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-26 04:53:12 UTC, PRIMARY):** *"if we run ouut of usage is there anything else we can work on that Admin@s lanes dont block"*
+
+**Question as App Overwatch put it (2026-11-26, in its reply):** "While admin@'s lanes are out of usage, which should run?" Option A (recommended): stage a release of main `94d3b99d` for Jason's signed-in staging check, plus small Overwatch prep (TL-5a's frozen-Backbone suites and old-worktree cleanup). Option B: A, and also start the room-renaming lane (RN-1 to RN-3) on the desktop account. Option C: only the small prep.
+
+**Jason (2026-11-26 04:56:14 UTC, PRIMARY):** *"A"*
+
+**Then, after App Overwatch gave the staging check list (PM-2 on `/coach/decision-loop`, the session plan editor on `/coach/session-scripts`) and asked "Release main 94d3b99d to production after your staging check?":**
+
+**Jason (2026-11-26 05:10:24 UTC, PRIMARY):** *"Release to production"*
+
+**Ruling:** A, then release. Main `94d3b99d` is released to production.
+
+**Applied (Overwatch, not his words):** merges held from the staging deploy until production finished; no migration in `13a17485..94d3b99d`; deploy-staging run 45758402176 (image `sha256:74e23d5ed517657e9411921152b4734300f863d834a7492e8b6eebf37f1f7edc`, revision `app-ppbf-staging--0000324`); read-only staging checks (pages 200; PM-2's family-threads and unread routes, the session-scripts route and the drill library 401 signed out); deploy-production run 45759856129; the production gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds, 05:12:35 UTC); revision `app-ppbf-production--0000220` at 100% traffic, same image as staging; www home and login returned 200 and the family-threads route 401 signed out. Contains #2209, #2204 (PM-2), #2196 (SP-1b), #2199 (SP-2a). Whether Jason ran the signed-in staging check before his words is not observed by Overwatch; his words came after the check list.
+
+**Status:** recorded 2026-11-26 by PR.
+
+---
+
+## OD-2026-11-26-001 -- Release of main `13a17485` to production now, with no screen changed since the last release
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-26; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-26 01:22:19 UTC, PRIMARY):** *"Is anything ready to shipp"*
+
+**Question as App Overwatch put it (2026-11-26, in its reply):** "release main `13a17485` now, or hold?" Option A (recommended): hold, and ship once the first screens merge (PM-2, FN-3, SP-2a). Option B: ship now, so the two migrations and the new routes go live early and the next release is smaller. It said no screen file had changed since the last release, so nothing would look different on the live app.
+
+**Jason (2026-11-26 01:23:48 UTC, PRIMARY):** *"B"*
+
+**Ruling:** B. Main `13a17485` is released to production now.
+
+**Applied (Overwatch, not his words):** staging migrations athlete-reached-out-marks (run 45735517736) and email-alert-sweep-indexes (45735918119, after an AWS-runner timeout on 45735536312); deploy-staging run 45736075767 (image `sha256:118175b6a384a390f9db4740987eb77ab469cdcc82cbfa34743e396ac17f052d`, revision `app-ppbf-staging--0000323`); read-only staging checks (home and login 200, the floor route 401 signed out); production migrations athlete-reached-out-marks (45737043935) and email-alert-sweep-indexes (45737456394); deploy-production run 45737794872; every production gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds); revision `app-ppbf-production--0000219` at 100% traffic, same image as staging; www home and login returned 200 and the floor route 401 signed out. No screen changed, so no signed-in screen check was owed.
+
+**Status:** recorded 2026-11-26 by PR.
+
+---
+
+## OD-2026-11-25-005 -- W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-25 11:24 UTC):** "Start W4 item 5 on admin@ now (A, recommended), or hold it until the handovers have started (B)?" It said four of the six pieces (SP-1a, SP-1b, SP-2a, SP-2b) share no files with any running lane, and the last two wait for lane W4-7 to merge.
+
+**Jason (2026-11-25 11:27:34 UTC, PRIMARY):** *"do it navigat the accont in your in app browser"*
+
+**Jason (2026-11-25 11:30:21 UTC, PRIMARY):** *"its already open in your in app browser"*
+
+**Ruling:** A. W4 item 5 starts now as a cloud lane on admin@, started by App Overwatch in its in-app browser.
+
+**Applied (Overwatch, not his words):** lane W4-5 started 2026-11-25 11:31 UTC on admin@ (claude.ai/code, Opus); its brief's normalised hash was matched before Send. Plan PR #2189; App Overwatch's GO 2026-11-25 13:05 UTC. SP-3 and SP-4 wait for W4-7's OQ-3 and OQ-4 to merge (they share the scheduler route and the schedule page).
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-25-004 -- Release of main `f7d951bf` to production, and the W4 lanes move to admin@
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-25 11:20:03 UTC, PRIMARY), his own proposal:** *"can we just deploy to production what we have then tell the other account t pick up the lanes"*
+
+**Question as App Overwatch put it (2026-11-25 11:40 UTC), after main moved to `f7d951bf` during the release freeze (see Applied):** "Ship the Stopped Coming page after my own signed-in staging check?" Options: "Yes, you check it"; "I'll check it".
+
+**Jason (2026-11-25 11:40:59 UTC, PRIMARY):** *"Yes, you check it"*
+
+**Ruling:** release what is on main to production, with App Overwatch's own signed-in staging check of the Stopped Coming page; then the W4 lanes continue on admin@.
+
+**Applied (Overwatch, not his words):**
+- Release: staging deploy run 45606624993 (image `sha256:5e64a096d23f5941e55da95545817fc6b1e41bc93ec083e1381e844548ea7063`); the Stopped Coming page checked on staging as the organization admin (pass); production migrations applied by the apply-migrations workflow: session-staff-note-request-key (run 45609083780), family-threads (45610065796), organization-stopped-coming-policy (45611018411), email-alert-switches (45612021468), two of them after a retry on an AWS runner; deploy-production run 45612464917; every gate approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds); revision `app-ppbf-production--0000218` at 100% traffic (created 2026-11-25 12:21 UTC); www returned 200.
+- **Defect (App Overwatch's own):** #2175 (SC-2, the Stopped Coming page) merged at 11:38 UTC, during the release freeze. Stopping the merge-queue task did not stop the script it had started, and the script merged #2175 when its checks finished. The process was found and killed before it reached #2176. The release was retargeted from `c2a38741` to `f7d951bf` (SC-2 adds no migration), and the screen check above was asked for because the page shows minors' data. Since then, a merge queue is stopped by killing its process, not only its task.
+- Lanes: each W4 lane on the desktop account wrote a HANDOVER on its plan PR and stopped; successors started on admin@ 2026-11-25 13:07 to 13:10 UTC (W4-1, W4-4, W4-6, W4-7, W4-8, W4-3), with the lane rules in `docs/current/CLOUD_LANE_RULES.md` (#2190).
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-25-003 -- Usage plan: the W4 lanes go to admin@ when the desktop account runs low, and admin@'s free Full reset is used; the Fable reset is not
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-25 11:10 UTC):** "When this account nears its limit, move W4 to admin@ and use its free Full reset?" Options: "Yes, A"; "Wait for Thursday". In its message: "should W4 move to admin@, with you pressing its free Full reset (A), or should W4 pause until admin@'s normal Thursday 6 PM reset (B)?"
+
+**Jason (2026-11-25 11:12:00 UTC, PRIMARY):** *"go with recomendations and use the admin @ account i still have a reset avai;ble with them for both fable and the week"*
+
+**Ruling:** A. When the desktop account nears its weekly limit, the W4 lanes hand over and continue on admin@; when admin@ runs low, App Overwatch presses admin@'s free Full reset.
+
+**Not ruled here:** the Fable reset. Jason named it as available; App Overwatch does not use it (Overwatch's reading, not his words).
+
+**Applied (Overwatch, not his words):** the handover came earlier than the usage trigger, on OD-2026-11-25-004. admin@'s Full reset ("Reset for free" under Full reset, in claude.ai Settings > Usage) was pressed 2026-11-25 at about 16:45 UTC, with admin@'s weekly use at 97% and its 5-hour limit at 100%; the page then read "Limits reset". The admin@ lanes, stopped at the 5-hour limit, were each sent "Continue" after the reset. App Overwatch's 30-minute check reads usage at each check.
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-25-002 -- The "on the floor now" line: when a family's own mark counts, its words, and a later Absent or Excused (FN0-Q2 A, FN0-Q6 A)
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Questions:** FN0-Q2 and FN0-Q6 in `docs/content-review/w4-sizing/FN-0_FLOOR_LINE_PRIVACY_REVIEW.md`, section 6, posted by lane W4-3 on PR #2160 (2026-11-25 07:16 and 07:17 UTC). App Overwatch put them to Jason as: "Take the lane's recommendations on the two floor-line questions (Q2 A, Q6 A)?"
+
+**Jason (2026-11-25 11:10:24 UTC, PRIMARY):** *"Yes, A and A"*
+
+**Ruling:**
+1. FN0-Q2: A. A register mark the family wrote (an athlete's or parent's own check-in) counts from its class's start to the end of the gym day; a staff mark counts from when it is written; "On the floor now" counts for either record. The words are as option A lists them: coach "On the floor now: [names]", with "Nobody is counted on the floor right now." and, on a failed read, "Who is on the floor could not be checked."; parent "[first name] is on the floor now."; athlete "You're on the floor now." or "You're not counted on the floor right now." The line refreshes when the page opens or is refreshed, not pushed live (the recommendation asked with FN0-Q2).
+2. FN0-Q6: A. On a session tied to a class, a later Absent or Excused on the register takes the child off the line, for every reader.
+
+**Applied (Overwatch, not his words):** posted to lane W4-3 on PR #2160 (2026-11-25 11:10 UTC); the staff and volunteer failed-read words follow the same form. FN-2 and FN-3 are planned on these answers in PR #2192.
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-25-001 -- Build the rest of W4 fast: five W4 build lanes and a privacy review at once, as cloud sessions on the desktop account, Sonnet work on admin@, and release main `348e126d`
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-25 00:07:35 UTC, PRIMARY), after App Overwatch said the W4 lanes would wait for admin@'s weekly reset:** *"Well we have plenty of usage  on this account"*
+
+**Jason (2026-11-25 01:56:42 UTC, PRIMARY):** *"look at the claue account Admin@ i have the usage pulled up between that account and this account come up wit the most effcient way to get the remaining oitem built fast"*
+
+**Question as App Overwatch put it (2026-11-25, in its reply):** "Official form: approve this plan? Options: A (recommended): all of it: five W4 lanes in the cloud on this account now, Sonnet work on admin@, and the release of `348e126d`. B: the same, but local sessions on this PC instead of cloud (about one building lane at a time). C: start fewer lanes."
+
+**Jason (2026-11-25 01:58:48 UTC, PRIMARY):** *"A ans what the ETA"*
+
+**Ruling:** A. W4 items 1, 4, 6, 7 and 8 and item 3's privacy review run at once as cloud sessions on the desktop account; admin@ takes the Sonnet work; main `348e126d` is released.
+
+**Applied (Overwatch, not his words):** usage read live before the plan: the desktop account at 6% of its weekly limit, admin@ at 79% with one free full reset that expires 2026-12-10 (kept for when admin@ reaches its limit). Six cloud sessions started, each with an App Overwatch GO on its plan PR after a fresh reviewer's read: W4-1 #2159, W4-4 #2161, W4-6 #2163, W4-7 #2158, W4-8 #2162, W4-3 (privacy review) #2160. Release: deploy-staging run 45530131239 (image `sha256:a2bd563e04fcd64de740c3129a90d13672e735cc4c61ac10435ca18f8ede6f9f`), the changed words checked on staging as the organization admin, deploy-production run 45531112008 approved as PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds), revision `app-ppbf-production--0000217` at 100% traffic, www returned 200. The ETA given was an estimate (INFERRED), about 3 to 5 days for W4.
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
+## OD-2026-11-24-007 -- The no-new-lanes hold is lifted
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24 to 2026-11-25; the UTC times are from this session's transcript. New; it partly replaces OD-2026-11-24-002 (the status line there says which part).
+
+**Question as App Overwatch put it (2026-11-24, after it found no lane open and the build waiting on the hold):** "Lift the no-new-lanes hold so Overwatch can start the next build item?" Options: "Lift it"; "Keep the hold".
+
+**Jason (2026-11-24 21:29:19 UTC, PRIMARY):** *"Lift it"*
+
+**Ruling:** OD-2026-11-24-002's "do not start any new lanes" no longer holds. App Overwatch starts lanes by the collision rule (Jason 2026-11-20: "no cap the only restiction is collision validate that the lane wont collide before starting"). The account roles in OD-2026-11-24-002 stand.
+
+**Applied (Overwatch, not his words):** lane AS-13 started (cloud, admin@); its part a merged as #2157 (`348e126d`) and was released (OD-2026-11-25-001).
+
+**Status:** recorded 2026-11-25 by PR.
+
+---
+
 ## OD-2026-11-24-006 -- Release of main `d6b2f407f31aa5deda4604cb64da0150373ad180` to production (#2154), tested on the live app instead of staging
 
 **Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-24; the UTC times are from this session's transcript. New; edits no earlier entry.
@@ -747,6 +906,8 @@ and should not try to.
 **Applied (Overwatch, not his words):** written into the workspace rules on his PC (CLAUDE ACCOUNTS). Which login "my personal pro accout" is was read as his gmail account (INFERRED from his 2026-10-10 and 2026-11-21 words); the desktop session confirms its own login. Observed 2026-11-24 about 18:00 UTC: the desktop App Overwatch session was still signed in as admin@, so the switch was not yet made.
 
 **Status:** recorded 2026-11-24 by PR.
+
+**Status, 2026-11-24:** partly replaced by OD-2026-11-24-007 (the no-new-lanes hold; the account roles stand)
 
 ---
 

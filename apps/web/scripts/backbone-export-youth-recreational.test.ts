@@ -531,6 +531,40 @@ describe('the committed youth + recreational rows', () => {
 
   const HW_TRACK = 'trk_55480ac4429113';
   const HW_TRACK_COLUMNS = ['sources', 'details', 'field_labels'];
+  // Lane W4-8's step PRs: template id -> the typed steps now linked to the lane's drills (one entry per template).
+  const LANE_W48_STEPS: Record<string, number[]> = {
+    wtp_43c793b8f90e77: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // 48-Session Youth Coaching Manual, Weeks 1-4 (TL-1b)
+    wtp_ed57bea28de0f7: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 5-8 (TL-1b)
+    wtp_d861f584584788: [1, 2, 7, 8, 9, 10, 11, 12, 13, 14], // Weeks 9-12 (TL-1b)
+    wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (test run 4-5) (TL-2)
+    wtp_1ad3c846b03ecc: [1, 2, 9, 10, 11], // Friday Sparring Coach Sheet (TL-3a)
+    wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday Gold Standard Coach Script (TL-3b)
+    wtp_456e418b1741b8: [6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
+    wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min (TL-5a)
+    wtp_c2c4bec001a56b: [1, 4, 5, 6, 7], // Phase 1 boxing skill session, 90 minutes (TL-5a)
+  };
+  // Of those, the steps that also took their own stated time (details.block_time, minutes in the block_title, or a
+  // whole-minutes details.time) as duration_minutes (Codex P1 and App Overwatch on #2177; #2162): the export would
+  // blank that cell too.
+  const LANE_W48_DURATIONS: Record<string, number[]> = {
+    wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
+    wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
+    wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
+    wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b)
+    wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
+    wtp_01de3f48606d4c: [1, 3], // Conditioning session A — SIT, 45 min (TL-5a)
+  };
+  // Of those, the steps whose contact_level the lane changed by a ruling: Phase 1 step 1 names 'one pre-activation cue
+  // drill', which D-OQ94 rates light_technical (App Overwatch on #2201, comment 7176799736); the frozen Backbone has none.
+  const LANE_W48_CONTACT: Record<string, number[]> = {
+    wtp_c2c4bec001a56b: [1], // Phase 1 boxing skill session, 90 minutes (TL-5a)
+  };
+  it("names duration and contact cells only on lane W4-8's linked steps (the frozen case below ignores any other)", () => {
+    for (const changed of [LANE_W48_DURATIONS, LANE_W48_CONTACT]) {
+      for (const [id, steps] of Object.entries(changed)) expect({ id, outside: steps.filter((step) => !(LANE_W48_STEPS[id] ?? []).includes(step)) }).toEqual({ id, outside: [] });
+    }
+  });
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -542,8 +576,30 @@ describe('the committed youth + recreational rows', () => {
     // Lane HW (OD-2026-11-19-005; Overwatch R1): the Personal and Home Training track names the six PPBF
     // home sessions in days 1-6 in place of the held six, so its details, sources and field_labels differ
     // from the frozen Backbone, and the guard refuses to write the frozen row back over them.
-    expect(named.filter(([file]) => file !== TEMPLATES)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
-    expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort()).toEqual(draftedIds);
+    expect(named.filter(([file]) => file !== TEMPLATES && file !== ITEMS)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
+    // Lane W4-8 (OD-2026-11-19-030, OW26-05 B; OD-2026-11-20-001, OW27-09 B; plan and GO on #2162): each typed step in
+    // LANE_W48_STEPS now links the drill the lane wrote for its line, and its template's 'items' label gains the
+    // lane's 'drill_id' part. The frozen Backbone keeps the typed lines, so the guard names exactly those
+    // steps (drill_id is their committed cell the export would change, with duration_minutes on the LANE_W48_DURATIONS
+    // steps; the cleared free_text_drill is a blank it would fill) and those templates' field_labels. UNVERIFIED where written (no frozen folder); App Overwatch runs this case on each
+    // step PR's head before merging it (#2162).
+    const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
+    expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
+    const timed = (row: Record<string, string>) => (LANE_W48_DURATIONS[row.template_id] ?? []).includes(Number(row.ordinal));
+    const rated = (row: Record<string, string>) => (LANE_W48_CONTACT[row.template_id] ?? []).includes(Number(row.ordinal));
+    // The changed cells in the items header's order: drill_id, duration_minutes, contact_level.
+    const cells = (row: Record<string, string>) => ['drill_id', ...(timed(row) ? ['duration_minutes'] : []), ...(rated(row) ? ['contact_level'] : [])].join(', ');
+    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, cells(row)]));
+    expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
+      .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
+    // A lane template changes in field_labels and, if lane YR drafted it, in exactly its drafted cells (header order).
+    for (const id of Object.keys(LANE_W48_STEPS)) {
+      const labels = JSON.parse(templates.find((row) => row.template_id === id)?.field_labels ?? '{}');
+      const columns = [...DRAFTED.filter((field) => (labels[field] ?? {}).draft), 'field_labels'].join(', ');
+      expect(named.filter(([file, owner]) => file === TEMPLATES && owner === id).map(([, , cells]) => cells)).toEqual([columns]);
+    }
+    // Every overwrite line is one of those named: no committed row is removed.
+    expect(refused.stderr.split('\n').filter((line) => /^ {2}\S+ \w+ \S+: (changes .+|removes .+)$/.test(line) && !line.includes(' links drill '))).toHaveLength(named.length);
 
     // Lane GD: the frozen track row still names the held six in its details, so no flag writes it back
     // (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042). The plain refusal says so, and
@@ -557,7 +613,11 @@ describe('the committed youth + recreational rows', () => {
     const forced = exportInto(FROZEN, SEED_DIR, ['--allow-overwrite']);
     expect(forced.status).toBe(1);
     expect(heldLines(forced.stderr)).toEqual([heldLine]);
-    expect(forced.stderr).not.toContain('the export would write it back as a typed line');
+    // ...and both runs refuse to write lane W4-8's linked steps back as typed lines, naming exactly those steps.
+    const typedLines = (stderr: string) => stderr.split('\n').filter((line) => line.endsWith('the export would write it back as a typed line'));
+    const laneTypedLines = laneSteps.map((row) => `  ${ITEMS} template_id ${row.template_id}: step ${row.ordinal} links drill ${row.drill_id}; the export would write it back as a typed line`);
+    expect(typedLines(refused.stderr)).toEqual(laneTypedLines);
+    expect(typedLines(forced.stderr)).toEqual(laneTypedLines);
     for (const name of WRITTEN) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
   });
 });

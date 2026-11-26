@@ -6,9 +6,9 @@ import { writePilotAuditEvent } from './audit';
 import { query, withTransaction } from './db';
 import {
   type SchedulerClass,
-  countClassNoShows,
   getSchedulerClassById,
   isRegisteredForClass,
+  listClassNoShows,
   lockSchedulerClass,
   markClassNoShowsAbsent,
   undoSessionRegisterPresent,
@@ -62,6 +62,9 @@ export const SESSION_CLASS_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['SESSION_RUN_NOT_TIED', 'This session is not tied to a class, so there is no class register to mark.'],
   ['SESSION_CLASS_NOT_STARTED', 'This class has not started yet, so nobody is a no-show.'],
   ['SESSION_CLASS_ALREADY_LIVE', 'Another live session is already running this class. Start without a class, or ask that coach to end theirs.'],
+  ['SESSION_NO_SHOWS_KEY_REUSED', 'This tap was already sent for other athletes. Nothing more was marked.'],
+  ['SESSION_NO_SHOWS_CLASS_CHANGED', 'This session is now tied to another class, so nobody was marked Absent.'],
+  ['SESSION_RUN_KEY_REUSED', 'This tap was already sent for another change. Nothing more was changed.'],
 ]);
 
 type Tier = Pick<ActorIdentity, 'organizationId' | 'accountId' | 'role'>;
@@ -138,6 +141,9 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, 
     },
     new Date().toISOString(),
     tappedAt,
+    // An Absent this run's own no-shows tap wrote, untouched since, is never a later register
+    // change: on one page the tap came first (writeSessionRegisterPresent).
+    tap.runId,
   );
   if (written.effect === 'created') {
     await client.query(
@@ -175,7 +181,7 @@ export async function undoTapOnRegister(
 }
 
 /** Inside a write's transaction: the actor's own live run, locked, with the codes sessionScriptRuns.ts uses. */
-async function lockOwnLiveRun(client: PoolClient, actor: ActorIdentity, runId: string): Promise<{ class_id: string | null }> {
+async function lockOwnRun(client: PoolClient, actor: ActorIdentity, runId: string): Promise<{ run_state: string | null; class_id: string | null }> {
   const { rows } = await client.query<{ delivered_by_account_id: string; run_state: string | null; class_id: string | null }>(
     `select delivered_by_account_id, run_state, class_id from pilot.session_script_runs
       where organization_id = $1 and run_id = $2
@@ -185,8 +191,7 @@ async function lockOwnLiveRun(client: PoolClient, actor: ActorIdentity, runId: s
   const owned = rows[0];
   // Another coach's run reads exactly like a missing one.
   if (!owned || owned.delivered_by_account_id !== actor.accountId) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
-  if (owned.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
-  return { class_id: owned.class_id };
+  return { run_state: owned.run_state, class_id: owned.class_id };
 }
 
 /** The marks that stand in this run (athlete, when marked), locked: what a tie copies. */
@@ -230,18 +235,85 @@ export interface TieOutcome {
   copied: Array<{ athlete_id: string } & RegisterResult>;
   /** Untying or retying: the register marks this session had created, which now simply stay. */
   released: string[];
+  /**
+   * Set only on a resend of a key already recorded (it wrote nothing). class_id is then the class
+   * the run holds NOW, which another device may have changed since; copied and released are the
+   * first send's only while the run still holds the class it set. live: whether the run still is.
+   */
+  replayed?: true;
+  live?: boolean;
 }
 
 /**
  * Tie the actor's own live session to a class, or untie it (classId null). Untying, or tying to a
  * different class, leaves the register marks in place and clears the session's claim to undo them.
+ *
+ * With a request key (W4 item 7, OVERWATCH 7170099938 on #2178), whether an earlier send landed is
+ * decided by the key, never by the run holding the class asked for (another device may have tied
+ * it): every keyed tie, a no-op included, is recorded on the run's audit event with its key and
+ * answer, in the same transaction. The key is looked up under the run's lock and before the run must
+ * be live, as for the no-shows tap; a resend of a recorded key writes nothing (TieOutcome.replayed),
+ * and the same key for another class is refused.
  */
-export async function setSessionRunClass(actor: ActorIdentity, runId: string, classId: string | null): Promise<TieOutcome> {
+export async function setSessionRunClass(
+  actor: ActorIdentity,
+  runId: string,
+  classId: string | null,
+  requestKey: string | null = null,
+): Promise<TieOutcome> {
   return withTransaction(async (client) => {
+    // READ COMMITTED, set and not assumed: a resend that waited on the run's lock sees the first send's commit.
+    await client.query('set transaction isolation level read committed');
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
-    const owned = await lockOwnLiveRun(client, actor, runId);
-    if (owned.class_id === classId) return { class_id: classId, copied: [], released: [] };
+    const run = await lockOwnRun(client, actor, runId);
+    if (requestKey !== null) {
+      const first = await client.query<{ same: boolean; copied: TieOutcome['copied']; released: string[] }>(
+        `select details->'class_id' = $4::jsonb as same, details->'copied' as copied, details->'released' as released
+           from pilot.audit_events
+          where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
+            and details->>'action' = 'tie_class' and details->>'request_key' = $3
+          order by audit_id
+          limit 1`,
+        [actor.organizationId, runId, requestKey, JSON.stringify(classId)],
+      );
+      const landed = first.rows[0];
+      if (landed) {
+        if (!landed.same) throw new SessionRunClassError('SESSION_RUN_KEY_REUSED', 409);
+        const holds = run.class_id === classId;
+        return {
+          class_id: run.class_id,
+          copied: holds ? landed.copied : [],
+          released: holds ? landed.released : [],
+          replayed: true,
+          live: run.run_state === 'in_progress',
+        };
+      }
+    }
+    if (run.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
+    const owned = { class_id: run.class_id };
+    const audit = (outcome: TieOutcome) => writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: role,
+        organization_id: actor.organizationId,
+        entity_type: 'session_script_run',
+        entity_id: runId,
+        details: {
+          run_id: runId, class_id: classId, previous_class_id: owned.class_id, action: 'tie_class', request_key: requestKey,
+          copied: outcome.copied, released: outcome.released,
+        },
+        shadow_mirror: false,
+      },
+      client,
+    );
+    if (owned.class_id === classId) {
+      const unchanged: TieOutcome = { class_id: classId, copied: [], released: [] };
+      // Recorded only with a key (a keyless resend of a no-op still writes nothing).
+      if (requestKey !== null) await audit(unchanged);
+      return unchanged;
+    }
 
     // The lock order: run, then the marks (and their athletes), then the class, then the register.
     const standing = await standingMarks(client, actor.organizationId, runId);
@@ -263,20 +335,6 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
       }
       throw error;
     }
-    await writePilotAuditEvent(
-      {
-        event_type: 'update',
-        actor_account_id: actor.accountId,
-        actor_role: role,
-        organization_id: actor.organizationId,
-        entity_type: 'session_script_run',
-        entity_id: runId,
-        details: { run_id: runId, class_id: classId, previous_class_id: owned.class_id },
-        shadow_mirror: false,
-      },
-      client,
-    );
-
     const copied: TieOutcome['copied'] = [];
     if (classId) {
       for (const { athlete_id: athleteId, marked_at: markedAt } of standing) {
@@ -284,21 +342,71 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
         copied.push({ athlete_id: athleteId, ...(await copyTapToRegister(client, tap, markedAt)) });
       }
     }
-    return { class_id: classId, copied, released: released.rows.map((row) => row.athlete_id).sort() };
+    const outcome: TieOutcome = { class_id: classId, copied, released: released.rows.map((row) => row.athlete_id).sort() };
+    // After the copy, so the record holds the answer a resend of its key is given.
+    await audit(outcome);
+    return outcome;
   });
 }
 
+/** The no-shows tap as the coach's screen sent it. */
+export interface NoShowsTap {
+  /** The athletes the screen showed as no-shows when the coach tapped: only these can be marked. */
+  athleteIds: readonly string[];
+  /** The tap's key, the same on every resend; null when the page sent none (it is then sent once). */
+  requestKey: string | null;
+  /** The class the screen showed them for: a run tied to another class since is refused, marking nobody. */
+  classId: string;
+}
+
 /**
- * The End Session no-shows tap on the actor's own live tied session (ruling 3): every athlete
- * signed up for the class with no register mark and no standing mark here becomes Absent, each
- * audited. The class is re-checked under its lock, as for a tap.
+ * The End Session no-shows tap on the actor's own live tied session (ruling 3): every athlete the
+ * tap names who is still signed up for the class with no register mark and no standing mark here
+ * becomes Absent, each audited. The class is re-checked under its lock, as for a tap.
+ *
+ * A resend acts on the set the first send named, never one the server works out later, and applies
+ * once (W4 item 7, OVERWATCH 7160191377): every tap is audited on its run with its key, the names it
+ * sent and whom it marked, in the same transaction as the marks. A resend of a key already recorded
+ * for the run (only its own coach gets past the run's lock) is answered with the first answer and
+ * writes nothing. The key is looked up under the run's lock, so a resend that overtakes a slow first
+ * send waits for it, and before the run is required to be live, so a send that landed before the
+ * session ended still reads as saved. The same key with other names is refused.
+ *
+ * The marks are made when the tap lands, and the tap records that time (marked_at): a here tap of
+ * this run that lands after it flips such a mark, while untouched, whatever the two requests' delays
+ * (writeSessionRegisterPresent; OD-2026-10-21-004 ruling 1; Overwatch condition 1 on #2158).
  */
-export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: string): Promise<{ marked: string[] }> {
+export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: string, tap: NoShowsTap): Promise<{ marked: string[] }> {
+  const named = [...new Set(tap.athleteIds)].sort();
   return withTransaction(async (client) => {
+    // READ COMMITTED, set here and not assumed (withTransaction sends a plain BEGIN): the key lookup
+    // below, made once the run's lock is held, must see a first send committed while this one waited.
+    await client.query('set transaction isolation level read committed');
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
-    const { class_id: classId } = await lockOwnLiveRun(client, actor, runId);
+    const run = await lockOwnRun(client, actor, runId);
+    if (tap.requestKey !== null) {
+      const first = await client.query<{ athlete_ids: string[]; marked: string[] }>(
+        `select details->'athlete_ids' as athlete_ids, details->'marked_athlete_ids' as marked
+           from pilot.audit_events
+          where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
+            and details->>'action' = 'mark_no_shows' and details->>'request_key' = $3
+          order by audit_id
+          limit 1`,
+        [actor.organizationId, runId, tap.requestKey],
+      );
+      const landed = first.rows[0];
+      if (landed) {
+        if (JSON.stringify(landed.athlete_ids) !== JSON.stringify(named)) throw new SessionRunClassError('SESSION_NO_SHOWS_KEY_REUSED', 409);
+        return { marked: landed.marked };
+      }
+    }
+    if (run.run_state !== 'in_progress') throw new SessionRunClassError('SESSION_RUN_NOT_LIVE', 409);
+    const classId = run.class_id;
     if (!classId) throw new SessionRunClassError('SESSION_RUN_NOT_TIED', 409);
+    // Tied to another class since the screen showed these names (from another device): nobody here
+    // was seen by the coach for that class.
+    if (classId !== tap.classId) throw new SessionRunClassError('SESSION_NO_SHOWS_CLASS_CHANGED', 409);
     const item = await lockSchedulerClass(client, actor.organizationId, classId);
     if (!item || item.status === 'cancelled') throw new SessionRunClassError('SESSION_CLASS_CANCELLED', 409);
     if (!isOrganizationAdminRole(role) && !actorRunsClass(actor, item)) throw new SessionRunClassError('SESSION_CLASS_NOT_YOURS', 403);
@@ -309,6 +417,8 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
       actor.organizationId,
       item.start_at,
     );
+    // Whole milliseconds, recorded on the tap's audit event exactly as written to the register.
+    const markedAt = new Date().toISOString();
     const marked = await markClassNoShowsAbsent(
       client,
       actor.organizationId,
@@ -319,20 +429,37 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
         checked_in_by_account_id: actor.accountId,
       },
       standing,
-      new Date().toISOString(),
+      named,
+      markedAt,
     );
     for (const athleteId of marked) {
-      const tap = { organizationId: actor.organizationId, runId, classId, athleteId, accountId: actor.accountId, role };
-      await auditRegister(client, tap, { effect: 'no_show_absent' });
+      const mark = { organizationId: actor.organizationId, runId, classId, athleteId, accountId: actor.accountId, role };
+      await auditRegister(client, mark, { effect: 'no_show_absent' });
     }
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: role,
+        organization_id: actor.organizationId,
+        entity_type: 'session_script_run',
+        entity_id: runId,
+        details: {
+          run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey,
+          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt,
+        },
+        shadow_mirror: false,
+      },
+      client,
+    );
     return { marked };
   });
 }
 
 /**
- * The class a live run is tied to, as the live screen names it, and how many athletes the no-shows
- * tap would mark now: 0 whenever the tap would be refused (cancelled, not started, not the
- * caller's class), so the screen never offers a tap that fails.
+ * The class a live run is tied to, as the live screen names it, and whom the no-shows tap would
+ * mark now (the tap sends these names back): none whenever the tap would be refused (cancelled, not
+ * started, not the caller's class), so the screen never offers a tap that fails.
  */
 export async function describeRunClass(actor: Tier, classId: string) {
   const item = await getSchedulerClassById(actor.organizationId, classId);
@@ -341,15 +468,17 @@ export async function describeRunClass(actor: Tier, classId: string) {
     && new Date(item.start_at).getTime() <= Date.now()
     && (isOrganizationAdminRole(actor.role) || actorRunsClass(actor, item));
   const reader: AthleteIdReader = (text, values) => query<{ athlete_id: string }>(text, values);
+  const noShows = offerable
+    ? await listClassNoShows(actor.organizationId, classId, await seenOnClassDay(reader, actor.organizationId, item.start_at))
+    : [];
   return {
     class_id: item.class_id,
     title: item.title,
     start_at: item.start_at,
     end_at: item.end_at,
     status: item.status,
-    no_shows: offerable
-      ? await countClassNoShows(actor.organizationId, classId, await seenOnClassDay(reader, actor.organizationId, item.start_at))
-      : 0,
+    no_shows: noShows.length,
+    no_show_ids: noShows,
   };
 }
 
