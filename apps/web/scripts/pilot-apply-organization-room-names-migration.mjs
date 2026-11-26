@@ -19,20 +19,37 @@ function sslConfig() {
 
 // Readiness asserts the result, not the attempt (the stopped-coming runner's
 // shape), each piece looked up ON pilot.organization_room_names and reported
-// by name: the exact column list; each column by type, nullability and
-// default; exactly two CHECKs, each validated and compared IN FULL against the
-// text Postgres stores; the primary key on (organization_id, name_key) in that
-// order; no other unique constraint or unique index; exactly two foreign keys,
-// each by column, target table and column, ON DELETE (cascade for the gym, set
-// null for the setter), ON UPDATE NO ACTION and not deferrable. Each is
-// refused on its own (organizationRoomNamesMigration.pg.test.ts), except the
-// target COLUMN of each foreign key, which no test drifts: neither target
-// table has a second unique column to point a foreign key at.
+// by name: an ordinary, logged table; the exact column list; each column by
+// type, nullability and default; exactly two CHECKs, each validated and
+// compared IN FULL against the text Postgres stores; the primary key on
+// (organization_id, name_key) in that order and not deferrable (RN-1b's save
+// is an ON CONFLICT on it, which a deferrable key cannot serve); no other
+// unique constraint or unique index; exactly two foreign keys, each by local
+// column, target table and column, validated, ON DELETE (cascade for the gym,
+// set null for the setter), ON UPDATE NO ACTION and not deferrable.
+// organizationRoomNamesMigration.pg.test.ts refuses each piece on its own,
+// with three exceptions it does not drift separately:
+// - a CHECK's validated flag: a NOT VALID CHECK already fails the full-text
+//   comparison (INFERRED: Postgres reports it with " NOT VALID");
+// - the constraint-type half of the uniqueness check: a unique or exclusion
+//   constraint also creates the unique index the other half sees;
+// - the target COLUMN of each foreign key: neither target table has a second
+//   unique column to point a foreign key at.
+
+// The whitespace JavaScript's trim() removes, as a Postgres regex class (the
+// same class as source_rights_migration.sql and locatorWhitespace.ts), and the
+// control characters and line breaks Q-C refuses, both as code points.
+const TRIM_CLASS = String.raw` \t\n\v\f\r   -     　﻿`;
+const CONTROL_CLASS = String.raw`\u0001-\u001f\u007f-\u009f  `;
+
 export const EXPECTED_CHECKS = [
   ['pilot_org_room_names_key_check', "CHECK ((name_key ~ '^(place|room|card):[a-z]+(-[a-z]+)*$'::text))"],
   [
     'pilot_org_room_names_display_name_check',
-    "CHECK (((display_name = btrim(display_name)) AND ((char_length(display_name) >= 1) AND (char_length(display_name) <= 40)) AND (display_name !~ '[[:cntrl:]]'::text)))",
+    'CHECK ((((char_length(display_name) >= 1) AND (char_length(display_name) <= 40))'
+      + ` AND (display_name !~ '^[${TRIM_CLASS}]'::text)`
+      + ` AND (display_name !~ '[${TRIM_CLASS}]$'::text)`
+      + ` AND (display_name !~ '[${CONTROL_CLASS}]'::text)))`,
   ],
 ];
 
@@ -59,6 +76,8 @@ const READINESS_QUERY = `
   )
   select
     (select oid from t) is not null as table_ready,
+    exists (select 1 from pg_class c, t where c.oid = t.oid and c.relkind = 'r' and c.relpersistence = 'p')
+      as table_kind_ready,
     (
       select array_agg(column_name::text order by ordinal_position)
       from information_schema.columns
@@ -80,7 +99,7 @@ const READINESS_QUERY = `
     exists (select 1 from con where conname = $3 and contype = 'c' and convalidated
               and pg_get_constraintdef(oid) = $4) as display_name_check_ready,
     exists (
-      select 1 from con c where c.contype = 'p'
+      select 1 from con c where c.contype = 'p' and not c.condeferrable
         and c.conkey = array[
           (select attnum from attnum_of where attname = 'organization_id'),
           (select attnum from attnum_of where attname = 'name_key')

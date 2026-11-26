@@ -23,6 +23,15 @@
 -- THE NAME ITSELF (Overwatch's answer Q-C on #2212): 1 to 40 characters,
 -- trimmed, no line breaks or control characters. The store trims and checks
 -- first; this CHECK is the backstop for a row written any other way.
+-- - Characters are counted as code points, as char_length counts them.
+-- - "Trimmed" means no leading or trailing character from JavaScript's trim()
+--   set, not just the ASCII space btrim strips (a leading NBSP or U+3000 is
+--   refused). The class is the one source_rights_migration.sql and
+--   locatorWhitespace.ts already use.
+-- - Control characters and line breaks are written as code points (C0, DEL,
+--   C1, U+2028, U+2029), not [[:cntrl:]], whose reach depends on the
+--   database's LC_CTYPE and locale provider. So the rule is the same on every
+--   server, and the store can copy it exactly.
 -- Duplicates within a list (Q-B) are the store's to refuse: they depend on the
 -- defaults in code, which this table does not hold.
 --
@@ -53,9 +62,10 @@ create table if not exists pilot.organization_room_names (
     constraint pilot_org_room_names_key_check check (name_key ~ '^(place|room|card):[a-z]+(-[a-z]+)*$'),
   display_name       text not null
     constraint pilot_org_room_names_display_name_check check (
-      display_name = btrim(display_name)
-      and char_length(display_name) between 1 and 40
-      and display_name !~ '[[:cntrl:]]'
+      char_length(display_name) between 1 and 40
+      and display_name !~ '^[ \t\n\v\f\r   -     　﻿]'
+      and display_name !~ '[ \t\n\v\f\r   -     　﻿]$'
+      and display_name !~ '[\u0001-\u001f\u007f-\u009f  ]'
     ),
   set_by_account_id  text null references pilot.accounts(account_id) on delete set null,
   set_at             timestamptz not null default clock_timestamp(),

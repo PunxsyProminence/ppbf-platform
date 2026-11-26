@@ -217,6 +217,14 @@ describe('organization room names migration', () => {
   // Each piece of the readiness check, refused on its own and named in the error.
   const ORG_FK = 'organization_room_names_organization_id_fkey';
   const SETTER_FK = 'organization_room_names_set_by_account_id_fkey';
+  const TRIM_CLASS = String.raw` \t\n\v\f\r   -     　﻿`;
+  // The shipped display-name CHECK, with its length and its control-character
+  // clause as parameters, so a drift case changes one thing only.
+  const displayCheck = (maxLength: number, { controls = true } = {}) =>
+    `char_length(display_name) between 1 and ${maxLength}
+       and display_name !~ '^[${TRIM_CLASS}]'
+       and display_name !~ '[${TRIM_CLASS}]$'`
+    + (controls ? String.raw` and display_name !~ '[\u0001-\u001f\u007f-\u009f  ]'` : '');
   test.each([
     ['key_check_ready', 'a key CHECK that lets capitals in',
       `alter table ${T} drop constraint pilot_org_room_names_key_check,
@@ -226,18 +234,19 @@ describe('organization room names migration', () => {
          add constraint pilot_org_room_names_key_check check (name_key ~ '^(place|room|card):[a-z]+(-[a-z]+)*$') not valid`],
     ['display_name_check_ready', 'a display-name CHECK allowing 60 characters',
       `alter table ${T} drop constraint pilot_org_room_names_display_name_check,
-         add constraint pilot_org_room_names_display_name_check check (
-           display_name = btrim(display_name) and char_length(display_name) between 1 and 60
-           and display_name !~ '[[:cntrl:]]')`],
+         add constraint pilot_org_room_names_display_name_check check (${displayCheck(60)})`],
     ['display_name_check_ready', 'a display-name CHECK that lets control characters in',
       `alter table ${T} drop constraint pilot_org_room_names_display_name_check,
-         add constraint pilot_org_room_names_display_name_check check (
-           display_name = btrim(display_name) and char_length(display_name) between 1 and 40)`],
-    ['display_name_check_ready', 'the display-name CHECK not validated',
+         add constraint pilot_org_room_names_display_name_check check (${displayCheck(40, { controls: false })})`],
+    ['display_name_check_ready', 'a display-name CHECK that trims only the ASCII space',
       `alter table ${T} drop constraint pilot_org_room_names_display_name_check,
          add constraint pilot_org_room_names_display_name_check check (
            display_name = btrim(display_name) and char_length(display_name) between 1 and 40
-           and display_name !~ '[[:cntrl:]]') not valid`],
+           and display_name !~ '[[:cntrl:]]')`],
+    ['display_name_check_ready', 'the display-name CHECK not validated',
+      `alter table ${T} drop constraint pilot_org_room_names_display_name_check,
+         add constraint pilot_org_room_names_display_name_check check (${displayCheck(40)}) not valid`],
+    ['table_kind_ready', 'the table unlogged', `alter table ${T} set unlogged`],
     ['check_count_ready', 'a third CHECK', `alter table ${T} add constraint zz_extra_check check (display_name <> 'x')`],
     ['columns_ready', 'an extra column', `alter table ${T} add column note text`],
     ['organization_id_ready', 'organization_id with a default', `alter table ${T} alter column organization_id set default 'org-x'`],
@@ -257,6 +266,9 @@ describe('organization room names migration', () => {
     ['primary_key_ready', 'the primary key on organization_id alone',
       `alter table ${T} drop constraint organization_room_names_pkey,
          add constraint organization_room_names_pkey primary key (organization_id)`],
+    ['primary_key_ready', 'the primary key deferrable',
+      `alter table ${T} drop constraint organization_room_names_pkey,
+         add constraint organization_room_names_pkey primary key (organization_id, name_key) deferrable`],
     ['no_other_unique_ready', 'an extra unique constraint',
       `alter table ${T} add constraint zz_unique_name unique (organization_id, display_name)`],
     ['no_other_unique_ready', 'a unique index', `create unique index zz_unique_name_index on ${T} (organization_id, display_name)`],
@@ -275,6 +287,18 @@ describe('organization room names migration', () => {
       `alter table ${T} drop constraint ${ORG_FK},
          add constraint ${ORG_FK} foreign key (organization_id)
            references pilot.organizations(organization_id)`],
+    ['organization_fk_ready', 'the gym foreign key pointing at pilot.accounts',
+      `alter table ${T} drop constraint ${ORG_FK},
+         add constraint ${ORG_FK} foreign key (organization_id)
+           references pilot.accounts(account_id) on delete cascade`],
+    ['organization_fk_ready', 'the gym foreign key on name_key',
+      `alter table ${T} drop constraint ${ORG_FK},
+         add constraint ${ORG_FK} foreign key (name_key)
+           references pilot.organizations(organization_id) on delete cascade`],
+    ['organization_fk_ready', 'the gym foreign key not validated',
+      `alter table ${T} drop constraint ${ORG_FK},
+         add constraint ${ORG_FK} foreign key (organization_id)
+           references pilot.organizations(organization_id) on delete cascade not valid`],
     ['set_by_fk_ready', 'the setter foreign key cascading on update',
       `alter table ${T} drop constraint ${SETTER_FK},
          add constraint ${SETTER_FK} foreign key (set_by_account_id)
@@ -287,6 +311,14 @@ describe('organization room names migration', () => {
       `alter table ${T} drop constraint ${SETTER_FK},
          add constraint ${SETTER_FK} foreign key (set_by_account_id)
            references pilot.accounts(account_id) on delete set null deferrable`],
+    ['set_by_fk_ready', 'the setter foreign key pointing at pilot.organizations',
+      `alter table ${T} drop constraint ${SETTER_FK},
+         add constraint ${SETTER_FK} foreign key (set_by_account_id)
+           references pilot.organizations(organization_id) on delete set null`],
+    ['set_by_fk_ready', 'the setter foreign key not validated',
+      `alter table ${T} drop constraint ${SETTER_FK},
+         add constraint ${SETTER_FK} foreign key (set_by_account_id)
+           references pilot.accounts(account_id) on delete set null not valid`],
   ])('readiness refuses %s: %s', async (piece, _label, alteration) => {
     const client = await freshDatabase(`roomnames_r${Math.random().toString(36).slice(2, 10)}`);
     try {
@@ -299,10 +331,17 @@ describe('organization room names migration', () => {
     }
   });
 
-  test('the database refuses a name that is blank, untrimmed, over 40 characters or carries a control character, and takes 1 to 40', async () => {
+  test('the database refuses a name that is blank, untrimmed, over 40 characters or carries a control character or line break, and takes 1 to 40', async () => {
     const client = await freshDatabase('roomnames_names');
     try {
-      const refused = ['', ' ', 'Lobby ', ' Lobby', 'x'.repeat(41), 'Front\nDesk', 'Front\tDesk', 'Front\rDesk', 'Lobby\u0007'];
+      const refused = [
+        '', ' ', 'Lobby ', ' Lobby', 'x'.repeat(41),
+        // Untrimmed by JavaScript's trim() set, not only the ASCII space.
+        ' Lobby', 'Lobby ', 'Lobby　', '﻿Lobby', '\tLobby', 'Lobby\n',
+        // Control characters and line breaks anywhere: C0, DEL, C1, U+2028, U+2029.
+        'Front\nDesk', 'Front\tDesk', 'Front\rDesk', 'Lobby\u0007x', 'Front\u000bDesk', 'Front\u007fDesk',
+        'Front\u0085Desk', 'Front\u009fDesk', 'Front Desk', 'Front Desk',
+      ];
       for (const name of refused) {
         await expect(insertName(client, 'place:front-desk', name)).rejects.toMatchObject({ code: '23514' });
       }
@@ -315,6 +354,8 @@ describe('organization room names migration', () => {
         ['place:coach-office', 'Coach\'s Corner'],
         ['place:window', 'é'.repeat(40)],
         ['card:who-they-train-with', 'Their training partners'],
+        // Inside a name, a space of any kind is the gym's to choose.
+        ['place:locker', 'Changing Room'],
       ];
       for (const [key, name] of taken) {
         await insertName(client, key, name);
@@ -334,6 +375,8 @@ describe('organization room names migration', () => {
       const refused = [
         'lobby', 'place:', 'place:Front-desk', 'place:front_desk', 'place:-front', 'place:front-',
         'card:who--they', 'Place:front-desk', 'door:/profile', 'place:front desk', 'place:front-desk ',
+        // Both anchors: nothing before the prefix, nothing after the last word.
+        'xplace:front-desk', ' place:front-desk', 'place:front-desk\n',
       ];
       for (const key of refused) {
         await expect(insertName(client, key, 'Lobby')).rejects.toMatchObject({ code: '23514' });
@@ -384,7 +427,9 @@ describe('organization room names migration', () => {
       await holder.query('lock table pilot.accounts in row exclusive mode');
       const started = Date.now();
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toMatchObject({ code: '55P03' });
-      expect(Date.now() - started).toBeGreaterThanOrEqual(9_000);
+      const waited = Date.now() - started;
+      expect(waited).toBeGreaterThanOrEqual(9_000);
+      expect(waited).toBeLessThan(30_000);
       const { rows } = await client.query(`select to_regclass('${T}') is null as absent`);
       expect(rows[0].absent).toBe(true);
     } finally {
