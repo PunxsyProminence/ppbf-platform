@@ -19,6 +19,8 @@
  * setStoppedComingPolicy checks the role again so a second caller cannot skip it.
  */
 
+import type { PoolClient } from 'pg';
+
 import { isOrganizationAdminRole } from './access';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
@@ -43,11 +45,15 @@ export interface StoppedComingPolicy {
 
 const DEFAULT_POLICY: StoppedComingPolicy = { gap_days: DEFAULT_STOPPED_COMING_GAP_DAYS, is_default: true };
 
-export async function readStoppedComingPolicy(organizationId: string): Promise<StoppedComingPolicy> {
-  const row = await queryOne<{ gap_days: number }>(
-    'select gap_days from pilot.organization_stopped_coming_policy where organization_id = $1',
-    [organizationId],
-  );
+/**
+ * `client` reads it on the caller's transaction: a reached-out mark (stoppedComing.ts), which holds
+ * the gym's row FOR SHARE first, so the number cannot change until the mark commits.
+ */
+export async function readStoppedComingPolicy(organizationId: string, client?: PoolClient): Promise<StoppedComingPolicy> {
+  const text = 'select gap_days from pilot.organization_stopped_coming_policy where organization_id = $1';
+  const row = client
+    ? (await client.query<{ gap_days: number }>(text, [organizationId])).rows[0] ?? null
+    : await queryOne<{ gap_days: number }>(text, [organizationId]);
   if (!row) return DEFAULT_POLICY;
   // The CHECK makes this unreachable; if it is ever reached, the stored value
   // is not one this module can stand behind, so it fails loudly rather than
