@@ -143,15 +143,36 @@ export function normalizeRoomName(raw: unknown): RoomNameInput {
 }
 
 /**
- * Case folding, as Unicode's full case folding does it, from what JavaScript
- * has (Codex on #2214: toLowerCase alone lets "STRASSE" beside "Strasse" with
- * the sharp s, and two Greek sigma forms, through as different names).
- * Upper-casing first applies the special cases (the sharp s to "SS"); then
- * lower-casing. The Turkish dotless i is kept apart, as folding keeps it: it
- * reads differently from "i". NFC again after, as the fold can split letters.
+ * Case folding with the equivalence of Unicode's full case folding, from what
+ * JavaScript has (Codex P2s on #2214: toLowerCase alone, then an upper-lower
+ * pass with a placeholder, still let the sharp s beside the capital sharp s,
+ * and let a typed U+E000 equal the dotless i). Each code point is upper-cased
+ * then lower-cased until it stops changing, so the special cases apply (the
+ * capital sharp s becomes the sharp s, then "ss"; every sigma form one sigma).
+ * The Turkish dotless i is kept as itself, as folding keeps it: it reads
+ * differently from "i". No placeholder stands in for anything a gym types.
+ * Checked against Python's str.casefold for every code point Unicode 16
+ * assigns (292,530): the same classes (#2214).
  */
+const DOTLESS_I = '\u0131';
+
+function foldCodePoint(ch: string): string {
+  if (ch === DOTLESS_I) return ch;
+  let folded = ch;
+  // Three rounds reach a fixed point for every code point (capital sharp s:
+  // sharp s, then "ss"); the fourth is a guard.
+  for (let round = 0; round < 4; round += 1) {
+    const next = folded.toUpperCase().toLowerCase();
+    if (next === folded) return folded;
+    folded = next;
+  }
+  return folded;
+}
+
 function foldCase(text: string): string {
-  return text.replace(/\u0131/g, '\ue000').toUpperCase().toLowerCase().replace(/\ue000/g, '\u0131').normalize('NFC');
+  let out = '';
+  for (const ch of text.normalize('NFC')) out += foldCodePoint(ch);
+  return out.normalize('NFC');
 }
 
 /**
