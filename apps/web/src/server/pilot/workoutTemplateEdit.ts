@@ -414,14 +414,30 @@ export async function editWorkoutTemplate(input: {
         })],
       );
 
-      for (const item of newItems ?? oldItems) {
+      // An owner's step placed inside another names it by item id in details.within_item_id (D-PK73-3;
+      // issued straight after it, workoutTemplates.ts issueOrder). Every item is re-minted under the new
+      // version, so a link follows its parent to the new id, and a link to a parent this edit removed is
+      // dropped. A link naming no item of the edited version is left as it is (App Overwatch on #2205).
+      const written = newItems ?? oldItems;
+      const newIdOf = new Map(written.filter((item) => item.item_id !== undefined)
+        .map((item) => [String(item.item_id), MINT.templateItem(newId, String(item.ordinal))]));
+      const oldIds = new Set(oldItems.map((item) => String(item.item_id)));
+      const relinked = (details: unknown): unknown => {
+        if (!details || typeof details !== 'object' || Array.isArray(details)) return details;
+        const { within_item_id: parent, ...rest } = details as Record<string, unknown>;
+        if (typeof parent !== 'string' || !oldIds.has(parent)) return details;
+        const moved = newIdOf.get(parent);
+        return moved === undefined ? rest : { ...rest, within_item_id: moved };
+      };
+
+      for (const item of written) {
         const itemId = MINT.templateItem(newId, String(item.ordinal));
         if (item.item_id !== undefined) {
           // Carried from an item of the old version: every column, the edit laid over.
           await tx.query(
             `insert into pilot.workout_template_items
              select (jsonb_populate_record(null::pilot.workout_template_items, $1::jsonb)).*`,
-            [JSON.stringify({ ...item, item_id: itemId, template_id: newId, created_at: at })],
+            [JSON.stringify({ ...item, details: relinked(item.details), item_id: itemId, template_id: newId, created_at: at })],
           );
         } else {
           // A new item: the named columns, the table's defaults for the rest.
