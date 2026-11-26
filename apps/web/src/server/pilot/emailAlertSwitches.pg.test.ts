@@ -390,6 +390,59 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
+  test('a parent with email on made a coach: the first read as a coach switches the parent row off, so made a parent again it stays off (T-1 A, Codex 4703532904)', async () => {
+    const client = await freshDatabase('emailsw_type_change');
+    activeClient = client;
+    try {
+      await setEmailAlertSwitch({ ...subject('parent'), switchedOn: true }, NOW);
+      // As the role writers do it: the account and the membership (and every session ended).
+      const makeRole = async (role: string) => {
+        await client.query('update pilot.accounts set role = $2 where account_id = $1', [PARENT_ID, role]);
+        await client.query(
+          'update pilot.organization_memberships set role = $3 where account_id = $1 and organization_id = $2',
+          [PARENT_ID, ORG_ID, role],
+        );
+      };
+      const as = (role: PilotRole) => ({ organizationId: ORG_ID, accountId: PARENT_ID, role, athleteId: null });
+
+      await makeRole('coach');
+      await expect(readEmailAlertSwitch(as('coach'), NOW)).resolves.toEqual({ offered: true, user_type: 'staff', switched_on: false });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: PARENT_ID, user_type: 'parent', switched_on: false, has_on_at: true, has_off_at: true,
+      })]);
+      // A second read finds nothing left to retire.
+      await readEmailAlertSwitch(as('coach'), NOW);
+
+      await makeRole('parent');
+      await expect(readEmailAlertSwitch(as('parent'), NOW)).resolves.toEqual({ offered: true, user_type: 'parent', switched_on: false });
+      expect((await auditRows(client)).map((row) => row.details)).toEqual([
+        { user_type: 'parent', switched_on: true, previous_switched_on: false },
+        { user_type: 'parent', switched_on: false, previous_switched_on: true, address_cleared: false, reason: 'user_type_changed' },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a type change and back with no read in between leaves the switch as it was: it was never shown off (T-1 A, disclosed)', async () => {
+    const client = await freshDatabase('emailsw_type_round_trip');
+    activeClient = client;
+    try {
+      await setEmailAlertSwitch({ ...subject('parent'), switchedOn: true }, NOW);
+      for (const role of ['coach', 'parent']) {
+        await client.query('update pilot.accounts set role = $2 where account_id = $1', [PARENT_ID, role]);
+        await client.query(
+          'update pilot.organization_memberships set role = $3 where account_id = $1 and organization_id = $2',
+          [PARENT_ID, ORG_ID, role],
+        );
+      }
+      await expect(readEmailAlertSwitch(subject('parent'), NOW)).resolves.toEqual({ offered: true, user_type: 'parent', switched_on: true });
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('an adult athlete is offered the switch but cannot turn it on before an address is confirmed: no row, no audit', async () => {
     const client = await freshDatabase('emailsw_adult');
     activeClient = client;
@@ -481,7 +534,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
-  test('a row saved under another user type is not this switch: it reads off, and a save under the new type drops any address', async () => {
+  test('a row left on under another user type is retired by the next read (T-1 A): switched off, address cleared, audited; a save under the new type starts fresh', async () => {
     const client = await freshDatabase('emailsw_retype');
     activeClient = client;
     try {
@@ -497,6 +550,11 @@ describe('emailAlertSwitches.ts on a real database', () => {
       await expect(readEmailAlertSwitch(subject('coach'), NOW)).resolves.toEqual({
         offered: true, user_type: 'staff', switched_on: false,
       });
+      // The read retired the row it left behind: off, address gone, type as stored.
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: COACH_ID, user_type: 'adult_athlete', switched_on: false, has_off_at: true,
+        pending_address: null, confirmed_address: null,
+      })]);
       await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
       expect(await switchRows(client)).toEqual([expect.objectContaining({
         account_id: COACH_ID, user_type: 'staff', switched_on: true, pending_address: null, confirmed_address: null,
@@ -508,10 +566,16 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(code.rows).toEqual([{
         pending_code_hash: null, pending_code_expires_at: null, pending_code_attempts: 0, confirmed_at: null,
       }]);
-      // The audit describes the row as stored: it was on, under another user type.
-      expect((await auditRows(client))[0].details).toEqual({
-        user_type: 'staff', switched_on: true, previous_switched_on: true, previous_user_type: 'adult_athlete',
-      });
+      // The retire, then the save, each describing the row as stored; no address in either.
+      const audits = await auditRows(client);
+      expect(audits.map((row) => row.details)).toEqual([
+        {
+          user_type: 'adult_athlete', switched_on: false, previous_switched_on: true,
+          address_cleared: true, reason: 'user_type_changed',
+        },
+        { user_type: 'staff', switched_on: true, previous_switched_on: false, previous_user_type: 'adult_athlete' },
+      ]);
+      expect(JSON.stringify(audits)).not.toContain('example.test');
     } finally {
       await client.end();
     }
@@ -570,7 +634,7 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
-  test('a row saved on under another user type, then switched off: the off-time is stamped and the audit says it was on', async () => {
+  test('a row saved on under another user type, then a switch-off under the new type: retired first (T-1 A), then saved; the off-time is stamped', async () => {
     const client = await freshDatabase('emailsw_retype_off');
     activeClient = client;
     try {
@@ -583,9 +647,11 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await switchRows(client)).toEqual([expect.objectContaining({
         user_type: 'staff', switched_on: false, has_on_at: true, has_off_at: true,
       })]);
-      expect((await auditRows(client))[0].details).toEqual({
-        user_type: 'staff', switched_on: false, previous_switched_on: true, previous_user_type: 'parent',
-      });
+      // T-1 A: the write retires the parent row first, then saves under the new type from off.
+      expect((await auditRows(client)).map((row) => row.details)).toEqual([
+        { user_type: 'parent', switched_on: false, previous_switched_on: true, address_cleared: false, reason: 'user_type_changed' },
+        { user_type: 'staff', switched_on: false, previous_switched_on: false, previous_user_type: 'parent' },
+      ]);
     } finally {
       await client.end();
     }
@@ -718,6 +784,112 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await switchRows(client)).toEqual([]);
     } finally {
       office.release(true);
+      await client.end();
+    }
+  });
+
+  // OVERWATCH 7182466510: sign-in switched off (T-3 A) or a role with no switch (T-2 A) only
+  // pauses a switch that is on, so a save that races it is refused and writes nothing; a role of
+  // another user type retires it (T-1 A).
+  test.each([
+    ['the login switched off', 'kept', 'update pilot.accounts set active_flag = false where account_id = $1'],
+    ['the login deleted', 'kept', 'update pilot.accounts set deleted_at = now() where account_id = $1'],
+    ['the membership switched off', 'kept', `update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = '${ORG_ID}'`],
+    ['the membership made a volunteer', 'kept', `update pilot.organization_memberships set role = 'volunteer' where account_id = $1 and organization_id = '${ORG_ID}'`],
+    ['the membership made a parent', 'retired', `update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = '${ORG_ID}'`],
+  ] as const)('a coach with email on, %s while a save waits: 403, and the switch is %s', async (_label, after, change) => {
+    const client = await freshDatabase('emailsw_on_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_on_race'), max: 4 });
+    try {
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      const office = await activePool.connect();
+      try {
+        await office.query('BEGIN');
+        // The account row first, as every membership writer takes it.
+        await office.query('update pilot.accounts set updated_at = now() where account_id = $1', [COACH_ID]);
+        let settled = false;
+        const save = setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+        save.then(() => { settled = true; }, () => { settled = true; });
+        let waited = false;
+        for (let i = 0; i < 200 && !settled; i += 1) {
+          const { rows } = await client.query(
+            `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+          );
+          if (rows[0].n > 0) {
+            waited = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect(waited).toBe(true);
+        await office.query(change, [COACH_ID]);
+        await office.query('COMMIT');
+        await expect(save).rejects.toMatchObject({ status: 403 });
+      } finally {
+        office.release(true);
+      }
+      const reasons = (await auditRows(client)).map((row) => row.details.reason ?? 'save');
+      if (after === 'kept') {
+        expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: true, has_off_at: false })]);
+        expect(reasons).toEqual(['save']);
+      } else {
+        expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: false, has_off_at: true })]);
+        expect(reasons).toEqual(['save', 'user_type_changed']);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an adult athlete with email on whose login is switched off while a save waits: 403, and the switch and its confirmed address are kept (T-3 A)', async () => {
+    const client = await freshDatabase('emailsw_adult_off_race');
+    activeClient = client;
+    activePool = new Pool({ connectionString: connectionStringFor('emailsw_adult_off_race'), max: 4 });
+    try {
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'someone@example.test', now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      await expect(whileHeld(
+        client,
+        ['update pilot.accounts set active_flag = false where account_id = $1', [ADULT_ID]],
+        () => setEmailAlertSwitch({ ...subject('adult'), switchedOn: true }, NOW),
+      )).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({
+        account_id: ADULT_ID, switched_on: true, confirmed_address: 'someone@example.test',
+      })]);
+      expect(await auditRows(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a coach with email on made a volunteer, then a coach again: the switch is kept, paused, and reads on again (T-2 A)', async () => {
+    const client = await freshDatabase('emailsw_no_switch_role');
+    activeClient = client;
+    try {
+      await setEmailAlertSwitch({ ...subject('coach'), switchedOn: true }, NOW);
+      const makeRole = async (role: string) => {
+        await client.query('update pilot.accounts set role = $2 where account_id = $1', [COACH_ID, role]);
+        await client.query(
+          'update pilot.organization_memberships set role = $3 where account_id = $1 and organization_id = $2',
+          [COACH_ID, ORG_ID, role],
+        );
+      };
+      await makeRole('volunteer');
+      // The route refuses a volunteer before the store; asked directly, the store keeps the row too.
+      const asVolunteer = { organizationId: ORG_ID, accountId: COACH_ID, role: 'volunteer' as const, athleteId: null };
+      await expect(readEmailAlertSwitch(asVolunteer, NOW)).resolves.toEqual({ offered: false });
+      await expect(setEmailAlertSwitch({ ...asVolunteer, switchedOn: false }, NOW)).rejects.toMatchObject({ status: 403 });
+      expect(await switchRows(client)).toEqual([expect.objectContaining({ user_type: 'staff', switched_on: true })]);
+
+      await makeRole('coach');
+      await expect(readEmailAlertSwitch(subject('coach'), NOW)).resolves.toEqual({ offered: true, user_type: 'staff', switched_on: true });
+      expect(await auditRows(client)).toHaveLength(1);
+    } finally {
       await client.end();
     }
   });

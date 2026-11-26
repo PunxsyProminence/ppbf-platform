@@ -121,7 +121,8 @@ async function lockSwitchRow(client: PoolClient, subject: EmailAlertSwitchSubjec
  * Codex on #2169). Locks this person's rows in the order every other writer
  * takes them -- the athlete row first (FOR SHARE, for an athlete), then the
  * account, then the switch row -- and answers, under those locks, the user type
- * they may switch under now (null if none) and their switch row as stored.
+ * they may switch under now (null if none), their switch row as stored, and
+ * whether that row is to be retired (retireReason).
  * Every writer of an account's state or memberships takes the account row
  * first, role upserts included (auth.ts setAccountActiveStatus and its
  * membership upserts, activation.ts, staffProvisioning.ts, dataDeletion.ts,
@@ -144,7 +145,12 @@ async function lockPerson(
   client: PoolClient,
   subject: EmailAlertSwitchSubject,
   now: Date,
-): Promise<{ userType: EmailAlertUserType | null; gymActive: boolean; stored: SwitchRow | undefined }> {
+): Promise<{
+  userType: EmailAlertUserType | null;
+  gymActive: boolean;
+  stored: SwitchRow | undefined;
+  retire: RetireReason | null;
+}> {
   const candidate = emailAlertCandidateUserType(subject.role);
   const athleteId = subject.athleteId?.trim() || null;
   if (candidate === 'adult_athlete' && athleteId) {
@@ -165,14 +171,56 @@ async function lockPerson(
       where a.account_id = $1 and a.active_flag and not ${accountDeletedSql('a')}`,
     [subject.accountId, subject.organizationId],
   );
-  let userType = member.rows[0] && emailAlertCandidateUserType(member.rows[0].role) === candidate ? candidate : null;
-  if (userType === 'adult_athlete') {
+  // No row: sign-in to this gym is off (the login off or deleted, the membership off or gone).
+  const memberRole = member.rows[0]?.role ?? null;
+  const memberType = memberRole === null ? null : emailAlertCandidateUserType(memberRole);
+  // An athlete's linked record is read whatever the sign-in: a record gone or
+  // under 18 retires the switch even while the login is off.
+  let adult: boolean | null = null;
+  if (candidate === 'adult_athlete') {
     const athlete = athleteId
       ? await client.query<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, athleteId])
       : { rows: [] };
-    if (!athlete.rows[0] || isMinor(athlete.rows[0].dob, now)) userType = null;
+    adult = athlete.rows[0] !== undefined && !isMinor(athlete.rows[0].dob, now);
   }
-  return { userType, gymActive: gym.rows[0]?.status === 'active', stored };
+  const userType = memberType !== null && memberType === candidate && adult !== false ? candidate : null;
+  return {
+    userType,
+    gymActive: gym.rows[0]?.status === 'active',
+    stored,
+    retire: retireReason(stored, adult, memberType),
+  };
+}
+
+type RetireReason = 'no_longer_offered' | 'user_type_changed';
+
+/**
+ * WHAT A CHANGE DOES TO A SWITCH (OVERWATCH on #2169, 7182466510, applying
+ * OD-2026-11-19-019 and OW27-08 A): an opt-in is the person's choice. It pauses
+ * while they cannot receive under its terms, resumes when they can, and is
+ * retired only when they themselves would otherwise see it off, or when the
+ * record is gone. Decided under lockPerson's locks, for a row that is on or
+ * holds an address:
+ *   - an athlete whose linked record is gone, unlinked or under 18: retired,
+ *     whatever their sign-in (A1's guarantee; OD-2026-10-04-010);
+ *   - sign-in to this gym off (memberType null): kept, paused (T-3 A). The
+ *     sender skips it as sign_in_off, and the gym's own status never retires;
+ *   - a role with no switch (volunteer, board, the 'staff' role): kept, paused
+ *     (T-2 A). The route refuses these roles before the store anyway;
+ *   - a role of another user type (staff to parent or back): retired as
+ *     user_type_changed (T-1 A). A change and back with no own read between
+ *     keeps it: it was never shown off, and nothing was sent meanwhile;
+ *   - otherwise kept.
+ */
+function retireReason(
+  stored: SwitchRow | undefined,
+  adult: boolean | null,
+  memberType: EmailAlertUserType | null,
+): RetireReason | null {
+  if (!stored || (!stored.switched_on && !stored.holds_address)) return null;
+  if (adult === false) return 'no_longer_offered';
+  if (memberType === null) return null;
+  return memberType === stored.user_type ? null : 'user_type_changed';
 }
 
 function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Record<string, unknown>) {
@@ -193,9 +241,13 @@ function audit(client: PoolClient, subject: EmailAlertSwitchSubject, details: Re
  * Someone no longer offered a switch (date of birth corrected to under 18,
  * record deleted) keeps none that is on and no address: cleared quietly at
  * their next own read or write, the lazy clean-up the escalations read does for
- * ended holds. Whether they are offered is decided again under the retire's own
- * locks (lockPerson), so a person offered again by then keeps their row. The
- * sender (EM-3) re-checks every person before every send anyway.
+ * ended holds. So does someone whose user type has changed (staff to parent or
+ * back, T-1 A on #2169): the row left under the other type is switched off, so
+ * an old opt-in never comes back with a later change back. Sign-in switched off
+ * and a role with no switch only pause it (retireReason). Every case is decided
+ * again under the retire's own locks (lockPerson), so a person offered that
+ * row's type again by then keeps it. The sender (EM-3) re-checks every person
+ * before every send anyway.
  */
 async function retireSwitchIfAny(subject: EmailAlertSwitchSubject, now: Date): Promise<void> {
   // Most never had a row (every athlete under 18): one read, no lock.
@@ -206,25 +258,28 @@ async function retireSwitchIfAny(subject: EmailAlertSwitchSubject, now: Date): P
   );
   if (!leftover) return;
   await withTransaction(async (client) => {
-    const { userType, stored: row } = await lockPerson(client, subject, now);
-    if (userType !== null) return;
-    if (!row || (!row.switched_on && !row.holds_address)) return;
-    await client.query(
-      `update pilot.email_alert_switches s set
-           switched_on = false,
-           switched_off_at = case when s.switched_on then clock_timestamp() else s.switched_off_at end,
-           set_at = clock_timestamp(),
-           ${addressColumns('false')}
-         where s.organization_id = $1 and s.account_id = $2`,
-      [subject.organizationId, subject.accountId],
-    );
-    await audit(client, subject, {
-      user_type: row.user_type,
-      switched_on: false,
-      previous_switched_on: row.switched_on,
-      address_cleared: row.holds_address,
-      reason: 'no_longer_offered',
-    });
+    const { stored, retire } = await lockPerson(client, subject, now);
+    if (stored && retire) await retireRow(client, subject, stored, retire);
+  });
+}
+
+/** Switches the locked row off and clears its address, audited with the reason (retireReason). */
+async function retireRow(client: PoolClient, subject: EmailAlertSwitchSubject, row: SwitchRow, reason: RetireReason) {
+  await client.query(
+    `update pilot.email_alert_switches s set
+         switched_on = false,
+         switched_off_at = case when s.switched_on then clock_timestamp() else s.switched_off_at end,
+         set_at = clock_timestamp(),
+         ${addressColumns('false')}
+       where s.organization_id = $1 and s.account_id = $2`,
+    [subject.organizationId, subject.accountId],
+  );
+  await audit(client, subject, {
+    user_type: row.user_type,
+    switched_on: false,
+    previous_switched_on: row.switched_on,
+    address_cleared: row.holds_address,
+    reason,
   });
 }
 
@@ -237,11 +292,18 @@ export async function readEmailAlertSwitch(
     await retireSwitchIfAny(subject, now);
     return { offered: false };
   }
-  const row = await queryOne<SwitchRow>(
+  const readRow = () => queryOne<SwitchRow>(
     `select ${SWITCH_ROW_COLUMNS} from pilot.email_alert_switches
       where organization_id = $1 and account_id = $2`,
     [subject.organizationId, subject.accountId],
   );
+  const row = await readRow();
+  // A row left on, or holding an address, under another user type is retired
+  // now (T-1 A on #2169): the page never shows off while a row is on.
+  if (row && row.user_type !== userType && (row.switched_on || row.holds_address)) {
+    await retireSwitchIfAny(subject, now);
+    return stateFrom(userType, await readRow());
+  }
   return stateFrom(userType, row);
 }
 
@@ -264,10 +326,17 @@ export async function setEmailAlertSwitch(
     // nothing is written unless the person is still offered this user type.
     // A gym not active refuses a switch-on; a switch-off grants nothing and is
     // kept, so an opt-out is never lost to a suspension lifted later.
-    const { userType: underLock, gymActive, stored } = await lockPerson(client, subject, now);
+    const { userType: underLock, gymActive, stored, retire } = await lockPerson(client, subject, now);
     if (underLock !== userType || (switchedOn && !gymActive)) return null;
+    // A row left on under another user type is retired first (T-1 A), so the
+    // save starts from off, under the new type.
+    let current = stored;
+    if (stored && retire === 'user_type_changed') {
+      await retireRow(client, subject, stored, retire);
+      current = { ...stored, switched_on: false, address_confirmed: false, holds_address: false };
+    }
     try {
-      return await saveSwitch(client, subject, userType, switchedOn, stored);
+      return await saveSwitch(client, subject, userType, switchedOn, current);
     } catch (error) {
       // Defensive: a membership row deleted after lockPerson read it, by a
       // writer that takes neither the account nor the gym row. No writer does
@@ -285,6 +354,9 @@ export async function setEmailAlertSwitch(
     }
   });
   if (saved) return saved;
+  // Refused under the locks. The retire decides again under its own: a record
+  // gone, under 18 or a changed user type retires the row; sign-in switched off
+  // or a role with no switch leaves it as it was (T-2 A, T-3 A).
   await retireSwitchIfAny(subject, now);
   throw new ForbiddenError('Forbidden: email alerts are not offered to this account');
 }
