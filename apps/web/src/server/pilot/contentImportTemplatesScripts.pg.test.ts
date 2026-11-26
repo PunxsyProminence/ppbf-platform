@@ -779,6 +779,35 @@ describe('workout templates', () => {
     const v3Items = await stored(v3);
     expect(v3Items[2].details).toEqual({ timing: 'after the first round', within_item_id: MINT.templateItem(v3, '2') });
     expect(issueOrder(v3Items).map((item) => item.ordinal)).toEqual([1, 2, 3]);
+
+    // The file may write the parent's whole-number ordinal as '02' (stored as 2): the link still compares equal.
+    const padded = templatePackage(
+      [templateRow(template, { intent: 'The check sits inside the first round.' })],
+      [items[0], { ...items[1], ordinal: '02' }, { ...items[2], details: nestedIn(second) }],
+    );
+    expect((await plan('gym_nested', admin, padded)).counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: 1, absent: 0, reject: 0 });
+  });
+
+  it('a within_item_id that names no other item of its template in the file is refused at plan, naming each step (TL-ORD)', async () => {
+    // Only a link to an id the file gives another item of the same template can follow it to a new version.
+    const admin = await createGymWithDisciplines('gym_nested_refused');
+    const jab = fixtureDrillId('nested-refused:jab');
+    await insertDrill('gym_nested_refused', jab);
+    const template = `wtp_${hex14('fixture template:nested refused')}`;
+    const other = `wtp_${hex14('fixture template:nested other')}`;
+    const id = (templateId: string, ordinal: number) => MINT.templateItem(templateId, String(ordinal));
+    const inside = (parent: string) => JSON.stringify({ within_item_id: parent });
+    const planned = await plan('gym_nested_refused', admin, templatePackage([templateRow(template), templateRow(other)], [
+      itemRow(template, 1, jab), // no item_id in the file: a link cannot name it
+      itemRow(template, 2, jab, { item_id: id(template, 2), details: inside(id(template, 1)) }),
+      itemRow(template, 3, jab, { item_id: id(template, 3), details: inside(id(template, 3)) }),
+      itemRow(template, 4, jab, { item_id: id(template, 4), details: inside(id(other, 1)) }),
+      itemRow(other, 1, jab, { item_id: id(other, 1) }),
+      itemRow(other, 2, jab, { item_id: id(other, 2), details: inside(id(other, 1)) }),
+    ]));
+    expect(planned.blocking.map((finding) => [finding.code, finding.key, finding.message])).toEqual([
+      ['row_rule', template, `template ${template} has a within_item_id that names no other item of it in this file: step 2 (${id(template, 1)}), step 3 (${id(template, 3)}), step 4 (${id(other, 1)})`],
+    ]);
   });
 
   it('a template is unchanged when only its drill got a newer version, and keeps the version it was built with', async () => {

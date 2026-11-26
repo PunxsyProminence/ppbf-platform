@@ -1,5 +1,6 @@
 import { MINT } from '../ids';
 import { datasetSpec } from '../specs';
+import { withinItemIdOf } from '../specs/templates';
 import { integerText, isIntegerText } from '../values';
 import type { DatasetEngine } from './index';
 import { childFile, versionedDatasetEngine } from './templateScriptVersions';
@@ -46,6 +47,11 @@ function detailsOf(cell: string | undefined): Record<string, unknown> | undefine
   }
 }
 
+/** An item's ordinal in the form mintId uses and the table stores: whole-number text ('01', '1.0') as its integer. */
+function ordinalKey(ordinal: string): string {
+  return isIntegerText(ordinal) ? integerText(ordinal) : ordinal;
+}
+
 export const workoutTemplatesEngine: DatasetEngine = versionedDatasetEngine({
   dataset,
   table: 'workout_templates',
@@ -57,17 +63,16 @@ export const workoutTemplatesEngine: DatasetEngine = versionedDatasetEngine({
       spec: childFile(dataset, 'seed_workout_template_items.csv'),
       table: 'workout_template_items',
       idColumn: 'item_id',
-      mintId: (templateId, row) => MINT.templateItem(templateId, isIntegerText(row.ordinal) ? integerText(row.ordinal) : row.ordinal),
+      mintId: (templateId, row) => MINT.templateItem(templateId, ordinalKey(row.ordinal)),
       // An owner's step placed inside another names it by item id in details.within_item_id (D-PK73-3;
-      // issued straight after it, workoutTemplates.ts issueOrder). A new version re-mints every item id,
-      // so the link follows its parent to the new id (App Overwatch on #2205, comment 7176799374).
+      // issued straight after it, workoutTemplates.ts issueOrder). The spec refuses a link that names no
+      // other item of the template in the file, so a new version, which re-mints every item id, carries
+      // the link to its parent's new id (App Overwatch on #2205, comment 7176799374).
       siblingLink: {
-        read: (cells) => {
-          const parent = detailsOf(cells.details)?.within_item_id;
-          return typeof parent === 'string' && parent !== '' ? parent : undefined;
-        },
+        read: (cells) => withinItemIdOf(cells.details),
         write: (cells, value) => ({ ...cells, details: JSON.stringify({ ...detailsOf(cells.details), within_item_id: value }) }),
-        key: (cells) => cells.ordinal ?? '',
+        // The ordinal as stored ('01' and '1.0' are stored as 1), so a file and its stored version agree.
+        key: (cells) => ordinalKey(cells.ordinal ?? ''),
       },
     },
   ],

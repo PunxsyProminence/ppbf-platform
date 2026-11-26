@@ -2014,4 +2014,22 @@ describe('a step an owner placed inside another is issued straight after it (TL-
     expect(recorded.steps.map((step: { ordinal: number; template_item_id: string }) => [step.ordinal, step.template_item_id]))
       .toEqual([[1, 'wti_1'], [3, 'wti_3']]);
   });
+
+  test('a nested step that already follows its parent moves nothing: the template ordinals are recorded, gaps included', async () => {
+    given({
+      items: [item(1), item(3), item(5, { details: { within_item_id: 'wti_3' } })],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-1' },
+        'ref-3': { state: 'operational', operational: 'op-3' },
+        'ref-5': { state: 'operational', operational: 'op-5' },
+      },
+    });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-1', 'op-3', 'op-5']);
+    const [, recorded] = mockRecordIssue.mock.calls[0];
+    expect(recorded.steps.map((step: { ordinal: number; template_item_id: string }) => [step.ordinal, step.template_item_id]))
+      .toEqual([[1, 'wti_1'], [3, 'wti_3'], [5, 'wti_5']]);
+  });
 });

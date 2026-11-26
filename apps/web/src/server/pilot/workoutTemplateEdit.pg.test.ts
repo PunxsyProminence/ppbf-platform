@@ -434,6 +434,17 @@ describe('editing a workout template', () => {
     await edit(org, { template_id: v3Id, items: [{ item_id: v3[0].item_id }, { item_id: v3[2].item_id }] });
     const v4 = await itemsOf(org, versionId('wtp', 'wtp_nest', 4));
     expect(v4[1].details).toEqual({ timing: 'end of the warm-up' });
+
+    // A link naming no item of the edited version (here an id of no template) is carried as it is, not dropped.
+    const v4Id = versionId('wtp', 'wtp_nest', 4);
+    await client.query(
+      `update pilot.workout_template_items set details = jsonb_build_object('within_item_id', 'wti_elsewhere')
+        where organization_id = $1 and item_id = $2`,
+      [org, v4[0].item_id],
+    );
+    await edit(org, { template_id: v4Id, intent: 'Another intent.' });
+    const v5 = await itemsOf(org, versionId('wtp', 'wtp_nest', 5));
+    expect(v5[0].details).toEqual({ within_item_id: 'wti_elsewhere' });
   });
 
   it('writes nothing when nothing really changes', async () => {

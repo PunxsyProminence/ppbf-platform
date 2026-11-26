@@ -87,7 +87,8 @@ export interface ChildTable {
    * A cell that names a sibling row of the same unit by its id (workout template items:
    * details.within_item_id, an owner's step placed inside another; lane W4-8 TL-ORD). Child ids are
    * re-minted for every new version, so a link is written as its sibling's new id, and is hashed as its
-   * sibling's key, so that a stored version and the file it came from still compare equal.
+   * sibling's key, so that a stored version and the file it came from still compare equal. The dataset's
+   * spec must refuse a link that names no row of the same unit in the file: only those are resolved.
    */
   siblingLink?: {
     read(cells: Readonly<Record<string, string>>): string | undefined;

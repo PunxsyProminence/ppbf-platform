@@ -17,6 +17,17 @@ import {
 } from './common';
 import { detailsColumn, detailsRule } from './trainingTracks';
 
+/** An item's details.within_item_id (an owner's step placed inside another, D-PK73-3), or undefined. */
+export function withinItemIdOf(details: string | undefined): string | undefined {
+  try {
+    const value: unknown = JSON.parse(details ?? '');
+    const parent = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>).within_item_id : undefined;
+    return typeof parent === 'string' && parent !== '' ? parent : undefined;
+  } catch {
+    return undefined; // a blank cell, or JSON detailsRule names
+  }
+}
+
 // pilot.workout_templates and pilot.workout_template_items
 // (workout_templates_v2 migration :43-100). Loaded by the content-import core
 // (seed-reference-data, npm run seed:workout-templates). The retired
@@ -133,6 +144,21 @@ export const workoutTemplatesDataset: DatasetSpec = {
             return !['none', 'light_technical'].includes(contact) && (row.duration_minutes || row.rep_count)
               ? `contact_level ${contact} may not carry duration_minutes or rep_count`
               : null;
+          },
+        },
+      ],
+      groupRules: [
+        {
+          // A new version re-mints every item id and carries the link to the id the file gave its parent
+          // (datasets/templates.ts; App Overwatch on #2205, comment 7176799374), so the link must name one.
+          description: 'A details.within_item_id names the item_id of another item of the same template in this file.',
+          check: (rows) => {
+            const ids = new Set(rows.map((row) => row.item_id ?? '').filter((id) => id !== ''));
+            const unnamed = rows.flatMap((row) => {
+              const parent = withinItemIdOf(row.details);
+              return parent === undefined || (parent !== row.item_id && ids.has(parent)) ? [] : [`step ${row.ordinal} (${parent})`];
+            });
+            return unnamed.length > 0 ? `has a within_item_id that names no other item of it in this file: ${unnamed.join(', ')}` : null;
           },
         },
       ],
