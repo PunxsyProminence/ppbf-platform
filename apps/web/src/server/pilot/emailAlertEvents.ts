@@ -33,6 +33,12 @@
  *     app/api/pilot/coach/family-message-replies/route.ts: every coach,
  *     organization admin and admin of the gym, while the athlete is live
  *     (assertActorCanAccessAthlete).
+ *   - guardian_message (EM-4c): every post a guardian writes in a family
+ *     thread (pilot.family_thread_posts, W4-4), the opening one and each one
+ *     after. Not everyone who can read it (every coach reaches the whole gym):
+ *     only those it nudges, as the staff unread count does
+ *     (countUnseenFamilyThreadPostsForStaff, familyThreads.ts; GUARDIAN_MESSAGE
+ *     below).
  * FAMILY AND ATHLETE (EM-4b):
  *   - gym_notice: a notice (never the Chalkboard's 'motivation') as it goes
  *     live, to every coach, organization admin, admin, parent and athlete who
@@ -47,7 +53,6 @@
  *     shows it (parent/messages/route.ts): linked to the live child, signed in
  *     as a parent of the gym (guardianLinkedPredicateSql, guardianAccess.ts,
  *     W4-4's one-statement rule), and the child under 18 (guardianLinkEnded).
- * The parent's new message arrives in EM-4c.
  */
 
 import type { EmailAlertUserType } from '@/src/shared/emailAlerts';
@@ -132,6 +137,49 @@ const PARENT_REPLY: SqlEvent = {
   inWindow: 'r.created_at > $2 and r.created_at <= $3',
   // Event ids passed the send log's UUID check when they were queued.
   oneReader: 'r.organization_id = $2 and m.account_id = $3 and r.reply_id = $4::uuid',
+};
+
+/**
+ * A guardian's new message (EM-4c; GO on #2159, Q-2 A; OW27-25 A): every post
+ * a guardian writes in a family thread, the opening one and each one after. A
+ * staff member's post nudges nobody. Readers are the people it nudges, not
+ * everyone who can read it: Q-2 A sends it to "the OW27-27 A set (the child's
+ * coach, any covering coach, admins), not the whole gym; an email is a nudge,
+ * and Q4.5 A rules who is nudged". That is the staff unread count's own rule
+ * (countUnseenFamilyThreadPostsForStaff, familyThreads.ts):
+ *   - the gym's organization admins and admins;
+ *   - a coach who is the child's coach of record, or covering the child now
+ *     (its COACH_NUDGE_SQL, which access.athleteIdsForCoach also follows);
+ *   - while the athlete is live, and not once that person has seen the post (a
+ *     row in pilot.family_thread_reads), as the count leaves it out then.
+ * Written here, not imported, so this lane edits no W4-4 file (Q-2 A);
+ * emailAlertEvents.pg.test.ts holds it to the count, person by person.
+ */
+const GUARDIAN_MESSAGE: SqlEvent = {
+  kind: 'guardian_message',
+  userType: 'staff',
+  readers: (where) =>
+    `select p.organization_id, m.account_id, p.post_id::text as event_id
+       from pilot.family_thread_posts p
+       join pilot.athletes a
+         on a.organization_id = p.organization_id and a.athlete_id = p.athlete_id and a.deleted_at is null
+       join pilot.organization_memberships m
+         on m.organization_id = p.organization_id and m.active_flag and m.role = any($1::text[])
+      where ${where}
+        and p.author_role = 'parent'
+        and (m.role in ('organization_admin', 'admin')
+             or a.coach_id = m.account_id
+             or exists (select 1 from pilot.coach_coverage cc
+                         where cc.organization_id = a.organization_id and cc.athlete_id = a.athlete_id
+                           and cc.covering_coach_id = m.account_id
+                           and cc.starts_at <= now() and cc.expires_at > now()))
+        and not exists (select 1 from pilot.family_thread_reads r
+                         where r.organization_id = p.organization_id and r.post_id = p.post_id
+                           and r.reader_account_id = m.account_id)`,
+  roles: STAFF_ROLES,
+  // created_at is the insert's clock_timestamp() (the family threads trigger), on the database clock.
+  inWindow: 'p.created_at > $2 and p.created_at <= $3',
+  oneReader: 'p.organization_id = $2 and m.account_id = $3 and p.post_id = $4::uuid',
 };
 
 /**
@@ -359,16 +407,20 @@ const FAMILY_NOTE: AlertEvent = {
 const SAFETY_ESCALATION_EVENT = sqlEvent(SAFETY_ESCALATION);
 const PARENT_REPLY_EVENT = sqlEvent(PARENT_REPLY);
 const COACH_MESSAGE_EVENT = sqlEvent(COACH_MESSAGE);
+const GUARDIAN_MESSAGE_EVENT = sqlEvent(GUARDIAN_MESSAGE);
 
-const EVENTS: readonly AlertEvent[] = [SAFETY_ESCALATION_EVENT, PARENT_REPLY_EVENT, GYM_NOTICE, COACH_MESSAGE_EVENT, FAMILY_NOTE];
+const EVENTS: readonly AlertEvent[] = [
+  SAFETY_ESCALATION_EVENT, PARENT_REPLY_EVENT, GYM_NOTICE, COACH_MESSAGE_EVENT, FAMILY_NOTE, GUARDIAN_MESSAGE_EVENT,
+];
 
 export const safetyEscalationSource = SAFETY_ESCALATION_EVENT.source;
 export const parentReplySource = PARENT_REPLY_EVENT.source;
 export const gymNoticeSource = GYM_NOTICE.source;
 export const coachMessageSource = COACH_MESSAGE_EVENT.source;
 export const familyNoteSource = FAMILY_NOTE.source;
+export const guardianMessageSource = GUARDIAN_MESSAGE_EVENT.source;
 
-/** The sources the sweep reads, in this order (EM-4c adds the parent's new message). */
+/** The sources the sweep reads, in this order. */
 export const EMAIL_ALERT_EVENT_SOURCES: readonly EmailAlertSource[] = EVENTS.map((event) => event.source);
 
 /** The event kinds the send-time check has a read rule for (a test ties them to the sources). */
