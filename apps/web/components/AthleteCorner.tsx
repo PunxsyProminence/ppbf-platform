@@ -128,7 +128,7 @@ export default function AthleteCorner({
   }
 
   return (
-    <section aria-label="My corner" className="athlete-corner rounded-[var(--r-lg)]">
+    <section aria-label={names.name('card:my-corner')} className="athlete-corner rounded-[var(--r-lg)]">
       <h2 className="athlete-corner__title">{names.name('card:my-corner')}</h2>
 
       <div className="athlete-corner__grid">

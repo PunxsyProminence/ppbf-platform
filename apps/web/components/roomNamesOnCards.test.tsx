@@ -129,3 +129,9 @@ describe('the pages read their card names through the lookup, and no longer type
     expect(CARD_NAME_DEFAULTS['coach-entry']).toBe('Coach Entry');
   });
 });
+
+test('the Corner section\'s landmark reads the same name as its heading (Codex P2 on #2216)', () => {
+  const source = read('components/AthleteCorner.tsx');
+  expect(source).toContain("<section aria-label={names.name('card:my-corner')}");
+  expect(source).not.toContain('aria-label="My corner"');
+});
