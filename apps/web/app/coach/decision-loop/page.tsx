@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
+import FamilyThreadsForStaff, { FamilyThreadsUnread } from '@/components/FamilyThreadsForStaff';
 import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
 import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
@@ -637,6 +638,9 @@ export default function DecisionLoopReviewPage() {
   // also asks for that section: the page scrolls to it once, when the arriving
   // athlete's sections are on screen, and never on a later pick.
   const scrollToFamilyRef = useRef(false);
+  // Bumped when the family-messages panel records a read, so the unread line is read again.
+  const [familyThreadsSeen, setFamilyThreadsSeen] = useState(0);
+  const onFamilyThreadSeen = useCallback(() => setFamilyThreadsSeen((n) => n + 1), []);
   /* The picker is the only way to choose an athlete, so it is never an empty
      picker that reads as "no athletes": while the roster is read it says so,
      and a roster that would not load -- or has not answered within
@@ -1329,6 +1333,26 @@ export default function DecisionLoopReviewPage() {
             {rosterState === 'loaded' && athletes.length === 0 && (
               <p className="t-body mt-[var(--s3)]">No athletes on your roster.</p>
             )}
+            {/* Guardian messages this staff member has not seen (W4 item 4): a tap chooses the
+                athlete and, once their records are read, scrolls to the family section. */}
+            {rosterState === 'loaded' && (
+              <FamilyThreadsUnread
+                athletes={athletes}
+                refreshKey={`${athleteId}:${familyThreadsSeen}`}
+                onChoose={(chosen) => {
+                  // The athlete already on screen is not chosen again (that would drop their
+                  // records' read and the notices): the page only goes to the family section,
+                  // once their records are read, as for any other choice.
+                  if (chosen === athleteId) {
+                    if (loadState === 'loading') scrollToFamilyRef.current = true;
+                    else document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
+                    return;
+                  }
+                  scrollToFamilyRef.current = true;
+                  selectAthlete(chosen);
+                }}
+              />
+            )}
             {loading && <p className="t-muted mt-[var(--s3)]">Loading…</p>}
             {/* --restricted-ink, not --locked-ink. A roster that would not
                 load is a network fact, not a medical one; sports-medicine
@@ -1737,6 +1761,7 @@ export default function DecisionLoopReviewPage() {
 
                 <FamilyNotesPosted athleteId={athleteId} refreshKey={familyNotesRefresh} />
                 <FamilyObservations athleteId={athleteId} />
+                <FamilyThreadsForStaff athleteId={athleteId} onSeen={onFamilyThreadSeen} />
                 <FamilyGoalsForStaff key={athleteId} athleteId={athleteId} />
               </section>
 
