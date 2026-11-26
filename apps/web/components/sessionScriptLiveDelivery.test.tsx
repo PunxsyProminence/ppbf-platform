@@ -10,7 +10,7 @@ import SessionScriptLiveDelivery, { RUN_GONE } from './SessionScriptLiveDelivery
 import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS } from './SaveQueueNotice';
 import { unknownOffPage } from './SessionRunClass';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
-import { RESEND_MS, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
+import { RESEND_MS, keepSave, readSaveQueue, resetSaveQueueForTests } from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
@@ -2655,14 +2655,22 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     });
     fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
     await tap('Record as completed');
-    await openLog();
-    await logPair();
+    // Another part of the page keeps a save behind the finish (a here tap, which the finish does not
+    // lock; the console's own log is locked while a finish waits).
+    await act(async () => {
+      await keepSave({
+        label: 'Mark an athlete here',
+        send: () => {
+          throw new TypeError('Failed to fetch');
+        },
+      });
+    });
     expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled();
     await act(async () => {
       refuseFinish?.(jsonResponse({ error: 'SESSION_SCRIPT_RUN_NOT_IN_PROGRESS' }, false, 409));
       await jest.advanceTimersByTimeAsync(0);
     });
-    expect(within(waitingLine() as HTMLElement).getByText('Intervention log: Round-3 endurance block')).toBeInTheDocument();
+    expect(within(waitingLine() as HTMLElement).getByText('Mark an athlete here')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pause session' })).not.toBeDisabled();
     expect(screen.queryByText(/^Ending this session is not saved yet/)).toBeNull();
     // The finish's own refusal is said on the console, which stays; not in the page's list.
