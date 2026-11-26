@@ -108,6 +108,14 @@ const LEGACY_READERS = new Set<string>([
   // of a day, for the next-day symptom check); nothing is counted, no rate is
   // derived, and it is never crossed with another attendance source.
   'src/server/pilot/sparringSymptoms.ts',
+  // The "on the floor now" line (lane W4-3, FN-1; Jason Q3.1 C, OD-2026-11-21-006):
+  // a present register mark on a class whose gym day is today puts a person on
+  // the line. It is NOT attendance (the OW27-19 card) and no figure reads it, and
+  // the reconciled view would add sources Jason did not choose (FN-0 F9) and
+  // collapse a day to one row, so it reads the register directly. Each of its
+  // statements names one attendance relation; nothing is summed or crossed.
+  // Approved by name in "OVERWATCH: GO W4-3" on #2192.
+  'src/server/pilot/onTheFloor.ts',
 ]);
 
 const SCANNED_DIRECTORIES = ['app', 'components', 'src'];
