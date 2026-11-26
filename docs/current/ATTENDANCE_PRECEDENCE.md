@@ -167,6 +167,13 @@ OD-2026-11-21-006; App Overwatch on #2172; `stoppedComing.ts`, lane W4-6). A
 tap whose register mark stands defers to the register. No attendance figure,
 report, board or grant figure reads it, and nothing above changes.
 
+The "on the floor now" line (lane W4-3, `onTheFloor.ts`; Jason Q3.1 C,
+OD-2026-11-21-006) is not attendance either. It reads the class register
+directly, a present mark on a class whose gym day is today, beside a standing
+"here" mark on a live run, because the line counts exactly those two records
+and this view would add others and collapse a day to one row. No attendance
+figure, report, board or grant figure reads it.
+
 **A cancelled class** (OD-2026-10-22-001; migration `attendance-reconciled-cancelled`): rank 2 reads no mark on a class whose `status` is `cancelled`, so for that day an `activity_log` boxing row still wins, else the day's held classes, else legacy, else there is no row; every `scheduler_attendance` row is kept and staff still see it on `/schedule` and `/admin/attendance`.
 
 ## What this deliberately does not do

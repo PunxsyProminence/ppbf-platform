@@ -6295,6 +6295,123 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/family-thread-reads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-thread-reads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the post's athlete (in familyThreads.recordFamilyThreadReadByStaff)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller records the first time they saw one guardian post in a family thread in their own gym (half of it on screen in the coach panel, FC-05 Q-1 A; W4 item 4). Only a guardian's post; a staff post, a forged id, another gym's post or an unreachable athlete is the same 404. The database guard also requires an active staff seat. Written on conflict do nothing, so the first time stays.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Every family thread on one athlete (W4 item 4, scrub FAM-09; familyThreads.ts listFamilyThreadsForStaff): the guardian's opening post, the guardian's own later posts and the staff answers, with the guardian's name from the parent record (Overwatch Q4 A on #2161, as family-message-replies) and which guardian posts are new to this staff member (their own reads only). No account id in the answer. Scoped by assertActorCanAccessAthlete (whole gym since #1480; Q3 A).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/family-threads",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin) + assertActorCanAccessAthlete on the thread's athlete (in familyThreads.replyInFamilyThread)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "A staff member answers under a guardian's thread on an athlete they reach (W4 item 4; Overwatch Q3 A on #2161). A forged id, another gym's thread or an unreachable athlete is the same 404; the database guard also requires an active staff seat in this gym. Append-only. Audit row entity family_thread_reply in the same transaction, shadow_mirror false (no SHADOW event, no telemetry; joins no audit read allow-list). Nothing sent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/family-threads/unread/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/family-threads/unread",
+    "gate": "requirePrincipal + requireRole(coach, organization_admin, admin); scope in familyThreads.countUnseenFamilyThreadPostsForStaff, inside the counting statement: a coach's own and actively covered athletes (athleteIdsForCoach's rule), an organization admin or admin the whole gym; the staff seat re-read there too",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Per athlete, how many guardian posts in family threads the caller has not seen (W4 item 4, Q4.5 A, as /api/pilot/escalations scopes: the child's coach and active covering coaches, organization admins and admins across the gym). Live athletes of the caller's gym only. Athlete ids and counts, no text, no names, no account ids; the caller's own reads only.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/floor-groups/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/floor-groups",
@@ -8856,6 +8973,35 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Who has stopped coming: the gym's live, not-left athletes, with at least one active program membership where the gym records any for them (App Overwatch on #2172; no membership recorded is decided by not-left alone), who came at least once (a register present day, or a standing here mark the register does not hold: an untied open-gym run, a tap that created no register mark, or a cancelled class; OW27-32 A on this page only, App Overwatch on #2172) and have not come for the gym's number of days. Returns the gym's gap_days, is_default and today, and per athlete id, name, last day they came and days since; no date of birth, membership, run or mark. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/on-the-floor/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/on-the-floor",
+    "gate": "requirePrincipal + requireRole(ON_THE_FLOOR_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in listOnTheFloorForStaff; 403 without); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Who is on the floor now, for the coach and admin line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; FN-0 signed off on #2160; GO on #2192). Counts a standing here mark on a live run of this gym (less one a later Absent or Excused on the tied class's register took off, FN0-Q6 A) or a present register mark on a class whose gym day is today (a family's own mark from the class's start, a staff mark from when written, FN0-Q2 A); cancelled classes stay on this staff line (FN0-Q1 A). Returns the gym day and each counted live athlete's id and name, in name order; no run, class, mark time, marker or source. writes: before reading it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). Not attendance; no figure reads it. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Parents and athletes are refused until FN-2.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12007,7 +12153,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L1. A coach or organization admin changes a session script's name and its blocks' titles and minutes (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name and blocks. A script another coach saved since the editor read it is refused (409), not overwritten. With `retired` instead of name and blocks (item H) it retires the script or brings it back (setSessionScriptRetired): authoring_state changed in place, never a new version, the row and its blocks kept; refused together with name or blocks. A script that has any run is not changed by an edit: the edit is written as version + 1 in the same lineage, one transaction, audited. No athlete data. platform_owner and every reader-only role refused.",
+    "notes": "Lane L1; lane W4-5 (SP-1a, #2191). A coach or organization admin changes a session script's name, its blocks' titles and minutes, and its blocks themselves: a block added (add_blocks: a library drill; a text block, its contact level picked by the coach from the ladder, required; or a copy of any block of the gym's plans, linked to its drill's current version -- SP-1b, #2196), blocks removed (remove_block_ids), the running order set (order) (editSessionScript, sessionScriptAuthoring.ts). Role gate is the first statement after requirePrincipal, above the body parse. The organization is the principal's; the body may name only script_id, expected_updated_at, name, blocks, add_blocks, remove_block_ids, order, retired and reviewed, and no field names a gym; only a text block names a contact level (a new drill block carries its drill's own, a copy its source's). A script another coach saved since the editor read it is refused (409), not overwritten. With `retired` instead of name and blocks (item H) it retires the script or brings it back (setSessionScriptRetired): authoring_state changed in place, never a new version, the row and its blocks kept; refused together with name or blocks. A script that has any run, or an edit that removes a block, is not changed in place: the edit is written as version + 1 in the same lineage, one transaction, audited, and no block row is ever deleted; the answer says why (because: run | removal). No athlete data. platform_owner and every reader-only role refused.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

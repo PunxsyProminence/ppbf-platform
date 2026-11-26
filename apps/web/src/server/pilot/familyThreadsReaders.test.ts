@@ -26,8 +26,11 @@ const TABLE_FILES: readonly string[] = [
   'infra/azure/pilot_slice_postgres_family_threads_migration.sql',
 ];
 
-/** Every non-test file importing the store, as of this PR: the guardian routes (PM-1b). */
+/** Every non-test file importing the store, as of this PR: the guardian routes (PM-1b), the staff routes (PM-1c) and the unread count (PM-2). */
 const STORE_IMPORTERS: readonly string[] = [
+  'apps/web/app/api/pilot/coach/family-thread-reads/route.ts',
+  'apps/web/app/api/pilot/coach/family-threads/route.ts',
+  'apps/web/app/api/pilot/coach/family-threads/unread/route.ts',
   'apps/web/app/api/pilot/parent/family-thread-reads/route.ts',
   'apps/web/app/api/pilot/parent/family-threads/route.ts',
 ];
