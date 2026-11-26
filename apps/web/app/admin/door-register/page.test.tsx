@@ -174,6 +174,11 @@ describe('the register previews a role WITHOUT becoming that role', () => {
     expect(init).toEqual({ credentials: 'include', cache: 'no-store' });
   });
 
+  it('says truthfully what it reads: only the reader’s own gym’s room names (Codex P1 on #2215)', () => {
+    expect(PAGE_SOURCE).not.toContain('Nothing is looked up until you do');
+    expect(PAGE_SOURCE).toContain('Nothing is looked up for the role you pick');
+  });
+
   it("shows the 7 rooms in the gym's own words", async () => {
     global.fetch = jest.fn(async () => ({
       ok: true,

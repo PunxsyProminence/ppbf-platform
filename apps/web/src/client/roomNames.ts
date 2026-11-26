@@ -10,10 +10,11 @@
  * sees the default for that moment).
  *
  * WHICH SIGN-IN. The browser's role session (roleSession.ts) is the only
- * signed-in identity it holds: the role and when the session ends. A new
- * sign-in is a new session, so the names are read again; a sign-out drops
- * them. The read itself is answered for the session's own gym only (the route
- * takes the organization from the session).
+ * signed-in identity it holds: the role (and a board seat) and when the session
+ * ends. The names are read once per role session (sessionKey, below); a
+ * sign-out drops them, and the next sign-in reads them again. The read itself
+ * is answered for the session's own gym only (the route takes the
+ * organization from the session).
  *
  * It starts on first use, so no header component has to mount it.
  */
@@ -91,8 +92,16 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+/**
+ * Which sign-in the names belong to: the role (and board seat), NOT expiresAt.
+ * RoleSessionGate re-verifies the session on every gated route and mints a
+ * fresh expiresAt each time (persistAuthoritativeRoleSession), so keying on it
+ * re-read the names and flickered them back to the defaults on every page
+ * change (Codex P2 on #2215). A sign-out (no session) still drops the names,
+ * and a different role signing in reads them again.
+ */
 function sessionKey(session: RoleSession | null): string | null {
-  return session ? `${session.role}:${session.expiresAt}` : null;
+  return session ? `${session.role}:${session.boardSeat ?? ''}` : null;
 }
 
 /** Reads the names once for this sign-in; a second caller for the same sign-in waits on the first. */
