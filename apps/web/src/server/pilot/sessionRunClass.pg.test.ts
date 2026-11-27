@@ -97,6 +97,7 @@ import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertPa
 import { setRunAthletePresent } from './sessionRunAthletes';
 import { createRunStaffNote } from './sessionStaffNotes';
 import { describeRunClass, listTieableClasses, markSessionNoShowsAbsent, setSessionRunClass } from './sessionRunClass';
+import { setSessionScriptRetired } from './sessionScriptAuthoring';
 import {
   finishSessionScriptRun,
   keyedSessionScriptRunAction,
@@ -918,6 +919,105 @@ describe('today\'s classes a session can be tied to', () => {
     await addClass(gym.organizationId, 'class-early-today', gym.coach.accountId, "'2026-10-14T04:30:00Z'::timestamptz"); // 12:30 AM, 14 October
     await addClass(gym.organizationId, 'class-tomorrow', gym.coach.accountId, "'2026-10-15T04:30:00Z'::timestamptz"); // 12:30 AM, 15 October
     expect((await listTieableClasses(gym.coach, now)).map((item) => item.class_id)).toEqual(['class-early-today']);
+  });
+});
+
+// SP-4a of lane W4-5 (OW27-29 A, "Class keeps the plan; Start runs it"; App Overwatch 7215533652 on
+// #2189, Q1): each of today's classes carries its plan, resolved to the newest version of the
+// lineage it was scheduled with, with its name, whether it is retired and whether it has blocks.
+describe('today\'s classes carry their plan, as its newest version', () => {
+  /** One version of a plan in the gym (every version here is of one lineage), with `blocks` blocks. */
+  async function addPlan(gym: Gym, scriptId: string, version: number, name: string, blocks: number) {
+    const { organizationId } = gym;
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact') on conflict do nothing`,
+      [organizationId],
+    );
+    await client.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+       values ($1, $2, 'scr-lineage', $3, $4, $5)`,
+      [organizationId, scriptId, version, name, gym.coach.accountId],
+    );
+    for (let order = 1; order <= blocks; order += 1) {
+      await client.query(
+        `insert into pilot.session_script_blocks
+           (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
+         values ($1, $2, $3, $4, $5, $6, 'block', 'cue')`,
+        [organizationId, `${scriptId}-b${order}`, scriptId, order, (order - 1) * 10, order * 10],
+      );
+    }
+  }
+  const linkPlan = (gym: Gym, scriptId: string) => client.query(
+    `update pilot.scheduler_classes set script_id = $3 where organization_id = $1 and class_id = $2`,
+    [gym.organizationId, gym.klass, scriptId],
+  );
+  const planOf = async (by: ActorIdentity) => (await listTieableClasses(by)).find((item) => item.class_id === 'class-today')?.plan;
+  const retire = (gym: Gym, scriptId: string, retired: boolean) => setSessionScriptRetired({
+    organizationId: gym.organizationId, actorAccountId: gym.coach.accountId, actorRole: gym.coach.role, scriptId, retired,
+  });
+
+  test('the response keys are pinned: a class with no plan carries plan null; a plan carries exactly four keys', async () => {
+    const gym = await newGym('plan-keys');
+    const [plain] = await listTieableClasses(gym.coach);
+    expect(Object.keys(plain).sort()).toEqual(['class_id', 'end_at', 'held_by_other_session', 'plan', 'start_at', 'title']);
+    expect(plain.plan).toBeNull();
+
+    await addPlan(gym, 'scr-1', 1, 'Footwork night', 2);
+    await linkPlan(gym, 'scr-1');
+    const [planned] = await listTieableClasses(gym.coach);
+    expect(Object.keys(planned).sort()).toEqual(['class_id', 'end_at', 'held_by_other_session', 'plan', 'start_at', 'title']);
+    expect(Object.keys(planned.plan ?? {}).sort()).toEqual(['has_blocks', 'name', 'retired', 'script_id']);
+    expect(planned.plan).toEqual({ script_id: 'scr-1', name: 'Footwork night', retired: false, has_blocks: true });
+  });
+
+  test('a class scheduled with v1 while v2 exists carries v2\'s id and name; another gym\'s higher version of the same lineage id is not it', async () => {
+    const gym = await newGym('plan-newest');
+    const other = await newGym('plan-other-gym');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 3);
+    await addPlan(other, 'scr-v3-elsewhere', 3, 'Another gym\'s plan', 1);
+    await linkPlan(gym, 'scr-v1');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    // An organization admin reads the same plan; the plan never changes which classes are listed.
+    expect(await planOf(gym.admin)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    expect((await listTieableClasses(gym.otherCoach)).map((item) => item.class_id)).toEqual([]);
+  });
+
+  test('the newest version retired: retired true; brought back: false', async () => {
+    const gym = await newGym('plan-retired');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 2);
+    await linkPlan(gym, 'scr-v1');
+    expect(await retire(gym, 'scr-v2', true)).toMatchObject({ outcome: 'retired' });
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: true, has_blocks: true });
+    expect(await retire(gym, 'scr-v2', false)).toMatchObject({ outcome: 'brought_back' });
+    expect((await planOf(gym.coach))?.retired).toBe(false);
+  });
+
+  test('has_blocks is the newest version\'s: none on v2 is false even when v1 had blocks; blocks on v2 are true when v1 had none', async () => {
+    const gym = await newGym('plan-blocks');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 0);
+    await linkPlan(gym, 'scr-v1');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: false });
+
+    const later = await newGym('plan-blocks-later');
+    await addPlan(later, 'scr-v1', 1, 'Footwork night', 0);
+    await addPlan(later, 'scr-v2', 2, 'Footwork night, revised', 1);
+    await linkPlan(later, 'scr-v1');
+    expect(await planOf(later.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+  });
+
+  test('a plan row deleted clears the class\'s link (on delete set null), and the class carries no plan', async () => {
+    const gym = await newGym('plan-deleted');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 1);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 1);
+    await linkPlan(gym, 'scr-v1');
+    await client.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+    const { rows } = await client.query(`select script_id from pilot.scheduler_classes where organization_id = $1 and class_id = $2`, [gym.organizationId, gym.klass]);
+    expect(rows).toEqual([{ script_id: null }]);
+    expect(await planOf(gym.coach)).toBeNull();
   });
 });
 
