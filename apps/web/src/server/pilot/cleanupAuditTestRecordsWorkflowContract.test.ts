@@ -54,7 +54,7 @@ function jobBlocks(text: string): Map<string, string> {
   const blocks = new Map<string, string>();
   let current: string | null = null;
   for (const line of lines) {
-    const id = /^ {2}([a-z][a-z0-9_-]*):$/.exec(line);
+    const id = /^ {2}([A-Za-z_][A-Za-z0-9_-]*):$/.exec(line);
     if (id) {
       current = id[1];
       blocks.set(current, '');
@@ -321,6 +321,9 @@ describe(`${FILE}: where the job runs (Codex finding 4723994429 on #2242)`, () =
     expect(launch).not.toMatch(/^ {4}environment:/m);
     expect(launch).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(launch).toContain('SWITCH: ${{ vars.PPBF_AZURE_DB_RUNNER }}');
+    // The gates read these ids: renamed, every gated step would be skipped and the fallback taken.
+    expect(launch).toMatch(/- name: Choose The Runner\n {8}id: route\n/);
+    expect(launch).toMatch(/- name: Launch A Runner In Azure\n {8}id: azure\n/);
     const gated = launch.split(/\n {6}- name: /).slice(2);
     expect(gated).toHaveLength(4);
     for (const step of gated) expect(step).toContain("if: steps.route.outputs.azure == 'true'");
@@ -333,12 +336,19 @@ describe(`${FILE}: where the job runs (Codex finding 4723994429 on #2242)`, () =
     expect(allowed).not.toContain('cleanup-audit-test-records.yml:launch');
   });
 
-  test('the route step sends cleanup to Azure only when the switch is true and the run is from main', () => {
-    expect(route({ SWITCH: 'true', GITHUB_REF: 'refs/heads/main' })).toBe('azure=true\n');
-    expect(route({ SWITCH: 'TRUE', GITHUB_REF: 'refs/heads/main' })).toBe('azure=true\n');
-    expect(route({ SWITCH: 'true', GITHUB_REF: 'refs/heads/claude/some-branch' })).toBe('azure=false\n');
-    expect(route({ SWITCH: '', GITHUB_REF: 'refs/heads/main' })).toBe('azure=false\n');
-    expect(route({ SWITCH: 'false', GITHUB_REF: 'refs/heads/main' })).toBe('azure=false\n');
+  test('the route step sends cleanup to Azure only when the switch is true, the run is from main and the retyped target matches', () => {
+    const ok = { SWITCH: 'true', GITHUB_REF: 'refs/heads/main', TARGET: 'production', CONFIRM_TARGET: 'production' };
+    expect(route(ok)).toBe('azure=true\n');
+    expect(route({ ...ok, SWITCH: 'TRUE' })).toBe('azure=true\n');
+    expect(route({ ...ok, GITHUB_REF: 'refs/heads/claude/some-branch' })).toBe('azure=false\n');
+    expect(route({ ...ok, SWITCH: '' })).toBe('azure=false\n');
+    expect(route({ ...ok, SWITCH: 'false' })).toBe('azure=false\n');
+    expect(route({ ...ok, CONFIRM_TARGET: 'staging' })).toBe('azure=false\n');
+    expect(route({ ...ok, CONFIRM_TARGET: '' })).toBe('azure=false\n');
+  });
+
+  test('the route reads the target and its retyped copy from the inputs, through env', () => {
+    expect(stepText('Choose The Runner')).toContain('          TARGET: ${{ inputs.target }}\n          CONFIRM_TARGET: ${{ inputs.confirm_target }}\n');
   });
 
   test('the resource-group guard still comes before the file\'s first Azure login', () => {

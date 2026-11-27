@@ -89,13 +89,17 @@ from `main`, `cleanup` runs on a single-use runner inside Azure, which the datab
 otherwise on GitHub's runner, where a job GitHub places on AWS stops at the database preflight
 (`PROBE_TIMEOUT`, as the first staging attempt did, run 46000784632).
 - **Before the first Azure run:** the runner image must carry this job's line in
-  `infra/gh-runner/allowed-jobs.txt`. Its guard refuses any job not baked into the image, so rebuild
-  (`build-runner-image`) and roll (`IMAGE` in `azure-runner.conf`, then `resources.sh create --apply`), as
-  `infra/gh-runner/README.md` says. Until then leave the variable unset for this workflow's runs, or
-  expect the job to be refused.
-- **The runner stops an hour after it starts** (`REPLICA_TIMEOUT_SECONDS` 3600). `launch` starts it
-  before the production approval is asked for, so the approval and the run (up to 30 minutes) must fit in
-  that hour: dispatch production when the approver is ready.
+  `infra/gh-runner/allowed-jobs.txt`. Its guard refuses any job not baked into the image, and the image
+  pinned today was built before that line was added. So rebuild (`build-runner-image`), roll (`IMAGE` in
+  `azure-runner.conf`, then `resources.sh create --apply`) and dispatch `runner-guard-check` again, as
+  `infra/gh-runner/README.md` says. `PPBF_AZURE_DB_RUNNER` is one repository variable, also read by
+  `session-token-cleanup.yml`: while it is `true` and the image is not rolled, a dispatch of this workflow
+  from `main` is refused by the guard (nothing is written), and unsetting it also moves the session-token
+  sweep back to GitHub's runner.
+- **The runner stops an hour after its container starts** (`REPLICA_TIMEOUT_SECONDS` 3600). `launch`
+  starts it before the production approval is asked for, so its boot (up to 8 minutes), the approval and
+  the run (up to 30 minutes) must fit in that hour: dispatch production when the approver is ready. A
+  dispatch whose `confirm_target` does not match starts no runner.
 - **Re-run with "Re-run all jobs"**, never "Re-run failed jobs": `cleanup` alone would wait for that
   attempt's runner, which is gone. If an approval came too late, cancel the run and dispatch again.
 
