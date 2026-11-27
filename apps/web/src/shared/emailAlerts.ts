@@ -56,16 +56,18 @@ export function emailAlertCandidateUserType(role: string): EmailAlertUserType | 
  * "safety escalations (SHADOW safety alerts included)"); they get no key of
  * their own, so an unticked gym or an off-list key can never drop them alone.
  *
- * A parent's new message (W4-4) joins the staff list in EM-4c (GO on #2159,
- * Q-2 = A); the database checks only the key's shape, so that needs no
- * migration. Keep each list in the order a screen should show it.
+ * 'guardian_message' is a guardian's new message in a family thread (W4-4;
+ * OW27-25 A), added in EM-4c (GO on #2159, Q-2 = A). It goes only to the staff
+ * it nudges (OW27-27 A), not to every staff member who can read it. The
+ * database checks only the key's shape, so it needed no migration. Keep each
+ * list in the order a screen should show it.
  *
  * DO NOT RENAME A KEY. A gym's stored choice is keyed by it: a renamed key
  * reads as having no choice, so an event a gym had unticked would start
  * sending again. Add a new key and keep the old one, or migrate the rows.
  */
 export const EMAIL_ALERT_EVENTS = {
-  staff: ['safety_escalation', 'parent_reply', 'gym_notice'],
+  staff: ['safety_escalation', 'parent_reply', 'guardian_message', 'gym_notice'],
   parent: ['family_note', 'gym_notice'],
   adult_athlete: ['coach_message', 'gym_notice'],
 } as const satisfies Record<EmailAlertUserType, readonly string[]>;

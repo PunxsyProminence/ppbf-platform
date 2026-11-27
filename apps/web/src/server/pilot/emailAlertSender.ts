@@ -27,8 +27,9 @@
  * role's sign-in (sessionCredentialFits). The person's role in that gym and
  * age still give that user type (an unknown date of birth is a minor,
  * OD-2026-10-04-010), and any account linked to an athlete record under 18 or
- * deleted gets nothing, whatever its role. The person can still read the
- * event in the app (emailAlertEvents.ts, EM-4a). The gym still has the event
+ * deleted gets nothing, whatever its role. The person is still one the
+ * event's source names: can still read the event in the app, or for a
+ * guardian's message is still nudged by it (emailAlertEvents.ts). The gym still has the event
  * ticked; there is an address. Any no: the row is skipped with its reason and
  * nothing is sent.
  *
@@ -88,7 +89,7 @@ export interface EmailAlertSenderDependencies {
   readonly now: () => Date;
   /** The clock the tick's claim budget reads. */
   readonly clockMs: () => number;
-  /** Whether the person can still read the event in the app (emailAlertEvents.ts). */
+  /** Whether the person is still one the event's source names (emailAlertEvents.ts). */
   readonly stillReads: (send: ClaimedEmailAlertSend) => Promise<boolean>;
 }
 
