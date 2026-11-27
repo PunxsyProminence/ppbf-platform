@@ -181,6 +181,45 @@ describe('FamilyThreadsForStaff', () => {
     expect(await screen.findByRole('button', { name: 'Send reply to First Guardian' })).toBeEnabled();
   });
 
+  test('two submits of one reply box in the same tick send it once, per thread (Overwatch 7183603899 on #2210)', async () => {
+    const second: StaffThreadView = {
+      ...THREAD, thread_id: 't2', guardian_name: 'Second Guardian',
+      posts: [{ post_id: 'q1', from: 'guardian', staff_name: null, text: 'Can she move up a class?', created_at: '2026-11-25T06:00:00.000Z', new_to_me: false }],
+    };
+    let releases: Array<(response: Response) => void> = [];
+    const fetchMock = install(
+      () => jsonResponse({ ok: true, items: [THREAD, second] }),
+      () => new Promise<Response>((resolve) => { releases.push(resolve); }),
+    );
+    render(<FamilyThreadsForStaff athleteId="ath-1" />);
+    const firstBox = await screen.findByLabelText('Reply to First Guardian');
+    const secondBox = screen.getByLabelText('Reply to Second Guardian');
+    fireEvent.change(firstBox, { target: { value: 'See you then.' } });
+    fireEvent.change(secondBox, { target: { value: 'Yes, from next week.' } });
+
+    // A double press: both submits land before React re-renders the disabled button.
+    act(() => {
+      fireEvent.submit(firstBox.closest('form') as HTMLFormElement);
+      fireEvent.submit(firstBox.closest('form') as HTMLFormElement);
+      fireEvent.submit(secondBox.closest('form') as HTMLFormElement);
+      fireEvent.submit(secondBox.closest('form') as HTMLFormElement);
+    });
+    expect(bodies(fetchMock, '/api/pilot/coach/family-threads')).toEqual([
+      { thread_id: 't1', text: 'See you then.' },
+      { thread_id: 't2', text: 'Yes, from next week.' },
+    ]);
+
+    // Once a send has answered, the box sends again.
+    await act(async () => {
+      for (const release of releases) release(jsonResponse({ error: 'down' }, false, 500));
+      releases = [];
+    });
+    await act(async () => {
+      fireEvent.submit(firstBox.closest('form') as HTMLFormElement);
+    });
+    expect(bodies(fetchMock, '/api/pilot/coach/family-threads')).toHaveLength(3);
+  });
+
   test('a reply that fails while its athlete is on screen is told under its thread only; moving on adds no notice', async () => {
     const fetchMock = jest.fn((url: string, init?: RequestInit) => {
       const key = String(url);

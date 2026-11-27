@@ -220,6 +220,10 @@ describe('organization email alert events migration', () => {
     ['ticked that may be null', 'alter table pilot.organization_email_alert_events alter column ticked drop not null'],
     ['ticked stored as text', 'alter table pilot.organization_email_alert_events alter column ticked type text'],
     ['a set time that may be null', 'alter table pilot.organization_email_alert_events alter column set_at drop not null'],
+    ['a set time with no default', 'alter table pilot.organization_email_alert_events alter column set_at drop default'],
+    ['a set time defaulting to now()', 'alter table pilot.organization_email_alert_events alter column set_at set default now()'],
+    ['a set time defaulting to statement_timestamp()', 'alter table pilot.organization_email_alert_events alter column set_at set default statement_timestamp()'],
+    ['a default on who set it', "alter table pilot.organization_email_alert_events alter column set_by_account_id set default 'someone'"],
     ['an extra column', 'alter table pilot.organization_email_alert_events add column note text'],
     [
       'a second gym key that blocks deleting the gym',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
@@ -13,8 +13,15 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
-import SessionRunClass from '@/components/SessionRunClass';
+import SessionRunClass, { goneWords, unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
+import {
+  keepSave,
+  prepareSaveQueue,
+  readSaveQueue,
+  subscribeSaveQueue,
+  type KeptSave,
+} from '@/src/lib/saveQueue';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 import type { GymTvListItem } from '@/src/server/pilot/gymTvs';
@@ -158,6 +165,75 @@ function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun
       return live.show_on_wall ? 'the session is allowed on a TV' : 'the session is not allowed on a TV';
     default:
       return null;
+  }
+}
+
+// A kept run action's refusals that the server gives only after looking up the action's request key
+// and finding it unrecorded (keyedSessionScriptRunAction): the action never landed. Any other refusal
+// of a resend leaves it not known. Decided by the key alone, never by the run's state matching what
+// was asked, which another tab or device making the same change would also produce (OVERWATCH
+// 7170099938, Codex P2 4698738015 on #2178).
+const RUN_REFUSED_AFTER_KEY = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_HAS_NO_SCRIPT', 'SESSION_RUN_BLOCK_NOT_IN_SCRIPT']);
+
+/** Nothing kept is waiting on this page (saved, refused, or dropped at a sign-out). */
+function queueIdle(): boolean {
+  const state = readSaveQueue();
+  return state.waiting.length === 0 && state.checking === 0;
+}
+
+type PendingRun = Partial<Pick<LiveSessionScriptRun, 'is_paused' | 'show_on_wall' | 'current_block_id'>>;
+/** An intervention execution of this run as the ledger lists it (the fields a landed check reads). */
+type RunExecution = {
+  execution_id: string;
+  created_at: string;
+  recorded_by_account_id?: string;
+  version?: number;
+  /** The key that started the record's lineage: a kept log's landed check matches by it. */
+  request_key?: string | null;
+};
+/** A ledger that names no request keys (a server older than this page): which log is this tap's cannot be told by key. */
+function namesNoKeys(items: readonly RunExecution[]): boolean {
+  return items.length > 0 && items.every((item) => item.request_key === undefined);
+}
+/** One kept run action not yet answered: what it asks, and whether it ends the session. */
+type AskedRun = { save: object; asked: PendingRun; finish: boolean };
+
+/** The part of the run a run action asks for, or null (a finish). */
+function askedByRunAction(body: Record<string, unknown>): PendingRun | null {
+  switch (body.action) {
+    case 'pause':
+      return { is_paused: true };
+    case 'resume':
+      return { is_paused: false };
+    case 'advance':
+      return typeof body.to_block_id === 'string' ? { current_block_id: body.to_block_id } : null;
+    case 'show_on_wall':
+      return { show_on_wall: body.show === true };
+    default:
+      return null;
+  }
+}
+
+/**
+ * What the waiting and failed lines call a run action (W4 item 7, OQ-3): the control's own words.
+ * Words PROPOSED (UI not tied down, OD-2026-10-02-004).
+ */
+export function runActionLabel(body: Record<string, unknown>, blocks: readonly Block[]): string {
+  switch (body.action) {
+    case 'pause':
+      return 'Pause session';
+    case 'resume':
+      return 'Resume session';
+    case 'advance': {
+      const label = blocks.find((item) => item.block_id === body.to_block_id)?.block_label;
+      return label ? `Move to ${label}` : 'Move to the block you picked';
+    }
+    case 'show_on_wall':
+      return body.show ? 'Allow on a TV: on' : 'Allow on a TV: off';
+    case 'finish':
+      return body.run_state === 'abandoned' ? 'Record as abandoned' : 'Record as completed';
+    default:
+      return 'Session change';
   }
 }
 
@@ -312,8 +388,15 @@ export default function SessionScriptLiveDelivery({
   const blocks: Block[] = detail?.blocks ?? [];
   const currentIndex = blocks.findIndex((block) => block.block_id === run.current_block_id);
   const currentBlock = currentIndex >= 0 ? blocks[currentIndex] : null;
-  const previousBlock = currentIndex > 0 ? blocks[currentIndex - 1] : null;
-  const nextBlock = currentIndex >= 0 && currentIndex < blocks.length - 1 ? blocks[currentIndex + 1] : null;
+  // Run actions kept and not yet saved (W4 item 7): what each asks, in the order tapped, so the next
+  // tap works from what the coach asked, not from the run as last read. Each entry is added once its
+  // save is kept and goes with that save's answer, never another's; a later one wins. What is shown
+  // as the run stays the server's.
+  const [askedRuns, setAskedRuns] = useState<readonly AskedRun[]>([]);
+  const asked = askedRuns.reduce<LiveSessionScriptRun>((all, entry) => ({ ...all, ...entry.asked }), run);
+  const askedIndex = blocks.findIndex((block) => block.block_id === asked.current_block_id);
+  const previousBlock = askedIndex > 0 ? blocks[askedIndex - 1] : null;
+  const nextBlock = askedIndex >= 0 && askedIndex < blocks.length - 1 ? blocks[askedIndex + 1] : null;
 
   // Lane U2-6e (Overwatch Q4 = A): the current block's linked drill is read
   // when one of its Say, Watch or Fix lines is empty, and kept for the rest of
@@ -355,6 +438,56 @@ export default function SessionScriptLiveDelivery({
 
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  // Set when this console hands the page a settled run; a finish once kept locks the run actions.
+  const settledHere = useRef(false);
+  // No run action while one is in hand, or once a finish is kept: it cannot be taken back, and an
+  // action queued behind it would only be refused once the session has ended.
+  const finishKept = askedRuns.some((entry) => entry.finish);
+  const controlsLocked = actionBusy !== null || finishKept;
+  // Once a kept finish lands this console goes, so a refusal said here meanwhile would go unread:
+  // it is said in the page's list instead. Set when the finish is kept and when it is answered, so a
+  // refusal arriving before the next render reads it right; the screens below ask through a getter.
+  const finishKeptNow = useRef(finishKept);
+  useEffect(() => {
+    finishKeptNow.current = finishKept;
+  }, [finishKept]);
+  const isFinishWaiting = useCallback(() => finishKeptNow.current, []);
+  // A finish in hand: kept, or being sent or kept right now (the queue may wait for the page's re-check
+  // of who is signed in, and a one-shot finish is on its way). A log made then would be sent after the
+  // finish and land on an ended session, as the server takes a log on any run (Codex P2, review
+  // 6062374955; round 20, reviewer B): the log is locked for all of it. The ref answers a tap in flight.
+  const finishInHand = finishKept || (actionBusy?.startsWith('finish-') ?? false);
+  const finishAskedNow = useRef(false);
+  const finishLineId = useId();
+  // Asked and not yet saved, in words beside the controls: the buttons follow what was asked, while
+  // the badge, the block and the switch's state as saved are the server's.
+  const askedNotSaved = [
+    asked.is_paused !== run.is_paused ? (asked.is_paused ? 'Pause session' : 'Resume session') : null,
+    asked.current_block_id !== run.current_block_id
+      ? runActionLabel({ action: 'advance', to_block_id: asked.current_block_id }, blocks)
+      : null,
+    asked.show_on_wall !== run.show_on_wall
+      ? runActionLabel({ action: 'show_on_wall', show: asked.show_on_wall }, blocks)
+      : null,
+  ].filter((words): words is string => words !== null);
+  const askedLineId = `asked-not-saved-${run.run_id}`;
+  // While this console is on the page; a save that resolves after it has gone gives its words to
+  // the page's list instead, so they are said somewhere.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
+  const settledByThisConsole = useCallback((settled: SettledRunSummary) => {
+    settledHere.current = true;
+    onSettled(settled);
+  }, [onSettled]);
+  // The page keeps its live-floor saves (W4 item 7): it learns who is signed in when it opens.
+  useEffect(() => {
+    prepareSaveQueue();
+  }, []);
 
   // ---- Log an intervention against THIS run --------------------------
   // The picklists a coach needs to log one: the roster they coach, and the
@@ -398,7 +531,24 @@ export default function SessionScriptLiveDelivery({
   const [logProtocolId, setLogProtocolId] = useState('');
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState('');
+  // Kept logs not yet saved: said in the log panel too, where the coach tapped (W4 item 7).
+  // One entry per kept log, keyed by its pair's request key: the same pair tapped twice is one log.
+  const [logsWaiting, setLogsWaiting] = useState<readonly { save: object; key: unknown }[]>([]);
+  const logsWaitingCount = new Set(logsWaiting.map((entry) => entry.key)).size;
   const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
+  // A drop (a sign-out, another account, a 401) tells this screen nothing: once nothing kept is
+  // waiting on the page, nothing is asked, no finish waits and no log waits here either. (Each is
+  // added only once its save is kept, so the queue's own notices while it takes a save clear nothing
+  // of it.)
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        if (!queueIdle()) return;
+        setAskedRuns([]);
+        setLogsWaiting([]);
+      }),
+    [],
+  );
 
   // ONE TAP, ONE INTERVENTION (finding F-135). A read that finds nothing does not prove a write
   // still in flight will not commit after it, so a retry must not be a new log. Each tap of an
@@ -410,6 +560,13 @@ export default function SessionScriptLiveDelivery({
   // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
   // whose key could not be made (no randomUUID); then none is sent, as before.
   const logRequestKeys = useRef(new Map<string, string | null>());
+  // Each pair key belongs to the account whose kept log first sent it, or whose log the server says
+  // it wrote. The server answers a repeated key within the organization, so another account's tap of
+  // the same pair (someone else signed in on this page) sends its own key, one per pair key and
+  // account: it never replays the last person's log as theirs, and their own second tap is still one
+  // log. A landed log retires its pair key, so a later tap of the pair gets new keys altogether.
+  const pairKeyAccounts = useRef(new Map<string, string>());
+  const accountPairKeys = useRef(new Map<string, string>());
 
   // A protocol authored for one specific athlete never applies to another --
   // the server enforces this too (startExecution), but narrowing the list
@@ -425,7 +582,7 @@ export default function SessionScriptLiveDelivery({
       athleteId: string,
       protocolId: string,
       signal?: AbortSignal,
-    ): Promise<{ execution_id: string; created_at: string }[] | null> => {
+    ): Promise<RunExecution[] | null> => {
       try {
         const response = await fetch(
           `${apiBase()}/api/pilot/coach/intervention-executions?athlete_id=${encodeURIComponent(athleteId)}`,
@@ -433,7 +590,7 @@ export default function SessionScriptLiveDelivery({
         );
         if (!response.ok) return null;
         const payload = (await response.json()) as {
-          items?: { execution_id: string; created_at: string; session_run_id: string | null; protocol_id: string }[];
+          items?: (RunExecution & { session_run_id: string | null; protocol_id: string })[];
         };
         if (!Array.isArray(payload.items)) return null;
         return payload.items.filter((item) => item.session_run_id === run.run_id && item.protocol_id === protocolId);
@@ -444,8 +601,132 @@ export default function SessionScriptLiveDelivery({
     [run.run_id],
   );
 
+  const keptLog = useCallback(
+    (
+      athleteId: string,
+      protocolId: string,
+      athleteName: string,
+      protocolTitle: string,
+      pairKey: string | null,
+      forgetPairKey: () => void,
+      resolved: { done: boolean },
+    ): KeptSave => {
+      let refusal: { error?: string; code?: string } = {};
+      let landedItem: { execution_id: string; created_at: string } | null = null;
+      // Who sent it last, and under which key.
+      let sent: { by: string; key: string } | null = null;
+      const label = `Intervention log: ${protocolTitle}`;
+      const settleOnce = () => {
+        resolved.done = true;
+        setLogsWaiting((entries) => entries.filter((entry) => entry.save !== resolved));
+      };
+      const showLogged = (item: { execution_id: string; created_at: string }) => {
+        forgetPairKey();
+        // A second tap of the same pair is answered with the same record: listed once.
+        setLoggedInterventions((items) => (items.some((logged) => logged.execution_id === item.execution_id) ? items : [
+          { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
+          ...items,
+        ]));
+      };
+      return {
+        // No athlete name: the line can outlive the log panel on a shared floor screen.
+        label,
+        send: ({ signal, requestKey, madeByAccountId }) => {
+          let key = requestKey;
+          if (pairKey) {
+            const owner = pairKeyAccounts.current.get(pairKey);
+            if (owner === undefined) pairKeyAccounts.current.set(pairKey, madeByAccountId);
+            if (owner === undefined || owner === madeByAccountId) key = pairKey;
+            else {
+              const slot = `${pairKey} ${madeByAccountId}`;
+              key = accountPairKeys.current.get(slot) ?? requestKey;
+              accountPairKeys.current.set(slot, key);
+            }
+          }
+          sent = { by: madeByAccountId, key };
+          return fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              athlete_id: athleteId,
+              protocol_id: protocolId,
+              session_run_id: run.run_id,
+              // The pair's own key while it is unsaved (F-135): a second tap of the same pair, or a
+              // retry after today's "Try again", is the same log, never a second one.
+              request_key: key,
+              made_by_account_id: madeByAccountId,
+            }),
+            signal,
+          });
+        },
+        answerOf: async (response) => {
+          const payload = (await response.clone().json().catch(() => ({}))) as {
+            item?: { recorded_by_account_id?: unknown; version?: unknown };
+            replayed?: unknown;
+            error?: string;
+            code?: string;
+          };
+          if (isRefusal(response.status) && response.status !== 408 && response.status !== 429) {
+            refusal = payload;
+            return 'refused';
+          }
+          // The pair's key wrote another account's log (a key first sent on today's path, then someone
+          // else signed in): this log is not written. The key is theirs; this one goes again under its own.
+          // Only an uncorrected record names who wrote it: a correction is recorded by the corrector, so
+          // a corrected replay counts as this log, as before (never a second one).
+          const recordedBy = payload.item?.recorded_by_account_id;
+          if (response.ok && payload.replayed === true && pairKey && sent?.key === pairKey && payload.item?.version === 1
+            && typeof recordedBy === 'string' && recordedBy !== sent.by) {
+            pairKeyAccounts.current.set(pairKey, recordedBy);
+            return 'unknown';
+          }
+          return response.ok && payload.item ? 'saved' : 'unknown';
+        },
+        // A refused resend: does this run hold the log this save's own key started? Matched by the key
+        // only: another tap of the same pair, from another tab or device of the same account, has its
+        // own key and is never taken for this one (Codex P2 and OVERWATCH on #2178).
+        checkLanded: async (signal) => {
+          const last = sent;
+          if (last === null) return null;
+          const after = await readRunExecutions(athleteId, protocolId, signal);
+          if (after === null || namesNoKeys(after)) return null;
+          // Another account's uncorrected log under a shared pair key (first sent on today's path) is
+          // not this one.
+          landedItem = after.find((item) => item.request_key === last.key
+            && (item.version !== 1 || item.recorded_by_account_id === last.by)) ?? null;
+          return landedItem !== null;
+        },
+        onSaved: (response) => {
+          settleOnce();
+          void (async () => {
+            const item = response
+              ? ((await response.json().catch(() => ({}))) as { item?: { execution_id: string; created_at: string } }).item
+              : landedItem;
+            if (item) showLogged(item);
+          })();
+        },
+        // Refused: said in the log panel, where the coach tapped.
+        onRefused: (response, landed) => {
+          settleOnce();
+          if (refusal.code === 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED') forgetPairKey();
+          const reason = refusalWords({ error: refusal.error, status: response.status }, {}, 'The intervention was not logged.');
+          // Off the page, the page's list says it, after the save's own name.
+          if (!onPage.current || finishKeptNow.current) {
+            return landed === null ? unknownOffPage('Check The Work before logging it again.') : reason;
+          }
+          setLogError(landed === null ? unknownOutcomeWords(label) : reason);
+          return undefined;
+        },
+      };
+    },
+    [readRunExecutions, run.run_id],
+  );
+
   const logIntervention = useCallback(async () => {
-    if (logBusy) return;
+    // A finish in hand (see finishInHand): a log made now would be sent after it and land on an ended
+    // session. The button is locked too; this covers a tap in flight.
+    if (logBusy || finishKeptNow.current || finishAskedNow.current) return;
     if (!logAthleteId || !logProtocolId) {
       setLogError('Pick an athlete and a protocol first.');
       return;
@@ -469,9 +750,26 @@ export default function SessionScriptLiveDelivery({
       setLogProtocolId('');
     };
     try {
-      // The "before" picture, so a lost answer can be checked against it afterwards: an earlier
-      // log of the same pair in this run (from before a reload, say) must not read as this one.
-      // A failed read never stops the log, and a slow one holds it back three seconds at most.
+      // Kept on the open page (W4 item 7, OQ-3): resent with the pair's request key until it goes
+      // through, instead of "Try again". The server writes it once however often it is sent (F-135),
+      // and only for the account that made it (made_by_account_id, OQ-1). The choice is cleared once
+      // kept; a second tap of the same pair while it is unsaved carries the same key.
+      const resolved = { done: false };
+      const kept = await keepSave(
+        // Forgets the pair's key only while it is still this tap's: never a newer tap's key.
+        keptLog(logAthleteId, logProtocolId, athleteName, protocolTitle, requestKey, () => {
+          if (keys.get(pair) === requestKey) keys.delete(pair);
+        }, resolved),
+      );
+      if (kept === 'kept') {
+        // Said once kept (the account check settles first), unless it was answered already.
+        if (!resolved.done) setLogsWaiting((entries) => [...entries, { save: resolved, key: requestKey ?? resolved }]);
+        setLogProtocolId('');
+        return;
+      }
+      // Today's way. The "before" picture, so a lost answer can be checked against it afterwards: an
+      // earlier log of the same pair in this run (from before a reload, say) must not read as this
+      // one. A failed read never stops the log, and a slow one holds it back three seconds at most.
       const before = await readRunExecutions(
         logAthleteId,
         logProtocolId,
@@ -514,14 +812,21 @@ export default function SessionScriptLiveDelivery({
         setLogError(LOG_UNCHECKED);
         return;
       }
+      // A tap that sent a key is matched by it alone (OVERWATCH 7158257725): another tab's tap of the
+      // pair is never taken for this one, and this tap's own log is found even when an earlier attempt
+      // of it landed late, into the before picture, or there is no before picture. Without a key, or
+      // from a server that names none, any new log, as before.
+      const byKey = requestKey !== null && requestKey !== undefined && !namesNoKeys(after);
       const known = new Set([...(before ?? []), ...loggedInterventions].map((item) => item.execution_id));
-      const fresh = after.filter((item) => !known.has(item.execution_id));
+      const fresh = byKey
+        ? after.filter((item) => item.request_key === requestKey)
+        : after.filter((item) => !known.has(item.execution_id));
       if (fresh.length === 0) {
         setLogError(LOG_NOT_SAVED);
         return;
       }
-      // Without the before picture, a record this screen did not log cannot be placed.
-      if (before === null) {
+      // Without the before picture, a record this screen did not log cannot be placed (by key it can).
+      if (!byKey && before === null) {
         setLogError(LOG_UNCHECKED);
         return;
       }
@@ -530,18 +835,19 @@ export default function SessionScriptLiveDelivery({
     } finally {
       setLogBusy(false);
     }
-  }, [logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, loggedInterventions, readRunExecutions, run.run_id]);
+  }, [keptLog, logAthleteId, logAthletes, logBusy, logProtocolId, logProtocols, loggedInterventions, readRunExecutions, run.run_id]);
 
   // A run can stop being live underneath this screen (finished on another
   // device, or settled by a race). The recovery is always the same: ask the
   // server what is live now, and either show that or hand control back.
   // The coach's live run as the server holds it now: the run, null for none, or 'unreadable'.
-  const readLiveRun = useCallback(async (): Promise<LiveSessionScriptRun | null | 'unreadable'> => {
+  const readLiveRun = useCallback(async (signal?: AbortSignal): Promise<LiveSessionScriptRun | null | 'unreadable'> => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
+        signal,
       });
       if (!response.ok) return 'unreadable';
       const payload = (await response.json()) as { run?: LiveSessionScriptRun | null };
@@ -565,6 +871,9 @@ export default function SessionScriptLiveDelivery({
   );
 
   const resyncAfterNotLive = useCallback(async () => {
+    // Once this run has settled here, a kept save refused because it is no longer live says nothing:
+    // the page already says how it ended.
+    if (settledHere.current) return;
     const live = await readLiveRun();
     if (live === 'unreadable') {
       setActionError('This session may no longer be live, and the server could not be reached to confirm. Reload to recover the real state.');
@@ -572,6 +881,26 @@ export default function SessionScriptLiveDelivery({
     }
     showOtherLiveRun(live);
   }, [readLiveRun, showOtherLiveRun]);
+
+  // This run among the gym's finished sessions: its settled row, null when it is not there settled,
+  // or 'unreadable'.
+  const readSettledRun = useCallback(async (signal?: AbortSignal): Promise<SettledRunSummary | null | 'unreadable'> => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs?finished=true`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        signal,
+      });
+      if (!response.ok) return 'unreadable';
+      const payload = (await response.json()) as { runs?: SettledRunSummary[] };
+      if (!Array.isArray(payload.runs)) return 'unreadable';
+      const settled = payload.runs.find((item) => item.run_id === run.run_id);
+      return settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned') ? settled : null;
+    } catch {
+      return 'unreadable';
+    }
+  }, [run.run_id]);
 
   // A run action whose answer proved nothing: read what the server holds and say that.
   const recoverRunAction = useCallback(
@@ -592,41 +921,122 @@ export default function SessionScriptLiveDelivery({
         return;
       }
       // This run is no longer live: a finish that landed is among the gym's finished sessions.
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs?finished=true`, {
-          method: 'GET',
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        if (response.ok) {
-          const payload = (await response.json()) as { runs?: SettledRunSummary[] };
-          const settled = payload.runs?.find((item) => item.run_id === run.run_id);
-          if (settled && (settled.run_state === 'completed' || settled.run_state === 'abandoned')) {
-            onSettled(settled);
-            return;
-          }
-          if (Array.isArray(payload.runs)) {
-            setActionError(RUN_END_UNKNOWN);
-            return;
-          }
-        }
-      } catch {
-        // Falls through to "could not be checked".
-      }
-      setActionError(RUN_UNCHECKED);
+      const settled = await readSettledRun();
+      if (settled === 'unreadable') setActionError(RUN_UNCHECKED);
+      else if (settled) settledByThisConsole(settled);
+      else setActionError(RUN_END_UNKNOWN);
     },
-    [applyServerRun, detail, onSettled, readLiveRun, run.run_id, showOtherLiveRun],
+    [applyServerRun, detail, readLiveRun, readSettledRun, run.run_id, settledByThisConsole, showOtherLiveRun],
+  );
+
+  // A run action kept on the open page (W4 item 7, OQ-3; OW27-35 A): sent now, or after the saves
+  // before it, and resent until it goes through, with the waiting words meanwhile. Every send carries
+  // the save's own request key: the server records it with the action and answers a resend of a key
+  // it holds as saved (`replayed`), writing nothing more. A refused RESEND is decided by that key
+  // before any failed words (condition 2): RUN_REFUSED_AFTER_KEY means it never landed, and any other
+  // refusal leaves it not known.
+  const keptRunAction = useCallback(
+    (body: Record<string, unknown>, resolved: { done: boolean }): KeptSave => {
+      const blocks = detail?.blocks ?? [];
+      let refusal: { error?: string } = {};
+      const label = runActionLabel(body, blocks);
+      // What this save asked goes with its own answer, saved or refused.
+      const releaseAsked = () => {
+        resolved.done = true;
+        if (body.action === 'finish') finishKeptNow.current = false;
+        setAskedRuns((entries) => entries.filter((entry) => entry.save !== resolved));
+      };
+      return {
+        label,
+        send: ({ signal, requestKey }) =>
+          fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(run.run_id)}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...body, request_key: requestKey }),
+            signal,
+          }),
+        answerOf: async (response) => {
+          const payload = (await response.clone().json().catch(() => ({}))) as { run?: unknown; replayed?: unknown; error?: string };
+          // 408 and 429 say "not now", not "no": sent again, as the queue's default does.
+          if (isRefusal(response.status) && response.status !== 408 && response.status !== 429) {
+            refusal = payload;
+            return 'refused';
+          }
+          // A yes without the run proves nothing (it is sent again: it sets a state), unless it says an
+          // earlier send of this key landed: a live action on a run that has ended since has no run.
+          return response.ok && (payload.run || payload.replayed === true) ? 'saved' : 'unknown';
+        },
+        // Decided by this save's own key: no read of the run, whose state another tab or device could match.
+        checkLanded: async () => (refusal.error !== undefined && RUN_REFUSED_AFTER_KEY.has(refusal.error) ? false : null),
+        onSaved: (response) => {
+          releaseAsked();
+          void (async () => {
+            const payload = response
+              ? ((await response.json().catch(() => ({}))) as { run?: LiveSessionScriptRun | SessionScriptRunRow | null; replayed?: unknown })
+              : {};
+            if (!payload.run) {
+              // An earlier send landed, and the run has ended since (not here): the console resyncs.
+              if (payload.replayed === true) void resyncAfterNotLive();
+              return;
+            }
+            if (body.action === 'finish') settledByThisConsole(payload.run);
+            else applyServerRun(payload.run as LiveSessionScriptRun);
+          })();
+        },
+        // Refused: said on the console, where the coach tapped (not in the page's waiting list).
+        onRefused: (response, landed) => {
+          releaseAsked();
+          if (settledHere.current) return undefined;
+          if (refusal.error === 'SESSION_RUN_NOT_LIVE' || refusal.error === 'SESSION_RUN_NOT_FOUND') {
+            void resyncAfterNotLive();
+            if (body.action !== 'finish') return undefined;
+            // A finish the session ended without (another tab or device, the idle close) loses what was
+            // entered when ending it. The console only says the session has ended and then goes, so the
+            // page's list names this finish too: not saved, or not known (round 17, reviewers A and B).
+            // The coach's notes themselves are never repeated there.
+            return landed === null
+              ? unknownOffPage('Check this session under Finished sessions.')
+              : `This tap did not end the session: ${goneWords(refusal.error)}. What was entered with it was not recorded.`;
+          }
+          // A refused resend that could not be checked: whether an earlier send landed is not known.
+          const reason = describeRunError(refusal.error, response.status);
+          // Off the page, the page's list says it, after the save's own name.
+          // A finish's own refusal is said here: its release above has cleared the flag, and the console stays.
+          if (!onPage.current || finishKeptNow.current) {
+            return landed === null ? unknownOffPage('Check the session on the class screen before doing it again.') : reason;
+          }
+          setActionError(landed === null ? unknownOutcomeWords(label) : reason);
+          return undefined;
+        },
+      };
+    },
+    [applyServerRun, detail, resyncAfterNotLive, run.run_id, settledByThisConsole],
   );
 
   const mutateRun = useCallback(
     async (body: Record<string, unknown>, busyKey: string): Promise<void> => {
       // One mutation at a time: a double-tapped control must not race itself.
       // (Pause/resume are additionally idempotent server-side.) The lock holds
-      // through any recovery read below.
+      // through any recovery read below, and while the queue takes the save.
       if (actionBusy) return;
       setActionBusy(busyKey);
       setActionError('');
+      if (body.action === 'finish') finishAskedNow.current = true;
       try {
+        // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in):
+        // sent once, and a lost answer read back, as before.
+        // What it asks is what the next tap works from once it is kept (the account check settles
+        // first, under this tap's busy lock), unless it was answered already.
+        const resolved = { done: false };
+        if ((await keepSave(keptRunAction(body, resolved))) === 'kept') {
+          const askedHere = askedByRunAction(body);
+          if (!resolved.done && (askedHere || body.action === 'finish')) {
+            if (body.action === 'finish') finishKeptNow.current = true;
+            setAskedRuns((entries) => [...entries, { save: resolved, asked: askedHere ?? {}, finish: body.action === 'finish' }]);
+          }
+          return;
+        }
         let response: Response;
         try {
           response = await fetch(
@@ -662,15 +1072,16 @@ export default function SessionScriptLiveDelivery({
           return;
         }
         if (body.action === 'finish') {
-          onSettled(payload.run);
+          settledByThisConsole(payload.run);
           return;
         }
         applyServerRun(payload.run as LiveSessionScriptRun);
       } finally {
+        if (body.action === 'finish') finishAskedNow.current = false;
         setActionBusy(null);
       }
     },
-    [actionBusy, applyServerRun, onSettled, recoverRunAction, resyncAfterNotLive, run.run_id],
+    [actionBusy, applyServerRun, keptRunAction, recoverRunAction, resyncAfterNotLive, run.run_id, settledByThisConsole],
   );
 
   // ---- Finish / abandon -------------------------------------------------
@@ -690,10 +1101,15 @@ export default function SessionScriptLiveDelivery({
   const [athletesPresentMarks, setAthletesPresentMarks] = useState<number | null>(null);
   // The tied class was cancelled since the tie: taps stay on the session (the class line says so).
   const [classCancelled, setClassCancelled] = useState(false);
-  const presentFromMarks = useCallback(
+  // The marks as the server holds them: the no-shows offer reads its count again when they change.
+  const presentFromMarks = useCallback((count: number | null) => {
+    setAthletesPresentMarks(count);
+  }, []);
+  // The box is filled in from the marks with the taps still waiting on this page applied: they are
+  // sent before a finish tapped now, so that finish records the marks standing when it lands (#2182).
+  const finishCountFromMarks = useCallback(
     (count: number | null) => {
       setMarksKnown(count !== null);
-      setAthletesPresentMarks(count);
       if (athletesPresentTyped || count === null) return;
       setAthletesPresent(count > 0 ? String(count) : '');
     },
@@ -778,18 +1194,20 @@ export default function SessionScriptLiveDelivery({
       <div className="coach-live-controls mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
         <button
           type="button"
-          onClick={() => void mutateRun({ action: run.is_paused ? 'resume' : 'pause' }, 'pause-resume')}
-          disabled={actionBusy !== null}
+          onClick={() => void mutateRun({ action: asked.is_paused ? 'resume' : 'pause' }, 'pause-resume')}
+          disabled={controlsLocked}
+          aria-describedby={asked.is_paused !== run.is_paused ? askedLineId : undefined}
           className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {run.is_paused ? 'Resume session' : 'Pause session'}
+          {asked.is_paused ? 'Resume session' : 'Pause session'}
         </button>
         {!isPlain && (
         <>
         <button
           type="button"
           onClick={() => previousBlock && void mutateRun({ action: 'advance', to_block_id: previousBlock.block_id }, 'advance')}
-          disabled={actionBusy !== null || !previousBlock}
+          disabled={controlsLocked || !previousBlock}
+          aria-describedby={asked.current_block_id !== run.current_block_id ? askedLineId : undefined}
           className="btn btn--ghost px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Previous block
@@ -797,7 +1215,8 @@ export default function SessionScriptLiveDelivery({
         <button
           type="button"
           onClick={() => nextBlock && void mutateRun({ action: 'advance', to_block_id: nextBlock.block_id }, 'advance')}
-          disabled={actionBusy !== null || !nextBlock}
+          disabled={controlsLocked || !nextBlock}
+          aria-describedby={asked.current_block_id !== run.current_block_id ? askedLineId : undefined}
           className="btn btn--ghost px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Next block
@@ -805,6 +1224,17 @@ export default function SessionScriptLiveDelivery({
         </>
         )}
       </div>
+
+      {/* Mounted always, so a screen reader announces the line when it fills. */}
+      <p
+        id={askedLineId}
+        role="status"
+        className={askedNotSaved.length > 0 ? 't-body mt-[var(--s2)] text-[length:var(--t-md)]' : 'sr-only'}
+      >
+        {askedNotSaved.length > 0
+          ? `Not saved yet: ${askedNotSaved.join('; ')}. The buttons follow what you asked; the session shown is what the server last showed.`
+          : ''}
+      </p>
 
       {/* The coach's "Allow on a TV" switch (Overwatch's 6a ruling; Q2 = A). Off by default on
           every run: a private lesson stays off the gym wall unless the coach allows it. The button
@@ -816,16 +1246,19 @@ export default function SessionScriptLiveDelivery({
         <button
           type="button"
           role="switch"
-          aria-checked={run.show_on_wall}
-          onClick={() => void mutateRun({ action: 'show_on_wall', show: !run.show_on_wall }, 'show-on-wall')}
-          disabled={actionBusy !== null}
+          aria-checked={asked.show_on_wall}
+          aria-describedby={asked.show_on_wall !== run.show_on_wall ? askedLineId : undefined}
+          onClick={() => void mutateRun({ action: 'show_on_wall', show: !asked.show_on_wall }, 'show-on-wall')}
+          disabled={controlsLocked}
           className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
         >
           Allow on a TV
         </button>
         {/* The switch's state in words, in sentence case: an upper-case "ON" beside "Allow on a TV"
             would read as the TV status. aria-checked already says it to a screen reader. */}
-        <span aria-hidden="true" className="t-body text-[color:var(--bone-200)]">{run.show_on_wall ? 'On' : 'Off'}</span>
+        <span aria-hidden="true" className="t-body text-[color:var(--bone-200)]">
+          {asked.show_on_wall ? 'On' : 'Off'}{asked.show_on_wall !== run.show_on_wall ? ' (not saved yet)' : ''}
+        </span>
         {tvStatus.on ? (
           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>{tvStatus.text}</span>
         ) : (
@@ -846,6 +1279,7 @@ export default function SessionScriptLiveDelivery({
         onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
         onRunNotLive={() => void resyncAfterNotLive()}
         onClassCancelled={setClassCancelled}
+        isFinishWaiting={isFinishWaiting}
       />
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
@@ -985,7 +1419,7 @@ export default function SessionScriptLiveDelivery({
                     <button
                       type="button"
                       onClick={() => void mutateRun({ action: 'advance', to_block_id: block.block_id }, 'advance')}
-                      disabled={actionBusy !== null}
+                      disabled={controlsLocked}
                       className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Go to this block
@@ -1005,7 +1439,9 @@ export default function SessionScriptLiveDelivery({
         tied={Boolean(run.class_id) && !classCancelled}
         classId={run.class_id ?? null}
         onPresentCount={presentFromMarks}
+        onCountForFinish={finishCountFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
+        isFinishWaiting={isFinishWaiting}
       />
 
       {/* Logging an intervention against THIS run. A protocol run once here is
@@ -1074,6 +1510,11 @@ export default function SessionScriptLiveDelivery({
                 {logError}
               </p>
             )}
+            <p role="status" className={logsWaitingCount > 0 ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
+              {logsWaitingCount === 0
+                ? ''
+                : `${logsWaitingCount === 1 ? 'One intervention is' : `${logsWaitingCount} interventions are`} not saved yet. This page keeps sending ${logsWaitingCount === 1 ? 'it' : 'them'} while it stays open.`}
+            </p>
 
             {loggedInterventions.length > 0 && (
               <ul className="space-y-[var(--s2)]">
@@ -1087,11 +1528,16 @@ export default function SessionScriptLiveDelivery({
               </ul>
             )}
 
+            {/* The log is locked while a finish is in hand, as the run actions are: a log made now would be
+                sent after the finish, onto a session that has ended (Codex P2 on #2178). Once the finish is
+                kept, the lock is described by the line of the finish, with no words of its own (rounds 20
+                and 21, reviewer B). No apostrophes here: a source-scanning suite tracks quotes. */}
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button
                 type="button"
                 onClick={() => void logIntervention()}
-                disabled={logBusy || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                disabled={logBusy || finishInHand || logAthletesState !== 'loaded' || logProtocolsState !== 'loaded'}
+                aria-describedby={finishKept ? finishLineId : undefined}
                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {logBusy ? 'Logging...' : 'Log intervention'}
@@ -1130,6 +1576,7 @@ export default function SessionScriptLiveDelivery({
                 classId={run.class_id}
                 presentCount={athletesPresentMarks}
                 onRunNotLive={() => void resyncAfterNotLive()}
+                isFinishWaiting={isFinishWaiting}
               />
             )}
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
@@ -1198,11 +1645,14 @@ export default function SessionScriptLiveDelivery({
             {settleFieldError && (
               <p role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{settleFieldError}</p>
             )}
+            <p id={finishLineId} role="status" className={finishKept ? 't-body text-[length:var(--t-md)]' : 'sr-only'}>
+              {finishKept ? 'Ending this session is not saved yet. This page keeps sending it, and it cannot be taken back.' : ''}
+            </p>
             <div className="flex flex-wrap gap-[var(--s3)]">
               <button
                 type="button"
                 onClick={() => void settle('completed')}
-                disabled={actionBusy !== null}
+                disabled={controlsLocked}
                 className="btn disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Record as completed
@@ -1210,7 +1660,7 @@ export default function SessionScriptLiveDelivery({
               <button
                 type="button"
                 onClick={() => void settle('abandoned')}
-                disabled={actionBusy !== null}
+                disabled={controlsLocked}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Record as abandoned
@@ -1218,7 +1668,7 @@ export default function SessionScriptLiveDelivery({
               <button
                 type="button"
                 onClick={() => { setSettleOpen(false); setSettleFieldError(''); }}
-                disabled={actionBusy !== null}
+                disabled={controlsLocked}
                 className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Keep delivering

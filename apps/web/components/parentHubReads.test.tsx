@@ -72,12 +72,16 @@ const MESSAGES = [
 type Handler = (init?: RequestInit) => Promise<Response>;
 
 function installFetch(
-  options: { repliesGet?: Handler; repliesPost?: Handler; readsGet?: Handler; readsPost?: Handler } = {},
+  options: { repliesGet?: Handler; repliesPost?: Handler; readsGet?: Handler; readsPost?: Handler; threadsGet?: Handler } = {},
 ): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     // FC-06: the Messages tab's "Sent to your athlete" copy; none here.
     if (url.includes('/api/pilot/parent/athlete-messages')) return jsonResponse({ ok: true, items: [] });
+    // W4 item 4: the guardian's own messages to the coach; none unless the test gives some.
+    if (url.includes('/api/pilot/parent/family-threads')) {
+      return options.threadsGet ? options.threadsGet(init) : jsonResponse({ ok: true, items: [] });
+    }
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse({ authenticated: true, account_id: 'acct_parent_1', role: 'parent' });
     }
@@ -263,6 +267,38 @@ describe('parent-facing copy folded into FC-05', () => {
   });
 });
 
+/* W4 item 4 (OW27-24 A, Q4.1 A): the Messages tab carries Write to the coach, about the child the
+   hub's picker has chosen, and its help list says a guardian can write first. */
+describe('Write to the coach on the Messages tab (W4 item 4)', () => {
+  test("the box is about the picker's child, and what is sent names that child", async () => {
+    const fetchMock = installFetch();
+    await renderHub();
+    await openTab('Messages');
+    expect(screen.getByRole('heading', { name: 'Write to the coach' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Your message about First Child')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
+    });
+    fireEvent.change(screen.getByLabelText('Your message about Second Child'), { target: { value: 'Is practice on Saturday?' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send to the coach' }));
+    });
+    const sent = fetchMock.mock.calls
+      .filter((call) => String(call[0]).endsWith('/api/pilot/parent/family-threads') && (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => JSON.parse(String((call[1] as RequestInit).body)));
+    expect(sent).toEqual([{ athlete_id: 'ath_2', text: 'Is practice on Saturday?' }]);
+  });
+
+  test('the help list says a guardian can write to the coach first', async () => {
+    installFetch();
+    await renderHub();
+    await openTab('Messages');
+    fireEvent.click(screen.getByText('HELP: Messages from the coaches'));
+    expect(screen.getByText('Write to the coach about your child, and read the reply under it')).toBeInTheDocument();
+  });
+});
+
 /* #1542, FC-08: a message is "New" until this guardian has opened it, read
    back from their own opens; the summary tile counts the new ones. */
 describe('New until this guardian opens it (FC-08)', () => {
@@ -294,6 +330,30 @@ describe('New until this guardian opens it (FC-08)', () => {
     await screen.findByText(OPENED.note_text);
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
     expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
+  });
+
+  test("the tile adds the gym's unseen replies to the guardian's own messages, per child (W4 item 4)", async () => {
+    installFetch({
+      readsGet: readsAnswer([OPENED.note_id]),
+      threadsGet: async () => jsonResponse({ ok: true, items: [{
+        thread_id: 't1', athlete_id: OPENED.athlete_id, created_at: '2026-11-25T03:00:00.000Z',
+        posts: [
+          { post_id: 'p1', from: 'you', staff_name: null, text: 'A question', created_at: '2026-11-25T03:00:00.000Z', new_to_me: false },
+          { post_id: 'p2', from: 'staff', staff_name: 'Coach Name', text: 'An answer', created_at: '2026-11-25T04:00:00.000Z', new_to_me: true },
+          { post_id: 'p3', from: 'staff', staff_name: 'Coach Name', text: 'Seen before', created_at: '2026-11-25T05:00:00.000Z', new_to_me: false },
+        ],
+      }] }),
+    });
+    await renderHub();
+    await waitFor(() => expect(newTileValue()).toBe('First 1 · Second 1'));
+  });
+
+  test('a read of those replies that fails makes the tile Unavailable, never a lower count (W4 item 4)', async () => {
+    installFetch({ readsGet: readsAnswer([OPENED.note_id]), threadsGet: async () => jsonResponse({ error: 'down' }, false) });
+    await renderHub();
+    await openTab('Messages');
+    await screen.findByText(OPENED.note_text);
+    expect(newTileValue()).toBe('Unavailable');
   });
 
   test('a failed reads answer: the tile is Unavailable and no card says New', async () => {
