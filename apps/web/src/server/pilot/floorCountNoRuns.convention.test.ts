@@ -102,6 +102,34 @@ describe('the floor count is register-only, and the platform owner stays off the
   });
 });
 
+describe('only the classes line reads the floor count (App Overwatch, 7206212516)', () => {
+  // No attendance figure, report or export may use floorCount.ts: its importers are pinned, and a
+  // new one fails here until App Overwatch approves it by name.
+  const ALLOWED_IMPORTERS = [CLASSES_ROUTE];
+
+  function sourceFiles(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(full);
+      return /\.(?:[cm]?[jt]sx?)$/.test(entry.name) && !/\.test\.[cm]?[jt]sx?$/.test(entry.name)
+        ? [path.relative(WEB_DIR, full)]
+        : [];
+    });
+  }
+
+  it('is imported by the classes line route and nothing else', () => {
+    const importers = ['app', 'components', 'lib', 'src']
+      .filter((dir) => fs.existsSync(path.join(WEB_DIR, dir)))
+      .flatMap((dir) => sourceFiles(path.join(WEB_DIR, dir)))
+      .filter((file) => file !== FLOOR_COUNT)
+      .filter((file) => Array.from(read(file).matchAll(SPECIFIER), (m) => m[1])
+        .some((specifier) => resolveSpecifier(path.join(WEB_DIR, file), specifier) === path.join(WEB_DIR, FLOOR_COUNT)))
+      .sort();
+    expect(importers).toEqual(ALLOWED_IMPORTERS);
+  });
+});
+
 describe('the classes line route admits exactly its six roles', () => {
   const text = read(CLASSES_ROUTE);
 
