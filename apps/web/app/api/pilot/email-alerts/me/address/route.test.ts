@@ -16,7 +16,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
  * section 8; OW27-38 B, OW27-02 C). The store is mocked: this file pins who may
  * call, that the request names nobody else, the body shape, and that every
  * answer is the store's, mapped without an address in it, and that the store's
- * adult check is asked before the query or the body is read. The adult check
+ * adult check is asked after the request is read and before it is judged. The adult check
  * itself, the limits, the tries and the races are emailAlertAddress.pg.test.ts.
  */
 
@@ -155,12 +155,17 @@ describe.each(['POST', 'PUT'] as const)('%s', (method) => {
     expect(await response.json()).toEqual({ error: NOT_OFFERED });
   });
 
-  // L1 (Codex on EM-2b-2): the store's adult check is asked before the query
-  // or the body is read, so an athlete it refuses gets the one plain 403,
-  // whatever they typed, and the body is never read.
+  // L1 (Codex and a reviewer on EM-2b-2): the request is read in full, then
+  // the store's adult check is asked, then the shape is judged, so an athlete
+  // it refuses gets the one plain 403, whatever they typed.
   it('an athlete the adult check refuses gets the same plain 403 for a query field, any malformed body, extra fields and a well-formed body', async () => {
     athlete();
-    mockRefuse.mockRejectedValue(new ForbiddenError(NOT_OFFERED));
+    let current: NextRequest | null = null;
+    const readFirst: boolean[] = [];
+    mockRefuse.mockImplementation(async () => {
+      readFirst.push(current!.bodyUsed);
+      throw new ForbiddenError(NOT_OFFERED);
+    });
     const sends: Array<[string, unknown, string]> = [
       ['well-formed', body, URL],
       ['a query field', body, `${URL}?account_id=acct-other`],
@@ -176,11 +181,14 @@ describe.each(['POST', 'PUT'] as const)('%s', (method) => {
     const answers = [];
     for (const [label, sent, url] of sends) {
       const request = new NextRequest(url, { method, body: typeof sent === 'string' ? sent : JSON.stringify(sent) });
+      current = request;
       const response = await (method === 'POST' ? route.POST(request) : route.PUT(request));
-      answers.push({ label, bodyUsed: request.bodyUsed, status: response.status, headers: [...response.headers.entries()], body: await response.text() });
+      answers.push({ label, status: response.status, headers: [...response.headers.entries()], body: await response.text() });
     }
-    const plain = { bodyUsed: false, status: 403, headers: answers[0].headers, body: JSON.stringify({ error: NOT_OFFERED }) };
+    const plain = { status: 403, headers: answers[0].headers, body: JSON.stringify({ error: NOT_OFFERED }) };
     expect(answers).toEqual(sends.map(([label]) => ({ label, ...plain })));
+    // The body was read before the check was asked, for every shape.
+    expect(readFirst).toEqual(sends.map(() => true));
     expect(mockRefuse).toHaveBeenCalledTimes(sends.length);
     for (const call of mockRefuse.mock.calls) {
       expect(call[0]).toEqual({ organizationId: 'org-1', accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' });

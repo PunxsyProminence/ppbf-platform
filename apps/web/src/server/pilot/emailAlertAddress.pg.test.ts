@@ -1152,7 +1152,8 @@ describe('the adult athlete\'s alert address on a real database', () => {
           expect({ person, method, sent, query, answer }).toEqual({ person, method, sent, query, answer: plain });
         }
       }
-      expect(plain).toMatchObject({ bodyUsed: false, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
+      // The body is read before the check (a reviewer's race on EM-2b-2), so bodyUsed is true for every shape.
+      expect(plain).toMatchObject({ bodyUsed: true, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
 
       // An adult: the adult check passes, and the route's own 400s say nothing about email.
       (requirePrincipal as jest.Mock).mockResolvedValue({
@@ -1166,6 +1167,71 @@ describe('the adult athlete\'s alert address on a real database', () => {
       }
       await expect(call('POST', { address: 'not an address' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter a valid email address' } });
       await expect(call('PUT', { code: '12' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter the six-digit code from the email' } });
+      expect(await switchCount(client)).toBe(0);
+      expect(await auditDetails(client)).toEqual([]);
+
+      // The route's refusal is the store's, leftover retire included: an athlete
+      // switched on with a confirmed address, whose record is then corrected to
+      // under 18, sends a malformed POST and a PUT carrying a query. The first
+      // switches the row off and clears the address, audited once; the second
+      // finds nothing left.
+      const mail = mailbox();
+      await post('adult2', newAddress('leftover'), mail.send);
+      await put('adult2', mail.sent[0].code);
+      await setEmailAlertSwitch({ ...subject('adult2'), switchedOn: true }, NOW);
+      expect(await addressRow(client, ADULT2_ID)).toMatchObject({ switched_on: true, confirmed_address: mail.sent[0].to });
+      const before = (await auditDetails(client)).length;
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT2_ATHLETE]);
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT2_ID, athleteId: ADULT2_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      for (const [method, sent, query] of [['POST', '{"', ''], ['PUT', { code: '012345' }, '?x=1']] as Array<['POST' | 'PUT', unknown, string]>) {
+        const answer = await call(method, sent, query);
+        expect({ status: answer.status, body: answer.body }).toEqual({ status: plain!.status, body: plain!.body });
+        expect(await addressRow(client, ADULT2_ID)).toMatchObject({
+          switched_on: false, pending_address: null, pending_code_hash: null, confirmed_address: null, has_confirmed_at: false,
+        });
+        const added = (await auditDetails(client)).slice(before);
+        expect(added).toEqual([{ user_type: 'adult_athlete', switched_on: false, previous_switched_on: true, address_cleared: true, reason: 'no_longer_offered' }]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  // L1, a reviewer's race on EM-2b-2: the record is corrected to under 18
+  // while the body is still arriving. Everything the request sent is read
+  // before the adult check, so a malformed body and a well-formed one get the
+  // same plain 403.
+  test.each(['POST', 'PUT'] as const)('L1 at the route, %s: a date of birth corrected to under 18 while the body streams in gets the plain 403 for a malformed body as for a well-formed one', async (method) => {
+    const client = await freshDatabase(`emailaddr_route_stream_${method.toLowerCase()}`);
+    activeClient = client;
+    try {
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT_ID, athleteId: ADULT_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      const good = method === 'POST' ? JSON.stringify({ address: newAddress('stream') }) : JSON.stringify({ code: '012345' });
+      const answers: Record<string, unknown> = {};
+      for (const [label, text] of [['malformed', '{"'], ['well-formed', good]] as const) {
+        await client.query(`update pilot.athletes set dob = '2000-03-14' where athlete_id = $1`, [ADULT_ATHLETE]);
+        let pulled = false;
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (pulled) return;
+            pulled = true;
+            // The office's correction commits while the body is still arriving.
+            await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+            controller.enqueue(new TextEncoder().encode(text));
+            controller.close();
+          },
+        }, { highWaterMark: 0 });
+        const request = new NextRequest('http://localhost/api/pilot/email-alerts/me/address',
+          { method, body, duplex: 'half' } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+        const response = await (method === 'POST' ? addressRoute.POST(request) : addressRoute.PUT(request));
+        answers[label] = { pulled, status: response.status, body: await response.json() };
+      }
+      const plain = { pulled: true, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } };
+      expect(answers).toEqual({ malformed: plain, 'well-formed': plain });
       expect(await switchCount(client)).toBe(0);
       expect(await auditDetails(client)).toEqual([]);
     } finally {
