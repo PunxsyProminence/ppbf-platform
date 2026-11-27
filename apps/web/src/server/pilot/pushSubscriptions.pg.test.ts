@@ -278,7 +278,7 @@ describe('who is offered push (OW27-18 A: the people the email switch is offered
     await expect(isPushOnHere(parent, { endpoint: browser().endpoint }, NO_KEYS)).rejects.toMatchObject({ status: 403 });
   });
 
-  test('an athlete under 18 cannot turn push on, and a row left from before is removed at their next read', async () => {
+  test('an athlete under 18 cannot turn push on; a row left from before survives a check and is removed at their next offer read', async () => {
     const client = await freshDatabase('pushstore_minor_save');
     await expect(savePushBrowser(minor, browser(), ENV)).rejects.toMatchObject({ status: 403 });
     expect(await rows(client)).toEqual([]);
@@ -421,6 +421,10 @@ describe('a save decides again under its own locks (reviewers E and F on #2236)'
     ['the person\'s sign-in to the gym is switched off', `update pilot.organization_memberships set active_flag = false where account_id = '${PARENT}'`],
     ['the login is switched off', `update pilot.accounts set active_flag = false where account_id = '${PARENT}'`],
     ['the membership\'s role has no push', `update pilot.organization_memberships set role = 'volunteer' where account_id = '${PARENT}'`],
+    // Reviewer F, second pass: a role of another user type, not only a role with none.
+    ['the membership\'s role is now of another user type', `update pilot.organization_memberships set role = 'coach' where account_id = '${PARENT}'`],
+    // Reviewers E and F, second pass: active_flag can be set back to true while deleted_at stays (deletedAccountSignIn.ts).
+    ['the login is deleted though still marked active', `update pilot.accounts set deleted_at = now(), active_flag = true where account_id = '${PARENT}'`],
   ])('a switch-on is refused when %s, and nothing is written', async (_label, change) => {
     const client = await freshDatabase('pushstore_under_lock');
     await client.query(change);
@@ -448,6 +452,61 @@ describe('a save decides again under its own locks (reviewers E and F on #2236)'
       await holder.end();
     }
     expect(await rows(client)).toHaveLength(PUSH_BROWSERS_PER_PERSON);
+  });
+
+  test('a membership deleted while a save waits on its key is refused like anyone not offered (the 23503 catch)', async () => {
+    const client = await freshDatabase('pushstore_fk_race');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_fk_race'), max: 4 });
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_fk_race') });
+    await holder.connect();
+    try {
+      // A writer taking neither the account nor the gym row (none does today):
+      // the save's checks still see the membership, and its insert waits on the key.
+      await holder.query('begin');
+      await holder.query('delete from pilot.organization_memberships where account_id = $1 and organization_id = $2', [PARENT, ORG]);
+      const save = savePushBrowser(parent, browser(), ENV).then(() => 'saved', (error: { status?: number }) => error.status);
+      await waitForLockWaiters(client, 1);
+      await holder.query('commit');
+      expect(await save).toBe(403);
+    } finally {
+      await holder.end();
+    }
+    expect(await rows(client)).toEqual([]);
+  });
+
+  test('two people at the cap, each taking the other\'s oldest browser at once: one is saved, the other gets 409 and nothing', async () => {
+    const client = await freshDatabase('pushstore_swap');
+    for (let index = 0; index < PUSH_BROWSERS_PER_PERSON; index += 1) {
+      await savePushBrowser(parent, browser(`https://push.example.test/send/p-${String(index).padStart(2, '0')}`), ENV);
+      await savePushBrowser(coach, browser(`https://push.example.test/send/c-${String(index).padStart(2, '0')}`), ENV);
+    }
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_swap'), max: 4 });
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_swap') });
+    await holder.connect();
+    let outcomes: unknown[];
+    try {
+      // Reviewer E's staging: both inserts wait on the membership keys, after each save has taken the other's row.
+      await holder.query('begin');
+      await holder.query('select 1 from pilot.organization_memberships where account_id = any($1) for update', [[PARENT, COACH]]);
+      const saves = [
+        savePushBrowser(parent, browser('https://push.example.test/send/c-00'), ENV),
+        savePushBrowser(coach, browser('https://push.example.test/send/p-00'), ENV),
+      ].map((save) => save.then(() => 'saved', (error: { status?: number }) => error.status));
+      await waitForLockWaiters(client, 2);
+      await holder.query('commit');
+      outcomes = await Promise.all(saves);
+    } finally {
+      await holder.end();
+    }
+    expect([...outcomes].sort()).toEqual([409, 'saved'].sort());
+    // The refused save wrote nothing: the saved person is at the cap, and the
+    // refused one lost only the browser the saved one took.
+    const { rows: counts } = await client.query<{ n: number }>(
+      'select count(*)::int as n from pilot.push_subscriptions group by account_id order by 1',
+    );
+    expect(counts.map((row) => row.n)).toEqual([PUSH_BROWSERS_PER_PERSON - 1, PUSH_BROWSERS_PER_PERSON]);
+    expect((await client.query(`select 1 from pilot.audit_events where entity_type = 'push_browser'
+      and details->>'reason' = 'turned_on_by_another_person'`)).rowCount).toBe(1);
   });
 });
 
