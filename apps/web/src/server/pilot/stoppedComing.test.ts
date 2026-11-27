@@ -244,14 +244,14 @@ describe('the reached-out mark on the list (SC-3a-2)', () => {
     mockRoster.mockResolvedValue([athlete('a-1', 'Ada'), athlete('a-2', 'Ben'), athlete('a-recent', 'Cy')]);
     mockRegister.mockResolvedValue(register({ 'a-1': daysAgo(20), 'a-2': daysAgo(30), 'a-recent': daysAgo(2) }));
     marksRows = [{ athlete_id: 'a-1', last_day: daysAgo(25) }];
-    mockReadMarks.mockResolvedValue(new Map([['a-2', { by_name: 'Coach Jordan', on_day: daysAgo(3) }]]));
+    mockReadMarks.mockResolvedValue(new Map([['a-2', { by_name: 'Coach Jordan', by_role: 'coach', on_day: daysAgo(3) }]]));
 
     const list = await listStoppedComing(coach, TODAY);
 
     expect(mockReadMarks).toHaveBeenCalledTimes(1);
     expect(mockReadMarks).toHaveBeenCalledWith('org-1', new Map([['a-2', daysAgo(30)], ['a-1', daysAgo(20)]]));
     expect(list.athletes).toEqual([
-      { athlete_id: 'a-2', full_name: 'Ben', last_came_day: daysAgo(30), days_since_came: 30, reached_out: { by_name: 'Coach Jordan', on_day: daysAgo(3) } },
+      { athlete_id: 'a-2', full_name: 'Ben', last_came_day: daysAgo(30), days_since_came: 30, reached_out: { by_name: 'Coach Jordan', by_role: 'coach', on_day: daysAgo(3) } },
       { athlete_id: 'a-1', full_name: 'Ada', last_came_day: daysAgo(20), days_since_came: 20, reached_out: null },
     ]);
   });

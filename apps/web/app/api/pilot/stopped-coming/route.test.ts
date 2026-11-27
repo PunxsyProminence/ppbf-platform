@@ -31,7 +31,7 @@ const LIST = {
   today: '2026-11-25',
   athletes: [{
     athlete_id: 'a-1', full_name: 'Ada', last_came_day: '2026-11-01', days_since_came: 24,
-    reached_out: { by_name: 'Coach Jordan', on_day: '2026-11-20' },
+    reached_out: { by_name: 'Coach Jordan', by_role: 'coach', on_day: '2026-11-20' },
   }],
 };
 

@@ -43,9 +43,11 @@ import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopAr
 // confirmation only when it carries one of the route's four outcome words
 // ('marked', 'already_marked', 'taken_back', 'not_marked'); any other 2xx says
 // it is not known whether the change was saved. A marker the server cannot name
-// is not given a name, and the row says so. A mark whose on_day is not
-// YYYY-MM-DD (the form the server sends), or whose by_name is neither text nor
-// null, makes the page say it could not read the list.
+// is not given a name: the row says the role the mark was made in, "by a coach"
+// or "by the gym office" (by_role; lane W5-FU, F2, App Overwatch's answer A on
+// #2248). A mark whose on_day is not YYYY-MM-DD (the form the server sends),
+// whose by_name is neither text nor null, or whose by_role is not 'coach' or
+// 'office', makes the page say it could not read the list.
 //
 // A press's outcome is shown under the pressed athlete's row while that row is
 // on the list shown, and at the top of the page otherwise. Either way the
@@ -54,6 +56,8 @@ import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopAr
 interface ReachedOut {
   /** The marker's staff name at this gym; null when the server cannot name them. */
   by_name: string | null;
+  /** The role the mark was made in: a coach, or the gym office (organization admin or admin). */
+  by_role: 'coach' | 'office';
   /** The gym-local day it was marked, YYYY-MM-DD. */
   on_day: string;
 }
@@ -89,14 +93,16 @@ function withinWords(days: number): string {
 }
 
 /**
- * A mark as the route sends it (by_name text or null, on_day in the form YYYY-MM-DD), or null.
+ * A mark as the route sends it (by_name text or null, by_role 'coach' or 'office', on_day in the
+ * form YYYY-MM-DD), or null.
  * A row without one is not read as unmarked.
  */
 function isReachedOut(value: unknown): value is ReachedOut | null {
   if (value === null) return true;
   const mark = value as Partial<ReachedOut> | undefined;
   return typeof mark === 'object' && typeof mark.on_day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(mark.on_day)
-    && (mark.by_name === null || typeof mark.by_name === 'string');
+    && (mark.by_name === null || typeof mark.by_name === 'string')
+    && (mark.by_role === 'coach' || mark.by_role === 'office');
 }
 
 /** The answer has the shape the route sends, or the page says it could not read it. */
@@ -108,11 +114,13 @@ function isStoppedComingList(value: unknown): value is StoppedComingList {
     && list.athletes.every((athlete) => isReachedOut((athlete as Partial<StoppedComingAthlete> | null)?.reached_out));
 }
 
-/** "Reached out by Sam K. on Mar 9, 2026."; with no name to show, it says who marked it cannot be shown, never a stand-in. */
+/** "Reached out by Sam K. on Mar 9, 2026."; with no name to show, "by a coach" or "by the gym office" (the role), never a stand-in name. */
 function reachedOutWords(mark: ReachedOut): string {
   const day = formatCalendarDay(mark.on_day);
   const name = mark.by_name?.trim();
-  return name ? `Reached out by ${name} on ${day}.` : `Reached out on ${day}; who marked it cannot be shown.`;
+  if (name) return `Reached out by ${name} on ${day}.`;
+  // No name: the role the mark was made in, never a stand-in name.
+  return `Reached out by ${mark.by_role === 'coach' ? 'a coach' : 'the gym office'} on ${day}.`;
 }
 
 // The route's own refusals after its 401 and 403 (handled first): the server said no and wrote nothing.
@@ -363,10 +371,10 @@ export default function CoachStoppedComingPage() {
 
   /**
    * Sends a take-back only if a fresh read just before it still shows the mark the row showed: the
-   * same name and on_day, each name compared trimmed, with a blank one read as no name. Its limits:
-   * - it compares the name and day shown, not a mark id;
+   * same name, role and on_day, each name compared trimmed, with a blank one read as no name. Its limits:
+   * - it compares the name, role and day shown, not a mark id;
    * - so a marker renamed, or no longer nameable, reads as changed, and nothing is sent;
-   * - and two different marks with the same name and day pass;
+   * - and two different marks with the same name, role and day pass;
    * - the PUT carries no mark id, so a change between that read and the PUT is not caught here: the
    *   server takes back the athlete's current mark at that moment, if it is newer than the last day
    *   they came, whichever mark that is.
@@ -379,7 +387,7 @@ export default function CoachStoppedComingPage() {
     if (!row) return { kind: 'said', text: `${athlete.full_name} is no longer on the stopped-coming list, so nothing was taken back.` };
     const now = row.reached_out;
     const nameOf = (mark: ReachedOut) => mark.by_name?.trim() || null;
-    if (!shown || !now || nameOf(now) !== nameOf(shown) || now.on_day !== shown.on_day) {
+    if (!shown || !now || nameOf(now) !== nameOf(shown) || now.by_role !== shown.by_role || now.on_day !== shown.on_day) {
       return { kind: 'said', text: `The mark on ${athlete.full_name} has changed since it was shown, so nothing was taken back.` };
     }
     return send(athlete, false);

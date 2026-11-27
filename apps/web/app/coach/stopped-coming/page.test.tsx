@@ -69,7 +69,7 @@ const LIST = {
 // Synthetic staff names only (public repository). Bare, with no "Coach " in front: the server
 // takes a leading title off the name the gym typed before it sends it (getStaffDisplayName, through
 // bareTypedStaffName in src/shared/coachDisplayName.ts).
-const MARK = { by_name: 'Ana T.', on_day: '2026-03-09' };
+const MARK = { by_name: 'Ana T.', by_role: 'coach', on_day: '2026-03-09' };
 
 /** LIST with the first row (Rosa D., ath-2) carrying `mark`. */
 const firstMarked = (mark: unknown) => ({
@@ -385,7 +385,7 @@ describe('the "reached out" mark', () => {
   });
 
   test('"already_marked" (another coach got there first): the fresh read shows their mark, and nothing is refused', async () => {
-    const theirs = { by_name: 'Bo R.', on_day: '2026-03-08' };
+    const theirs = { by_name: 'Bo R.', by_role: 'coach', on_day: '2026-03-08' };
     const fetchImpl = scriptedFetch({ body: LIST }, { body: { ok: true, outcome: 'already_marked' } }, { body: firstMarked(theirs) });
     await renderPage(fetchImpl);
     await press(markButton(row(0)));
@@ -454,9 +454,10 @@ describe('the "reached out" mark', () => {
   });
 
   test.each([
-    ['another coach\'s mark', { by_name: 'Bo R.', on_day: '2026-03-09' }],
-    ['a mark of another day', { by_name: 'Ana T.', on_day: '2026-03-10' }],
-    ['a marker no longer nameable', { by_name: null, on_day: '2026-03-09' }],
+    ['another coach\'s mark', { by_name: 'Bo R.', by_role: 'coach', on_day: '2026-03-09' }],
+    ['a mark of another day', { by_name: 'Ana T.', by_role: 'coach', on_day: '2026-03-10' }],
+    ['a marker no longer nameable', { by_name: null, by_role: 'coach', on_day: '2026-03-09' }],
+    ['a mark made in another role', { by_name: 'Ana T.', by_role: 'office', on_day: '2026-03-09' }],
     ['no mark', null],
   ])('a take-back whose fresh read shows %s sends nothing, and shows the list as it is', async (_label, now) => {
     const fetchImpl = scriptedFetch({ body: firstMarked(MARK) }, { body: firstMarked(now) });
@@ -493,15 +494,24 @@ describe('the "reached out" mark', () => {
     expect(screen.getByRole('alert').textContent).toContain(READ_FAILED);
   });
 
+  // Lane W5-FU, F2 (App Overwatch's answer A on #2248): no name, so the role the mark was made in.
   test.each([
-    ['null', null],
-    ['blank', '  '],
-  ])('a marker the server cannot name (%s) is not named, and the row says who marked it cannot be shown', async (_label, byName) => {
-    await renderPage(mockFetch({ body: firstMarked({ by_name: byName, on_day: '2026-03-09' }) }));
-    expect(row(0).textContent).toContain(`Reached out on ${formatCalendarDay('2026-03-09')}; who marked it cannot be shown.`);
-    // No stand-in name in its place.
-    expect(row(0).textContent).not.toMatch(/Reached out by|null|undefined|unknown|your coach|a coach|staff/i);
+    ['a null', 'coach', 'a coach', null],
+    ['a blank', 'coach', 'a coach', '  '],
+    ['a null', 'office', 'the gym office', null],
+    ['a blank', 'office', 'the gym office', '  '],
+  ])('a marker the server cannot name (%s name, by_role %s) is not named: the row says "by %s"', async (_label, byRole, words, byName) => {
+    await renderPage(mockFetch({ body: firstMarked({ by_name: byName, by_role: byRole, on_day: '2026-03-09' }) }));
+    expect(row(0).textContent).toContain(`Reached out by ${words} on ${formatCalendarDay('2026-03-09')}.`);
+    // A role, never a stand-in name, and never the raw value.
+    expect(row(0).textContent).not.toMatch(/Your coach|Gym office|null|undefined|unknown|cannot be shown|by office |by coach /);
     expect(markButton(row(0)).textContent).toBe('Take back mark');
+  });
+
+  test('a marker the server names is shown by name, whatever the role', async () => {
+    await renderPage(mockFetch({ body: firstMarked({ by_name: 'Pat Q.', by_role: 'office', on_day: '2026-03-09' }) }));
+    expect(row(0).textContent).toContain(`Reached out by Pat Q. on ${formatCalendarDay('2026-03-09')}.`);
+    expect(row(0).textContent).not.toMatch(/gym office|a coach/);
   });
 
   test('a 409 (no longer on the list) is a refusal stamp at the top, read out, with focus on it once the row has gone', async () => {
@@ -866,11 +876,13 @@ describe('the "reached out" mark', () => {
 
   test.each([
     ['no reached_out field', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30 }],
-    ['a mark with no day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Ana T.' } }],
-    ['a mark with an empty day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: null, on_day: ' ' } }],
-    ['a mark whose day is not YYYY-MM-DD', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Ana T.', on_day: 'not-a-date' } }],
-    ['a mark whose name is a number', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 5, on_day: '2026-03-09' } }],
-    ['a mark with no by_name key', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { on_day: '2026-03-09' } }],
+    ['a mark with no day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Ana T.', by_role: 'coach' } }],
+    ['a mark with an empty day', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: null, by_role: 'coach', on_day: ' ' } }],
+    ['a mark whose day is not YYYY-MM-DD', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 'Ana T.', by_role: 'coach', on_day: 'not-a-date' } }],
+    ['a mark whose name is a number', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: 5, by_role: 'coach', on_day: '2026-03-09' } }],
+    ['a mark with no by_name key', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_role: 'coach', on_day: '2026-03-09' } }],
+    ['a mark with no by_role key', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: null, on_day: '2026-03-09' } }],
+    ['a mark whose by_role is the stored role word', { athlete_id: 'ath-9', full_name: 'Kai M.', last_came_day: '2026-02-08', days_since_came: 30, reached_out: { by_name: null, by_role: 'organization_admin', on_day: '2026-03-09' } }],
   ])('a row with %s is not shown as unmarked: the page says it could not read the list', async (_label, athlete) => {
     await renderPage(mockFetch({ body: { ...LIST, athletes: [athlete] } }));
     expect(screen.getByRole('alert').textContent).toContain(READ_FAILED);

@@ -28,11 +28,22 @@ import { ConflictError } from './errors';
  * record), by_name is null, never a stand-in such as "Your coach": an unknown value is
  * not shown as a name (AGENT_KERNEL, the floor: "an unknown value never looks
  * complete"), as painReportAlert.ts names a pain report's reviewer.
+ *
+ * by_role is the role the mark was made in, from the mark's own marked_by_role
+ * (never looked up again): 'coach', or 'office' for an organization admin or
+ * the legacy admin name. The page shows it only when there is no name, as
+ * "by a coach" or "by the gym office" (lane W5-FU, F2; App Overwatch's answer
+ * A on #2248). It is a role, not a name.
  */
+
+/** The role a mark was made in, as the page words it: a coach, or the gym office. */
+export type ReachedOutByRole = 'coach' | 'office';
 
 export interface ReachedOut {
   /** The marker's staff name at this gym; null when they cannot be named. */
   readonly by_name: string | null;
+  /** The role the mark was made in (marked_by_role): 'office' for organization_admin and admin. */
+  readonly by_role: ReachedOutByRole;
   /** The gym-local day it was marked. */
   readonly on_day: string;
 }
@@ -57,9 +68,10 @@ export async function readCurrentReachedOut(
   const rows = await query<{
     athlete_id: string;
     marked_by_account_id: string | null;
+    marked_by_role: ReachedOutMarkRole;
     on_day: string;
   }>(
-    `select athlete_id, marked_by_account_id,
+    `select athlete_id, marked_by_account_id, marked_by_role,
             (marked_at at time zone $3)::date::text as on_day
        from pilot.athlete_reached_out_marks
       where organization_id = $1
@@ -78,7 +90,11 @@ export async function readCurrentReachedOut(
         : await getStaffDisplayName(organizationId, row.marked_by_account_id);
       names.set(row.marked_by_account_id, byName);
     }
-    shown.set(row.athlete_id, { by_name: byName, on_day: row.on_day });
+    shown.set(row.athlete_id, {
+      by_name: byName,
+      by_role: row.marked_by_role === 'coach' ? 'coach' : 'office',
+      on_day: row.on_day,
+    });
   }
   return shown;
 }

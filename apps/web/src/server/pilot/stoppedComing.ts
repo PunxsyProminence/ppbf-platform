@@ -61,8 +61,9 @@
  * condition 1).
  *
  * What leaves this module: athlete id, name, the last day they came, the days
- * since, and the reached-out mark as who (staff name, or null) and the gym day,
- * or null; a mark write answers one outcome word. No date of birth, membership,
+ * since, and the reached-out mark as who (staff name, or null), the role it was
+ * made in ('coach' or 'office') and the gym day, or null; a mark write answers
+ * one outcome word. No date of birth, membership,
  * here mark, run, count or account id. Membership records stay admin-only
  * (programMemberships.ts): the one membership read returns ids to leave off,
  * and no status, program or date leaves it.
