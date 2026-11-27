@@ -103,6 +103,7 @@ import {
   keyedSessionScriptRunAction,
   listSettledRunsForOrganization,
   pauseSessionScriptRun,
+  startClassPlanRun,
   startSessionScriptRun,
   type RunActionAsked,
 } from './sessionScriptRuns';
@@ -1024,6 +1025,154 @@ describe('today\'s classes carry their plan, as its newest version', () => {
     await linkPlan(other, 'scr-same');
     expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
     expect(await planOf(other.coach)).toEqual({ script_id: 'scr-same', name: 'Another gym\'s plan', retired: true, has_blocks: true });
+  });
+
+  // Codex P1 on #2241 (finding 4723993483; App Overwatch 7229515935): the class's plan is resolved
+  // when Start is committed, in the start's own transaction, not taken from the list the screen read.
+  describe('Start resolves the class\'s plan when it is committed', () => {
+    const startPlan = (gym: Gym, by: ActorIdentity, classId = gym.klass) =>
+      startClassPlanRun(gym.organizationId, by.accountId, { classId, actorRole: by.role });
+
+    test('the newest version runs, tied to the class, and comes back as resolved', async () => {
+      const gym = await newGym('plan-start-newest');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 3);
+      await linkPlan(gym, 'scr-v1');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v2', script_version: 2, class_id: gym.klass, current_block_id: 'scr-v2-b1' });
+      expect(classPlan).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    });
+
+    test('retired after the screen read the list: the session starts tied to the class without it', async () => {
+      const gym = await newGym('plan-start-retired');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      expect((await planOf(gym.coach))?.retired).toBe(false);
+      await retire(gym, 'scr-v1', true);
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, script_version: null, current_block_id: null, class_id: gym.klass });
+      expect(classPlan).toEqual({ script_id: 'scr-v1', name: 'Footwork night', retired: true, has_blocks: true });
+    });
+
+    test('brought back after the screen read it as retired: it runs', async () => {
+      const gym = await newGym('plan-start-back');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      await retire(gym, 'scr-v1', true);
+      expect((await planOf(gym.coach))?.retired).toBe(true);
+      await retire(gym, 'scr-v1', false);
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v1', class_id: gym.klass });
+      expect(classPlan?.retired).toBe(false);
+    });
+
+    test('given its first block in place after the screen read it as empty: it runs from that block', async () => {
+      const gym = await newGym('plan-start-blocks');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 0);
+      await linkPlan(gym, 'scr-v1');
+      expect((await planOf(gym.coach))?.has_blocks).toBe(false);
+      await client.query(
+        `insert into pilot.session_script_blocks
+           (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
+         values ($1, 'scr-v1-late', 'scr-v1', 1, 0, 10, 'block', 'cue')`,
+        [gym.organizationId],
+      );
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v1', current_block_id: 'scr-v1-late' });
+      expect(classPlan?.has_blocks).toBe(true);
+    });
+
+    test('with no blocks: the session starts tied to the class without it', async () => {
+      const gym = await newGym('plan-start-empty');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 0);
+      await linkPlan(gym, 'scr-v1');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+      expect(classPlan).toEqual({ script_id: 'scr-v1', name: 'Footwork night', retired: false, has_blocks: false });
+    });
+
+    test('a class with no plan starts plain, and answers no plan', async () => {
+      const gym = await newGym('plan-start-none');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+      expect(classPlan).toBeNull();
+    });
+
+    test('two gyms holding the same plan id: the start reads its own gym\'s plan', async () => {
+      const gym = await newGym('plan-start-same-id');
+      const other = await newGym('plan-start-same-id-other');
+      await addPlan(gym, 'scr-same', 1, 'Footwork night', 0);
+      await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2);
+      await linkPlan(gym, 'scr-same');
+      await linkPlan(other, 'scr-same');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run.script_id).toBeNull();
+      expect(classPlan).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+    });
+
+    test('the class rules are the scripted start\'s: another coach\'s class and another gym\'s are refused, nothing written', async () => {
+      const gym = await newGym('plan-start-rules');
+      const other = await newGym('plan-start-rules-other');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      await expect(startPlan(gym, gym.otherCoach)).rejects.toMatchObject({ message: 'SESSION_CLASS_NOT_YOURS' });
+      await expect(startClassPlanRun(other.organizationId, other.coach.accountId, { classId: 'class-elsewhere', actorRole: 'coach' }))
+        .rejects.toMatchObject({ message: 'SESSION_CLASS_NOT_FOUND' });
+      const { rows } = await client.query(`select 1 from pilot.session_script_runs where organization_id in ($1, $2)`, [gym.organizationId, other.organizationId]);
+      expect(rows).toEqual([]);
+    });
+
+    test('a retire in progress is waited for, and the session then starts without the plan', async () => {
+      const gym = await newGym('plan-start-race');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        // A retire as setSessionScriptRetired writes it: the current version locked FOR UPDATE, then set.
+        await other.query('BEGIN');
+        await other.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1' for update`, [gym.organizationId]);
+        await other.query(`update pilot.session_scripts set authoring_state = 'retired' where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        const { run, classPlan } = await starting;
+        expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+        expect(classPlan?.retired).toBe(true);
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+    });
+
+    test('a new version committed while the start waited is refused as superseded, and nothing is written', async () => {
+      const gym = await newGym('plan-start-edit-race');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        // An edit of a run plan as sessionScriptAuthoring.ts writes it: the current version locked, the next inserted.
+        await other.query('BEGIN');
+        await other.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1' for update`, [gym.organizationId]);
+        await other.query(
+          `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+           values ($1, 'scr-v2', 'scr-lineage', 2, 'Footwork night, revised', $2)`,
+          [gym.organizationId, gym.coach.accountId],
+        );
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered', () => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        await expect(starting).rejects.toMatchObject({ message: 'SESSION_SCRIPT_SUPERSEDED', status: 409 });
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+      const { rows } = await client.query(`select 1 from pilot.session_script_runs where organization_id = $1`, [gym.organizationId]);
+      expect(rows).toEqual([]);
+    });
   });
 
   test('a plan row deleted clears the class\'s link (on delete set null), and the class carries no plan', async () => {

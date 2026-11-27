@@ -5,7 +5,7 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
-import { lockTieableClass } from './sessionRunClass';
+import { lockTieableClass, type TieableClassPlan } from './sessionRunClass';
 
 // The delivery side of a session script. sessionScripts.ts reads the plan; this module writes what
 // is happening to it right now, into pilot.session_script_runs.
@@ -430,6 +430,55 @@ async function tieAtStart(client: PoolClient, organizationId: string, accountId:
   return input.classId;
 }
 
+/** The script a scripted start runs: its version and the block its cursor opens on. */
+interface StartedScript {
+  scriptId: string;
+  version: number;
+  firstBlockId: string;
+}
+
+// The one insert every start makes: a scripted run on its first block, or a plain one (script,
+// version and cursor null, pilot_ssrun_plain_no_cursor). Its unique-index refusals are startConflict's.
+async function insertLiveRun(
+  client: PoolClient,
+  organizationId: string,
+  accountId: string,
+  input: StartSessionScriptRunInput,
+  classId: string | null,
+  script: StartedScript | null,
+): Promise<LiveSessionScriptRun> {
+  const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
+  try {
+    const { rows } = await client.query<SessionScriptRunRow>(
+      `insert into pilot.session_script_runs (
+         organization_id, run_id, script_id, script_version, activity_id,
+         delivered_by_account_id, delivered_on, athletes_present,
+         run_state, started_at, current_block_id, paused_seconds, class_id
+       ) values (
+         $1, $2, $3, $4, $5,
+         $6, coalesce($7::date, current_date), $8,
+         'in_progress', now(), $9, 0, $10
+       )
+       returning ${RUN_COLUMNS}`,
+      [
+        organizationId,
+        runId,
+        script?.scriptId ?? null,
+        script?.version ?? null,
+        input.activityId ?? null,
+        accountId,
+        input.deliveredOn ?? null,
+        input.athletesPresent ?? null,
+        script?.firstBlockId ?? null,
+        classId,
+      ],
+    );
+    return toLiveRun(rows[0]);
+  } catch (error) {
+    return startConflict(error);
+  }
+}
+
 // Starting a run pins the script's CURRENT version onto the row. A script edited mid-season must
 // not retroactively change what a coach was following on a night already delivered.
 //
@@ -502,40 +551,83 @@ export async function startSessionScriptRun(
       throw new SessionScriptRunError('SESSION_SCRIPT_HAS_NO_BLOCKS', 422);
     }
 
-    const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const classId = await tieAtStart(client, organizationId, accountId, input);
+    return insertLiveRun(client, organizationId, accountId, input, classId, {
+      scriptId,
+      version: script.rows[0].version,
+      firstBlockId: firstBlock.rows[0].block_id,
+    });
+  });
+}
 
-    let inserted;
-    try {
-      inserted = await client.query<SessionScriptRunRow>(
-        `insert into pilot.session_script_runs (
-           organization_id, run_id, script_id, script_version, activity_id,
-           delivered_by_account_id, delivered_on, athletes_present,
-           run_state, started_at, current_block_id, paused_seconds, class_id
-         ) values (
-           $1, $2, $3, $4, $5,
-           $6, coalesce($7::date, current_date), $8,
-           'in_progress', now(), $9, 0, $10
-         )
-         returning ${RUN_COLUMNS}`,
-        [
-          organizationId,
-          runId,
-          scriptId,
-          script.rows[0].version,
-          input.activityId ?? null,
-          accountId,
-          input.deliveredOn ?? null,
-          input.athletesPresent ?? null,
-          firstBlock.rows[0].block_id,
-          classId,
-        ],
+// START THE CLASS'S OWN PLAN, AS IT IS WHEN START IS PRESSED (lane W4-5; Codex P1 on #2241, finding
+// 4723993483; App Overwatch 7229515935). The class screen used to send the plan id it read with
+// today's classes, so a plan retired, brought back or given its first blocks while the screen
+// stayed open started the wrong way. Here the class's plan is resolved in the start's own
+// transaction: the newest version of the lineage the class was scheduled with (#2238), share-locked
+// as the scripted start above locks its script, so a retire or an edit in progress (each holds that
+// row FOR UPDATE, sessionScriptAuthoring.ts lockCurrentScript) is waited for and then seen, in
+// statements of their own after the lock. Retired, or with no blocks: the session starts tied to
+// the class without it (App Overwatch 7215533652, Q2 A and Q3 A); otherwise it runs that version.
+// What was resolved comes back with the run, in listTieableClasses' shape, so the screen can say it.
+export async function startClassPlanRun(
+  organizationId: string,
+  accountId: string,
+  input: StartSessionScriptRunInput & { classId: string },
+): Promise<{ run: LiveSessionScriptRun; classPlan: TieableClassPlan | null }> {
+  await sweepIdleRuns(organizationId);
+  return withTransaction(async (client) => {
+    const linked = await client.query<{ lineage_id: string }>(
+      `select s.lineage_id
+         from pilot.scheduler_classes c
+         join pilot.session_scripts s on s.organization_id = c.organization_id and s.script_id = c.script_id
+        where c.organization_id = $1 and c.class_id = $2`,
+      [organizationId, input.classId],
+    );
+    let classPlan: TieableClassPlan | null = null;
+    let script: StartedScript | null = null;
+    if (linked.rows.length > 0) {
+      const lineageId = linked.rows[0].lineage_id;
+      const locked = await client.query<{ script_id: string }>(
+        `select script_id from pilot.session_scripts
+          where organization_id = $1 and lineage_id = $2
+          order by version desc
+          limit 1
+            for share`,
+        [organizationId, lineageId],
       );
-    } catch (error) {
-      startConflict(error);
+      const head = await client.query<{ script_id: string; version: number; name: string; authoring_state: string }>(
+        `select script_id, version, name, authoring_state from pilot.session_scripts
+          where organization_id = $1 and lineage_id = $2
+          order by version desc
+          limit 1`,
+        [organizationId, lineageId],
+      );
+      // A newer version committed while this start waited: the one locked is not the one to run,
+      // and the screen reads today's classes again, as for any superseded start.
+      if (head.rows[0].script_id !== locked.rows[0].script_id) {
+        throw new SessionScriptRunError('SESSION_SCRIPT_SUPERSEDED', 409);
+      }
+      const firstBlock = await client.query<{ block_id: string }>(
+        `select block_id from pilot.session_script_blocks
+          where organization_id = $1 and script_id = $2
+          order by block_order asc
+          limit 1`,
+        [organizationId, head.rows[0].script_id],
+      );
+      classPlan = {
+        script_id: head.rows[0].script_id,
+        name: head.rows[0].name,
+        retired: head.rows[0].authoring_state === 'retired',
+        has_blocks: firstBlock.rows.length > 0,
+      };
+      if (!classPlan.retired && classPlan.has_blocks) {
+        script = { scriptId: classPlan.script_id, version: head.rows[0].version, firstBlockId: firstBlock.rows[0].block_id };
+      }
     }
-
-    return toLiveRun(inserted.rows[0]);
+    const classId = await tieAtStart(client, organizationId, accountId, input);
+    const run = await insertLiveRun(client, organizationId, accountId, input, classId, script);
+    return { run, classPlan };
   });
 }
 
@@ -548,35 +640,9 @@ async function startPlainRun(
   accountId: string,
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
-  const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
   return withTransaction(async (client) => {
     const classId = await tieAtStart(client, organizationId, accountId, input);
-    try {
-      const { rows } = await client.query<SessionScriptRunRow>(
-        `insert into pilot.session_script_runs (
-           organization_id, run_id, script_id, script_version, activity_id,
-           delivered_by_account_id, delivered_on, athletes_present,
-           run_state, started_at, current_block_id, paused_seconds, class_id
-         ) values (
-           $1, $2, null, null, $3,
-           $4, coalesce($5::date, current_date), $6,
-           'in_progress', now(), null, 0, $7
-         )
-         returning ${RUN_COLUMNS}`,
-        [
-          organizationId,
-          runId,
-          input.activityId ?? null,
-          accountId,
-          input.deliveredOn ?? null,
-          input.athletesPresent ?? null,
-          classId,
-        ],
-      );
-      return toLiveRun(rows[0]);
-    } catch (error) {
-      return startConflict(error);
-    }
+    return insertLiveRun(client, organizationId, accountId, input, classId, null);
   });
 }
 

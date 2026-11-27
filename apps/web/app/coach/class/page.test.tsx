@@ -11,6 +11,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachClassPage from './page';
+import { classPlanStart } from '@/src/shared/sessionClassChoice';
 import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
 import { WAITING_WORDS } from '@/components/SaveQueueNotice';
 import { createPersistentRoleSession } from '@/components/roleSession';
@@ -165,7 +166,7 @@ test('no live session: today\'s classes and one Start, which starts the chosen c
     fireEvent.click(start);
   });
 
-  expect(posts).toEqual([{ class_id: 'class-youth' }]);
+  expect(posts).toEqual([{ class_id: 'class-youth', class_plan: true }]);
   expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
   // Gym TVs sits on the same screen, told this run and that the coach is the one delivering it.
@@ -214,7 +215,7 @@ test('?class=<id> chooses that class when it is one of today\'s free classes, ov
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
   });
-  expect(posts).toEqual([{ class_id: 'class-adult' }]);
+  expect(posts).toEqual([{ class_id: 'class-adult', class_plan: true }]);
 });
 
 test.each([
@@ -605,10 +606,10 @@ describe('a class with a plan (SP-4a)', () => {
     });
   }
 
-  test('one line names the plan, and the one Start sends the newest version\'s id with the class', async () => {
+  test('one line names the plan, and the one Start asks for the class\'s plan, which the server resolves', async () => {
     const { posts } = serve({
       classes: [{ ...YOUTH, plan: plan() }],
-      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth', script_id: 'scr-youth-v2', script_version: 2 }) }),
+      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth', script_id: 'scr-youth-v2', script_version: 2 }), class_plan: plan() }),
     });
     await open();
 
@@ -617,8 +618,11 @@ describe('a class with a plan (SP-4a)', () => {
     // One Start: no second "start without the plan" button (accepted with Overwatch 7215533652).
     expect(screen.getAllByRole('button', { name: /start/i })).toHaveLength(1);
     await pressStart();
-    expect(posts).toEqual([{ script_id: 'scr-youth-v2', class_id: 'class-youth' }]);
+    // No plan id from this screen's list: the server resolves the class's plan at the start.
+    expect(posts).toEqual([{ class_id: 'class-youth', class_plan: true }]);
     expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
+    // What started is what the line said, so nothing more is said.
+    expect(screen.queryByText(ANY_PLAN_LINE)).toBeNull();
   });
 
   test.each([
@@ -626,13 +630,36 @@ describe('a class with a plan (SP-4a)', () => {
     ['with no blocks (Q3)', { has_blocks: false }, "This class's plan, Footwork night, has no blocks yet, so this session starts without it."],
     ['retired and with no blocks', { retired: true, has_blocks: false }, "This class's plan, Footwork night, is retired, so this session starts without it."],
   ])('a plan %s: the line says so, and Start sends the class without the plan', async (_label, overrides, words) => {
-    const { posts } = serve({ classes: [{ ...YOUTH, plan: plan(overrides) }], start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth' }) }) });
+    const { posts } = serve({
+      classes: [{ ...YOUTH, plan: plan(overrides) }],
+      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth' }), class_plan: plan(overrides) }),
+    });
     await open();
 
     expect(await screen.findByText(words)).toBeInTheDocument();
     expect(screen.getAllByText(ANY_PLAN_LINE)).toHaveLength(1);
     await pressStart();
-    expect(posts).toEqual([{ class_id: 'class-youth' }]);
+    expect(posts).toEqual([{ class_id: 'class-youth', class_plan: true }]);
+    expect(screen.queryByText(ANY_PLAN_LINE)).toBeNull();
+  });
+
+  // Codex P1 on #2241 (finding 4723993483): the plan is resolved when Start is committed, so a
+  // change made while the screen stayed open is what starts, and the screen says what started.
+  test.each([
+    ['retired before Start', {}, { retired: true }, "This class's plan, Footwork night, is retired, so this session starts without it."],
+    ['emptied before Start', {}, { has_blocks: false }, "This class's plan, Footwork night, has no blocks yet, so this session starts without it."],
+    ['brought back before Start', { retired: true }, {}, 'This class runs the plan: Footwork night.'],
+    ['given its first blocks before Start', { has_blocks: false }, {}, 'This class runs the plan: Footwork night.'],
+  ])('a plan %s: what the server resolved starts, and the screen says it', async (_label, listed, resolved, words) => {
+    serve({
+      classes: [{ ...YOUTH, plan: plan(listed) }],
+      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth' }), class_plan: plan(resolved) }),
+    });
+    await open();
+    expect(await screen.findByText(classPlanStart({ plan: plan(listed) }).line ?? '')).toBeInTheDocument();
+    await pressStart();
+    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
+    expect(await screen.findByText(words)).toHaveAttribute('role', 'status');
   });
 
   test('the line follows the choice: none for a class with no plan or for open gym, and neither sends a plan', async () => {
@@ -678,10 +705,11 @@ describe('a class with a plan (SP-4a)', () => {
   test('replaced between the read and Start (409): its words, one POST, today\'s classes read again, and the coach chooses again before the next press starts the newest', async () => {
     const v1 = { ...YOUTH, plan: plan({ script_id: 'scr-youth-v1' }) };
     const v2 = { ...YOUTH, plan: plan({ script_id: 'scr-youth-v2', name: 'Footwork night, revised' }) };
+    let starts = 0;
     const { posts } = serve({
-      start: (body) => (body.script_id === 'scr-youth-v1'
+      start: () => (++starts === 1
         ? jsonResponse({ error: 'SESSION_SCRIPT_SUPERSEDED', message: SUPERSEDED_WORDS }, false, 409)
-        : jsonResponse({ run: plainRun({ class_id: 'class-youth', script_id: 'scr-youth-v2', script_version: 2 }) })),
+        : jsonResponse({ run: plainRun({ class_id: 'class-youth', script_id: 'scr-youth-v2', script_version: 2 }), class_plan: v2.plan })),
     });
     const list = twoReads([v1], [v2]);
     await open();
@@ -689,7 +717,7 @@ describe('a class with a plan (SP-4a)', () => {
 
     await pressStart();
     expect(await screen.findByRole('alert')).toHaveTextContent(SUPERSEDED_WORDS);
-    expect(posts).toEqual([{ script_id: 'scr-youth-v1', class_id: 'class-youth' }]);
+    expect(posts).toEqual([{ class_id: 'class-youth', class_plan: true }]);
     // While today's classes are read again, Start is off.
     expect(list.reads()).toBe(2);
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
@@ -708,8 +736,8 @@ describe('a class with a plan (SP-4a)', () => {
     expect(await screen.findByText('This class runs the plan: Footwork night, revised.')).toBeInTheDocument();
     await pressStart();
     expect(posts).toEqual([
-      { script_id: 'scr-youth-v1', class_id: 'class-youth' },
-      { script_id: 'scr-youth-v2', class_id: 'class-youth' },
+      { class_id: 'class-youth', class_plan: true },
+      { class_id: 'class-youth', class_plan: true },
     ]);
     expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
   });
@@ -718,10 +746,11 @@ describe('a class with a plan (SP-4a)', () => {
     const youth = { ...YOUTH, plan: plan({ script_id: 'scr-youth', name: 'Youth plan' }) };
     const adultV1 = { ...ADULT, plan: plan({ script_id: 'scr-adult-v1', name: 'Adult plan' }) };
     const adultV2 = { ...ADULT, plan: plan({ script_id: 'scr-adult-v2', name: 'Adult plan, revised' }) };
+    let starts = 0;
     const { posts } = serve({
-      start: (body) => (body.script_id === 'scr-adult-v1'
+      start: (body) => (++starts === 1
         ? jsonResponse({ error: 'SESSION_SCRIPT_SUPERSEDED', message: SUPERSEDED_WORDS }, false, 409)
-        : jsonResponse({ run: plainRun({ class_id: String(body.class_id), script_id: String(body.script_id) }) })),
+        : jsonResponse({ run: plainRun({ class_id: String(body.class_id), script_id: 'scr-adult-v2' }), class_plan: adultV2.plan })),
     });
     const list = twoReads([youth, adultV1], [youth, adultV2]);
     await open();
@@ -742,8 +771,8 @@ describe('a class with a plan (SP-4a)', () => {
     expect(await screen.findByText('This class runs the plan: Adult plan, revised.')).toBeInTheDocument();
     await pressStart();
     expect(posts).toEqual([
-      { script_id: 'scr-adult-v1', class_id: 'class-adult' },
-      { script_id: 'scr-adult-v2', class_id: 'class-adult' },
+      { class_id: 'class-adult', class_plan: true },
+      { class_id: 'class-adult', class_plan: true },
     ]);
   });
 
@@ -751,13 +780,13 @@ describe('a class with a plan (SP-4a)', () => {
     search = new URLSearchParams('class=class-adult');
     const { posts } = serve({
       classes: [{ ...YOUTH, plan: plan({ script_id: 'scr-youth', name: 'Youth plan' }) }, { ...ADULT, plan: plan({ script_id: 'scr-adult', name: 'Adult plan' }) }],
-      start: () => jsonResponse({ run: plainRun({ class_id: 'class-adult', script_id: 'scr-adult' }) }),
+      start: () => jsonResponse({ run: plainRun({ class_id: 'class-adult', script_id: 'scr-adult' }), class_plan: plan({ script_id: 'scr-adult', name: 'Adult plan' }) }),
     });
     await open();
     expect(await screen.findByText('This class runs the plan: Adult plan.')).toBeInTheDocument();
     expect(screen.queryByText('This class runs the plan: Youth plan.')).toBeNull();
     await pressStart();
-    expect(posts).toEqual([{ script_id: 'scr-adult', class_id: 'class-adult' }]);
+    expect(posts).toEqual([{ class_id: 'class-adult', class_plan: true }]);
   });
 
   test('the plan line arrives in a status region already on the screen, so it is announced when it appears', async () => {

@@ -179,19 +179,29 @@ function ClassScreen() {
         return;
       }
     }
-    // The chosen class's plan from the list the picker reported: its newest version, or none when
-    // it is retired or has no blocks (OW27-29 A; App Overwatch 7215533652 on #2189, Q2 and Q3).
-    const { scriptId } = classPlanStart(classPick.current.classes.find((item) => item.class_id === classChoice));
+    // A class's plan is resolved by the server when Start is committed, not taken from this list:
+    // a plan retired, brought back or given its first blocks while the screen stayed open would
+    // otherwise start the wrong way (Codex P1 on #2241; App Overwatch 7229515935). The newest
+    // version runs, or none when it is retired or has no blocks (OW27-29 A; App Overwatch
+    // 7215533652, Q2 and Q3). The line the coach read is kept to compare with what started.
+    const lineAtPress = classPlanStart(classPick.current.classes.find((item) => item.class_id === classChoice)).line;
     inFlight.current = true;
     setStarting(true);
     setStartError('');
     setNotice('');
     try {
-      const outcome = await startClassSession({ scriptId, classId: classChoice });
+      const outcome = await startClassSession({ scriptId: null, classId: classChoice, classPlan: classChoice !== null });
       if ((outcome.kind === 'started' || outcome.kind === 'already_live') && outcome.run) {
         setLiveRun(outcome.run);
         setLiveRunCheck('checked');
-        if (outcome.kind === 'already_live') setNotice(RESTORED);
+        if (outcome.kind === 'already_live') {
+          setNotice(RESTORED);
+        } else if (outcome.classPlan) {
+          // What started, in the same words, when it is not what the line said: the line goes with
+          // the picker once the session is live, so nothing false is left standing.
+          const started = classPlanStart({ plan: outcome.classPlan }).line;
+          if (started && started !== lineAtPress) setNotice(started);
+        }
         return;
       }
       setStartError(startRefusalWords(outcome));

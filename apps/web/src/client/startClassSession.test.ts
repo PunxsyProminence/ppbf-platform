@@ -37,6 +37,28 @@ test('a plan started as open gym sends script_id only', async () => {
   expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({ script_id: 'scr-1' });
 });
 
+// Codex P1 on #2241: the class's own plan is resolved by the server when Start is committed.
+test('the class\'s own plan sends class_id and class_plan, never a plan id, and returns what the server resolved', async () => {
+  const resolved = { script_id: 'scr-2', name: 'Footwork night', retired: true, has_blocks: true };
+  const fetchMock = respond({ ok: true, body: { run: RUN, class_plan: resolved } });
+  await expect(startClassSession({ scriptId: 'scr-1', classId: 'cls-1', classPlan: true }))
+    .resolves.toEqual({ kind: 'started', run: RUN, classPlan: resolved });
+  expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body)))
+    .toEqual({ class_id: 'cls-1', class_plan: true });
+});
+
+test('the class\'s own plan for a class with none returns classPlan null', async () => {
+  respond({ ok: true, body: { run: RUN, class_plan: null } });
+  await expect(startClassSession({ scriptId: null, classId: 'cls-1', classPlan: true }))
+    .resolves.toEqual({ kind: 'started', run: RUN, classPlan: null });
+});
+
+test('the class\'s own plan with no class is a plain open-gym start', async () => {
+  const fetchMock = respond({ ok: true, body: { run: RUN } });
+  await expect(startClassSession({ scriptId: null, classId: null, classPlan: true })).resolves.toEqual({ kind: 'started', run: RUN });
+  expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({});
+});
+
 test('already live: the running session is read and returned, never a second start', async () => {
   const fetchMock = respond({ ok: false, body: { error: 'SESSION_RUN_ALREADY_LIVE' } }, { ok: true, body: { run: RUN } });
   await expect(startClassSession({ scriptId: null, classId: null })).resolves.toEqual({ kind: 'already_live', run: RUN });
