@@ -1,4 +1,4 @@
-import { classesUnderWay, defaultClassChoice, instantMs, toIsoInstant, type TieableClassView } from './sessionClassChoice';
+import { classPlanStart, classesUnderWay, defaultClassChoice, instantMs, toIsoInstant, type TieableClassView } from './sessionClassChoice';
 
 // D4 (OD-2026-10-21-002): which class a new session opens on. Never a guess between classes,
 // never the oldest one (the B2 wrong-class failure).
@@ -58,5 +58,41 @@ describe('instantMs', () => {
     expect(toIsoInstant('2026-10-21 18:00:00.123456-04')).toBe('2026-10-21T18:00:00.123456-04:00');
     expect(toIsoInstant('2026-10-21T22:00:00.000Z')).toBe('2026-10-21T22:00:00.000Z');
     expect(toIsoInstant('2026-10-21T22:00:00+05:30')).toBe('2026-10-21T22:00:00+05:30');
+  });
+});
+
+// OW27-29 A ("Class keeps the plan; Start runs it"); App Overwatch 7215533652 on #2189, Q2 and Q3.
+describe('classPlanStart', () => {
+  const plan = (retired: boolean, hasBlocks: boolean) => ({ plan: { script_id: 'scr-2', name: 'Footwork night', retired, has_blocks: hasBlocks } });
+
+  test('no class, a class with no plan, or a list without plans: nothing sent, no line', () => {
+    expect(classPlanStart(undefined)).toEqual({ scriptId: null, line: null });
+    expect(classPlanStart({ plan: null })).toEqual({ scriptId: null, line: null });
+    expect(classPlanStart(klass('no-plan', -10, 50))).toEqual({ scriptId: null, line: null });
+  });
+
+  test('a plan with blocks, not retired: Start sends its id, and the screen names it', () => {
+    expect(classPlanStart(plan(false, true))).toEqual({ scriptId: 'scr-2', line: 'This class runs the plan: Footwork night.' });
+  });
+
+  test('retired (Q2): starts without it, and says so', () => {
+    expect(classPlanStart(plan(true, true))).toEqual({
+      scriptId: null,
+      line: "This class's plan, Footwork night, is retired, so this session starts without it.",
+    });
+  });
+
+  test('no blocks (Q3): starts without it, and says so', () => {
+    expect(classPlanStart(plan(false, false))).toEqual({
+      scriptId: null,
+      line: "This class's plan, Footwork night, has no blocks yet, so this session starts without it.",
+    });
+  });
+
+  test('retired and with no blocks: the retired words', () => {
+    expect(classPlanStart(plan(true, false))).toEqual({
+      scriptId: null,
+      line: "This class's plan, Footwork night, is retired, so this session starts without it.",
+    });
   });
 });
