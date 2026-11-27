@@ -10,13 +10,13 @@ jest.mock('@/src/server/pilot/organizationProfileStore', () => ({
 
 const { PPBF_PROFILE } = jest.requireActual('@/src/testing/organizationProfileFixtures');
 
-test('it names the app from the gym profile, starts at "/", opens on its own, and lists only the existing seal', async () => {
+test('it names the app from the gym profile, starts at "/login", opens on its own, and lists only the existing seal', async () => {
   profile = PPBF_PROFILE;
   expect(await manifest()).toEqual({
     id: '/',
     name: `${PPBF_PROFILE.shortName} Platform`,
     short_name: PPBF_PROFILE.shortName,
-    start_url: '/',
+    start_url: '/login',
     display: 'standalone',
     icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
   });
@@ -36,7 +36,7 @@ test('with no profile it falls back to the layout\'s "Platform" and invents no g
     id: '/',
     name: 'Platform',
     short_name: 'Platform',
-    start_url: '/',
+    start_url: '/login',
     display: 'standalone',
     icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
   });

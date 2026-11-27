@@ -105,7 +105,7 @@ test('a tap closes the pop-up and brings forward an open window of the app, open
 test.each([
   ['no window is open', []],
   ['only another site\'s window is open', [{ url: 'https://elsewhere.example.test/', focus: jest.fn() }]],
-])('a tap opens the app at "/" when %s', async (_label, windows) => {
+])('a tap opens the app at "/login" when %s', async (_label, windows) => {
   const { listeners, matchAll, openWindow } = load();
   matchAll.mockResolvedValueOnce(windows);
   const close = jest.fn();
@@ -119,7 +119,7 @@ test.each([
   });
   expect(read).toBe(0);
   expect(close).toHaveBeenCalledTimes(1);
-  expect(openWindow).toHaveBeenCalledWith('/');
+  expect(openWindow).toHaveBeenCalledWith('/login');
   for (const window of windows) expect(window.focus).not.toHaveBeenCalled();
 });
 
@@ -127,5 +127,5 @@ test('a window the browser will not bring forward still leaves the tap opening t
   const { listeners, matchAll, openWindow } = load();
   matchAll.mockResolvedValueOnce([{ url: `${ORIGIN}/coach`, focus: jest.fn().mockRejectedValue(new Error('not allowed')) }]);
   await dispatch(listeners.get('notificationclick')![0], { notification: { close: jest.fn() } });
-  expect(openWindow).toHaveBeenCalledWith('/');
+  expect(openWindow).toHaveBeenCalledWith('/login');
 });

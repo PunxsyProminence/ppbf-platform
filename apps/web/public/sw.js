@@ -5,7 +5,8 @@
  *   - on a push, it shows one pop-up whose title is "Open the app", with no
  *     body (QE A on #2228; OD-2026-11-19-009, "Only 'open the app'");
  *   - on a tap of that pop-up, it brings an open window of the app forward,
- *     or opens the app at "/".
+ *     or opens the app at "/login", which takes a signed-in person to their
+ *     own home (QI A on #2228).
  *
  * IT READS NOTHING FROM THE PUSH. The words are fixed here, so whatever a push
  * carries can never put a name, a message or an event on a lock screen.
@@ -21,6 +22,7 @@
 
 const TITLE = 'Open the app';
 const TAG = 'open-the-app';
+const START = '/login';
 
 self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(TITLE, { tag: TAG, renotify: true }));
@@ -32,7 +34,7 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
       const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
       // A window the browser will not bring forward still leaves the tap useful.
-      return open ? open.focus().catch(() => self.clients.openWindow('/')) : self.clients.openWindow('/');
+      return open ? open.focus().catch(() => self.clients.openWindow(START)) : self.clients.openWindow(START);
     }),
   );
 });
