@@ -24,10 +24,12 @@
  * raw values, so it does not depend on the key.
  *
  * Target guard as RR-1 (scripts/lib/postgres-write-target.mjs), before a
- * client exists. K1 to K4 read one repeatable-read, read-only snapshot; each
- * sweep table is read in its own short read-only transaction, so no lock is
- * held across the whole schema. Every transaction is rolled back. Scope is
- * --organization <id> or --all-organizations, never a default.
+ * client exists. K1 to K4 read one repeatable-read, read-only snapshot; with a
+ * test gym in scope it counts that gym's rows in every pilot table, so it holds
+ * read locks on them for the seconds that snapshot lasts. Each sweep table is
+ * read in its own short read-only transaction, and one that fails is listed,
+ * not fatal. Every transaction is rolled back. Scope is --organization <id> or
+ * --all-organizations, never a default.
  *
  *   npm run pilot:cleanup-audit-test-records -- --organization <id>
  */
@@ -44,16 +46,19 @@ export const NEAR_RULE = "'zz-audit' anywhere, or 'audit test' first after any w
 export const TEST_ORGANIZATION_NAME_PREFIX = 'audit test gym';
 export const HIIT_FIT = Object.freeze({ organization_id: 'danielles', name: 'hiit fit' });
 // Column names that can hold a person's id or name: the GO's list, plus
-// parent, person, participant, coach, staff, volunteer, login and subject.
-export const PERSON_COLUMN = /athlete|account|guardian|member|user|email|parent|person|participant|coach|staff|volunteer|login|subject/i;
-// Keys that print raw: the GO's class, run, TV and organization ids. Any other
-// key prints raw only when it is a uuid or an integer and its column is not a
-// person's; everything else is hashed. A key nobody thought about is hashed.
+// parent, person, participant, contact, profile, child, minor, student,
+// coach, staff, volunteer, login and subject.
+export const PERSON_COLUMN = /athlete|account|guardian|member|user|email|parent|person|participant|contact|profile|child|minor|student|coach|staff|volunteer|login|subject/i;
+// Keys that print raw: the GO's class, run, TV and organization ids, and uuid
+// row keys whose column is not a person's. Everything else, integer keys
+// included, is hashed. A key nobody thought about is hashed.
 export const RAW_KEY_COLUMNS = Object.freeze(['organization_id', 'class_id', 'run_id', 'tv_id']);
 const UUID_VALUE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Every foreign key into the class tables, as the class delete (B6-3) expects
 // it: columns and ON DELETE action (c cascade, n set null (columns)). Any
-// other refuses an apply (UNKNOWN_FOREIGN_KEY).
+// other refuses an apply (UNKNOWN_FOREIGN_KEY), and so does any of these
+// missing (KNOWN_FOREIGN_KEY_MISSING): a delete would then leave rows
+// pointing at nothing.
 export const KNOWN_CLASS_FOREIGN_KEYS = Object.freeze([
   'pilot.scheduler_attendance(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) c()',
   'pilot.scheduler_registrations(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) c()',
@@ -81,7 +86,7 @@ export const SWEEP_ROW_LIMIT = 500;
 const UTC = (column) => `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
 // "audit test" first after any whitespace, Unicode spaces included.
-const LEADING_AUDIT_TEST = "E'^[[:space:]\\u00a0\\u1680\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*audit test'";
+const LEADING_AUDIT_TEST = "E'^[[:space:]\\u0085\\u00a0\\u1680\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*audit test'";
 const hitSql = (e) => `(${e} ilike '%zz-audit%' or ${e} ~* ${LEADING_AUDIT_TEST})`;
 const strictSql = (e) => `(left(${e}, 8) = 'ZZ-AUDIT' or left(${e}, 10) = 'AUDIT TEST')`;
 const markerSql = (e) => `case when left(${e}, 8) = 'ZZ-AUDIT' then 'ZZ-AUDIT'
@@ -105,7 +110,7 @@ export function printableKey(column, type, value, key) {
   const text = String(value);
   if (RAW_KEY_COLUMNS.includes(column)) return text;
   if (PERSON_COLUMN.test(column)) return personRef(text, key);
-  return ['int2', 'int4', 'int8', 'uuid'].includes(type) || UUID_VALUE.test(text) ? text : personRef(text, key);
+  return type === 'uuid' || UUID_VALUE.test(text) ? text : personRef(text, key);
 }
 
 const refused = (reason) => ({ ok: false, refusal: { reason } });
@@ -196,7 +201,8 @@ async function readClasses(client, organizationId, refKey) {
   const ref = (value) => personRef(value, refKey);
   const classes = (await client.query(
     `select organization_id, class_id, title, ${markerSql('title')} as marker, status,
-            ${UTC('start_at')} as start_at, ${UTC('end_at')} as end_at, (start_at <= now() and now() < end_at) as running_now
+            ${UTC('start_at')} as start_at, ${UTC('end_at')} as end_at, (start_at <= now() and now() < end_at) as running_now,
+            extract(epoch from start_at)::text as start_raw, extract(epoch from end_at)::text as end_raw
        from pilot.scheduler_classes
       where ${strictSql('title')} and ($1::text is null or organization_id = $1)
       order by organization_id, class_id`,
@@ -220,7 +226,7 @@ async function readClasses(client, organizationId, refKey) {
       group by 1, 2`,
     [keys],
   )).rows.map((row) => [keyOf(row.organization_id, row.class_id), row.n]));
-  const unknownForeignKeys = (await client.query(
+  const observedForeignKeys = (await client.query(
     `select fn.nspname || '.' || fc.relname || '(' || ${fkColumns('c.conrelid', 'c.conkey')} || ')->'
             || tn.nspname || '.' || tc.relname || '(' || ${fkColumns('c.confrelid', 'c.confkey')} || ') '
             || c.confdeltype::text || '(' || coalesce(${fkColumns('c.conrelid', 'c.confdelsetcols')}, '') || ')' as fk
@@ -229,7 +235,9 @@ async function readClasses(client, organizationId, refKey) {
        join pg_catalog.pg_class tc on tc.oid = c.confrelid join pg_catalog.pg_namespace tn on tn.oid = tc.relnamespace
       where c.contype = 'f' and tn.nspname = 'pilot'
         and tc.relname in ('scheduler_classes', 'scheduler_registrations', 'scheduler_attendance')`,
-  )).rows.map((row) => row.fk).filter((fk) => !KNOWN_CLASS_FOREIGN_KEYS.includes(fk)).sort();
+  )).rows.map((row) => row.fk);
+  const unknownForeignKeys = observedForeignKeys.filter((fk) => !KNOWN_CLASS_FOREIGN_KEYS.includes(fk)).sort();
+  const missingForeignKeys = KNOWN_CLASS_FOREIGN_KEYS.filter((fk) => !observedForeignKeys.includes(fk));
 
   const byClass = (rows) => groupBy(rows, (row) => keyOf(row.organization_id, row.class_id));
   const [regs, marks, tied, pointers] = [byClass(registrations), byClass(attendance), byClass(runs), byClass(registerMarks)];
@@ -242,6 +250,7 @@ async function readClasses(client, organizationId, refKey) {
     if (row.running_now) wouldRefuse.push('CLASS_RUNNING_NOW');
     if (count('activity_log') + count('floor_plans_daily') > 0) wouldRefuse.push('UNTRACKED_REFERENCE');
     if (unknownForeignKeys.length > 0) wouldRefuse.push('UNKNOWN_FOREIGN_KEY');
+    if (missingForeignKeys.length > 0) wouldRefuse.push('KNOWN_FOREIGN_KEY_MISSING');
     const athletes = [...(regs.get(key) ?? []), ...(marks.get(key) ?? []), ...(pointers.get(key) ?? [])].map((r) => r.athlete_id);
     return {
       organization_id: row.organization_id, class_id: row.class_id, marker: row.marker, status: row.status,
@@ -262,16 +271,18 @@ async function readClasses(client, organizationId, refKey) {
   const material = {
     classes: classes.map((row) => {
       const key = keyOf(row.organization_id, row.class_id);
-      return [row.organization_id, row.class_id, row.title, row.status, row.start_at, row.end_at,
-        counts.activity_log.get(key) ?? 0, counts.floor_plans_daily.get(key) ?? 0];
+      // Every input to a refusal: running now, and whether (not how often) a row names it without a key.
+      return [row.organization_id, row.class_id, row.title, row.status, row.start_raw, row.end_raw, row.running_now,
+        (counts.activity_log.get(key) ?? 0) > 0, (counts.floor_plans_daily.get(key) ?? 0) > 0];
     }),
     registrations: registrations.map((r) => [r.organization_id, r.class_id, r.registration_id, r.athlete_id, r.status]),
     attendance: attendance.map((a) => [a.organization_id, a.class_id, a.attendance_id, a.athlete_id, a.status]),
     tied_runs: runs.map((run) => [run.organization_id, run.class_id, run.run_id, run.run_state]),
     register_marks: registerMarks.map((m) => [m.organization_id, m.class_id, m.run_id, m.athlete_id]),
     unknown_foreign_keys: unknownForeignKeys,
+    missing_foreign_keys: missingForeignKeys,
   };
-  return { report, material, unknownForeignKeys };
+  return { report, material, unknownForeignKeys, missingForeignKeys };
 }
 
 /** K2: every TV in scope; the STRICT-named ones are the planned ones. */
@@ -279,17 +290,20 @@ async function readTvs(client, organizationId) {
   const rows = (await client.query(
     `select organization_id, tv_id, ${markerSql('tv_name')} as marker, ${UTC('created_at')} as created_at,
             ${UTC('paired_at')} as paired_at, ${UTC('last_seen_at')} as last_seen_at, ${UTC('revoked_at')} as revoked_at,
-            current_run_id is not null as showing_a_session, pair_code_hash is not null as pair_code_pending
+            current_run_id is not null as showing_a_session, pair_code_hash is not null as pair_code_pending,
+            extract(epoch from paired_at)::text as paired_raw, extract(epoch from revoked_at)::text as revoked_raw,
+            current_run_id as run_raw
        from pilot.gym_tvs where ($1::text is null or organization_id = $1)
       order by organization_id, tv_id`,
     [organizationId],
   )).rows;
   const marked = rows.filter((row) => STRICT_MARKERS.includes(row.marker));
+  const printed = ({ paired_raw: _p, revoked_raw: _r, run_raw: _s, ...row }) => row;
   return {
-    report: { marked, others: rows.filter((row) => !STRICT_MARKERS.includes(row.marker)) },
+    report: { marked: marked.map(printed), others: rows.filter((row) => !STRICT_MARKERS.includes(row.marker)).map(printed) },
     // Not last_seen_at: a working TV moves it every few seconds.
-    material: marked.map((row) => [row.organization_id, row.tv_id, row.marker, row.paired_at, row.revoked_at,
-      row.showing_a_session, row.pair_code_pending]),
+    material: marked.map((row) => [row.organization_id, row.tv_id, row.marker, row.paired_raw, row.revoked_raw,
+      row.showing_a_session, row.pair_code_pending, row.run_raw]),
   };
 }
 
@@ -346,7 +360,7 @@ async function readOrganizations(client, organizationId, tables) {
   // with every audit login and would make a reviewed plan go stale.
   const material = {
     organizations: rows.map((row) => [row.organization_id, row.status, row.test_name, row.hiit_fit_id, row.hiit_fit_name]),
-    hiit_fit_holding: holding,
+    hiit_fit_holding: holding.map(([table]) => table),
   };
   return { testOrganizations, hiitFit, material };
 }
@@ -368,7 +382,7 @@ async function sweep(client, options, { tables, unswept }, refKey) {
   const single = options.allOrganizations !== true;
   const out = {
     tables_scanned: 0, columns_scanned: 0, columns_not_swept_by_type: unswept,
-    tables_skipped_no_organization_column: [], truncated_tables: [], strict: [], near: [],
+    tables_skipped_no_organization_column: [], truncated_tables: [], tables_failed: [], strict: [], near: [],
   };
   for (const [table, { columns, text, key }] of tables) {
     if (text.length === 0) continue;
@@ -376,15 +390,22 @@ async function sweep(client, options, { tables, unswept }, refKey) {
       out.tables_skipped_no_organization_column.push(table);
       continue;
     }
-    const found = await readOnly(client,
-      `select ${key.map((k, i) => `${ident(k.name)}::text as k${i}, `).join('')}
-              ${columns.has('organization_id') ? 'organization_id::text' : 'null::text'} as organization_id,
-              array[${text.map((c) => markerSql(ident(c))).join(', ')}]::text[] as markers
-         from pilot.${ident(table)}
-        where (${text.map((c) => hitSql(ident(c))).join(' or ')}) ${single ? 'and organization_id = $1' : ''}
-        ${key.length > 0 ? `order by ${key.map((_, i) => `k${i}`).join(', ')}` : ''}
-        limit ${SWEEP_ROW_LIMIT + 1}`,
-      single ? [options.organizationId] : []);
+    let found;
+    try {
+      found = await readOnly(client,
+        `select ${key.map((k, i) => `${ident(k.name)}::text as k${i}, `).join('')}
+                ${columns.has('organization_id') ? 'organization_id::text' : 'null::text'} as organization_id,
+                array[${text.map((c) => markerSql(ident(c))).join(', ')}]::text[] as markers
+           from pilot.${ident(table)}
+          where (${text.map((c) => hitSql(ident(c))).join(' or ')}) ${single ? 'and organization_id = $1' : ''}
+          order by coalesce(${text.map((c) => strictSql(ident(c))).join(' or ')}, false) desc${key.map((_, i) => `, k${i}`).join('')}
+          limit ${SWEEP_ROW_LIMIT + 1}`,
+        single ? [options.organizationId] : []);
+    } catch (error) {
+      // Listed, not fatal: K1 to K4 are already read. The code only, never the message.
+      out.tables_failed.push({ table, code: error && typeof error === 'object' && 'code' in error ? String(error.code) : 'unknown' });
+      continue;
+    }
     out.tables_scanned += 1;
     out.columns_scanned += text.length;
     if (found.length > SWEEP_ROW_LIMIT) out.truncated_tables.push(table);
@@ -456,10 +477,12 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       hiit_fit_found: organizations.hiitFit.found_id,
       sweep_strict: swept.strict.length,
       sweep_near: swept.near.length,
+      sweep_tables_failed: swept.tables_failed.length,
     };
     const report = {
       mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
-      unknown_foreign_keys: classes.unknownForeignKeys, classes: classes.report, tvs: tvs.report,
+      unknown_foreign_keys: classes.unknownForeignKeys, missing_foreign_keys: classes.missingForeignKeys,
+      classes: classes.report, tvs: tvs.report,
       test_organizations: organizations.testOrganizations, hiit_fit: organizations.hiitFit, sweep: swept,
     };
     log('plan', report);
@@ -493,9 +516,9 @@ export async function run(env = process.env, argv = process.argv.slice(2), {
   } catch (error) {
     // Name, code and constraint only: a database error's message or detail can quote a row.
     const failure = {
-      reason: error instanceof Error ? error.name : 'UnknownError',
+      reason: error && typeof error === 'object' && error.code != null ? 'DATABASE_ERROR' : error instanceof Error ? error.name : 'UnknownError',
       code: error && typeof error === 'object' && 'code' in error ? String(error.code) : undefined,
-      constraint: error && typeof error === 'object' && 'constraint' in error ? String(error.constraint) : undefined,
+      constraint: error && typeof error === 'object' && error.constraint != null ? String(error.constraint) : undefined,
     };
     log('failed', failure);
     return { status: 'failed', ...failure };

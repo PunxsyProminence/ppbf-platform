@@ -80,6 +80,7 @@ type Result = {
   plan_fingerprint?: string;
   counts?: Record<string, number | boolean>;
   unknown_foreign_keys?: string[];
+  missing_foreign_keys?: string[];
   classes?: ClassReport[];
   tvs?: { marked: Array<Record<string, unknown>>; others: Array<Record<string, unknown>> };
   test_organizations?: Array<{ organization_id: string; status: string; members_by_role: Record<string, number>; rows_by_table: Record<string, number> }>;
@@ -87,6 +88,7 @@ type Result = {
   sweep?: {
     tables_scanned: number; columns_scanned: number; columns_not_swept_by_type: Record<string, number>;
     tables_skipped_no_organization_column: string[]; truncated_tables: string[]; strict: Hit[]; near: Hit[];
+    tables_failed: Array<{ table: string; code: string }>;
   };
   missing?: string[];
 };
@@ -219,6 +221,7 @@ async function buildTemplate(target: Client): Promise<void> {
   await insertClass(target, GYM, 'c-near-tab', '\tAUDIT TEST after a tab');
   await insertClass(target, GYM, 'c-near-nbsp', '\u00a0AUDIT TEST after a no-break space');
   await insertClass(target, GYM, 'c-near-emspace', '\u2003AUDIT TEST after an em space');
+  await insertClass(target, GYM, 'c-near-nel', '\u0085AUDIT TEST after a next-line character');
   await insertClass(target, GYM, 'c-real', 'Tuesday boxing, not an AUDIT TEST', { start: iso(DAY), end: iso(DAY + 60 * 60 * 1000) });
   await insertClass(target, OTHER, 'c-other-strict', 'ZZ-AUDIT in another gym');
 
@@ -271,6 +274,7 @@ async function buildTemplate(target: Client): Promise<void> {
   await insertTv(target, GYM, 'tv-strict', 'ZZ-AUDIT TV');
   await insertTv(target, GYM, 'tv-near', 'zz-audit spare screen');
   await insertTv(target, GYM, 'tv-real', `Ring TV ${TEXT_SENTINEL}`);
+  await insertTv(target, OTHER, 'tv-other-strict', 'ZZ-AUDIT TV in another gym');
 
   await insertNote(target, NOTE_STRICT, TEST_ATHLETE, `ZZ-AUDIT LA2 2026-10-19 note ${TEXT_SENTINEL}`);
   await insertNote(target, NOTE_NEAR, TEST_ATHLETE, `Written on the zz-audit walk ${TEXT_SENTINEL}`);
@@ -467,6 +471,31 @@ describe('K1 classes, one gym', () => {
   });
 });
 
+describe('known foreign keys', () => {
+  test.each([
+    ['the run tie', 'alter table pilot.session_script_runs drop constraint pilot_ssrun_class_fk',
+      'pilot.session_script_runs(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) n(class_id)'],
+    ['the register pointer', 'alter table pilot.session_run_athletes drop constraint pilot_session_run_athletes_register_fk',
+      'pilot.session_run_athletes(organization_id,register_class_id,athlete_id)->pilot.scheduler_attendance(organization_id,class_id,athlete_id) n(register_class_id)'],
+    ['the registrations cascade', 'alter table pilot.scheduler_registrations drop constraint scheduler_registrations_organization_id_class_id_fkey',
+      'pilot.scheduler_registrations(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) c()'],
+  ])('one missing (%s) refuses every class and moves the fingerprint', async (_label, ddl, named) => {
+    const { client } = await freshDatabase();
+    try {
+      const before = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(before.missing_foreign_keys).toEqual([]);
+      await client.query(ddl);
+      const result = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(result.missing_foreign_keys).toEqual([named]);
+      expect(result.unknown_foreign_keys).toEqual([]);
+      for (const c of result.classes!) expect(c.apply_would_refuse).toContain('KNOWN_FOREIGN_KEY_MISSING');
+      expect(result.plan_fingerprint).not.toBe(before.plan_fingerprint);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('the fingerprint', () => {
   const print = async (client: Client, options: Options) => (await report(client, options, { log: () => {} })).plan_fingerprint;
 
@@ -487,8 +516,34 @@ describe('the fingerprint', () => {
         [TEST_GYM_2, HIIT_FIT_ID],
       );
       await client.query("update pilot.organization_memberships set role = 'organization_admin' where organization_id = $1", [TEST_GYM_2]);
+      await client.query(
+        `insert into pilot.activity_log (organization_id, activity_id, person_account_id, activity_domain, activity_type, occurred_on,
+           duration_minutes, capture_method, recorded_by_role, recorded_by_account_id, class_id)
+         values ($1, 'act-2', $2, 'boxing_training', 'technical_session', '2026-10-06', 30, 'coach_override', 'coach', $2, 'c-strict-untracked')`,
+        [GYM, COACH],
+      );
       expect(await print(client, { organizationId: GYM })).toBe(gym);
       expect(await print(client, { allOrganizations: true })).toBe(all);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('does not move with a login in a "hiit fit" that already holds rows: only which tables hold rows counts', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ('acct-b6-hiit', 'coach', $1, 'microsoft')`,
+        [HIIT_FIT_ID],
+      );
+      await client.query(
+        "insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('t1', 'acct-b6-hiit', $1)", [HIIT_FIT_ID],
+      );
+      const before = await print(client, { allOrganizations: true });
+      await client.query(
+        "insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('t2', 'acct-b6-hiit', $1)", [HIIT_FIT_ID],
+      );
+      expect(await print(client, { allOrganizations: true })).toBe(before);
     } finally {
       await client.end();
     }
@@ -499,7 +554,13 @@ describe('the fingerprint', () => {
        (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
      values ('${GYM}', 'aaaaaaaa-0000-4000-8000-0000000000f1', 'c-strict-1', '${REAL_ATHLETE}', 'coach', '${COACH}', 'registered')`],
     ['a planned class\'s end time', "update pilot.scheduler_classes set end_at = end_at + interval '5 minutes' where class_id = 'c-strict-1'"],
+    ['a planned class\'s end time, by half a second', "update pilot.scheduler_classes set end_at = end_at + interval '500 milliseconds' where class_id = 'c-strict-1'"],
     ['a planned class\'s title, same marker', "update pilot.scheduler_classes set title = 'ZZ-AUDIT renamed' where class_id = 'c-strict-1'"],
+    ['a tied run\'s state', "update pilot.session_script_runs set run_state = 'abandoned' where run_id = 'run-done'"],
+    ['"hiit fit"\'s name', `update pilot.organizations set organization_name = 'hiit fit studio' where organization_id = '${HIIT_FIT_ID}'`],
+    ['whether a planned class is running now', "update pilot.scheduler_classes set start_at = now() - interval '1 minute', end_at = now() + interval '1 hour' where class_id = 'c-strict-1'"],
+    ['the session on a STRICT TV', "update pilot.gym_tvs set current_run_id = 'run-live' where tv_id = 'tv-strict'",
+      "update pilot.gym_tvs set device_key_hash = 'k', paired_at = '2026-10-19T22:00:00Z', current_run_id = 'run-done' where tv_id = 'tv-strict'"],
     ['a register mark let go', "update pilot.session_run_athletes set register_class_id = null where run_id = 'run-done'"],
     ['a floor plan naming a planned class', `insert into pilot.floor_plans_daily (organization_id, plan_id, plan_on, created_by_account_id, class_id)
        values ('${GYM}', 'plan-b6', '2026-10-05', '${COACH}', 'c-strict-1')`],
@@ -508,6 +569,8 @@ describe('the fingerprint', () => {
     ['a pair code issued to a STRICT TV',
       "update pilot.gym_tvs set pair_code_hash = 'h', pair_code_expires_at = now() + interval '1 hour' where tv_id = 'tv-strict'"],
     ['a session put on a paired STRICT TV', "update pilot.gym_tvs set current_run_id = 'run-done' where tv_id = 'tv-strict'",
+      "update pilot.gym_tvs set device_key_hash = 'k', paired_at = '2026-10-19T22:00:00Z' where tv_id = 'tv-strict'"],
+    ['a STRICT TV re-paired within the same second', "update pilot.gym_tvs set paired_at = '2026-10-19T22:00:00.4Z' where tv_id = 'tv-strict'",
       "update pilot.gym_tvs set device_key_hash = 'k', paired_at = '2026-10-19T22:00:00Z' where tv_id = 'tv-strict'"],
     ['a test gym\'s status', `update pilot.organizations set status = 'active' where organization_id = '${TEST_GYM_1}'`],
     ['"hiit fit" holding a row', `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
@@ -535,6 +598,9 @@ describe('K2 TVs', () => {
       const out = recorder();
       const result = await report(client, { organizationId: GYM }, { log: out.log });
       expect(result.tvs!.marked.map((tv) => [tv.tv_id, tv.marker])).toEqual([['tv-strict', 'ZZ-AUDIT']]);
+      // The other gym's STRICT TV is out of a one-gym scope, and in an every-organization one.
+      const all = await report(client, { allOrganizations: true }, { log: () => {} });
+      expect(all.tvs!.marked.map((tv) => tv.tv_id)).toEqual(['tv-strict', 'tv-other-strict']);
       expect(result.tvs!.others.map((tv) => [tv.tv_id, tv.marker])).toEqual([['tv-near', 'NEAR'], ['tv-real', null]]);
       for (const tv of [...result.tvs!.marked, ...result.tvs!.others]) expect(tv).not.toHaveProperty('tv_name');
       expect(out.text()).not.toContain('Ring TV');
@@ -612,6 +678,7 @@ describe('K5 the sweep', () => {
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-tab' })}`,
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-nbsp' })}`,
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-emspace' })}`,
+        `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-nel' })}`,
       ]));
       expect(result.classes!.map((c) => c.class_id)).not.toEqual(expect.arrayContaining(['c-near-tab']));
       expect(sweep.columns_not_swept_by_type).toMatchObject({ jsonb: expect.any(Number), _text: expect.any(Number) });
@@ -644,12 +711,15 @@ describe('keys and limits', () => {
     expect(printableKey('class_id', 'text', 'Any text at all', TEST_REF_KEY)).toBe('Any text at all');
     expect(printableKey('note_id', 'uuid', uuid, TEST_REF_KEY)).toBe(uuid);
     expect(printableKey('registration_id', 'text', uuid, TEST_REF_KEY)).toBe(uuid);
-    expect(printableKey('audit_id', 'int8', '42', TEST_REF_KEY)).toBe('42');
+    expect(printableKey('audit_id', 'int8', '42', TEST_REF_KEY)).toBe(ref('42'));
     expect(printableKey('athlete_id', 'text', uuid, TEST_REF_KEY)).toBe(ref(uuid));
     expect(printableKey('capture_participant_id', 'uuid', uuid, TEST_REF_KEY)).toBe(ref(uuid));
     expect(printableKey('bucket_key', 'text', BUCKET_KEY, TEST_REF_KEY)).toBe(ref(BUCKET_KEY));
     expect(printableKey('code', 'text', '1234567', TEST_REF_KEY)).toBe(ref('1234567'));
     expect(printableKey('registration_id', 'text', 'reg-test', TEST_REF_KEY)).toBe(ref('reg-test'));
+    // A person's record by another name: an emergency contact, a SHADOW user profile.
+    expect(printableKey('contact_id', 'uuid', uuid, TEST_REF_KEY)).toBe(ref(uuid));
+    expect(printableKey('profile_id', 'int8', '1', TEST_REF_KEY)).toBe(ref('1'));
   });
 
   test('the sweep limit counts hits only: 600 notes with "audit test" mid-text do not hide a STRICT one', async () => {
@@ -666,6 +736,53 @@ describe('keys and limits', () => {
     } finally {
       await client.end();
     }
+  });
+
+  test('over the limit, STRICT hits come first: 600 NEAR notes keyed ahead of a STRICT one do not hide it', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        `insert into pilot.coach_observations (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text)
+         select $1, ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, $2, $3, 'observation', 'zz-audit near ' || g
+           from generate_series(1, 600) g`,
+        [GYM, REAL_ATHLETE, COACH],
+      );
+      const result = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(result.sweep!.truncated_tables).toEqual(['coach_observations']);
+      expect(result.sweep!.strict.filter((h) => h.table === 'coach_observations').map((h) => h.key.note_id)).toEqual([NOTE_STRICT]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a sweep table that cannot be read is listed by its code, and the rest of the report stands', async () => {
+    const { client, name } = await freshDatabase();
+    const locker = new Client({ connectionString: connectionStringFor(name) });
+    await locker.connect();
+    try {
+      await locker.query('begin');
+      await locker.query('lock table pilot.auth_rate_limit_buckets in access exclusive mode');
+      const result = await report(client, { allOrganizations: true }, { log: () => {} });
+      expect(result.status).toBe('dry-run');
+      expect(result.sweep!.tables_failed).toEqual([{ table: 'auth_rate_limit_buckets', code: '55P03' }]);
+      expect(result.counts).toMatchObject({ classes: 6, sweep_tables_failed: 1 });
+    } finally {
+      await locker.query('rollback').catch(() => {});
+      await locker.end();
+      await client.end();
+    }
+  });
+
+  test('a failure prints no constraint field it does not have', async () => {
+    const out = recorder();
+    const failing = {
+      on: () => {},
+      connect: async () => { throw Object.assign(new Error('no'), { code: '08006', constraint: undefined }); },
+      end: async () => {},
+    };
+    const result = await runTool(envFor('unused'), ['--all-organizations'], { createClient: () => failing, log: out.log });
+    expect(result).toMatchObject({ status: 'failed', reason: 'DATABASE_ERROR', code: '08006' });
+    expect(out.text()).not.toContain('"constraint"');
   });
 
   test('a column the report reads directly is missing: refused, naming it', async () => {
@@ -690,6 +807,14 @@ describe('read-only and refusals', () => {
       expect(result.status).toBe('dry-run');
       expect(statements[0]).toBe('begin transaction isolation level repeatable read read only');
       expect(statements[statements.length - 1]).toBe('rollback');
+      // K1 to K4 are read inside that first snapshot, before its rollback.
+      const firstRollback = statements.indexOf('rollback');
+      for (const read of [/from pilot\.scheduler_classes\b/, /from pilot\."scheduler_registrations"/, /from pilot\.gym_tvs\b/,
+        /organization_name[\s\S]*from pilot\.organizations\b/, /from pilot\.organization_memberships\b/]) {
+        const at = statements.findIndex((s) => read.test(s));
+        expect(at).toBeGreaterThan(0);
+        expect(at).toBeLessThan(firstRollback);
+      }
       const begins = statements.filter((s) => /^begin\b/i.test(s));
       expect(begins.length).toBe(1 + result.sweep!.tables_scanned);
       expect(begins.every((s) => s.endsWith('read only'))).toBe(true);
