@@ -40,8 +40,12 @@ import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staf
 // (sessionBlockLinks.ts); it now names minors. So listPresentAthletes takes the
 // caller's permitted athlete ids (the gym's live athletes) as a REQUIRED argument and filters in SQL, as
 // listBlocksForRun does: there is no "null means everyone". Athletes, parents,
-// the board and the platform owner have no read of this at all
-// (OD-2026-10-10-003 items 3 and 4); no route for them imports this module.
+// the board and the platform owner have no read of this module
+// (OD-2026-10-10-003 items 3 and 4); no route for them imports it. One fact
+// derived from these rows reaches a family elsewhere: the on-the-floor line
+// (onTheFloor.ts, lane W4-3; OD-2026-11-21-006, FN-0 F1) gives a parent a yes or
+// no for each of their own children, and an athlete one about themselves, and
+// nothing else of a run or a mark.
 //
 // A MARK TAKEN BACK KEEPS ITS ROW (removed_at, removed_by_account_id); marking
 // the athlete again clears them. The row holds the mark's CURRENT state, so
@@ -85,8 +89,20 @@ export async function setRunAthletePresent(input: {
   athleteId: string;
   present: boolean;
   tappedAt?: string;
-}): Promise<{ outcome: RunAthleteOutcome; register?: RegisterResult }> {
+  /** The page a kept tap was made on (W4 item 7): see writeSessionRegisterPresent's pageId. */
+  pageId?: string;
+  /**
+   * A kept tap's request key, the same on every resend (W4 item 7, OVERWATCH 7170099938 on #2178):
+   * whether an earlier send landed is decided by this key, never by the mark matching the tap, which
+   * another tab or device tapping the same athlete would also give. Absent: sent once, as before.
+   */
+  requestKey?: string | null;
+}): Promise<HereTapAnswer> {
   const { actor, runId, athleteId } = input;
+  const requestKey = input.requestKey ?? null;
+  // What the key is recorded with: the athlete nested, so the record is not read as activity on the
+  // athlete's own session (sessionAutoClose signal 8 reads a top-level athlete_id).
+  const asked = { athlete_id: athleteId, present: input.present };
   // One refusal for "not staff here", "another gym's athlete", "a deleted
   // athlete" and "no such athlete": the answer says nothing about the id.
   if (!(await staffRoleReachingAthlete(actor, athleteId))) {
@@ -94,6 +110,8 @@ export async function setRunAthletePresent(input: {
   }
 
   return withTransaction(async (client) => {
+    // READ COMMITTED, set and not assumed: a resend that waited on the run's lock sees the first send's commit.
+    await client.query('set transaction isolation level read committed');
     // The marker must still be staff here now, not only when the check above ran: an admin
     // ending the membership, or deactivating the account, in between gets no mark. Lock order,
     // one way only: membership and account, run row, athlete row, mark row (lockStaffMembership).
@@ -114,6 +132,25 @@ export async function setRunAthletePresent(input: {
     // The same codes as requireOwnLiveRun: another coach's run reads exactly like a missing one.
     if (!owned || owned.delivered_by_account_id !== actor.accountId) {
       throw new SessionScriptRunError('SESSION_RUN_NOT_FOUND', 404);
+    }
+    // A keyed tap's key, looked up under the run's lock and before the run must be live: a resend of a
+    // tap that landed writes nothing and is answered with the first answer, even once the session has
+    // ended; the same key for another athlete or the other way is refused.
+    if (requestKey !== null) {
+      const first = await client.query<{ same: boolean; answer: HereTapAnswer }>(
+        `select details->'asked' = $4::jsonb as same, details->'answer' as answer
+           from pilot.audit_events
+          where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
+            and details->>'action' = 'here_tap' and details->>'request_key' = $3
+          order by audit_id
+          limit 1`,
+        [actor.organizationId, runId, requestKey, JSON.stringify(asked)],
+      );
+      const landed = first.rows[0];
+      if (landed) {
+        if (!landed.same) throw new SessionScriptRunError('SESSION_RUN_KEY_REUSED', 409);
+        return { ...landed.answer, replayed: true, live: owned.run_state === 'in_progress' };
+      }
     }
     if (owned.run_state !== 'in_progress') {
       throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
@@ -206,19 +243,51 @@ export async function setRunAthletePresent(input: {
     // The class register, for a tied session only, after the mark (the lock order: mark, class,
     // register). A standing mark asked again writes nothing, so a later register change wins.
     const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
+    let answer: HereTapAnswer;
     if (outcome === 'marked' && owned.class_id) {
-      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined) };
-    }
-    if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
-      return {
+      answer = { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }, tappedAt ?? undefined, input.pageId) };
+    } else if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
+      answer = {
         outcome,
         register: await undoTapOnRegister(client, { ...tap, classId: pointer.register_class_id }, pointer.register_written_at),
       };
+    } else if (outcome === 'unmarked' && owned.class_id) {
+      // Tied, but this mark created no register mark: the register stands as it is.
+      answer = { outcome, register: { effect: 'unchanged' } };
+    } else {
+      answer = { outcome };
     }
-    // Tied, but this mark created no register mark: the register stands as it is.
-    if (outcome === 'unmarked' && owned.class_id) return { outcome, register: { effect: 'unchanged' } };
-    return { outcome };
+    // A keyed tap's key and answer, recorded on the run in the same transaction as the mark, so the
+    // key is recorded exactly when the tap is written. That includes a tap that changed nothing (the
+    // mark already stood, from another tab or device): it is this key's own answer.
+    if (requestKey !== null) {
+      await writePilotAuditEvent(
+        {
+          event_type: 'update',
+          actor_account_id: actor.accountId,
+          actor_role: role,
+          organization_id: actor.organizationId,
+          entity_type: 'session_script_run',
+          entity_id: runId,
+          details: { run_id: runId, action: 'here_tap', request_key: requestKey, asked, answer },
+          // Staff only, as the mark's own audit event is.
+          shadow_mirror: false,
+        },
+        client,
+      );
+    }
+    return answer;
   });
+}
+
+/** What a here tap answers. replayed and live are set only on a resend of a key already recorded. */
+export interface HereTapAnswer {
+  outcome: RunAthleteOutcome;
+  register?: RegisterResult;
+  /** A resend of this key's tap, which landed earlier: nothing was written by this send. */
+  replayed?: true;
+  /** On a replay: whether the run is still live. */
+  live?: boolean;
 }
 
 export interface PresentAthlete {

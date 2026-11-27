@@ -199,11 +199,19 @@ export function searchGroupOf(href: string, role: ClubRole | null): SearchGroupK
  * "All pages" for one person: the doors they can see (pass visibleDoors' answer),
  * grouped Home first, then the Room Map's rooms in order, then Lab. A room with
  * none of their doors is left out ("Only rooms the role can enter").
+ *
+ * `placeName` names a Room Map room: the gym's own name where it has one (lane
+ * W4-9, RN-2; src/client/roomNames.ts), else the Room Map's. Home and Lab are
+ * not rooms and keep their names (OW27-40 A).
  */
-export function searchGroups(doors: readonly Door[], role: ClubRole | null): SearchGroup[] {
+export function searchGroups(
+  doors: readonly Door[],
+  role: ClubRole | null,
+  placeName: (place: RoomPlace) => string = (place) => ROOM_PLACE_LABEL[place],
+): SearchGroup[] {
   const keys: SearchGroupKey[] = ['home', ...ROOM_PLACE_ORDER, 'lab'];
   const label = (key: SearchGroupKey): string =>
-    key === 'home' ? 'Home' : key === 'lab' ? LAB_LABEL : ROOM_PLACE_LABEL[key];
+    key === 'home' ? 'Home' : key === 'lab' ? LAB_LABEL : placeName(key);
   return keys
     .map((key) => ({ key, label: label(key), doors: doors.filter((door) => searchGroupOf(door.href, role) === key) }))
     .filter((group) => group.doors.length > 0);

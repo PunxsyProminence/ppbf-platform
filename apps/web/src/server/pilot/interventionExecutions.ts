@@ -85,6 +85,11 @@ export interface InterventionExecutionRow {
    * loaded with its save (expectedRowVersion below), and a save against any
    * other version is refused. It is Postgres's xmin -- see ROW_VERSION_SQL. */
   row_version: string;
+  /** The request key that started this record's lineage (null without one). A correction does not
+   * carry the key, so it is read from the lineage's first record: a screen checking whether its own
+   * kept tap landed matches by this, never by athlete, protocol and run (W4 item 7). Null too on a
+   * database without the request-key migration, where every read works as before. */
+  request_key: string | null;
 }
 
 const FIELDS = `e.organization_id, e.execution_id, e.lineage_id, e.version,
@@ -95,7 +100,11 @@ const FIELDS = `e.organization_id, e.execution_id, e.lineage_id, e.version,
   e.planned_exposure, e.planned_task_context, e.actual_exposure,
   e.trained_context, e.task_constraint, e.partner_context, e.adherence,
   e.deviations, e.deviation_reason, e.stop_change_reason, e.notes,
-  e.correction_reason, e.created_at, e.xmin::text as row_version`;
+  e.correction_reason, e.created_at, e.xmin::text as row_version,
+  (select to_jsonb(f) ->> 'request_key' from pilot.intervention_executions f
+    where f.organization_id = e.organization_id and f.execution_id = e.lineage_id) as request_key`;
+// (Read through to_jsonb, not as a column, so a database without the request-key migration answers
+// null instead of failing every read: a start without a key works there, as it always did.)
 
 const FROM = `from pilot.intervention_executions e
   left join pilot.athletes a

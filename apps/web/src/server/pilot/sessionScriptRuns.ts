@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
+import { writePilotAuditEvent } from './audit';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 import { lockTieableClass } from './sessionRunClass';
@@ -384,13 +385,15 @@ async function assertBlockBelongsToScript(
   organizationId: string,
   scriptId: string,
   blockId: string,
+  client?: PoolClient,
 ): Promise<void> {
-  const block = await queryOne<{ block_id: string }>(
-    `select block_id
+  const text = `select block_id
        from pilot.session_script_blocks
-      where organization_id = $1 and script_id = $2 and block_id = $3`,
-    [organizationId, scriptId, blockId],
-  );
+      where organization_id = $1 and script_id = $2 and block_id = $3`;
+  const values = [organizationId, scriptId, blockId];
+  const block = client
+    ? (await client.query<{ block_id: string }>(text, values)).rows[0]
+    : await queryOne<{ block_id: string }>(text, values);
   if (!block) {
     throw new SessionScriptRunError('SESSION_RUN_BLOCK_NOT_IN_SCRIPT', 422);
   }
@@ -577,6 +580,92 @@ async function startPlainRun(
   });
 }
 
+// THE ONE STATEMENT EACH RUN ACTION IS, shared by the plain call and the keyed one below, so the two
+// can never write a run differently. Each is conditioned on the run being live, and returns the row.
+const ADVANCE_SQL = `update pilot.session_script_runs
+    set current_block_id = $3
+  where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
+  returning ${RUN_COLUMNS}`;
+
+// See pauseSessionScriptRun for why this is one statement with no condition on paused_at.
+const PAUSE_SQL = `update pilot.session_script_runs
+    set paused_at = coalesce(paused_at, now())
+  where organization_id = $1 and run_id = $2
+    and run_state = 'in_progress'
+  returning ${RUN_COLUMNS}`;
+
+const RESUME_SQL = `update pilot.session_script_runs
+    set paused_seconds = coalesce(paused_seconds, 0)
+                         + case
+                             when paused_at is not null
+                               then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
+                             else 0
+                           end,
+        paused_at = null
+  where organization_id = $1 and run_id = $2
+    and run_state = 'in_progress'
+  returning ${RUN_COLUMNS}`;
+
+const SHOW_ON_WALL_SQL = `update pilot.session_script_runs
+    set show_on_wall = $4
+  where organization_id = $1 and run_id = $2
+    and delivered_by_account_id = $3
+    and run_state = 'in_progress'
+  returning ${RUN_COLUMNS}`;
+
+const FINISH_SQL = `update pilot.session_script_runs
+      set run_state = $3,
+          ended_at = now(),
+          current_block_id = null,
+          -- Bank the OPEN pause before discarding it. A coach who pauses and then ends the
+          -- session without resuming would otherwise lose that final interval, and every later
+          -- reading of actual teaching time (ended_at - started_at - paused_seconds) would
+          -- overcount by exactly the length of the last pause.
+          paused_seconds = coalesce(paused_seconds, 0)
+                           + case
+                               when paused_at is not null
+                                 then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
+                               else 0
+                             end,
+          paused_at = null,
+          -- Off the TV in the same statement that settles the run. pilot_ssrun_wall_only_live
+          -- would refuse a settled run left showing, and the wall must never present a finished
+          -- session as the one on the floor now.
+          show_on_wall = false,
+          blocks_completed = coalesce($4, blocks_completed),
+          athletes_present = coalesce($5, athletes_present),
+          reset_protocol_used = coalesce($6, reset_protocol_used),
+          deviation_note = coalesce($7, deviation_note),
+          what_worked = coalesce($8, what_worked),
+          what_did_not = coalesce($9, what_did_not)
+    where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
+    returning ${RUN_COLUMNS}`;
+
+/** Settles a live run inside the caller's transaction (finishSessionScriptRun gives the reasons). */
+async function settleRun(
+  client: PoolClient,
+  organizationId: string,
+  runId: string,
+  input: FinishSessionScriptRunInput,
+): Promise<SessionScriptRunRow> {
+  const { rows } = await client.query<SessionScriptRunRow>(FINISH_SQL, [
+    organizationId,
+    runId,
+    input.runState,
+    input.blocksCompleted ?? null,
+    input.athletesPresent ?? null,
+    input.resetProtocolUsed ?? null,
+    input.deviationNote ?? null,
+    input.whatWorked ?? null,
+    input.whatDidNot ?? null,
+  ]);
+  if (rows.length === 0) {
+    throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
+  }
+  await closeRunWindows(client, organizationId, [runId]);
+  return rows[0];
+}
+
 // Moving the cursor. Deliberately takes a target block rather than "next": a coach who skips a
 // block or goes back to re-teach one is doing something normal, and an increment-only API would
 // force the client to model an order it does not own.
@@ -593,13 +682,7 @@ export async function moveSessionScriptRunCursor(
   }
   await assertBlockBelongsToScript(organizationId, run.script_id, toBlockId);
 
-  const rows = await query<SessionScriptRunRow>(
-    `update pilot.session_script_runs
-        set current_block_id = $3
-      where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
-      returning ${RUN_COLUMNS}`,
-    [organizationId, runId, toBlockId],
-  );
+  const rows = await query<SessionScriptRunRow>(ADVANCE_SQL, [organizationId, runId, toBlockId]);
   if (rows.length === 0) {
     throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
   }
@@ -621,14 +704,7 @@ export async function pauseSessionScriptRun(
   // SESSION_RUN_NOT_LIVE for a run that was live and had reached the state the caller asked for.
   // `coalesce(paused_at, now())` needs no such condition: an already-paused run keeps the pause it
   // has, so both callers succeed and neither loses the seconds already banked.
-  const rows = await query<SessionScriptRunRow>(
-    `update pilot.session_script_runs
-        set paused_at = coalesce(paused_at, now())
-      where organization_id = $1 and run_id = $2
-        and run_state = 'in_progress'
-      returning ${RUN_COLUMNS}`,
-    [organizationId, runId],
-  );
+  const rows = await query<SessionScriptRunRow>(PAUSE_SQL, [organizationId, runId]);
   if (rows.length === 0) {
     // Only reachable if the run settled between the read and this update, which is a real 409.
     throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
@@ -647,20 +723,7 @@ export async function resumeSessionScriptRun(
   // resumes both match and both succeed. The `case` makes it a no-op on an already-running run
   // rather than adding a second interval, and the pause is closed out from the DATABASE's clock so
   // the banked total never depends on the caller's sense of time.
-  const rows = await query<SessionScriptRunRow>(
-    `update pilot.session_script_runs
-        set paused_seconds = coalesce(paused_seconds, 0)
-                             + case
-                                 when paused_at is not null
-                                   then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
-                                 else 0
-                               end,
-            paused_at = null
-      where organization_id = $1 and run_id = $2
-        and run_state = 'in_progress'
-      returning ${RUN_COLUMNS}`,
-    [organizationId, runId],
-  );
+  const rows = await query<SessionScriptRunRow>(RESUME_SQL, [organizationId, runId]);
   if (rows.length === 0) {
     throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
   }
@@ -683,15 +746,7 @@ export async function setSessionScriptRunShowOnWall(
 ): Promise<LiveSessionScriptRun> {
   await requireOwnLiveRun(organizationId, accountId, runId);
 
-  const rows = await query<SessionScriptRunRow>(
-    `update pilot.session_script_runs
-        set show_on_wall = $4
-      where organization_id = $1 and run_id = $2
-        and delivered_by_account_id = $3
-        and run_state = 'in_progress'
-      returning ${RUN_COLUMNS}`,
-    [organizationId, runId, accountId, showOnWall],
-  );
+  const rows = await query<SessionScriptRunRow>(SHOW_ON_WALL_SQL, [organizationId, runId, accountId, showOnWall]);
   if (rows.length === 0) {
     throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
   }
@@ -724,52 +779,138 @@ export async function finishSessionScriptRun(
   }
   await requireOwnLiveRun(organizationId, accountId, runId);
 
+  return withTransaction((client) => settleRun(client, organizationId, runId, input));
+}
+
+/** A run action as the coach's screen asked it: what a request key is recorded with. */
+export type RunActionAsked =
+  | { action: 'advance'; toBlockId: string }
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'show_on_wall'; show: boolean }
+  | { action: 'finish'; input: FinishSessionScriptRunInput };
+
+export interface KeyedRunActionAnswer {
+  /**
+   * The run as the server holds it after this action: live, or (a finish) settled. On a replay it
+   * is read now, under the run's lock; null when a live action is replayed on a run no longer live.
+   */
+  run: LiveSessionScriptRun | SessionScriptRunRow | null;
+  /** True when this key was already recorded for the run: this send wrote nothing. */
+  replayed: boolean;
+}
+
+/** What the audit event records of the action: its target, never a coach's notes. */
+function recordedAsk(asked: RunActionAsked): Record<string, unknown> {
+  switch (asked.action) {
+    case 'advance':
+      return { run_action: 'advance', to_block_id: asked.toBlockId };
+    case 'show_on_wall':
+      return { run_action: 'show_on_wall', show: asked.show };
+    case 'finish':
+      return { run_action: 'finish', run_state: asked.input.runState };
+    default:
+      return { run_action: asked.action };
+  }
+}
+
+/**
+ * A run action sent with a request key (W4 item 7, OVERWATCH 7170099938 on #2178): whether a kept
+ * action's earlier send landed is decided by its own key, never by the run's state matching it, which
+ * another tab or device making the same change would also produce.
+ *
+ * In one transaction: the run is locked (another coach's run reads as missing, as everywhere here),
+ * then the key is looked up among the run's audit events. A key already recorded is a resend of a
+ * send that landed: it writes nothing and answers with the run as it is now. The same key with
+ * another action or target is refused. Only then must the run be live, so a send that landed before
+ * the session ended still reads as saved. The action is the same statement as the plain call's, and
+ * the key is recorded on the run's audit event in the same transaction, so it is recorded if and
+ * only if the action was written. READ COMMITTED, set here: a resend that waited on the lock sees
+ * the first send's commit.
+ */
+export async function keyedSessionScriptRunAction(
+  actor: { organizationId: string; accountId: string; role: PilotRole },
+  runId: string,
+  requestKey: string,
+  asked: RunActionAsked,
+): Promise<KeyedRunActionAnswer> {
+  if (asked.action === 'finish' && !TERMINAL_STATES.includes(asked.input.runState)) {
+    throw new SessionScriptRunError('SESSION_RUN_STATE_INVALID', 422);
+  }
+  const { organizationId, accountId } = actor;
+  const recorded = recordedAsk(asked);
   return withTransaction(async (client) => {
-    const { rows } = await client.query<SessionScriptRunRow>(
-      `update pilot.session_script_runs
-          set run_state = $3,
-              ended_at = now(),
-              current_block_id = null,
-              -- Bank the OPEN pause before discarding it. A coach who pauses and then ends the
-              -- session without resuming would otherwise lose that final interval, and every later
-              -- reading of actual teaching time (ended_at - started_at - paused_seconds) would
-              -- overcount by exactly the length of the last pause.
-              paused_seconds = coalesce(paused_seconds, 0)
-                               + case
-                                   when paused_at is not null
-                                     then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
-                                   else 0
-                                 end,
-              paused_at = null,
-              -- Off the TV in the same statement that settles the run. pilot_ssrun_wall_only_live
-              -- would refuse a settled run left showing, and the wall must never present a finished
-              -- session as the one on the floor now.
-              show_on_wall = false,
-              blocks_completed = coalesce($4, blocks_completed),
-              athletes_present = coalesce($5, athletes_present),
-              reset_protocol_used = coalesce($6, reset_protocol_used),
-              deviation_note = coalesce($7, deviation_note),
-              what_worked = coalesce($8, what_worked),
-              what_did_not = coalesce($9, what_did_not)
-        where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
-        returning ${RUN_COLUMNS}`,
-      [
-        organizationId,
-        runId,
-        input.runState,
-        input.blocksCompleted ?? null,
-        input.athletesPresent ?? null,
-        input.resetProtocolUsed ?? null,
-        input.deviationNote ?? null,
-        input.whatWorked ?? null,
-        input.whatDidNot ?? null,
-      ],
+    await client.query('set transaction isolation level read committed');
+    const { rows: locked } = await client.query<SessionScriptRunRow>(
+      `select ${RUN_COLUMNS}
+         from pilot.session_script_runs
+        where organization_id = $1 and run_id = $2
+          for update`,
+      [organizationId, runId],
     );
-    if (rows.length === 0) {
+    const row = locked[0];
+    if (!row || row.delivered_by_account_id !== accountId) {
+      throw new SessionScriptRunError('SESSION_RUN_NOT_FOUND', 404);
+    }
+    const first = await client.query<{ same: boolean }>(
+      `select details->'asked' = $4::jsonb as same
+         from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2
+          and details->>'action' = 'run_action' and details->>'request_key' = $3
+        order by audit_id
+        limit 1`,
+      [organizationId, runId, requestKey, JSON.stringify(recorded)],
+    );
+    if (first.rows[0]) {
+      if (!first.rows[0].same) throw new SessionScriptRunError('SESSION_RUN_KEY_REUSED', 409);
+      // A finish's key is recorded only by the finish that settled this run; a live action's run may
+      // have ended since (another device, the idle close), and then there is no live run to show.
+      const live = row.run_state === 'in_progress' && row.started_at !== null;
+      return { run: live ? toLiveRun(row) : asked.action === 'finish' ? row : null, replayed: true };
+    }
+    if (row.run_state !== 'in_progress') {
       throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
     }
-    await closeRunWindows(client, organizationId, [runId]);
-    return rows[0];
+
+    let run: LiveSessionScriptRun | SessionScriptRunRow;
+    if (asked.action === 'finish') {
+      run = await settleRun(client, organizationId, runId, asked.input);
+    } else {
+      let statement: { text: string; values: unknown[] };
+      switch (asked.action) {
+        case 'advance':
+          if (!row.script_id) throw new SessionScriptRunError('SESSION_RUN_HAS_NO_SCRIPT', 409);
+          await assertBlockBelongsToScript(organizationId, row.script_id, asked.toBlockId, client);
+          statement = { text: ADVANCE_SQL, values: [organizationId, runId, asked.toBlockId] };
+          break;
+        case 'pause':
+          statement = { text: PAUSE_SQL, values: [organizationId, runId] };
+          break;
+        case 'resume':
+          statement = { text: RESUME_SQL, values: [organizationId, runId] };
+          break;
+        default:
+          statement = { text: SHOW_ON_WALL_SQL, values: [organizationId, runId, accountId, asked.show] };
+      }
+      const { rows } = await client.query<SessionScriptRunRow>(statement.text, statement.values);
+      if (rows.length === 0) throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
+      run = toLiveRun(rows[0]);
+    }
+    await writePilotAuditEvent(
+      {
+        event_type: 'update',
+        actor_account_id: accountId,
+        actor_role: actor.role,
+        organization_id: organizationId,
+        entity_type: 'session_script_run',
+        entity_id: runId,
+        details: { run_id: runId, action: 'run_action', request_key: requestKey, asked: recorded },
+        // Staff only, as the run's other audit events are.
+        shadow_mirror: false,
+      },
+      client,
+    );
+    return { run, replayed: false };
   });
 }
 

@@ -1,3 +1,5 @@
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import { query } from './db';
 
 // CT-13: the ONE way to ask this platform how many days somebody attended.
@@ -238,18 +240,23 @@ function dayFromNumber(day: number): string {
  * returned beside it for the screen to say exactly that.
  *
  * `today` is the gym-local day (gymDayIso), passed in so tests are fixed.
+ * `client` runs the read on the caller's transaction (the stopped-coming
+ * mark write); omitted, it is the pooled read it has always been.
  */
 export async function getAttendanceLast28Days(
   organizationId: string,
   athleteIds: readonly string[],
   today: string,
+  client?: PoolClient,
 ): Promise<Map<string, AthleteAttendanceWindow>> {
   const result = new Map<string, AthleteAttendanceWindow>();
   if (athleteIds.length === 0) return result;
   const todayNumber = dayNumber(today);
   const windowFrom = dayFromNumber(todayNumber - (ATTENDANCE_RATE_WINDOW_DAYS - 1));
+  const read = async <T extends QueryResultRow>(text: string, params: unknown[]): Promise<T[]> =>
+    (client ? (await client.query<T>(text, params)).rows : query<T>(text, params));
 
-  const rows = await query<{
+  const rows = await read<{
     athlete_id: string;
     days_present: number;
     days_absent: number;

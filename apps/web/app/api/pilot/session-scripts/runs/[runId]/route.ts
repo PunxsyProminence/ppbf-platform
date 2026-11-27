@@ -10,10 +10,12 @@ import {
 import {
   SessionScriptRunError,
   finishSessionScriptRun,
+  keyedSessionScriptRunAction,
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
   setSessionScriptRunShowOnWall,
+  type RunActionAsked,
 } from '@/src/server/pilot/sessionScriptRuns';
 
 export const runtime = 'nodejs';
@@ -53,6 +55,33 @@ function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
 
+// The no-shows tap names its athletes and their class, and may carry a request key (W4 item 7,
+// OVERWATCH 7160191377): text of 1 to 200 characters, never blank, with no NUL and no unpaired
+// surrogate (PostgreSQL's jsonb cannot store either in the audit record, and the refused write would
+// read as a server fault and be sent again), at most NO_SHOWS_MAX names (a class is created with a
+// capacity of at most 200; the limit leaves room).
+const NO_SHOWS_MAX = 500;
+const TEXT_MAX = 200;
+const NUL = String.fromCharCode(0);
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+function isIdText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= TEXT_MAX && !value.includes(NUL)
+    && !LONE_SURROGATE.test(value);
+}
+
+// Every action may carry a request key (W4 item 7, OVERWATCH 7170099938): a kept save sends the same
+// key on every resend, and the server records it with the action, so whether an earlier send landed
+// is decided by that key alone. Absent: sent once, as before.
+const KEY_FIELD = 'request_key';
+
+function requestKeyOf(record: Record<string, unknown>): string | null | 'INVALID' {
+  if (record.request_key === undefined) return null;
+  return isIdText(record.request_key) ? record.request_key : 'INVALID';
+}
+
+const badKey = () => badRequest(`request_key:expected text of 1 to ${TEXT_MAX} characters`);
+
 function optionalNonNegativeInt(value: unknown): number | null | 'INVALID' {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
@@ -89,6 +118,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const { organizationId, accountId } = principal;
+    const requestKey = requestKeyOf(record);
+    if (requestKey === 'INVALID') return badKey();
+    // A keyed run action: the answer says whether this send wrote it or an earlier one had.
+    const keyed = async (asked: RunActionAsked) => {
+      const answer = await keyedSessionScriptRunAction({ organizationId, accountId, role: principal.role }, runId, requestKey as string, asked);
+      return NextResponse.json(answer.replayed ? { run: answer.run, replayed: true } : { run: answer.run });
+    };
 
     switch (action as RunAction) {
       case 'advance': {
@@ -97,10 +133,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (typeof record.to_block_id !== 'string' || record.to_block_id.trim() === '') {
           return badRequest('to_block_id');
         }
-        const extras = Object.keys(record).filter((k) => !['action', 'to_block_id'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'to_block_id', KEY_FIELD].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
+        if (requestKey !== null) return await keyed({ action: 'advance', toBlockId: record.to_block_id.trim() });
         const run = await moveSessionScriptRunCursor(
           organizationId,
           accountId,
@@ -112,10 +149,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       case 'pause':
       case 'resume': {
-        const extras = Object.keys(record).filter((k) => k !== 'action');
+        const extras = Object.keys(record).filter((k) => k !== 'action' && k !== KEY_FIELD);
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
+        if (requestKey !== null) return await keyed({ action: action === 'pause' ? 'pause' : 'resume' });
         const run =
           action === 'pause'
             ? await pauseSessionScriptRun(organizationId, accountId, runId)
@@ -129,10 +167,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (typeof record.show !== 'boolean') {
           return badRequest('show:expected true|false');
         }
-        const extras = Object.keys(record).filter((k) => !['action', 'show'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'show', KEY_FIELD].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
+        if (requestKey !== null) return await keyed({ action: 'show_on_wall', show: record.show });
         const run = await setSessionScriptRunShowOnWall(organizationId, accountId, runId, record.show);
         return NextResponse.json({ run });
       }
@@ -141,7 +180,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         if (record.class_id !== null && (typeof record.class_id !== 'string' || record.class_id.trim() === '')) {
           return badRequest('class_id:expected a class id or null');
         }
-        const extras = Object.keys(record).filter((k) => !['action', 'class_id'].includes(k));
+        const extras = Object.keys(record).filter((k) => !['action', 'class_id', KEY_FIELD].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
         }
@@ -149,18 +188,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
           typeof record.class_id === 'string' ? record.class_id.trim() : null,
+          requestKey,
         );
         return NextResponse.json(tie);
       }
 
       case 'mark_no_shows': {
-        const extras = Object.keys(record).filter((k) => k !== 'action');
+        const extras = Object.keys(record).filter((k) => !['action', 'athlete_ids', 'class_id', KEY_FIELD, 'page_id'].includes(k));
         if (extras.length > 0) {
           return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+        }
+        // The athletes the screen showed when the coach tapped: a resend acts on these, never on a
+        // set worked out again later.
+        const athleteIds: unknown = record.athlete_ids;
+        if (!Array.isArray(athleteIds) || athleteIds.length === 0 || athleteIds.length > NO_SHOWS_MAX || !athleteIds.every(isIdText)) {
+          return badRequest(`athlete_ids:expected 1 to ${NO_SHOWS_MAX} athlete ids`);
+        }
+        // The class the screen showed them for.
+        if (!isIdText(record.class_id)) {
+          return badRequest(`class_id:expected text of 1 to ${TEXT_MAX} characters`);
+        }
+        // The page a kept tap was made on (#2182 round 12): recorded with the tap.
+        if (record.page_id !== undefined && !isIdText(record.page_id)) {
+          return badRequest(`page_id:expected text of 1 to ${TEXT_MAX} characters`);
         }
         const result = await markSessionNoShowsAbsent(
           { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
           runId,
+          { athleteIds, classId: record.class_id, requestKey, pageId: record.page_id ?? null },
         );
         return NextResponse.json(result);
       }
@@ -170,6 +225,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           (k) =>
             k !== 'action'
             && k !== 'run_state'
+            && k !== KEY_FIELD
             && !(FINISH_OPTIONAL_FIELDS as readonly string[]).includes(k),
         );
         if (extras.length > 0) {
@@ -204,7 +260,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         const whatDidNot = optionalString(record.what_did_not);
         if (whatDidNot === 'INVALID') return badRequest('what_did_not');
 
-        const run = await finishSessionScriptRun(organizationId, accountId, runId, {
+        const input = {
           runState,
           blocksCompleted,
           athletesPresent,
@@ -212,7 +268,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           deviationNote: deviationNote ?? undefined,
           whatWorked: whatWorked ?? undefined,
           whatDidNot: whatDidNot ?? undefined,
-        });
+        } as const;
+        if (requestKey !== null) return await keyed({ action: 'finish', input });
+        const run = await finishSessionScriptRun(organizationId, accountId, runId, input);
         return NextResponse.json({ run });
       }
 

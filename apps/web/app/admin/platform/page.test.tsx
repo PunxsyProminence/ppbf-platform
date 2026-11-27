@@ -18,7 +18,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import PlatformConsole from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -693,6 +693,139 @@ describe('a suppressed figure on the gym summary', () => {
     expect(within(tile('Active Athletes')).getByText('Suppressed')).toBeInTheDocument();
     expect(within(tile('Sessions (30d)')).getByText('40')).toBeInTheDocument();
     expect(screen.queryByText('Too few athletes to show')).toBeNull();
+  });
+});
+
+// Lane W4-3, FN-4c (GO on #2192, 7206014991): the platform owner's on-the-floor tile reads a count from
+// 5 up or "Suppressed" (FN-0 flag 3), and anything else as "Could not be checked", never a number.
+describe('the on-the-floor tile', () => {
+  const baseSummary = {
+    organization_id: 'org-punxsy',
+    board: {
+      activeAthletes: { status: 'available', count: 12 },
+      trainingSessions30Days: { status: 'available', count: 40, completedCount: 30, completionRate: 0.75 },
+      goalStatusBuckets: {
+        active: { status: 'unavailable', count: null },
+        completed: { status: 'unavailable', count: null },
+        other: { status: 'unavailable', count: null },
+      },
+      coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
+    },
+    growth: { totalInteractions: 7, avgSatisfaction: null, recommendationsMade: 0, researchRequirementsCreated: 0, researchRequirementsClosed: 0 },
+    capabilityAccess: {},
+    trackAssignments: {},
+  };
+
+  async function tileFor(onTheFloor: unknown, present = true): Promise<HTMLElement> {
+    const summary = present ? { ...baseSummary, on_the_floor: onTheFloor } : baseSummary;
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) return jsonResponse(summary);
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+    return screen.getByText('On the floor now').parentElement as HTMLElement;
+  }
+
+  test('a count from 5 up reads its number', async () => {
+    expect(within(await tileFor({ status: 'available', count: 9 })).getByText('9')).toBeInTheDocument();
+  });
+
+  test('the floor itself: 5 reads "5"', async () => {
+    expect(within(await tileFor({ status: 'available', count: 5 })).getByText('5')).toBeInTheDocument();
+  });
+
+  test('a suppressed count reads "Suppressed"', async () => {
+    expect(within(await tileFor({ status: 'insufficient_data', count: null })).getByText('Suppressed')).toBeInTheDocument();
+  });
+
+  // A re-read of the same gym (away to "Select a gym..." and back) that is still running, or that
+  // fails, must not leave the first read's number on screen as current.
+  test('a read cancelled by a newer one never lands over it', async () => {
+    let reads = 0;
+    let releaseFirst: (value: Response) => void = () => {};
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) {
+        reads += 1;
+        // The first read ignores its cancel and answers late; the second is still running.
+        if (reads === 1) return new Promise<Response>((resolve) => { releaseFirst = resolve; });
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await screen.findByRole('option', { name: /Punxsy Prominence/i });
+    const select = screen.getByLabelText(/choose a gym/i);
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    expect(reads).toBe(2);
+    await act(async () => {
+      releaseFirst(jsonResponse({ ...baseSummary, on_the_floor: { status: 'available', count: 9 } }));
+    });
+    expect(screen.getByText(/Loading summary/i)).toBeInTheDocument();
+    expect(screen.queryByText('On the floor now')).toBeNull();
+    expect(screen.queryByText('9')).toBeNull();
+  });
+
+  // A failed count fails the whole summary on the server (route.test.ts), so the page shows no tile.
+  test.each([
+    ['still running', 'pending'],
+    ['failed', 'throws'],
+    ['answered with an error', 'error'],
+  ])('a re-read that is %s never leaves the last number on screen', async (_label, second) => {
+    let reads = 0;
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) {
+        reads += 1;
+        if (reads === 1) return jsonResponse({ ...baseSummary, on_the_floor: { status: 'available', count: 9 } });
+        if (second === 'throws') throw new Error('network down');
+        if (second === 'error') return jsonResponse({ error: 'Internal server error' }, false, 500);
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+    expect(within(screen.getByText('On the floor now').parentElement as HTMLElement).getByText('9')).toBeInTheDocument();
+
+    const select = screen.getByLabelText(/choose a gym/i);
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    if (second === 'pending') {
+      expect(screen.getByText(/Loading summary/i)).toBeInTheDocument();
+    } else {
+      await waitFor(() => expect(screen.queryByText(/Loading summary/i)).toBeNull());
+    }
+    expect(reads).toBe(2);
+    expect(screen.queryByText('On the floor now')).toBeNull();
+    expect(screen.queryByText('9')).toBeNull();
+  });
+
+  test.each([
+    ['a missing field', undefined, false],
+    ['a count under the floor', { status: 'available', count: 3 }, true],
+    ['a count of 4, one under the floor', { status: 'available', count: 4 }, true],
+    ['a zero marked available', { status: 'available', count: 0 }, true],
+    ['an unknown status', { status: 'unavailable', count: null }, true],
+    ['an unknown status carrying a count from 5 up', { status: 'unavailable', count: 9 }, true],
+    ['a suppressed status carrying a count', { status: 'insufficient_data', count: 9 }, true],
+    ['a count that is not a number', { status: 'available', count: '9' }, true],
+    ['not an object', 12, true],
+  ])('%s reads "Could not be checked", never a number', async (_label, value, present) => {
+    const tile = await tileFor(value, present as boolean);
+    expect(within(tile).getByText('Could not be checked')).toBeInTheDocument();
+    expect(within(tile).queryByText(/\d/)).toBeNull();
   });
 });
 
