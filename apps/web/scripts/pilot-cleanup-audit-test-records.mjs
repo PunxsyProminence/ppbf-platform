@@ -8,7 +8,9 @@
  *
  * MARKERS, exact:
  *   STRICT  text starting with exactly 'ZZ-AUDIT' or 'AUDIT TEST' (case as
- *           written, no trimming). Only STRICT records are ever planned.
+ *           written, no trimming), then the end or a character that is not a
+ *           letter or digit (QS A, #2227): "AUDIT TESTING day" is NEAR. Only
+ *           STRICT records are ever planned.
  *   NEAR    'zz-audit' anywhere, or 'audit test' first after any whitespace,
  *           any case, not STRICT. Reported, never planned, in every mode.
  *   K3      organizations whose name starts 'audit test gym' (any case).
@@ -42,6 +44,7 @@ import pg from 'pg';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
 export const STRICT_MARKERS = Object.freeze(['ZZ-AUDIT', 'AUDIT TEST']);
+export const STRICT_RULE = 'a marker first, exact case, then the end or a character that is not a letter or digit';
 export const NEAR_RULE = "'zz-audit' anywhere, or 'audit test' first after any whitespace, any case, and not STRICT";
 export const TEST_ORGANIZATION_NAME_PREFIX = 'audit test gym';
 export const HIIT_FIT = Object.freeze({ organization_id: 'danielles', name: 'hiit fit' });
@@ -88,9 +91,13 @@ const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
 // "audit test" first after any whitespace, Unicode spaces included.
 const LEADING_AUDIT_TEST = "E'^[[:space:]\\u0085\\u00a0\\u1680\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]*audit test'";
 const hitSql = (e) => `(${e} ilike '%zz-audit%' or ${e} ~* ${LEADING_AUDIT_TEST})`;
-const strictSql = (e) => `(left(${e}, 8) = 'ZZ-AUDIT' or left(${e}, 10) = 'AUDIT TEST')`;
-const markerSql = (e) => `case when left(${e}, 8) = 'ZZ-AUDIT' then 'ZZ-AUDIT'
-  when left(${e}, 10) = 'AUDIT TEST' then 'AUDIT TEST' when ${hitSql(e)} then 'NEAR' end`;
+// The marker, then the end or a character that is not a letter or digit. A
+// character outside ASCII counts as a letter here, so this only ever narrows.
+const markerAt = (e, marker) => `(left(${e}, ${marker.length}) = '${marker}' and (length(${e}) = ${marker.length}
+  or (ascii(substr(${e}, ${marker.length + 1}, 1)) < 128 and substr(${e}, ${marker.length + 1}, 1) !~ '[A-Za-z0-9]')))`;
+const strictSql = (e) => `(${markerAt(e, 'ZZ-AUDIT')} or ${markerAt(e, 'AUDIT TEST')})`;
+const markerSql = (e) => `case when ${markerAt(e, 'ZZ-AUDIT')} then 'ZZ-AUDIT'
+  when ${markerAt(e, 'AUDIT TEST')} then 'AUDIT TEST' when ${hitSql(e)} then 'NEAR' end`;
 
 function defaultLog(event, payload) {
   const line = JSON.stringify({ event: `audit_test_cleanup.${event}`, ...payload }, null, event === 'plan' ? 2 : 0);
@@ -467,7 +474,7 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
     const swept = await sweep(client, options, catalog, key);
 
     const fingerprint = `sha256:${crypto.createHash('sha256').update(JSON.stringify({
-      markers: STRICT_MARKERS, scope, ...classes.material, tvs: tvs.material, ...organizations.material,
+      markers: STRICT_MARKERS, strict_rule: STRICT_RULE, scope, ...classes.material, tvs: tvs.material, ...organizations.material,
     })).digest('hex')}`;
     const counts = {
       classes: classes.report.length,
@@ -481,7 +488,7 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       sweep_tables_failed: swept.tables_failed.length,
     };
     const report = {
-      mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
+      mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, strict_rule: STRICT_RULE, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
       unknown_foreign_keys: classes.unknownForeignKeys, missing_foreign_keys: classes.missingForeignKeys,
       classes: classes.report, tvs: tvs.report,
       test_organizations: organizations.testOrganizations, hiit_fit: organizations.hiitFit, sweep: swept,

@@ -471,6 +471,35 @@ describe('K1 classes, one gym', () => {
   });
 });
 
+describe('the STRICT break (QS A)', () => {
+  test('a marker must be followed by the end or a character that is not a letter or digit', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const titles: Array<[string, string, boolean]> = [
+        ['c-edge-bare', 'ZZ-AUDIT', true],
+        ['c-edge-hyphen', 'ZZ-AUDIT-LA2 rerun', true],
+        ['c-edge-colon', 'AUDIT TEST: rerun', true],
+        ['c-edge-underscore', 'AUDIT TEST_rerun', true],
+        ['c-edge-testing', 'AUDIT TESTING day for coaches', false],
+        ['c-edge-auditorium', 'ZZ-AUDITORIUM booking', false],
+        ['c-edge-digit', 'ZZ-AUDIT2 class', false],
+        ['c-edge-accent', 'AUDIT TEST\u00e9 class', false],
+        ['c-edge-nbsp', 'ZZ-AUDIT\u00a0class', false],
+      ];
+      for (const [id, title] of titles) await insertClass(client, OTHER, id, title);
+      const result = await report(client, { organizationId: OTHER }, { log: () => {} });
+      const planned = result.classes!.map((c) => c.class_id);
+      const near = result.sweep!.near.filter((h) => h.table === 'scheduler_classes').map((h) => h.key.class_id);
+      for (const [id, , strict] of titles) {
+        expect(planned.includes(id)).toBe(strict);
+        expect(near.includes(id)).toBe(!strict);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('known foreign keys', () => {
   test.each([
     ['the run tie', 'alter table pilot.session_script_runs drop constraint pilot_ssrun_class_fk',
