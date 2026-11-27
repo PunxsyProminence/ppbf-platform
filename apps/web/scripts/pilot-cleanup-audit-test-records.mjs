@@ -3,8 +3,15 @@
 /**
  * Finds and reports the audit test records left in a gym, by explicit, named
  * markers only (pilot blocker B6; Jason "2A", OD-2026-10-11-009 item 2; "hiit
- * fit" OD-2026-10-13-012 H-2 A; App Overwatch's GO on #2227). THIS VERSION ONLY
- * REPORTS: it has no write path. The apply comes in lane W5-B6's B6-3.
+ * fit" OD-2026-10-13-012 H-2 A; App Overwatch's GO on #2227). A dry run by
+ * default. The apply (B6-3) needs PPBF_AUDIT_TEST_CLEANUP_APPLY=true exactly,
+ * --kinds, the phrase in PPBF_AUDIT_TEST_CLEANUP_CONFIRM and the reviewed dry
+ * run's plan_fingerprint in PPBF_AUDIT_TEST_CLEANUP_EXPECT_FINGERPRINT. It runs
+ * in one transaction: lock the planned rows, recompute the fingerprint, refuse
+ * on any difference, write (classes deleted with their sign-ups and
+ * attendance, Q1 A; STRICT TVs disconnected, Q5 A; a named test gym or "hiit
+ * fit" set inactive with its sessions revoked, Q3 B and Q4 A), check every
+ * count and the end state, write one audit row per organization, commit.
  *
  * MARKERS, exact:
  *   STRICT  text starting with exactly 'ZZ-AUDIT' or 'AUDIT TEST' (case as
@@ -86,6 +93,24 @@ const REQUIRED_COLUMNS = Object.freeze({
 // audit history about it.
 export const EMPTY_EXCEPT = Object.freeze(['organizations', 'audit_events']);
 export const SWEEP_ROW_LIMIT = 500;
+// The apply. K5 (the sweep) is report only in every mode (Q2 A): no kind names it.
+export const KINDS = Object.freeze(['classes', 'tvs', 'test-organizations', 'hiit-fit']);
+// Act only on the organization named by --organization (the GO: "only ids named at dispatch").
+export const ORGANIZATION_KINDS = Object.freeze(['test-organizations', 'hiit-fit']);
+export const CONFIRM_PHRASE = 'DELETE AUDIT TEST RECORDS';
+export const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
+// Every table an apply writes, directly or through a foreign key's SET NULL.
+// A trigger on one that is not listed in KNOWN_TRIGGERS refuses the apply:
+// the full schema has none on these tables (pg_trigger, 2026-11-27).
+export const APPLY_TABLES = Object.freeze(['scheduler_classes', 'scheduler_registrations', 'scheduler_attendance',
+  'session_script_runs', 'session_run_athletes', 'gym_tvs', 'organizations', 'session_tokens', 'audit_events']);
+export const KNOWN_TRIGGERS = Object.freeze([]);
+export const AUDIT_ENTITY_TYPE = 'audit_test_record_cleanup';
+const RULINGS = Object.freeze([
+  'OD-2026-10-11-009 item 2: remove the audit test records (2A)',
+  '#2227 GO 7206238259: Q1 A delete STRICT classes; Q3 B named test gym inactive; Q4 A hiit fit only when empty; Q5 A disconnect STRICT TVs',
+  'OD-2026-10-13-012 H-2 A: hiit fit closed only as an empty duplicate',
+]);
 const UTC = (column) => `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
 // "audit test" first after any whitespace, Unicode spaces included.
@@ -122,13 +147,29 @@ export function printableKey(column, type, value, key) {
 
 const refused = (reason) => ({ ok: false, refusal: { reason } });
 
-/** Reads the scope from the command line. Refuses rather than guesses. */
+/** Pure checks on the options, before any database statement. Null when usable, else the refusal code. */
+export function validateOptions(options) {
+  const { apply, confirm, expectFingerprint, kinds, organizationId, allOrganizations } = options ?? {};
+  if (apply !== undefined && typeof apply !== 'boolean') return 'INVALID_APPLY';
+  const single = typeof organizationId === 'string' && organizationId !== '';
+  if (single === (allOrganizations === true)) return 'ORGANIZATION_SCOPE_REQUIRED';
+  if (apply === true && kinds === undefined) return 'APPLY_WITHOUT_KINDS';
+  // A dry run may name kinds too (they are bound into its fingerprint); an apply must.
+  if (kinds !== undefined && (!Array.isArray(kinds) || kinds.length === 0
+    || kinds.some((kind) => !KINDS.includes(kind)) || new Set(kinds).size !== kinds.length)) return 'INVALID_KINDS';
+  if (apply !== true) return null;
+  if (confirm !== CONFIRM_PHRASE) return 'APPLY_WITHOUT_CONFIRM_PHRASE';
+  if (!expectFingerprint) return 'APPLY_WITHOUT_EXPECTED_FINGERPRINT';
+  if (!FINGERPRINT_PATTERN.test(String(expectFingerprint))) return 'INVALID_EXPECTED_FINGERPRINT';
+  if (!single && kinds.some((kind) => ORGANIZATION_KINDS.includes(kind))) return 'ORGANIZATION_KIND_NEEDS_ONE_ORGANIZATION';
+  return null;
+}
+
+/** Reads the scope and kinds from the command line, the mode from the environment. Refuses rather than guesses. */
 export function parseOptions(env = process.env, argv = process.argv.slice(2)) {
-  // No write path exists yet: an apply request is refused, not run as a dry
-  // run, so nobody reads a report as a deletion.
-  if (env.PPBF_AUDIT_TEST_CLEANUP_APPLY === 'true') return refused('APPLY_NOT_AVAILABLE');
   let organizationId;
   let allOrganizations = false;
+  let kinds;
   const args = [...argv];
   while (args.length > 0) {
     const arg = args.shift();
@@ -142,13 +183,26 @@ export function parseOptions(env = process.env, argv = process.argv.slice(2)) {
       organizationId = value;
     } else if (arg === '--all-organizations' || arg === '--organization') {
       return refused('ORGANIZATION_SCOPE_AMBIGUOUS');
+    } else if (arg === '--kinds' && kinds === undefined) {
+      const value = args.shift();
+      if (value === undefined || value.startsWith('--')) return refused('INVALID_KINDS');
+      kinds = value.split(',');
     } else {
-      return refused('UNKNOWN_ARGUMENT'); // not echoed: operator input
+      return refused(arg === '--kinds' ? 'INVALID_KINDS' : 'UNKNOWN_ARGUMENT'); // not echoed: operator input
     }
   }
   if (organizationId !== undefined && allOrganizations) return refused('ORGANIZATION_SCOPE_AMBIGUOUS');
   if (organizationId === undefined && !allOrganizations) return refused('ORGANIZATION_SCOPE_REQUIRED');
-  return { ok: true, options: allOrganizations ? { allOrganizations: true } : { organizationId } };
+  const scope = allOrganizations ? { allOrganizations: true } : { organizationId };
+  // Exactly 'true'. 'TRUE' or '1' is a dry run, as in RR-1; its --kinds only shape the report.
+  const options = env.PPBF_AUDIT_TEST_CLEANUP_APPLY === 'true'
+    ? {
+      ...scope, apply: true, kinds, confirm: env.PPBF_AUDIT_TEST_CLEANUP_CONFIRM ?? '',
+      expectFingerprint: (env.PPBF_AUDIT_TEST_CLEANUP_EXPECT_FINGERPRINT ?? '').trim(),
+    }
+    : { ...scope, ...(kinds === undefined ? {} : { kinds }) };
+  const invalid = validateOptions(options);
+  return invalid ? refused(invalid) : { ok: true, options };
 }
 
 const keyOf = (organizationId, id) => `${organizationId}\u0000${id}`;
@@ -436,6 +490,28 @@ const refusal = (log, reason, detail = {}) => {
 };
 
 /**
+ * The fingerprint: sha256 over the markers, the scope, the kinds when the run
+ * names them (sorted), and the raw rows an apply acts on or refuses on. With no
+ * kinds it is B6-1's value byte for byte; an apply always names kinds, so it
+ * matches only a dry run made with the same kinds (the plan's "sha256 over the
+ * scope, the kinds, the markers ...").
+ */
+export function planFingerprint(scope, kinds, material) {
+  return `sha256:${crypto.createHash('sha256').update(JSON.stringify({
+    markers: STRICT_MARKERS, strict_rule: STRICT_RULE, scope, ...(kinds === undefined ? {} : { kinds: [...kinds].sort() }), ...material,
+  })).digest('hex')}`;
+}
+
+/** K1 to K4 and the fingerprint over them: the same reads for the dry run and the apply. */
+async function readPlan(client, organizationId, scope, kinds, catalog, key) {
+  const classes = await readClasses(client, organizationId, key);
+  const tvs = await readTvs(client, organizationId);
+  const organizations = await readOrganizations(client, organizationId, catalog.tables);
+  const fingerprint = planFingerprint(scope, kinds, { ...classes.material, tvs: tvs.material, ...organizations.material });
+  return { classes, tvs, organizations, fingerprint };
+}
+
+/**
  * The dry run. `client` has pg's `query(text, values)` shape; the caller owns
  * connecting and ending it. Returns { status: 'dry-run', ... } or
  * { status: 'refused', reason }; throws, after rolling back, on a database
@@ -446,11 +522,13 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
   // group a person's rows within this report and cannot be tied to an id.
   const key = typeof refKey === 'string' && refKey !== '' ? refKey : crypto.randomBytes(32);
   const personRefKey = Buffer.isBuffer(key) ? 'per-run key' : 'environment key';
-  // Exactly one scope: a call with neither must not read as "every organization".
-  const single = typeof options?.organizationId === 'string' && options.organizationId !== '';
-  if (single === (options?.allOrganizations === true)) return refusal(log, 'ORGANIZATION_SCOPE_REQUIRED');
+  // Exactly one scope (a call with neither must not read as "every organization"), and valid kinds if named.
+  const invalid = validateOptions({ ...options, apply: false });
+  if (invalid) return refusal(log, invalid);
+  const single = options.allOrganizations !== true;
   const scope = single ? { organization_id: options.organizationId } : { all_organizations: true };
   const organizationId = single ? options.organizationId : null;
+  const kinds = options.kinds;
   let open = false;
   try {
     await client.query('begin transaction isolation level repeatable read read only');
@@ -467,15 +545,10 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       await close();
       return refusal(log, 'SCHEMA_MISSING', { missing: catalog.missing });
     }
-    const classes = await readClasses(client, organizationId, key);
-    const tvs = await readTvs(client, organizationId);
-    const organizations = await readOrganizations(client, organizationId, catalog.tables);
+    const { classes, tvs, organizations, fingerprint } = await readPlan(client, organizationId, scope, kinds, catalog, key);
     await close();
     const swept = await sweep(client, options, catalog, key);
 
-    const fingerprint = `sha256:${crypto.createHash('sha256').update(JSON.stringify({
-      markers: STRICT_MARKERS, strict_rule: STRICT_RULE, scope, ...classes.material, tvs: tvs.material, ...organizations.material,
-    })).digest('hex')}`;
     const counts = {
       classes: classes.report.length,
       registrations: classes.report.reduce((n, c) => n + c.registrations.length, 0),
@@ -488,14 +561,309 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       sweep_tables_failed: swept.tables_failed.length,
     };
     const report = {
-      mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, strict_rule: STRICT_RULE, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
+      mode: 'dry-run', scope, kinds: kinds === undefined ? null : [...kinds].sort(), markers: { strict: STRICT_MARKERS, strict_rule: STRICT_RULE, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
       unknown_foreign_keys: classes.unknownForeignKeys, missing_foreign_keys: classes.missingForeignKeys,
       classes: classes.report, tvs: tvs.report,
       test_organizations: organizations.testOrganizations, hiit_fit: organizations.hiitFit, sweep: swept,
     };
     log('plan', report);
-    log('dry-run', { plan_fingerprint: fingerprint, person_ref: personRefKey, counts, note: 'report only: this version has no write path' });
+    log('dry-run', {
+      plan_fingerprint: fingerprint, kinds: report.kinds, person_ref: personRefKey, counts,
+      note: kinds === undefined
+        ? 'nothing written; an apply needs a dry run of the same scope that names its kinds'
+        : `nothing written; an apply of exactly these kinds needs mode apply, the phrase ${CONFIRM_PHRASE}, the same scope and expected_fingerprint set to this plan_fingerprint`,
+    });
     return { status: 'dry-run', ...report };
+  } catch (error) {
+    if (open) await client.query('rollback').catch(() => {});
+    throw error;
+  }
+}
+
+// The planned classes, restated on every lock, delete and check: STRICT title, in scope.
+const PLANNED_CLASSES = `select c.organization_id, c.class_id from pilot.scheduler_classes c
+  where ${strictSql('c.title')} and ($1::text is null or c.organization_id = $1)`;
+// What hangs off a class: [table, the column naming the class].
+const CLASS_CHILDREN = Object.freeze([['scheduler_registrations', 'class_id'], ['scheduler_attendance', 'class_id'],
+  ['session_script_runs', 'class_id'], ['session_run_athletes', 'register_class_id']]);
+const ORGANIZATION_NAME_MATCH = {
+  'test-organizations': ['lower(left(organization_name, length($2))) = $2 and organization_id <> $3', TEST_ORGANIZATION_NAME_PREFIX],
+  'hiit-fit': ['organization_id = $3 and lower(organization_name) = $2', HIIT_FIT.name],
+};
+
+// Organization tables a new row could join with no lock on the organization row: no foreign key
+// on organization_id whose columns are all NOT NULL, is not deferrable, and references a pilot
+// table's organization_id (pilot.organizations itself, or a table that in turn needs a row of this
+// organization). A row there takes no FOR KEY SHARE on the organization (MATCH SIMPLE skips a key
+// with a null column), so for "hiit fit" these tables are held whole, read on, writes wait.
+const ORGANIZATION_TABLES_NO_KEY_HOLDS = `select c.relname as t from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+   join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attname = 'organization_id' and not a.attisdropped
+  where n.nspname = 'pilot' and c.relkind = 'r' and c.relname <> 'organizations' and c.relname <> all($1::text[])
+    and not exists (select 1 from pg_catalog.pg_constraint k
+      join pg_catalog.pg_class rc on rc.oid = k.confrelid join pg_catalog.pg_namespace rn on rn.oid = rc.relnamespace
+     where k.contype = 'f' and k.conrelid = c.oid and rn.nspname = 'pilot' and not k.condeferrable
+       and exists (select 1 from unnest(k.conkey, k.confkey) as u(col, refcol) join pg_catalog.pg_attribute ra
+                     on ra.attrelid = k.confrelid and ra.attnum = u.refcol where u.col = a.attnum and ra.attname = 'organization_id')
+       and not exists (select 1 from unnest(k.conkey) as u(col) join pg_catalog.pg_attribute fa
+                         on fa.attrelid = c.oid and fa.attnum = u.col where not fa.attnotnull))
+  order by 1`;
+
+/** Locks what the kinds write, before the plan is read. Returns the live session count of a named organization. */
+async function lockPlanned(client, kinds, organizationId) {
+  if (kinds.includes('classes')) {
+    // activity_log and floor_plans_daily name a class with no foreign key, so no row lock holds
+    // them back: held whole (reads go on, writes wait) until the commit, so none can come to name
+    // a planned class between the plan and the commit.
+    await client.query('lock table pilot.activity_log, pilot.floor_plans_daily in share mode');
+    await client.query(`${PLANNED_CLASSES} for update`, [organizationId]);
+    for (const [table, column] of CLASS_CHILDREN) {
+      await client.query(`select 1 from pilot.${table} t where (t.organization_id, t.${column}) in (${PLANNED_CLASSES}) for update of t`,
+        [organizationId]);
+    }
+  }
+  if (kinds.includes('tvs')) {
+    await client.query(`select 1 from pilot.gym_tvs t where ${strictSql('t.tv_name')} and ($1::text is null or t.organization_id = $1)
+      for update`, [organizationId]);
+  }
+  if (!kinds.some((kind) => ORGANIZATION_KINDS.includes(kind))) return 0;
+  // FOR UPDATE, not FOR NO KEY UPDATE: it also holds back every insert whose
+  // foreign key on organization_id names this organization (those take FOR KEY
+  // SHARE on it). Not a row whose key has a null column or no key at all:
+  // for "hiit fit", the tables such rows go in are held whole below.
+  await client.query('select 1 from pilot.organizations where organization_id = $1 for update', [organizationId]);
+  if (kinds.includes('hiit-fit')) {
+    const unheld = (await client.query(ORGANIZATION_TABLES_NO_KEY_HOLDS, [EMPTY_EXCEPT])).rows.map((row) => row.t);
+    if (unheld.length > 0) await client.query(`lock table ${unheld.map((t) => `pilot.${ident(t)}`).join(', ')} in share mode`);
+  }
+  return (await client.query('select 1 from pilot.session_tokens where organization_id = $1 and revoked_at is null for update',
+    [organizationId])).rowCount ?? 0;
+}
+
+/**
+ * Counts, after the writes, of what must now be gone or changed. Every value
+ * must be 0. Not the class children: their foreign keys (checked by the plan,
+ * KNOWN_FOREIGN_KEY_MISSING) cascade or set null, so none can still name a
+ * deleted class. activity_log and floor_plans_daily are held whole by
+ * lockPlanned, and so are the "hiit fit" tables no key holds back; these
+ * re-reads are the check that the locks held.
+ */
+async function endState(client, planned, m, tvKeys, organizationId, { hiitFit, tables }) {
+  const classKeys = JSON.stringify(m.classes.map(([o, c]) => ({ o, c })));
+  const naming = (table) => `(select count(*)::int from pilot.${table} t join k on t.organization_id = k.o and t.class_id = k.c)`;
+  const checks = planned.classes === 0 ? {} : (await client.query(
+    `with k as (select * from jsonb_to_recordset($1::jsonb) as k(o text, c text))
+     select ${['scheduler_classes', 'activity_log', 'floor_plans_daily'].map((table) => `${naming(table)} as ${table}_left`).join(', ')}`,
+    [classKeys],
+  )).rows[0];
+  if (planned.tvs > 0) {
+    checks.tvs_not_disconnected = (await client.query(
+      `select count(*)::int as n from pilot.gym_tvs t join jsonb_to_recordset($1::jsonb) as k(o text, v text)
+          on t.organization_id = k.o and t.tv_id = k.v
+        where t.revoked_at is null or t.current_run_id is not null or t.pair_code_hash is not null`, [tvKeys])).rows[0].n;
+  }
+  if (planned.organization) {
+    checks.organization_not_inactive = (await client.query(
+      "select count(*)::int as n from pilot.organizations where organization_id = $1 and status <> 'inactive'", [organizationId])).rows[0].n;
+    checks.sessions_left = (await client.query(
+      'select count(*)::int as n from pilot.session_tokens where organization_id = $1 and revoked_at is null', [organizationId])).rows[0].n;
+  }
+  if (hiitFit) {
+    // H-2 A: closed only while empty. Re-counted here, after the writes, in every table, with or without a foreign key.
+    const held = [...tables].filter(([table, entry]) => entry.columns.has('organization_id') && !EMPTY_EXCEPT.includes(table));
+    for (const row of (await client.query(
+      `select t, n from (${held.map(([table]) => `select '${table.replace(/'/g, "''")}' as t, count(*)::int as n from pilot.${ident(table)}
+        where organization_id::text = $1`).join(' union all ')}) x where n > 0 order by t`,
+      [organizationId],
+    )).rows) checks[`hiit_fit_rows:${row.t}`] = row.n;
+  }
+  return Object.entries(checks).filter(([, n]) => Number(n) !== 0).map(([name, n]) => `${name}=${n}`);
+}
+
+/**
+ * The apply. One transaction: lock, re-plan, compare with the reviewed
+ * fingerprint, refuse on any difference or any planned refusal, write, check
+ * every count and the end state, audit, commit. Returns { status: 'applied' },
+ * 'nothing-to-apply' or 'refused' (nothing written); throws, after rolling
+ * back, on a database error. NEAR rows and K5 are never written: every write
+ * restates the STRICT marker and the scope.
+ */
+export async function applyAuditTestRecords(client, options, { log = defaultLog, refKey } = {}) {
+  const invalid = validateOptions(options) ?? (options.apply === true ? null : 'APPLY_NOT_REQUESTED');
+  if (invalid) return refusal(log, invalid);
+  const kinds = options.kinds;
+  const single = options.allOrganizations !== true;
+  const scope = single ? { organization_id: options.organizationId } : { all_organizations: true };
+  const organizationId = single ? options.organizationId : null;
+  const key = typeof refKey === 'string' && refKey !== '' ? refKey : crypto.randomBytes(32);
+  let open = false;
+  const refuseInside = async (reason, detail = {}) => {
+    open = false;
+    await client.query('rollback');
+    return refusal(log, reason, detail);
+  };
+  try {
+    await client.query('begin');
+    open = true;
+    await client.query("set local lock_timeout = '10s'");
+    await client.query("set local statement_timeout = '5min'");
+    if (single && (await client.query('select 1 from pilot.organizations where organization_id = $1', [organizationId])).rows.length !== 1) {
+      return await refuseInside('ORGANIZATION_NOT_FOUND');
+    }
+    const catalog = await readCatalog(client);
+    if (catalog.missing.length > 0) return await refuseInside('SCHEMA_MISSING', { missing: catalog.missing });
+    const triggers = (await client.query(
+      `select c.relname || '.' || t.tgname as name from pg_catalog.pg_trigger t
+         join pg_catalog.pg_class c on c.oid = t.tgrelid join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'pilot' and not t.tgisinternal and c.relname = any($1::text[]) order by 1`,
+      [APPLY_TABLES],
+    )).rows.map((row) => row.name).filter((name) => !KNOWN_TRIGGERS.includes(name));
+    if (triggers.length > 0) return await refuseInside('UNKNOWN_TRIGGER', { triggers });
+
+    const sessionsLocked = await lockPlanned(client, kinds, organizationId);
+    const plan = await readPlan(client, organizationId, scope, kinds, catalog, key);
+    // The reviewed dry run (of the same scope and kinds) is the plan Jason approved. Anything
+    // changed since stops here, before any write. The new value is not printed: it is a plan
+    // nobody has reviewed, and pasting it would apply it.
+    if (plan.fingerprint !== options.expectFingerprint) {
+      return await refuseInside('PLAN_FINGERPRINT_MISMATCH', {
+        expected: options.expectFingerprint, note: 'run a fresh dry run of the same scope and kinds, and have it reviewed',
+      });
+    }
+    const m = plan.classes.material;
+    if (kinds.includes('classes')) {
+      const blocked = plan.classes.report.filter((c) => c.apply_would_refuse.length > 0)
+        .map((c) => ({ organization_id: c.organization_id, class_id: c.class_id, reasons: c.apply_would_refuse }));
+      if (blocked.length > 0) return await refuseInside('CLASS_APPLY_REFUSED', { classes: blocked });
+    }
+    const organizationKind = kinds.find((kind) => ORGANIZATION_KINDS.includes(kind));
+    if (kinds.includes('test-organizations')
+      && !plan.organizations.testOrganizations.some((o) => o.organization_id === organizationId)) {
+      return await refuseInside('TEST_ORGANIZATION_NOT_NAMED');
+    }
+    if (kinds.includes('hiit-fit')) {
+      const hiit = plan.organizations.hiitFit;
+      if (organizationId !== HIIT_FIT.organization_id || !hiit.found_id) return await refuseInside('HIIT_FIT_NOT_NAMED');
+      if (hiit.apply_would_refuse.length > 0) {
+        // The plan's "names the tables, with counts only": table names and numbers, nothing from a row.
+        const holding = Object.fromEntries(hiit.holding_tables.map((table) => [table, hiit.rows_by_table[table]]));
+        return await refuseInside('HIIT_FIT_APPLY_REFUSED', { reasons: hiit.apply_would_refuse, holding });
+      }
+    }
+    // A STRICT TV already disconnected (revoked, no session, no pair code) is left as it is: the
+    // Disconnect would change nothing. It is reported apart and does not make its gym "affected".
+    const connected = ([, , , , revoked, showing, pending]) => revoked === null || showing === true || pending === true;
+    const markedTvs = kinds.includes('tvs') ? plan.tvs.material : [];
+    const tvsToDisconnect = markedTvs.filter(connected);
+    const tvsAlready = markedTvs.filter((row) => !connected(row)).map(([o, v]) => ({ organization_id: o, tv_id: v }));
+    const planned = {
+      classes: kinds.includes('classes') ? m.classes.length : 0,
+      tvs: tvsToDisconnect.length,
+      organization: organizationKind !== undefined,
+    };
+    if (planned.classes === 0 && planned.tvs === 0 && !planned.organization) {
+      open = false;
+      await client.query('rollback');
+      log('nothing-to-apply', { scope, kinds, plan_fingerprint: plan.fingerprint, tvs_already_disconnected: tvsAlready });
+      return { status: 'nothing-to-apply', scope, kinds, plan_fingerprint: plan.fingerprint, tvs_already_disconnected: tvsAlready };
+    }
+
+    const done = {
+      classes: 0, registrations: 0, attendance: 0, tied_runs_untied: 0, register_marks_untied: 0, tvs: 0,
+      tvs_already_disconnected: tvsAlready.length, sessions_revoked: 0,
+    };
+    const mismatch = (table, plannedCount, written) => refuseInside('WRITE_COUNT_MISMATCH', { table, planned: plannedCount, written });
+    if (planned.classes > 0) {
+      const values = [JSON.stringify(m.classes.map(([o, c]) => ({ o, c }))), organizationId];
+      const still = `join pilot.scheduler_classes c on c.organization_id = k.o and c.class_id = k.c
+        and ${strictSql('c.title')} and ($2::text is null or c.organization_id = $2)`;
+      for (const [table, name, plannedRows] of [['scheduler_attendance', 'attendance', m.attendance],
+        ['scheduler_registrations', 'registrations', m.registrations]]) {
+        done[name] = (await client.query(`delete from pilot.${table} t using jsonb_to_recordset($1::jsonb) as k(o text, c text) ${still}
+          where t.organization_id = k.o and t.class_id = k.c`, values)).rowCount ?? 0;
+        if (done[name] !== plannedRows.length) return await mismatch(table, plannedRows.length, done[name]);
+      }
+      done.classes = (await client.query(`delete from pilot.scheduler_classes c using jsonb_to_recordset($1::jsonb) as k(o text, c text)
+        where c.organization_id = k.o and c.class_id = k.c and ${strictSql('c.title')} and ($2::text is null or c.organization_id = $2)`,
+      values)).rowCount ?? 0;
+      if (done.classes !== m.classes.length) return await mismatch('scheduler_classes', m.classes.length, done.classes);
+      // The foreign keys' SET NULL: each planned tied run and register mark kept, its tie cleared.
+      done.tied_runs_untied = (await client.query(`select count(*)::int as n from pilot.session_script_runs t
+        join jsonb_to_recordset($1::jsonb) as k(o text, r text) on t.organization_id = k.o and t.run_id = k.r where t.class_id is null`,
+      [JSON.stringify(m.tied_runs.map(([o, , r]) => ({ o, r })))])).rows[0].n;
+      if (done.tied_runs_untied !== m.tied_runs.length) return await mismatch('session_script_runs', m.tied_runs.length, done.tied_runs_untied);
+      done.register_marks_untied = (await client.query(`select count(*)::int as n from pilot.session_run_athletes t
+        join jsonb_to_recordset($1::jsonb) as k(o text, r text, a text) on t.organization_id = k.o and t.run_id = k.r
+         and t.athlete_id = k.a where t.register_class_id is null`,
+      [JSON.stringify(m.register_marks.map(([o, , r, a]) => ({ o, r, a })))])).rows[0].n;
+      if (done.register_marks_untied !== m.register_marks.length) {
+        return await mismatch('session_run_athletes', m.register_marks.length, done.register_marks_untied);
+      }
+    }
+    const tvKeys = JSON.stringify(tvsToDisconnect.map(([o, v]) => ({ o, v })));
+    if (planned.tvs > 0) {
+      // The app's own Disconnect (gymTvs.ts disconnectGymTv), on STRICT TVs only.
+      done.tvs = (await client.query(
+        `update pilot.gym_tvs t set revoked_at = coalesce(t.revoked_at, now()), current_run_id = null,
+                current_run_set_by_account_id = null, pair_code_hash = null, pair_code_expires_at = null
+           from jsonb_to_recordset($1::jsonb) as k(o text, v text)
+          where t.organization_id = k.o and t.tv_id = k.v and ${strictSql('t.tv_name')} and ($2::text is null or t.organization_id = $2)
+            and (t.revoked_at is null or t.current_run_id is not null or t.pair_code_hash is not null)`,
+        [tvKeys, organizationId],
+      )).rowCount ?? 0;
+      if (done.tvs !== planned.tvs) return await mismatch('gym_tvs', planned.tvs, done.tvs);
+    }
+    if (planned.organization) {
+      // setOrganizationStatus (auth.ts) to inactive, with the name restated. Never a delete.
+      const [match, name] = ORGANIZATION_NAME_MATCH[organizationKind];
+      const updated = (await client.query(`update pilot.organizations set status = 'inactive', updated_at = now()
+        where organization_id = $1 and ${match}`, [organizationId, name, HIIT_FIT.organization_id])).rowCount ?? 0;
+      if (updated !== 1) return await mismatch('organizations', 1, updated);
+      done.sessions_revoked = (await client.query(
+        'update pilot.session_tokens set revoked_at = now() where organization_id = $1 and revoked_at is null', [organizationId],
+      )).rowCount ?? 0;
+      if (done.sessions_revoked !== sessionsLocked) return await mismatch('session_tokens', sessionsLocked, done.sessions_revoked);
+    }
+    const mismatches = await endState(client, planned, m, tvKeys, organizationId,
+      { hiitFit: organizationKind === 'hiit-fit', tables: catalog.tables });
+    if (mismatches.length > 0) return await refuseInside('END_STATE_MISMATCH', { mismatches });
+
+    const classIds = planned.classes > 0 ? m.classes : [];
+    const tvIds = tvsToDisconnect;
+    const affected = [...new Set([...classIds.map(([o]) => o), ...tvIds.map(([o]) => o),
+      ...(planned.organization ? [organizationId] : [])])].sort();
+    for (const org of affected) {
+      const own = (rows) => rows.filter(([o]) => o === org);
+      const ids = { class_ids: own(classIds).map(([, c]) => c), tv_ids: own(tvIds).map(([, v]) => v) };
+      const named = planned.organization && org === organizationId;
+      await client.query(
+        `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
+         values ($1, $2, $3, $2, $4::jsonb)`,
+        [ids.class_ids.length > 0 ? 'data_purged' : 'update', org, AUDIT_ENTITY_TYPE, JSON.stringify({
+          plan_fingerprint: plan.fingerprint, scope, kinds, ...ids, organization_set_inactive: named ? organizationKind : null,
+          counts: {
+            classes_deleted: ids.class_ids.length,
+            registrations_deleted: planned.classes > 0 ? own(m.registrations).length : 0,
+            attendance_deleted: planned.classes > 0 ? own(m.attendance).length : 0,
+            tied_runs_untied: planned.classes > 0 ? own(m.tied_runs).length : 0,
+            register_marks_untied: planned.classes > 0 ? own(m.register_marks).length : 0,
+            tvs_disconnected: ids.tv_ids.length,
+            sessions_revoked: named ? done.sessions_revoked : 0,
+          },
+          rulings: RULINGS,
+        })],
+      );
+    }
+    await client.query('commit');
+    open = false;
+    const result = {
+      status: 'applied', scope, kinds, plan_fingerprint: plan.fingerprint, counts: done, audit_rows: affected.length,
+      class_ids: classIds.map(([o, c]) => ({ organization_id: o, class_id: c })),
+      tv_ids: tvIds.map(([o, v]) => ({ organization_id: o, tv_id: v })), tvs_already_disconnected: tvsAlready,
+      organization_set_inactive: planned.organization ? organizationId : null,
+    };
+    log('applied', result);
+    return result;
   } catch (error) {
     if (open) await client.query('rollback').catch(() => {});
     throw error;
@@ -520,7 +888,8 @@ export async function run(env = process.env, argv = process.argv.slice(2), {
   client.on?.('error', () => {});
   try {
     await client.connect();
-    return await reportAuditTestRecords(client, parsed.options, { log, refKey: env.PPBF_AUDIT_TEST_CLEANUP_REF_KEY });
+    const act = parsed.options.apply === true ? applyAuditTestRecords : reportAuditTestRecords;
+    return await act(client, parsed.options, { log, refKey: env.PPBF_AUDIT_TEST_CLEANUP_REF_KEY });
   } catch (error) {
     // Name, code and constraint only: a database error's message or detail can quote a row.
     const failure = {
@@ -535,7 +904,7 @@ export async function run(env = process.env, argv = process.argv.slice(2), {
   }
 }
 
-export const exitCodeFor = (result) => (result.status === 'dry-run' ? 0 : 1);
+export const exitCodeFor = (result) => (['dry-run', 'applied', 'nothing-to-apply'].includes(result.status) ? 0 : 1);
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
