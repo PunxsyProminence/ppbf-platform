@@ -203,14 +203,14 @@ async function addTv(gym: Gym, tvId: string, name: string, runId: string | null)
  * clock was set up and last changed, which the idle close reads.
  */
 async function addTimer(
-  gym: Gym, runId: string, { state = 'running' as 'ready' | 'running' | 'paused', secondsAgo = 90, activityAt = at(-10) } = {},
+  gym: Gym, runId: string, { state = 'running' as 'ready' | 'running' | 'paused' | 'ended', secondsAgo = 90, activityAt = at(-10) } = {},
 ) {
   await client.query(
     `insert into pilot.round_timers
-       (organization_id, run_id, round_seconds, rest_seconds, rounds_total, state, started_at, paused_at,
+       (organization_id, run_id, round_seconds, rest_seconds, rounds_total, state, started_at, paused_at, ended_at,
         configured_by_account_id, created_at, updated_at)
      values ($1, $2, 60, 30, 5, $3, case when $3 <> 'ready' then now() - make_interval(secs => $4) end,
-             case when $3 = 'paused' then now() end,
+             case when $3 = 'paused' then now() end, case when $3 = 'ended' then now() end,
              $5, $6::timestamptz, $6::timestamptz)`,
     [gym.organizationId, runId, state, secondsAgo, gym.coachId, activityAt],
   );
@@ -268,6 +268,8 @@ beforeAll(async () => {
 
   client = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
   await client.connect();
+  // The session's zone is UTC whatever the host's, so a day test that forgets the gym's zone fails here.
+  await client.query("set time zone 'UTC'");
   const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   await (fullSchema.applyFullSchema as (c: Client, o: { infraDir: string }) => Promise<unknown>)(client, { infraDir: INFRA_DIR });
   activeClient = client;
@@ -319,6 +321,7 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
     await addAthletes(gym, ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14']);
     await addAthletes(gym, ['gone'], { deleted: true });
     await addAthletes(other, ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'a1']); // a1: the same id in another gym
+    await addAthletes(other, ['gone']); // deleted here, live there: the join must match the gym
 
     await addClass(gym, 'early-bag-work', TODAY, '14:30'); // running: 14:30 to 15:30
     await addClass(gym, 'full-sparring', TODAY, '14:45', 'full'); // running; full is not cancelled
@@ -439,7 +442,7 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     // Start every run first: a run start sweeps idle runs on the real clock.
     const ring = (await startSessionScriptRun(gym.organizationId, gym.coachId, {})).run_id;
     // One live run per coach, so each other run is a second coach's.
-    const coaches = ['c2', 'c3', 'c4', 'c5', 'c6', 'c7'].map((name) => `${name}@${gym.organizationId}`);
+    const coaches = ['c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'].map((name) => `${name}@${gym.organizationId}`);
     for (const id of coaches) {
       await client.query(`insert into pilot.accounts (account_id, role, organization_id) values ($1, 'coach', $2)`, [id, gym.organizationId]);
       await client.query(
@@ -449,10 +452,10 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     }
     const runs: string[] = [];
     for (const id of coaches) runs.push((await startSessionScriptRun(gym.organizationId, id, {})).run_id);
-    const [pausedId, hiddenId, noClockId, offTvId, forgottenId, readyId] = runs;
+    const [pausedId, hiddenId, noClockId, offTvId, forgottenId, readyId, endedId] = runs;
     const otherRun = (await startSessionScriptRun(other.organizationId, other.coachId, {})).run_id;
 
-    for (const id of [ring, pausedId, hiddenId, noClockId, offTvId, readyId]) await setRun(gym, id, { startedAt: at(-10), shown: true });
+    for (const id of [ring, pausedId, hiddenId, noClockId, offTvId, readyId, endedId]) await setRun(gym, id, { startedAt: at(-10), shown: true });
     await setRun(gym, hiddenId, { startedAt: at(-10), shown: false }); // the coach chose not to show it
     await setRun(gym, forgottenId, { startedAt: at(-240), shown: true }); // idle past three hours
     await setRun(other, otherRun, { startedAt: at(-10), shown: true });
@@ -460,6 +463,7 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     await addTimer(gym, ring, { secondsAgo: 90 }); // 90 s into 60 s rounds with 30 s rest: round 2, work
     await addTimer(gym, pausedId, { state: 'paused', secondsAgo: 20 });
     await addTimer(gym, readyId, { state: 'ready' }); // set up, not started: round 0, "ready"
+    await addTimer(gym, endedId, { state: 'ended' }); // the clock was ended: round 0, "ended"
     await addTimer(gym, hiddenId);
     await addTimer(gym, offTvId);
     await addTimer(gym, forgottenId, { secondsAgo: 60, activityAt: at(-240) });
@@ -472,11 +476,13 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     await addTv(gym, 'tv-5', 'Old TV', forgottenId);
     await addTv(gym, 'tv-6', 'Idle TV', null); // a TV showing nothing
     await addTv(gym, 'tv-7', 'Warmup TV', readyId);
+    await addTv(gym, 'tv-8', 'Cooldown TV', endedId);
     await addTv(other, 'tv-1', 'Other gym TV', otherRun);
 
     const rounds = await listLiveTvRounds(gym.organizationId, NOW);
     expect(rounds).toEqual([
       { tv_name: 'Bag TV', phase: 'work', round: 1, rounds_total: 5, is_paused: true },
+      { tv_name: 'Cooldown TV', phase: 'ended', round: 0, rounds_total: 5, is_paused: false },
       { tv_name: 'Ring TV', phase: 'work', round: 2, rounds_total: 5, is_paused: false },
       { tv_name: 'Warmup TV', phase: 'ready', round: 0, rounds_total: 5, is_paused: false },
     ]);

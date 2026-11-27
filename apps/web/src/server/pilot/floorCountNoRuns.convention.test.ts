@@ -13,7 +13,7 @@
 //    in the GO). Its answers' fields are asserted in its own route test.
 //
 // 3. ONLY THE CLASSES LINE READS THE COUNT. No attendance figure, report or export may use floorCount.ts
-//    (App Overwatch's answer A, 7206212516): its importers are pinned.
+//    (App Overwatch's answer A, 7206212516): every source file that names it is pinned.
 //
 // WHAT IT IS AND IS NOT. A source check: it proves which files these files reach and which names their
 // text, and every reached file's text, holds; not what any of them returns at run time. The module walk
@@ -157,19 +157,26 @@ describe('the floor count is register-only, and the platform owner stays off the
 });
 
 describe('only the classes line reads the floor count (App Overwatch, 7206212516)', () => {
-  // No attendance figure, report or export may use floorCount.ts: its importers are pinned, and a
-  // new one fails here until App Overwatch approves it by name. scripts/ holds this repo's exports.
-  const ALLOWED_IMPORTERS = [CLASSES_ROUTE];
+  // No attendance figure, report or export may use floorCount.ts: every non-test source file that names
+  // it at all, by any import form or none, is pinned, and a new one fails here until App Overwatch
+  // approves it by name. scripts/ (the app's and the repository's) holds this repo's exports.
+  const ALLOWED_NAMERS = [CLASSES_ROUTE];
+  const REPO_SCRIPTS = path.resolve(WEB_DIR, '..', '..', 'scripts');
 
-  it('is imported by the classes line route and nothing else', () => {
-    const importers = ['app', 'components', 'lib', 'src', 'scripts']
-      .filter((dir) => fs.existsSync(path.join(WEB_DIR, dir)))
-      .flatMap((dir) => sourceFiles(path.join(WEB_DIR, dir)))
+  it('is named by the classes line route and no other source file', () => {
+    const roots = ['app', 'components', 'lib', 'src', 'scripts'].map((dir) => path.join(WEB_DIR, dir)).concat(REPO_SCRIPTS);
+    const namers = roots
+      .filter((dir) => fs.existsSync(dir))
+      .flatMap((dir) => sourceFiles(dir))
       .filter((file) => file !== FLOOR_COUNT)
-      .filter((file) => Array.from(read(file).matchAll(SPECIFIER), (m) => m[1])
-        .some((specifier) => resolveSpecifier(path.join(WEB_DIR, file), specifier) === path.join(WEB_DIR, FLOOR_COUNT)))
+      .filter((file) => /floorCount/.test(fs.readFileSync(path.join(WEB_DIR, file), 'utf8')))
       .sort();
-    expect(importers).toEqual(ALLOWED_IMPORTERS);
+    expect(namers).toEqual(ALLOWED_NAMERS);
+  });
+
+  it('control: the classes line route imports it, by the "@/src" form', () => {
+    expect(Array.from(read(CLASSES_ROUTE).matchAll(SPECIFIER), (m) => resolveSpecifier(path.join(WEB_DIR, CLASSES_ROUTE), m[1])))
+      .toContain(path.join(WEB_DIR, FLOOR_COUNT));
   });
 });
 
