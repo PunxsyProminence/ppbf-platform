@@ -7,13 +7,15 @@
 // index that starts with created_at before this migration; the migration adds
 // exactly one b-tree on (created_at) to each and nothing else to the pilot
 // catalog, and a re-apply is a no-op; the SQL names a missing table, either
-// one; the runner's readiness check refuses a database where either index is
+// one; the runner's readiness check refuses a database where any index is
 // absent or is not the index promised (and rolls back what it built), and
 // accepts one where both are; the runner refuses a host or database the
-// operator did not name; behind a long write on the family thread posts it
-// gives up at its lock timeout while coach notes go on being written; and
-// the planner can serve the sweep's window read (`created_at > $1 and
-// created_at <= $2`) from each index, returning the same rows as a plain scan.
+// operator did not name; behind a long write on the announcements, or on the
+// family thread posts, it gives up at its lock timeout while the tables built
+// after it go on being written; and the planner can serve each sweep window
+// read from its index (the gym_notice read taken word for word from
+// emailAlertEvents.ts), returning the same rows as a plain scan. The notice
+// index's key and predicate are compared as PostgreSQL prints them back.
 //
 // Family thread posts are written as the app writes them, through the table's
 // guard trigger: a guardian of this child (pilot.parents and
@@ -55,6 +57,23 @@ const TABLES = [
   { index: POSTS_INDEX, table: 'family_thread_posts' },
   { index: NOTES_INDEX, table: 'coach_observations' },
 ] as const;
+// The gym_notice index: its key and predicate as PostgreSQL prints them back.
+const NOTICE_INDEX = 'idx_pilot_announcements_notice_live_from';
+const NOTICE_EXPRESSION = 'GREATEST(created_at, COALESCE(starts_at, created_at), updated_at)';
+const NOTICE_PREDICATE = "(kind = 'notice'::text)";
+const NOTICE_LIVE_FROM_SQL = '(greatest(created_at, coalesce(starts_at, created_at), updated_at))';
+const ALL_INDEXES = [NOTICE_INDEX, POSTS_INDEX, NOTES_INDEX] as const;
+const EVENTS_SOURCE_PATH = path.resolve(__dirname, 'emailAlertEvents.ts');
+
+/** The gym_notice source's own read (emailAlertEvents.ts), its constants put in, so the test reads what the sweep reads. */
+async function gymNoticeRead(): Promise<string> {
+  const text = await fs.readFile(EVENTS_SOURCE_PATH, 'utf8');
+  const liveFrom = /const NOTICE_LIVE_FROM = '([^']+)';/.exec(text)?.[1];
+  const liveNow = /const NOTICE_LIVE_NOW = `([^`]+)`;/.exec(text)?.[1];
+  const read = /`(select n\.organization_id, n\.announcement_id::text as event_id, n\.placement\s+from pilot\.announcements n\s+where \$\{NOTICE_LIVE_NOW\}\s+and \$\{NOTICE_LIVE_FROM\} > \$1 and \$\{NOTICE_LIVE_FROM\} <= \$2)`/.exec(text)?.[1];
+  if (!liveFrom || !liveNow || !read) throw new Error('emailAlertEvents.ts: the gym_notice read was not found');
+  return read.replaceAll('${NOTICE_LIVE_NOW}', liveNow).replaceAll('${NOTICE_LIVE_FROM}', liveFrom);
+}
 
 // Jest's CJS transform rewrites a bare `import()` into `require()`, which
 // cannot load an ESM .mjs runner. Building the import through `new Function`
@@ -185,6 +204,22 @@ async function catalogOf(client: Client): Promise<string[]> {
   return rows.map((row) => row.item);
 }
 
+/** An index's table, method, flags, key expression and predicate as printed, or null if there is none of that name. */
+async function indexShape(client: Client, indexName: string): Promise<Record<string, unknown> | null> {
+  const { rows } = await client.query(
+    `select i.indrelid::regclass::text as table_name, am.amname as method, i.indisunique as unique, i.indisvalid as valid,
+            i.indnatts as keys, pg_get_expr(i.indexprs, i.indrelid) as expression, pg_get_expr(i.indpred, i.indrelid) as predicate
+     from pg_index i join pg_class c on c.oid = i.indexrelid join pg_am am on am.oid = c.relam
+     where c.relname = $1 and c.relnamespace = 'pilot'::regnamespace`,
+    [indexName],
+  );
+  return rows[0] ?? null;
+}
+const NOTICE_SHAPE = {
+  table_name: 'pilot.announcements', method: 'btree', unique: false, valid: true, keys: 1,
+  expression: NOTICE_EXPRESSION, predicate: NOTICE_PREDICATE,
+};
+
 /** Whether any relation of this name exists in pilot, valid or not. */
 async function relationExists(client: Client, name: string): Promise<boolean> {
   const { rows } = await client.query<{ found: string | null }>('select to_regclass($1)::text as found', [`pilot.${name}`]);
@@ -248,6 +283,17 @@ interface EventWindow {
  * batches up to the moment after the second.
  */
 async function seedEvents(client: Client): Promise<{ notes: EventWindow; posts: EventWindow }> {
+  // Notices and motivations, one of each every 7 minutes over two days, live
+  // when posted: the notes' window below holds notices 1-5 and no motivation.
+  await client.query(
+    `insert into pilot.announcements
+       (organization_id, announcement_id, message, author_name, author_role, created_at, updated_at, placement, kind)
+     select $1, gen_random_uuid(), 'Gym closed Monday.', 'Sweep Coach', 'coach',
+            now() - make_interval(mins => g * 7), now() - make_interval(mins => g * 7), 'everywhere', k.kind
+     from generate_series(1, 400) as g cross join (values ('notice'), ('motivation')) as k(kind)`,
+    [ORG_ID],
+  );
+  await client.query('analyze pilot.announcements');
   await client.query(
     `insert into pilot.coach_observations
        (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text, created_at)
@@ -387,7 +433,7 @@ afterAll(async () => {
 });
 
 describe('email alert sweep indexes 2 migration', () => {
-  test('before it, no index on either table starts with created_at; the SQL adds exactly one (created_at) b-tree to each', async () => {
+  test('before it, no index on either table starts with created_at and none has the notice key; the SQL adds exactly the three indexes', async () => {
     const client = await freshDatabase('sweep2_index_create');
     try {
       for (const { index, table } of TABLES) {
@@ -395,12 +441,16 @@ describe('email alert sweep indexes 2 migration', () => {
         // Not a duplicate of an index already there.
         expect(await leadingColumns(client, table)).not.toContain('created_at');
       }
+      const noticeKeys = await client.query<{ e: string | null }>(
+        `select pg_get_expr(indexprs, indrelid) as e from pg_index where indrelid = 'pilot.announcements'::regclass`,
+      );
+      expect(noticeKeys.rows.map((row) => row.e)).not.toContain(NOTICE_EXPRESSION);
 
       const before = await catalogOf(client);
       await client.query(migrationSql);
       const after = await catalogOf(client);
 
-      // The two indexes and nothing else: no column, constraint or other
+      // The three indexes and nothing else: no column, constraint or other
       // index added, and nothing dropped or changed.
       expect({
         added: after.filter((item) => !before.includes(item)).sort(),
@@ -408,12 +458,14 @@ describe('email alert sweep indexes 2 migration', () => {
         growth: after.length - before.length,
       }).toEqual({
         added: [
+          `INDEX ${NOTICE_INDEX} :: CREATE INDEX ${NOTICE_INDEX} ON pilot.announcements USING btree (${NOTICE_EXPRESSION}) WHERE ${NOTICE_PREDICATE}`,
           `INDEX ${NOTES_INDEX} :: CREATE INDEX ${NOTES_INDEX} ON pilot.coach_observations USING btree (created_at)`,
           `INDEX ${POSTS_INDEX} :: CREATE INDEX ${POSTS_INDEX} ON pilot.family_thread_posts USING btree (created_at)`,
         ],
         removed: [],
-        growth: 2,
+        growth: 3,
       });
+      expect(await indexShape(client, NOTICE_INDEX)).toEqual(NOTICE_SHAPE);
 
       for (const { index, table } of TABLES) {
         expect({ index, columns: await indexColumns(client, index) }).toEqual({ index, columns: ['created_at'] });
@@ -433,11 +485,14 @@ describe('email alert sweep indexes 2 migration', () => {
     }
   });
 
-  test('a re-apply is a no-op: still one index of each name, same column', async () => {
+  test('a re-apply is a no-op: still one index of each name, same key', async () => {
     const client = await freshDatabase('sweep2_index_idempotent');
     try {
       await client.query(migrationSql);
+      const once = await catalogOf(client);
       await client.query(migrationSql);
+      expect(await catalogOf(client)).toEqual(once);
+      expect(await indexShape(client, NOTICE_INDEX)).toEqual(NOTICE_SHAPE);
       for (const { index } of TABLES) {
         const count = await client.query<{ n: string }>(
           `select count(*)::text as n from pg_indexes where schemaname = 'pilot' and indexname = $1`,
@@ -474,17 +529,15 @@ describe('email alert sweep indexes 2 migration', () => {
     }
   });
 
-  test.each([
-    ['family_thread_posts', 'coach_observations', NOTES_INDEX],
-    ['coach_observations', 'family_thread_posts', POSTS_INDEX],
-  ])('the SQL refuses a database where pilot.%s is gone, naming it, and builds nothing on pilot.%s', async (gone, _kept, keptIndex) => {
+  test.each([['family_thread_posts'], ['coach_observations'], ['announcements']])(
+    'the SQL refuses a database where pilot.%s is gone, naming it, and builds no index at all', async (gone) => {
     const client = await freshDatabase('sweep2_index_table_gone');
     try {
       await client.query(`drop table pilot.${gone} cascade`);
       await expect(client.query(migrationSql)).rejects.toThrow(
         new RegExp(`EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY: pilot\\.${gone} does not exist`),
       );
-      expect(await indexColumns(client, keptIndex)).toBeNull();
+      for (const index of ALL_INDEXES) expect(await relationExists(client, index)).toBe(false);
     } finally {
       await client.end();
     }
@@ -497,7 +550,7 @@ describe('email alert sweep indexes 2 migration', () => {
       // Not left inside a transaction.
       const probe = await client.query<{ ok: number }>('select 1 as ok');
       expect(probe.rows[0].ok).toBe(1);
-      for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
+      for (const index of ALL_INDEXES) expect(await relationExists(client, index)).toBe(false);
     } finally {
       await client.end();
     }
@@ -509,6 +562,7 @@ describe('email alert sweep indexes 2 migration', () => {
       await applyMigrationTransaction(client, migrationSql);
       await applyMigrationTransaction(client, migrationSql);
       for (const { index } of TABLES) expect(await indexColumns(client, index)).toEqual(['created_at']);
+      expect(await indexShape(client, NOTICE_INDEX)).toEqual(NOTICE_SHAPE);
     } finally {
       await client.end();
     }
@@ -529,7 +583,7 @@ describe('email alert sweep indexes 2 migration', () => {
       process.env.PPBF_EXPECTED_POSTGRES_HOSTNAME = host;
       process.env.PPBF_EXPECTED_POSTGRES_DATABASE = database;
       await expect(runMigration()).rejects.toThrow('POSTGRES_TARGET_MISMATCH');
-      for (const { index } of TABLES) expect(await relationExists(client, index)).toBe(false);
+      for (const index of ALL_INDEXES) expect(await relationExists(client, index)).toBe(false);
     } finally {
       process.env = saved;
       await client.end();
@@ -555,6 +609,14 @@ describe('email alert sweep indexes 2 migration', () => {
   test.each([
     ['only the family thread posts index', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at)`],
     ['only the coach notes index', `create index ${NOTES_INDEX} on pilot.coach_observations (created_at)`],
+    ['only the notice index', `create index ${NOTICE_INDEX} on pilot.announcements (${NOTICE_LIVE_FROM_SQL}) where kind = 'notice'`],
+    // Every index but one, for each one: the check must ask for all three.
+    ['both created_at indexes but no notice index', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at);
+       create index ${NOTES_INDEX} on pilot.coach_observations (created_at)`],
+    ['the notice and posts indexes but no coach notes index', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at);
+       create index ${NOTICE_INDEX} on pilot.announcements (${NOTICE_LIVE_FROM_SQL}) where kind = 'notice'`],
+    ['the notice and coach notes indexes but no posts index', `create index ${NOTES_INDEX} on pilot.coach_observations (created_at);
+       create index ${NOTICE_INDEX} on pilot.announcements (${NOTICE_LIVE_FROM_SQL}) where kind = 'notice'`],
   ])('the runner refuses a database with %s', async (_label, onlyOne) => {
     const client = await freshDatabase('sweep2_index_only_one');
     try {
@@ -585,9 +647,37 @@ describe('email alert sweep indexes 2 migration', () => {
       // `if not exists` sees the name and leaves the wrong index in place;
       // the readiness check must notice and refuse.
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY');
-      // And roll back: the coach notes index the SQL built in the same
-      // transaction is gone too.
+      // And roll back: the notice and coach notes indexes the SQL built in
+      // the same transaction are gone too.
+      expect(await relationExists(client, NOTICE_INDEX)).toBe(false);
       expect(await relationExists(client, NOTES_INDEX)).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  const notice = (key: string, where = "where kind = 'notice'") =>
+    `create index ${NOTICE_INDEX} on pilot.announcements ${key} ${where}`;
+  test.each([
+    ['on the column created_at instead of the expression', notice('(created_at)')],
+    ['keyed on the expression without the coalesce', notice('((greatest(created_at, starts_at, updated_at)))')],
+    ['keyed on another expression', notice('((greatest(created_at, coalesce(ends_at, created_at), updated_at)))')],
+    ['without the predicate', notice(`(${NOTICE_LIVE_FROM_SQL})`, '')],
+    ['on another predicate', notice(`(${NOTICE_LIVE_FROM_SQL})`, "where kind = 'motivation'")],
+    ['on a narrower predicate', notice(`(${NOTICE_LIVE_FROM_SQL})`, "where kind = 'notice' and active")],
+    ['keyed on the expression with an INCLUDE column', notice(`(${NOTICE_LIVE_FROM_SQL}) include (organization_id)`)],
+    ['keyed on the expression and a second expression', notice(`(${NOTICE_LIVE_FROM_SQL}, lower(message))`)],
+    ['not a b-tree', notice(`using hash (${NOTICE_LIVE_FROM_SQL})`)],
+    ['unique', notice(`(${NOTICE_LIVE_FROM_SQL})`).replace('create index', 'create unique index')],
+    ['on a table of the same shape', `create table pilot.notice_shadow (like pilot.announcements including defaults);
+       create index ${NOTICE_INDEX} on pilot.notice_shadow (${NOTICE_LIVE_FROM_SQL}) where kind = 'notice'`],
+  ])('the runner refuses a notice index of the right name that is %s', async (_label, wrong) => {
+    const client = await freshDatabase('sweep2_notice_wrong');
+    try {
+      await client.query(wrong);
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY');
+      // Rolled back: the two created_at indexes the SQL built are gone too.
+      for (const { index } of TABLES) expect(await relationExists(client, index)).toBe(false);
     } finally {
       await client.end();
     }
@@ -595,17 +685,18 @@ describe('email alert sweep indexes 2 migration', () => {
 
   test.each([
     // As a CREATE INDEX CONCURRENTLY that failed would leave it.
-    ['not valid', 'indisvalid'],
+    ['not valid', 'indisvalid', POSTS_INDEX],
     // Valid but not ready: new writes do not go into it, so a read through it misses them.
-    ['not ready', 'indisready'],
-    ['not live', 'indislive'],
-  ])('the runner refuses an index of the right name that is %s', async (_label, flag) => {
+    ['not ready', 'indisready', POSTS_INDEX],
+    ['not live', 'indislive', POSTS_INDEX],
+    ['the notice index, not valid', 'indisvalid', NOTICE_INDEX],
+  ])('the runner refuses an index of the right name that is %s', async (_label, flag, index) => {
     const client = await freshDatabase('sweep2_index_flag');
     try {
       await applyMigrationTransaction(client, migrationSql);
       // The test server's superuser sets the catalog flag directly.
       await client.query(
-        `update pg_index set ${flag} = false where indexrelid = to_regclass('pilot.${POSTS_INDEX}')`,
+        `update pg_index set ${flag} = false where indexrelid = to_regclass('pilot.${index}')`,
       );
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY');
     } finally {
@@ -630,8 +721,8 @@ describe('email alert sweep indexes 2 migration', () => {
         (error: { code?: string; message?: string }) => error.code ?? error.message,
       );
       // While the runner waits on the posts table, a new coach note is still
-      // written at once: the posts index is built first, so nothing is held
-      // on pilot.coach_observations yet.
+      // written at once: the posts index is built before the notes index, so
+      // nothing is held on pilot.coach_observations yet.
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       await noteWriter.query("set statement_timeout = '3s'");
       await noteWriter.query(
@@ -648,13 +739,54 @@ describe('email alert sweep indexes 2 migration', () => {
       expect(waited).toBeGreaterThanOrEqual(9_000);
       // Under 15 s: the 10 s timeout, not a longer one.
       expect(waited).toBeLessThan(15_000);
-      // Rolled back: neither index, and the session is usable.
-      for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
+      // Rolled back: no index (the notice index built before the wait
+      // included), and the session is usable.
+      for (const index of ALL_INDEXES) expect(await relationExists(client, index)).toBe(false);
       expect((await client.query<{ ok: number }>('select 1 as ok')).rows[0].ok).toBe(1);
     } finally {
       await writer.query('rollback').catch(() => {});
       await writer.end();
       await noteWriter.end();
+      await client.end();
+    }
+  });
+
+  test('behind a long write on the announcements the runner gives up after its lock timeout, holding nothing on posts or coach notes while it waits', async () => {
+    const name = 'sweep2_notice_lock_timeout';
+    const client = await freshDatabase(name);
+    const writer = new Client({ connectionString: connectionStringFor(name) });
+    const other = new Client({ connectionString: connectionStringFor(name) });
+    await writer.connect();
+    await other.connect();
+    try {
+      // A notice being posted in a transaction that stays open.
+      await writer.query('begin');
+      await writer.query('lock table pilot.announcements in row exclusive mode');
+      const started = Date.now();
+      const apply = applyMigrationTransaction(client, migrationSql).then(
+        () => 'applied',
+        (error: { code?: string; message?: string }) => error.code ?? error.message,
+      );
+      // The announcements index is built first, so while the runner waits for
+      // it, a guardian's post and a coach note are written at once.
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await other.query("set statement_timeout = '3s'");
+      await guardianPosts(other, 1);
+      await other.query(
+        `insert into pilot.coach_observations
+           (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text)
+         values ($1, gen_random_uuid(), $2, $3, 'coach', 'athlete_message', 'Good work tonight.')`,
+        [ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+      expect(await apply).toBe('55P03');
+      const waited = Date.now() - started;
+      expect(waited).toBeGreaterThanOrEqual(9_000);
+      expect(waited).toBeLessThan(15_000);
+      for (const index of ALL_INDEXES) expect(await relationExists(client, index)).toBe(false);
+    } finally {
+      await writer.query('rollback').catch(() => {});
+      await writer.end();
+      await other.end();
       await client.end();
     }
   });
@@ -674,13 +806,18 @@ describe('email alert sweep indexes 2 migration', () => {
           sql: 'select co.note_id from pilot.coach_observations co where co.created_at > $1 and co.created_at <= $2',
           window: windows.notes,
         },
+        // The gym_notice source's own read, word for word: if its expression
+        // changes, this index no longer serves it and this test says so.
+        { index: NOTICE_INDEX, sql: await gymNoticeRead(), window: windows.notes, key: 'event_id' },
       ];
 
       await applyMigrationTransaction(client, migrationSql);
       await client.query('analyze pilot.family_thread_posts');
       await client.query('analyze pilot.coach_observations');
+      await client.query('analyze pilot.announcements');
 
       for (const read of reads) {
+        const id = (row: Record<string, unknown>) => ('key' in read && read.key ? row[read.key] : Object.values(row)[0]) as string;
         const params = [read.window.from, read.window.to];
         expect({ index: read.index, used: await indexesUsed(client, read.sql, params) })
           .toEqual({ index: read.index, used: expect.arrayContaining([read.index]) });
@@ -692,8 +829,7 @@ describe('email alert sweep indexes 2 migration', () => {
         try {
           const viaScan = await client.query(read.sql, params);
           expect({ index: read.index, rows: viaIndex.rows.length }).toEqual({ index: read.index, rows: 5 });
-          expect(viaIndex.rows.map((row) => Object.values(row)[0]).sort())
-            .toEqual(viaScan.rows.map((row) => Object.values(row)[0]).sort());
+          expect(viaIndex.rows.map(id).sort()).toEqual(viaScan.rows.map(id).sort());
         } finally {
           await client.query('reset enable_indexscan');
           await client.query('reset enable_bitmapscan');
