@@ -200,6 +200,17 @@ describe('the board\'s mount renders for a board reader only (GO 7206014991)', (
     expect(await screen.findByText('On the floor now: 7')).toBeTruthy();
   });
 
+  // The board's shape is checked on the page too, not only on the server (flags 3 and 4).
+  test.each([
+    ['a class carrying a count', { ...BOARD, classes: [{ ...CLASS, count: 1 }] }],
+    ['no total', { ...BOARD, total: undefined }],
+  ])('a board answer with %s says the line could not be checked, never a count per class', async (_label, body) => {
+    respond(200, body);
+    render(<BoardOnTheFloorLine />);
+    expect(await screen.findByText(FAILED)).toBeTruthy();
+    expect(screen.queryByText(/here/)).toBeNull();
+  });
+
   test.each([
     ['the platform owner', { role: 'platform_owner' as const, seats: [] }],
     ['no board session', null],

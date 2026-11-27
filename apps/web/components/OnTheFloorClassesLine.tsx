@@ -82,7 +82,11 @@ function parseTotal(value: unknown): string | null {
   return null;
 }
 
-export function parseClassesRead(payload: unknown): ClassesRead | null {
+/**
+ * `board`: the board's answer has its shape checked here too, not only on the server (flags 3 and 4):
+ * a per-class count, or no total, is a malformed answer, so the board never reads a count per class.
+ */
+export function parseClassesRead(payload: unknown, board = false): ClassesRead | null {
   const body = record(payload);
   const at = body ? time(body.read_at) : null;
   if (!body || body.ok !== true || !at || !Array.isArray(body.classes) || !Array.isArray(body.rounds)) return null;
@@ -90,11 +94,12 @@ export function parseClassesRead(payload: unknown): ClassesRead | null {
   const rounds = body.rounds.map(parseRound);
   const total = 'total' in body ? parseTotal(body.total) : null;
   if (classes.some((item) => !item) || rounds.some((item) => !item) || ('total' in body && !total)) return null;
+  if (board && (!total || classes.some((item) => item?.count !== null))) return null;
   return { at, classes: classes as ClassShown[], rounds: rounds as RoundShown[], total };
 }
 
 /** Reads the classes line once, when the component mounts; a cancelled read never lands. */
-export function useOnTheFloorClasses(): ClassesState {
+export function useOnTheFloorClasses(board = false): ClassesState {
   const [state, setState] = useState<ClassesState>({ state: 'loading' });
   useEffect(() => {
     const controller = new AbortController();
@@ -107,7 +112,7 @@ export function useOnTheFloorClasses(): ClassesState {
         });
         const payload: unknown = await response.json().catch(() => null);
         if (controller.signal.aborted) return;
-        const read = response.ok ? parseClassesRead(payload) : null;
+        const read = response.ok ? parseClassesRead(payload, board) : null;
         setState(read ? { state: 'read', read } : { state: 'failed' });
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
@@ -115,7 +120,7 @@ export function useOnTheFloorClasses(): ClassesState {
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [board]);
   return state;
 }
 
@@ -144,8 +149,8 @@ export function FloorLines({ lines, busy }: { readonly lines: readonly string[];
 }
 
 /** The line on the staff-role and volunteer home, and inside the board's wrapper below. */
-export default function OnTheFloorClassesLine({ className = '' }: { readonly className?: string }) {
-  const classes = useOnTheFloorClasses();
+export default function OnTheFloorClassesLine({ className = '', board = false }: { readonly className?: string; readonly board?: boolean }) {
+  const classes = useOnTheFloorClasses(board);
   const lines = classes.state === 'loading'
     ? [CLASSES_LINE_WORDS.checking]
     : classes.state === 'failed' ? [CLASSES_LINE_WORDS.failed] : classesLineSentences(classes.read);
@@ -159,5 +164,5 @@ export default function OnTheFloorClassesLine({ className = '' }: { readonly cla
 /** The board's mount: a board reader only. A platform owner on /board does not get it (GO 7206014991). */
 export function BoardOnTheFloorLine({ className }: { readonly className?: string }) {
   const session = useBoardSession();
-  return session?.role === 'board' ? <OnTheFloorClassesLine className={className} /> : null;
+  return session?.role === 'board' ? <OnTheFloorClassesLine className={className} board /> : null;
 }
