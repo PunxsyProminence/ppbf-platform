@@ -133,6 +133,7 @@ it('an athlete whose record is gone is refused with a 403 and the one fixed text
   mockFamily.mockRejectedValue(forbidden('Forbidden: athlete does not belong to organization'));
   const response = await GET(new NextRequest(URL));
   expect(response.status).toBe(403);
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   const body = await response.json();
   expect(body).toEqual(FAMILY_FAILURE);
   expect(body).not.toHaveProperty('on_the_floor');
