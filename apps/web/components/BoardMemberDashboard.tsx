@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import BoardSeatEvidence from './BoardSeatEvidence';
 import { useBoardSession } from './BoardRoleGate';
 import BoardSummaryPanel from '@/app/board/BoardSummaryPanel';
+import { BoardOnTheFloorLine } from './OnTheFloorClassesLine';
 import BoardWorkspaceLinks from '@/app/board/BoardWorkspaceLinks';
 import {
   BOARD_AGGREGATE_BOUNDARY_STATEMENT,
@@ -201,6 +202,9 @@ export default function BoardMemberDashboard({ seat }: Readonly<BoardMemberDashb
         <div className="mt-[var(--s5)]">
           <BoardSummaryPanel variant="workspace" heading="Organization Aggregate" />
         </div>
+
+        {/* What is running on the floor now (lane W4-3, FN-4b): a board reader only, never the platform owner. */}
+        <BoardOnTheFloorLine className="mt-[var(--s5)]" />
 
         {/* Eight of these ten tabs hold nothing but placeholders, and the
             strip used to render every one of them identically -- a fiduciary
