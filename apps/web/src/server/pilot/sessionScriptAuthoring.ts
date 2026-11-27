@@ -25,7 +25,9 @@ import { getWorkoutTemplateWithItems, issueOrder, issueParents, type WorkoutTemp
 //
 //   createSessionScriptFromTemplate  a workout template's steps, in the order
 //     a workout issued from it runs them (issueOrder), become timed blocks:
-//     minutes from the start, running on from one step to the next.
+//     minutes from the start, running on from one step to the next, except
+//     that a step an owner placed inside another and gave no minutes runs
+//     inside that step's minutes.
 //   editSessionScript  the name, each block's title and minutes, and (lane
 //     W4-5) the blocks themselves: a library drill added, a block removed, the
 //     running order.
@@ -65,7 +67,10 @@ import { getWorkoutTemplateWithItems, issueOrder, issueParents, type WorkoutTemp
 // trusts its caller to have passed the role gate; organizationId is the
 // session's and scopes every read and write below.
 
-/** What a template step with no minutes of its own starts at. The coach edits it. */
+/**
+ * What a template step with no minutes of its own starts at, unless an owner placed it inside
+ * another step: it then runs inside that step's minutes (blocksFromTemplateSteps). The coach edits it.
+ */
 export const DEFAULT_STEP_MINUTES = 5;
 
 const MAX_OFFSET_MIN = 24 * 60;

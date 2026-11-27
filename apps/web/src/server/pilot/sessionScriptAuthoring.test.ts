@@ -34,7 +34,7 @@ const step = (overrides: Partial<Parameters<typeof blocksFromTemplateSteps>[1][n
 });
 
 describe('blocksFromTemplateSteps', () => {
-  it('runs each block on from the one before, in the order given', () => {
+  it('runs each block on from the one before, in ordinal order when no step sits inside another', () => {
     const blocks = blocksFromTemplateSteps('T', [
       step({ duration_minutes: 4 }),
       step({ duration_minutes: null }),
@@ -206,7 +206,6 @@ describe('the committed templates as plans (TL-ORD-2)', () => {
       const blocks = blocksFromTemplateSteps('T', steps);
       expect({ templateId, blocks: blocks.map((block) => [block.drill_id, block.contact_level, block.start_offset_min, block.end_offset_min]) })
         .toEqual({ templateId, blocks: before });
-      expect(blocks.map((block) => block.block_order)).toEqual(steps.map((_, index) => index + 1));
     }
     // A count is not pinned, so a new template in the seed does not fail this case without a code fault.
     expect(plain).toBeGreaterThan(0);

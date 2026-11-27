@@ -561,6 +561,28 @@ describe('making a session script from a workout template', () => {
     expect(Math.max(...detail!.blocks.map((block) => block.end_offset_min))).toBe(33);
   });
 
+  test("a plan made from the Phase 1 skill session, as committed, is the template's 90 minutes: its nested step adds none", async () => {
+    const PHASE_1_SKILL = 'wtp_c2c4bec001a56b';
+    const template = seedRows('workout-templates/seed_workout_templates.csv').find((row) => row.template_id === PHASE_1_SKILL)!;
+    const items = seedRows('workout-templates/seed_workout_template_items.csv').filter((row) => row.template_id === PHASE_1_SKILL);
+    const names = new Map(seedRows('drill-library/seed_drill_library.csv').map((row) => [row.drill_id, row.name]));
+    expect(template.duration_minutes).toBe('90');
+    const byOrdinal = new Map(items.map((row) => [Number(row.ordinal), row]));
+    // Steps 1-6 state 90 minutes between them; step 7 sits inside step 6 and states none.
+    expect([1, 2, 3, 4, 5, 6].map((ordinal) => Number(byOrdinal.get(ordinal)!.duration_minutes)).reduce((a, b) => a + b, 0)).toBe(90);
+    expect(byOrdinal.get(7)).toMatchObject({ duration_minutes: '' });
+    expect(JSON.parse(byOrdinal.get(7)!.details).within_item_id).toBe(byOrdinal.get(6)!.item_id);
+    const gym = await newGym('phase-1');
+    await insertTemplateRows(gym, template, items, names);
+
+    const created = await create(gym, undefined, PHASE_1_SKILL);
+
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    // Until now step 7 added 5 minutes after step 6, and the plan read 95.
+    expect(detail?.total_minutes).toBe(90);
+    expect(detail?.blocks.slice(-2).map((block) => [block.start_offset_min, block.end_offset_min])).toEqual([[80, 90], [80, 90]]);
+  });
+
   test("a step inside another that states its own minutes keeps them, and the plan's length reaches them", async () => {
     const gym = await newGym('own-minutes');
     const step = (item_id: string, ordinal: number, duration_minutes: string, within: string | null) => ({
@@ -586,30 +608,41 @@ describe('making a session script from a workout template', () => {
     expect(detail?.total_minutes).toBe(17);
   });
 
-  test('the contact label reads the blocks in the order the plan runs them', async () => {
-    const gym = await newGym('contact-order');
+  test('the contact label reads the blocks in the order the plan runs them, either way', async () => {
     const step = (item_id: string, ordinal: number, duration_minutes: string, contact_level: string, within: string | null) => ({
       item_id, ordinal: String(ordinal), block: 'technical', drill_id: '', free_text_drill: `Step ${item_id}`,
       scale_level: '', duration_minutes, rep_count: '', contact_level, coach_note: '',
       details: within === null ? '' : JSON.stringify({ within_item_id: within }),
     });
+    const labelOf = async (label: string, items: ReturnType<typeof step>[]) => {
+      const gym = await newGym(label);
+      await insertTemplateRows(gym, { template_id: 'wtp_contact', name: 'Contact order', duration_minutes: '15', intent: 'Fixture intent' }, items, new Map());
+      const created = await create(gym, undefined, 'wtp_contact');
+      const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+      return { blocks: detail?.blocks.map((block) => [block.block_label, block.contact_level]), label: detail?.contact_structure };
+    };
+
     // By ordinal: without contact, with, without ('contact'). As run: the step inside the first comes
     // straight after it, so without, without, then with.
-    await insertTemplateRows(gym, { template_id: 'wtp_contact', name: 'Contact order', duration_minutes: '15', intent: 'Fixture intent' }, [
+    expect(await labelOf('contact-later', [
       step('wti_a', 1, '10', 'none', null),
       step('wti_spar', 2, '', 'controlled_sparring', null),
       step('wti_in_a', 3, '', 'none', 'wti_a'),
-    ], new Map());
-
-    const created = await create(gym, undefined, 'wtp_contact');
-
-    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
-    expect(detail?.blocks.map((block) => [block.block_label, block.contact_level])).toEqual([
-      ['Step wti_a', 'none'],
-      ['Step wti_in_a', 'none'],
-      ['Step wti_spar', 'controlled_sparring'],
-    ]);
-    expect(detail?.contact_structure).toBe('split_non_contact_then_contact');
+    ])).toEqual({
+      blocks: [['Step wti_a', 'none'], ['Step wti_in_a', 'none'], ['Step wti_spar', 'controlled_sparring']],
+      label: 'split_non_contact_then_contact',
+    });
+    // The other way, the one that matters for safety: by ordinal without, without, then with, but the
+    // contact step sits inside the first and runs before the second, so the session has contact and
+    // then none again ('contact'), not "without, then with".
+    expect(await labelOf('contact-earlier', [
+      step('wti_a', 1, '10', 'none', null),
+      step('wti_b', 2, '5', 'none', null),
+      step('wti_spar_in_a', 3, '', 'controlled_sparring', 'wti_a'),
+    ])).toEqual({
+      blocks: [['Step wti_a', 'none'], ['Step wti_spar_in_a', 'controlled_sparring'], ['Step wti_b', 'none']],
+      label: 'contact',
+    });
   });
 });
 

@@ -107,7 +107,10 @@ export interface WorkoutTemplateItemRow {
    * Every Backbone field of the item with no column of its own (lane YR), e.g. a sheet's
    * duration_minutes on a controlled-sparring item, which the duration column may not hold
    * (pilot_wti_no_contact_volume). SHOWN AS INFORMATION ONLY (OD-2026-11-17-002): issuing,
-   * timers and presets read duration_minutes and rep_count, never details.
+   * timers and presets read duration_minutes and rep_count, never details. The one key read is
+   * `within_item_id`, an owner's placement of the item inside another step: issueOrder issues the
+   * item after that step (TL-ORD), and a plan made from the template places and times it there
+   * (TL-ORD-2).
    */
   details: Record<string, unknown>;
   created_at: string;
