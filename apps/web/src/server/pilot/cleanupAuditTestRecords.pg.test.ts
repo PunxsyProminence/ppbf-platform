@@ -75,6 +75,7 @@ type ClassReport = {
 type Hit = { table: string; column: string; key: Record<string, string>; organization_id: string | null; marker?: string };
 type Result = {
   status: string;
+  person_ref?: string;
   reason?: string;
   plan_fingerprint?: string;
   counts?: Record<string, number | boolean>;
@@ -90,7 +91,7 @@ type Result = {
   missing?: string[];
 };
 type Options = Record<string, unknown>;
-type Deps = { log?: (event: string, payload: Record<string, unknown>) => void; createClient?: (cs: string) => unknown };
+type Deps = { log?: (event: string, payload: Record<string, unknown>) => void; createClient?: (cs: string) => unknown; refKey?: string };
 type ReportFn = (client: unknown, options: Options, deps?: Deps) => Promise<Result>;
 type RunFn = (env: Record<string, string>, argv: string[], deps?: Deps) => Promise<Result>;
 type ParseFn = (env: Record<string, string>, argv: string[]) => { ok: boolean; refusal?: { reason: string }; options?: Options };
@@ -98,13 +99,16 @@ type ParseFn = (env: Record<string, string>, argv: string[]) => { ok: boolean; r
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let report: ReportFn;
+let reportWithoutKey: ReportFn;
 let runTool: RunFn;
 let parseOptions: ParseFn;
-let printableKey: (column: string, type: string, value: unknown) => string | null;
+let printableKey: (column: string, type: string, value: unknown, key: string) => string | null;
 let databaseCounter = 0;
 
+// Stands in for the PPBF_AUDIT_TEST_CLEANUP_REF_KEY environment secret (QR A, #2227).
+const TEST_REF_KEY = 'b6-test-ref-key-not-a-real-secret';
 /** Computed here, not by the tool, so a broken personRef cannot agree with itself. */
-const ref = (value: string) => crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
+const ref = (value: string) => crypto.createHmac('sha256', TEST_REF_KEY).update(value).digest('hex').slice(0, 12);
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -308,6 +312,7 @@ function envFor(database: string, overrides: Record<string, string> = {}): Recor
     AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(database),
     PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
     PPBF_EXPECTED_POSTGRES_DATABASE: database,
+    PPBF_AUDIT_TEST_CLEANUP_REF_KEY: TEST_REF_KEY,
     ...overrides,
   };
 }
@@ -344,10 +349,11 @@ beforeAll(async () => {
   const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   const applyFullSchema = helper.applyFullSchema as (c: Client, o?: { infraDir?: string }) => Promise<unknown>;
   const tool = await nativeDynamicImport(pathToFileURL(TOOL_PATH).href);
-  report = tool.reportAuditTestRecords as ReportFn;
+  reportWithoutKey = tool.reportAuditTestRecords as ReportFn;
+  report = (client, options, deps) => reportWithoutKey(client, options, { refKey: TEST_REF_KEY, ...deps } as Deps);
   runTool = tool.run as RunFn;
   parseOptions = tool.parseOptions as ParseFn;
-  printableKey = tool.printableKey as (column: string, type: string, value: unknown) => string | null;
+  printableKey = tool.printableKey as (column: string, type: string, value: unknown, key: string) => string | null;
 
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
@@ -627,15 +633,15 @@ describe('K5 the sweep', () => {
 describe('keys and limits', () => {
   test('printableKey: raw only for class, run, TV and organization ids and non-person uuid or integer keys', () => {
     const uuid = 'aaaaaaaa-0000-4000-8000-0000000000aa';
-    expect(printableKey('class_id', 'text', 'Any text at all')).toBe('Any text at all');
-    expect(printableKey('note_id', 'uuid', uuid)).toBe(uuid);
-    expect(printableKey('registration_id', 'text', uuid)).toBe(uuid);
-    expect(printableKey('audit_id', 'int8', '42')).toBe('42');
-    expect(printableKey('athlete_id', 'text', uuid)).toBe(ref(uuid));
-    expect(printableKey('capture_participant_id', 'uuid', uuid)).toBe(ref(uuid));
-    expect(printableKey('bucket_key', 'text', BUCKET_KEY)).toBe(ref(BUCKET_KEY));
-    expect(printableKey('code', 'text', '1234567')).toBe(ref('1234567'));
-    expect(printableKey('registration_id', 'text', 'reg-test')).toBe(ref('reg-test'));
+    expect(printableKey('class_id', 'text', 'Any text at all', TEST_REF_KEY)).toBe('Any text at all');
+    expect(printableKey('note_id', 'uuid', uuid, TEST_REF_KEY)).toBe(uuid);
+    expect(printableKey('registration_id', 'text', uuid, TEST_REF_KEY)).toBe(uuid);
+    expect(printableKey('audit_id', 'int8', '42', TEST_REF_KEY)).toBe('42');
+    expect(printableKey('athlete_id', 'text', uuid, TEST_REF_KEY)).toBe(ref(uuid));
+    expect(printableKey('capture_participant_id', 'uuid', uuid, TEST_REF_KEY)).toBe(ref(uuid));
+    expect(printableKey('bucket_key', 'text', BUCKET_KEY, TEST_REF_KEY)).toBe(ref(BUCKET_KEY));
+    expect(printableKey('code', 'text', '1234567', TEST_REF_KEY)).toBe(ref('1234567'));
+    expect(printableKey('registration_id', 'text', 'reg-test', TEST_REF_KEY)).toBe(ref('reg-test'));
   });
 
   test('the sweep limit counts hits only: 600 notes with "audit test" mid-text do not hide a STRICT one', async () => {
@@ -749,7 +755,45 @@ describe('the command line, end to end', () => {
     expect(printed).toContain(ref(TEST_ATHLETE));
     expect(printed).toContain(ref(NAMED_ATHLETE));
     expect(printed).toContain(ref(BUCKET_KEY));
+    expect(printed).toContain('"person_ref": "environment key"');
+    expect(printed).not.toContain(TEST_REF_KEY);
     expectNothingRaw(printed);
+  });
+
+  test('with no key set, the run uses a per-run key, says so, and still prints no raw id', async () => {
+    const { client, name } = await freshDatabase();
+    await client.end();
+    const printedBy = () => {
+      const child = spawnSync(process.execPath, [TOOL_PATH, '--all-organizations'], {
+        cwd: WEB_DIR, env: { ...process.env, ...envFor(name, { PPBF_AUDIT_TEST_CLEANUP_REF_KEY: '' }) }, encoding: 'utf8', timeout: 300_000,
+      });
+      expect(child.status).toBe(0);
+      return `${child.stdout}\n${child.stderr}`;
+    };
+    const first = printedBy();
+    const second = printedBy();
+    for (const printed of [first, second]) {
+      expect(printed).toContain('"person_ref": "per-run key"');
+      expect(printed).not.toContain(ref(TEST_ATHLETE));
+      expectNothingRaw(printed);
+    }
+    // A fresh key each run: the same athlete's reference differs between runs.
+    const athleteRefs = (printed: string) => [...printed.matchAll(/"athlete_ref": "([0-9a-f]{12})"/g)].map((m) => m[1]);
+    expect(athleteRefs(first).length).toBeGreaterThan(0);
+    expect(athleteRefs(first)).not.toEqual(athleteRefs(second));
+  });
+
+  test('the fingerprint does not depend on the key', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const withKey = await report(client, { allOrganizations: true }, { log: () => {} });
+      const withoutKey = await reportWithoutKey(client, { allOrganizations: true }, { log: () => {} });
+      expect(withKey.person_ref).toBe('environment key');
+      expect(withoutKey.person_ref).toBe('per-run key');
+      expect(withoutKey.plan_fingerprint).toBe(withKey.plan_fingerprint);
+    } finally {
+      await client.end();
+    }
   });
 
   test('run() on this suite\'s own database returns the dry run', async () => {

@@ -18,8 +18,10 @@
  * pilot table read from pg_catalog (keys only).
  *
  * IT NEVER PRINTS free text or a raw person id. Keys print through
- * printableKey (an allow-list); a person's id prints as personRef. The
- * fingerprint is over the raw values.
+ * printableKey (an allow-list); a person's id prints as personRef, an
+ * HMAC-SHA256 under PPBF_AUDIT_TEST_CLEANUP_REF_KEY, or under a random key for
+ * this run alone when that is unset (QR A, #2227). The fingerprint is over the
+ * raw values, so it does not depend on the key.
  *
  * Target guard as RR-1 (scripts/lib/postgres-write-target.mjs), before a
  * client exists. K1 to K4 read one repeatable-read, read-only snapshot; each
@@ -91,19 +93,19 @@ function defaultLog(event, payload) {
   else console.log(line);
 }
 
-/** A person's id as printed: the first 12 hex characters of its sha256. */
-export function personRef(value) {
+/** A person's id as printed: HMAC-SHA256 under `key`, first 12 hex characters. Never the id. */
+export function personRef(value, key) {
   if (value === null || value === undefined) return null;
-  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
+  return crypto.createHmac('sha256', key).update(String(value)).digest('hex').slice(0, 12);
 }
 
 /** A key value as printed: raw only on the allow-list above, otherwise personRef. */
-export function printableKey(column, type, value) {
+export function printableKey(column, type, value, key) {
   if (value === null || value === undefined) return null;
   const text = String(value);
   if (RAW_KEY_COLUMNS.includes(column)) return text;
-  if (PERSON_COLUMN.test(column)) return personRef(text);
-  return ['int2', 'int4', 'int8', 'uuid'].includes(type) || UUID_VALUE.test(text) ? text : personRef(text);
+  if (PERSON_COLUMN.test(column)) return personRef(text, key);
+  return ['int2', 'int4', 'int8', 'uuid'].includes(type) || UUID_VALUE.test(text) ? text : personRef(text, key);
 }
 
 const refused = (reason) => ({ ok: false, refusal: { reason } });
@@ -190,7 +192,8 @@ const fkColumns = (relation, attnums) => `(select string_agg(a.attname, ',' orde
   from unnest(${attnums}) with ordinality as k(n, o) join pg_catalog.pg_attribute a on a.attrelid = ${relation} and a.attnum = k.n)`;
 
 /** K1: STRICT-titled classes, what hangs off them, and what an apply would refuse on. */
-async function readClasses(client, organizationId) {
+async function readClasses(client, organizationId, refKey) {
+  const ref = (value) => personRef(value, refKey);
   const classes = (await client.query(
     `select organization_id, class_id, title, ${markerSql('title')} as marker, status,
             ${UTC('start_at')} as start_at, ${UTC('end_at')} as end_at, (start_at <= now() and now() < end_at) as running_now
@@ -244,13 +247,13 @@ async function readClasses(client, organizationId) {
       organization_id: row.organization_id, class_id: row.class_id, marker: row.marker, status: row.status,
       start_at: row.start_at, end_at: row.end_at, distinct_athletes: new Set(athletes).size,
       registrations: (regs.get(key) ?? []).map((r) => ({
-        registration_id: printableKey('registration_id', 'text', r.registration_id), athlete_ref: personRef(r.athlete_id), status: r.status,
+        registration_id: printableKey('registration_id', 'text', r.registration_id, refKey), athlete_ref: ref(r.athlete_id), status: r.status,
       })),
       attendance: (marks.get(key) ?? []).map((a) => ({
-        attendance_id: printableKey('attendance_id', 'text', a.attendance_id), athlete_ref: personRef(a.athlete_id), status: a.status,
+        attendance_id: printableKey('attendance_id', 'text', a.attendance_id, refKey), athlete_ref: ref(a.athlete_id), status: a.status,
       })),
       tied_runs: tiedRuns,
-      register_marks: (pointers.get(key) ?? []).map((m) => ({ run_id: m.run_id, athlete_ref: personRef(m.athlete_id) })),
+      register_marks: (pointers.get(key) ?? []).map((m) => ({ run_id: m.run_id, athlete_ref: ref(m.athlete_id) })),
       untracked_references: { activity_log: count('activity_log'), floor_plans_daily: count('floor_plans_daily') },
       audit_rows_about_it: count('audit_rows'),
       apply_would_refuse: wouldRefuse,
@@ -361,7 +364,7 @@ async function readOnly(client, sql, values) {
 }
 
 /** K5: every text column of every pilot table. Keys only; report only, in every mode. */
-async function sweep(client, options, { tables, unswept }) {
+async function sweep(client, options, { tables, unswept }, refKey) {
   const single = options.allOrganizations !== true;
   const out = {
     tables_scanned: 0, columns_scanned: 0, columns_not_swept_by_type: unswept,
@@ -386,7 +389,7 @@ async function sweep(client, options, { tables, unswept }) {
     out.columns_scanned += text.length;
     if (found.length > SWEEP_ROW_LIMIT) out.truncated_tables.push(table);
     for (const row of found.slice(0, SWEEP_ROW_LIMIT)) {
-      const rowKey = Object.fromEntries(key.map((k, i) => [k.name, printableKey(k.name, k.type, row[`k${i}`])]));
+      const rowKey = Object.fromEntries(key.map((k, i) => [k.name, printableKey(k.name, k.type, row[`k${i}`], refKey)]));
       row.markers.forEach((marker, i) => {
         if (marker === null) return;
         const hit = { table, column: text[i], key: rowKey, organization_id: row.organization_id };
@@ -409,7 +412,11 @@ const refusal = (log, reason, detail = {}) => {
  * { status: 'refused', reason }; throws, after rolling back, on a database
  * error. It never writes.
  */
-export async function reportAuditTestRecords(client, options, { log = defaultLog } = {}) {
+export async function reportAuditTestRecords(client, options, { log = defaultLog, refKey } = {}) {
+  // Never printed. Without one, a random key for this run alone: references
+  // group a person's rows within this report and cannot be tied to an id.
+  const key = typeof refKey === 'string' && refKey !== '' ? refKey : crypto.randomBytes(32);
+  const personRefKey = Buffer.isBuffer(key) ? 'per-run key' : 'environment key';
   // Exactly one scope: a call with neither must not read as "every organization".
   const single = typeof options?.organizationId === 'string' && options.organizationId !== '';
   if (single === (options?.allOrganizations === true)) return refusal(log, 'ORGANIZATION_SCOPE_REQUIRED');
@@ -431,11 +438,11 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       await close();
       return refusal(log, 'SCHEMA_MISSING', { missing: catalog.missing });
     }
-    const classes = await readClasses(client, organizationId);
+    const classes = await readClasses(client, organizationId, key);
     const tvs = await readTvs(client, organizationId);
     const organizations = await readOrganizations(client, organizationId, catalog.tables);
     await close();
-    const swept = await sweep(client, options, catalog);
+    const swept = await sweep(client, options, catalog, key);
 
     const fingerprint = `sha256:${crypto.createHash('sha256').update(JSON.stringify({
       markers: STRICT_MARKERS, scope, ...classes.material, tvs: tvs.material, ...organizations.material,
@@ -451,12 +458,12 @@ export async function reportAuditTestRecords(client, options, { log = defaultLog
       sweep_near: swept.near.length,
     };
     const report = {
-      mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, near: NEAR_RULE }, plan_fingerprint: fingerprint, counts,
+      mode: 'dry-run', scope, markers: { strict: STRICT_MARKERS, near: NEAR_RULE }, person_ref: personRefKey, plan_fingerprint: fingerprint, counts,
       unknown_foreign_keys: classes.unknownForeignKeys, classes: classes.report, tvs: tvs.report,
       test_organizations: organizations.testOrganizations, hiit_fit: organizations.hiitFit, sweep: swept,
     };
     log('plan', report);
-    log('dry-run', { plan_fingerprint: fingerprint, counts, note: 'report only: this version has no write path' });
+    log('dry-run', { plan_fingerprint: fingerprint, person_ref: personRefKey, counts, note: 'report only: this version has no write path' });
     return { status: 'dry-run', ...report };
   } catch (error) {
     if (open) await client.query('rollback').catch(() => {});
@@ -482,7 +489,7 @@ export async function run(env = process.env, argv = process.argv.slice(2), {
   client.on?.('error', () => {});
   try {
     await client.connect();
-    return await reportAuditTestRecords(client, parsed.options, { log });
+    return await reportAuditTestRecords(client, parsed.options, { log, refKey: env.PPBF_AUDIT_TEST_CLEANUP_REF_KEY });
   } catch (error) {
     // Name, code and constraint only: a database error's message or detail can quote a row.
     const failure = {
