@@ -8958,7 +8958,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Read only: whether the browser named by { endpoint } (body only, never the URL) is on for the caller in this gym; { on }. 403 for a caller not offered push.",
+    "notes": "Read only: whether the browser named by { endpoint } (body only, never the URL) is on for the caller in this gym; { on }. 403 for a caller not offered push, and nothing is removed (GET or a save clears a caller no longer offered).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8989,7 +8989,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Turns web push on for this browser, for the caller, in this gym. Body is exactly { endpoint, keys: { p256dh, auth } } as PushSubscription.toJSON gives it. The endpoint must be an https URL on a plain DNS host with a path (no IP literal, port, userinfo, '@' or backslash; the table's CHECK too), p256dh exactly 65 bytes and auth at least 16 (web-push 3.6.7). Under an advisory lock on the endpoint: removes the browser from any other person in any gym (one person per browser), then saves it for the caller; at most 10 browsers per person per gym, the one saved longest ago dropped. 403 for a caller not offered push or with the keys unset. Audited (on, saved again, moved count, dropped count); never the endpoint or a key.",
+    "notes": "Turns web push on for this browser, for the caller, in this gym. Body is exactly { endpoint, keys: { p256dh, auth } } as PushSubscription.toJSON gives it. The endpoint must be an https URL on a plain DNS host with a path (no IP literal, port, userinfo, '@' or backslash; the table's CHECK too), p256dh exactly 65 bytes and auth at least 16 (web-push 3.6.7). Under an advisory lock on the endpoint: removes the browser from any other person in any gym (one person per browser), then saves it for the caller; at most 10 browsers per person per gym, the one saved longest ago dropped. A key over 130 characters is refused before any other work. 403 for a caller not offered push or with the keys unset, and, decided again under the save's own locks (the athlete row, the account, the gym, in the email store's order), when the login is off or deleted, the membership of this gym is off or its role is of another user type, the gym is not active, or an athlete is now under 18; nothing is written then. 409 with nothing written if the save deadlocks with another (two people at the cap swapping browsers). Audited (on, saved again, moved count, dropped count); a browser taken from another person is also audited in the gym that lost it, with no actor and naming only that gym's own member. Never the endpoint or a key.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
