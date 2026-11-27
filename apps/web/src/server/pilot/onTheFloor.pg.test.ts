@@ -590,7 +590,7 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
    *   Eve   a parent's own mark on the 18:00 class                    nobody yet (FN0-Q2 A)
    *   Non   no mark                                                   nobody
    *   Adu   18 or over, marked                                        staff, and herself; not the parent (F6)
-   *   Del   deleted, marked                                           nobody
+   *   Del   deleted, marked                                           nobody; refused as an athlete
    *   Kim   marked, linked to parent B only                           staff, and parent B
    * F6's "no date of birth reads as a minor" cannot be built as a row: pilot.athletes.dob is NOT NULL
    * (infra/azure/pilot_slice_postgres.sql:88), so that rule lives in isMinor alone.
@@ -668,12 +668,34 @@ describe('onTheFloorForFamily on a real database (FN-2)', () => {
     const { gym } = await familyGym('athletes');
     const expected: Record<string, boolean> = {
       reg: true, run: true, adu: true, kim: true, tie: true, ful: true, fru: true,
-      cxr: false, cxu: false, exc: false, eve: false, non: false, del: false,
+      cxr: false, cxu: false, exc: false, eve: false, non: false,
     };
     for (const [id, onFloor] of Object.entries(expected)) {
       const answer = await onTheFloorForFamily(athleteAccount(gym, id), NOW);
       expect({ id, answer }).toEqual({ id, answer: { reader: 'athlete', on_the_floor: onFloor } });
     }
+  });
+
+  // Codex on #2220 (4723722713); App Overwatch 7228636120. An athlete's session can outlive their record:
+  // a soft-deleted or missing record is refused, as on the other athlete-self routes (OD-2026-09-29-002
+  // item 10), never answered "not counted", and nothing is settled for it.
+  test('an athlete whose record is soft-deleted, or missing, is refused before anything is settled', async () => {
+    const { gym, forgotten } = await familyGym('athlete-record-gone');
+    const other = await newGym('athlete-record-gone-other');
+    await addAthlete(other, 'elsewhere', 'Elsewhere');
+    for (const caller of [
+      athleteAccount(gym, 'del'), // soft-deleted, with a present mark on today's register
+      athleteAccount(gym, 'ghost'), // never a record in this gym
+      athleteAccount(gym, 'elsewhere'), // a live record, but in another gym
+    ]) {
+      await expect(onTheFloorForFamily(caller, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    expect(await runState(gym, forgotten)).toBe('in_progress');
+
+    // A session that outlives its record: answered while the record is live, refused once it is deleted.
+    expect(await onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).toEqual({ reader: 'athlete', on_the_floor: true });
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = 'reg'`, [gym.organizationId]);
+    await expect(onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   test('a parent of no live minor child, or one naming another gym, gets an empty answer and nothing is settled', async () => {

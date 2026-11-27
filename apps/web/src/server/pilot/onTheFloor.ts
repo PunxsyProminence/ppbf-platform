@@ -34,7 +34,7 @@
  * report, board or grant figure reads it.
  *
  * THE IDLE CLOSE. closeIdleSessionRuns settles every run of this gym idle past
- * the 3-hour limit (OD-2026-10-21-001 D2) before anything is read, and it
+ * the 3-hour limit (OD-2026-10-21-001 D2) before the two counts are read, and it
  * THROWS on a failure, unlike sweepIdleRuns, which swallows one. So a stale
  * run is settled or the whole read fails: it never shows as live (F13;
  * accepted by name in the GO). It settles runs and closes their sampled
@@ -55,7 +55,10 @@
  *     the two reads checks the link again in its own statement
  *     (guardianLinkedPredicateSql, App Overwatch on #2192), so a link removed
  *     during the read is not counted. An athlete is
- *     given yes or no about themselves only. FN-0 F1: this is the one way a
+ *     given yes or no about themselves only, and only while their own record
+ *     is live: a missing or soft-deleted record is refused before anything is
+ *     settled, as on the other athlete-self routes (OD-2026-09-29-002 item 10;
+ *     Codex on #2220), never answered "not counted". FN-0 F1: this is the one way a
  *     fact derived from the staff-only presence record reaches a family, and it
  *     is that yes or no and nothing else.
  *   Anyone else is refused with 403, never handed an empty answer: an empty
@@ -253,9 +256,15 @@ export async function onTheFloorForFamily(actor: ActorIdentity, now: Date): Prom
 
   const day = gymDayIso(now);
   if (!day) throw new Error('ON_THE_FLOOR_DAY_UNRESOLVED');
+  const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
+  // An athlete's session can outlive their record, so the live record is required, as on the other
+  // athlete-self routes (OD-2026-09-29-002 item 10): a missing or soft-deleted one is refused before
+  // anything is settled, never answered "not counted" (Codex on #2220, 4723722713).
+  if (actor.role === 'athlete' && !live.has(actor.athleteId as string)) {
+    throw new ForbiddenError('Forbidden: athlete does not belong to organization');
+  }
   await closeIdleSessionRuns(organizationId, { now });
 
-  const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
   const ids = scope.filter((id) => live.has(id));
   const guardian = actor.role === 'parent' ? actor.accountId : null;
   const counted = await countedAmong(organizationId, ids, day, now, true, guardian);

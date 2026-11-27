@@ -124,6 +124,21 @@ it('a family refusal is the one fixed text, with no id and no reason passed thro
   expect(await response.json()).toEqual(FAMILY_FAILURE);
 });
 
+// Codex on #2220 (4723722713); App Overwatch 7228636120. The module now refuses a session that outlived
+// the athlete's record (onTheFloor.pg.test.ts proves that); this pins what the route makes of that refusal:
+// a 403, the status the other athlete-self routes give it (assertAthleteBelongsToOrganization), with the
+// family's one fixed text and no "not counted" answer. The route itself is unchanged by the fix.
+it('an athlete whose record is gone is refused with a 403 and the one fixed text, never "not counted"', async () => {
+  mockPrincipal.mockResolvedValue(principal('athlete', 'org-1', 'a-gone'));
+  mockFamily.mockRejectedValue(forbidden('Forbidden: athlete does not belong to organization'));
+  const response = await GET(new NextRequest(URL));
+  expect(response.status).toBe(403);
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  const body = await response.json();
+  expect(body).toEqual(FAMILY_FAILURE);
+  expect(body).not.toHaveProperty('on_the_floor');
+});
+
 it.each(['parent', 'athlete'])('a failed %s read is a 500 with the one fixed text, and no id in the log', async (role) => {
   mockPrincipal.mockResolvedValue(principal(role, 'org-1', role === 'athlete' ? 'a-7' : null));
   const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
