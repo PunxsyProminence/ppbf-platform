@@ -576,6 +576,11 @@ describe('emailAlertSwitches.ts on a real database', () => {
           expect({ person, sent, query, answer }).toEqual({ person, sent, query, answer: refused });
         }
       }
+      // The store itself asks the user type before it judges switched_on.
+      for (const key of ['minor', 'gone'] as const) {
+        await expect(setEmailAlertSwitch({ ...subject(key), switchedOn: 'yes' }, NOW))
+          .rejects.toMatchObject({ status: 403, message: 'Forbidden: email alerts are not offered to this account' });
+      }
       expect(offeredNone).toMatchObject({ status: 200, body: { ok: true, offered: false } });
       expect(refused).toMatchObject({ status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
       expect(await switchRows(client)).toEqual([]);
