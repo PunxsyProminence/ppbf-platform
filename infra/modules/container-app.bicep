@@ -140,6 +140,15 @@ resource app 'Microsoft.App/containerApps@2026-01-01' = {
                     path: '/health'
                     port: appPort
                     scheme: 'HTTP'
+                    // The probe's Host header defaults to the pod IP, which the
+                    // bridge's MCP host allowlist (MCP_ALLOWED_HOSTS) rejects with
+                    // 403, so the replica was killed ~90 s after every wake-up.
+                    httpHeaders: [
+                      {
+                        name: 'Host'
+                        value: 'localhost'
+                      }
+                    ]
                   }
                   initialDelaySeconds: 10
                   periodSeconds: 30
