@@ -165,6 +165,8 @@ test.each([
   ['a round in an unknown phase', 200, { ...BOARD, rounds: [{ ...ROUND, phase: 'warmup' }] }],
   ['a class with no end', 200, { ...BOARD, classes: [{ ...CLASS, end_at: 'later' }] }],
   ['a read time that is only a year', 200, { ...BOARD, read_at: '2026' }],
+  ['a class time with no zone', 200, { ...BOARD, classes: [{ ...CLASS, start_at: '2026-11-25T23:00' }] }],
+  ['a staff answer that carries a malformed total', 200, { ...STAFF, total: 9 }, 'staff'],
   ['a staff answer whose class has no count', 200, { ...STAFF, classes: [CLASS] }],
   ['a staff answer that carries a total', 200, { ...STAFF, total: { status: 'available', count: 7 } }, 'staff'],
   ['a board total under the floor marked available', 200, { ...BOARD, total: { status: 'available', count: 4 } }],

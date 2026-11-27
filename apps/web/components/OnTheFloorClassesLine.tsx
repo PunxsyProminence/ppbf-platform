@@ -66,7 +66,10 @@ const record = (value: unknown): Record<string, unknown> | null =>
 const whole = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const named = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 const time = (value: unknown): string | null =>
-  (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? formatGymTimeOfDay(value) : null);
+  // An instant with its zone (the route sends toISOString()); a time with no zone would read in the device's.
+  (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value)
+    ? formatGymTimeOfDay(value)
+    : null);
 
 function parseClass(value: unknown): ClassShown | null {
   const row = record(value);
