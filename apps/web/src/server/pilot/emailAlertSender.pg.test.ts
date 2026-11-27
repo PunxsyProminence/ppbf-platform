@@ -49,10 +49,12 @@ import {
 } from './emailAlertQueue';
 import {
   deliverEmailAlertSend,
+  emailAlertSenderDependencies,
   runEmailAlertSweep,
   type EmailAlertSenderDependencies,
 } from './emailAlertSender';
 import { MailSendError, type OutboundMessage } from './graphMailer';
+import { resetTokenCache } from './managedIdentityToken';
 
 jest.setTimeout(180_000);
 
@@ -397,6 +399,48 @@ describe('email alert sender', () => {
       await runEmailAlertSweep(dependencies, []);
       expect(await sendRows(client)).toMatchObject([{ status, tries: 1, last_error_code: code }]);
     } finally {
+      await client.end();
+    }
+  });
+
+  test('a hung token fetch is cut off: the try is recorded as SEND_ERROR and retried, within the bound, and nothing is sent', async () => {
+    const client = await freshDatabase('emailsender_token_hang');
+    activeClient = client;
+    const realFetch = global.fetch;
+    const env = { endpoint: process.env.IDENTITY_ENDPOINT, header: process.env.IDENTITY_HEADER };
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      resetTokenCache();
+      process.env.IDENTITY_ENDPOINT = 'http://identity.test/msi/token';
+      process.env.IDENTITY_HEADER = 'identity-header';
+      const urls: string[] = [];
+      global.fetch = jest.fn((url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        urls.push(String(url));
+        // Never answers; without a cut-off it gives up after three seconds.
+        const giveUp = setTimeout(() => reject(new Error('never answered')), 3_000);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(giveUp);
+          reject(new Error('aborted'));
+        });
+      })) as unknown as typeof fetch;
+      const real: EmailAlertSenderDependencies = {
+        ...emailAlertSenderDependencies(30_000, 50),
+        gymName: async () => 'GYM',
+        stillReads: async () => true,
+      };
+      const started = Date.now();
+      expect(await runEmailAlertSweep(real, [])).toMatchObject({ sent: 0, retried: 1 });
+      expect(Date.now() - started).toBeLessThan(2_500);
+      expect(urls).toHaveLength(1);
+      expect(urls[0].startsWith('http://identity.test/msi/token?resource=')).toBe(true);
+      expect(await sendRows(client)).toMatchObject([{ status: 'queued', tries: 1, last_status_code: null, last_error_code: 'SEND_ERROR' }]);
+    } finally {
+      global.fetch = realFetch;
+      process.env.IDENTITY_ENDPOINT = env.endpoint;
+      process.env.IDENTITY_HEADER = env.header;
+      if (env.endpoint === undefined) delete process.env.IDENTITY_ENDPOINT;
+      if (env.header === undefined) delete process.env.IDENTITY_HEADER;
+      resetTokenCache();
       await client.end();
     }
   });

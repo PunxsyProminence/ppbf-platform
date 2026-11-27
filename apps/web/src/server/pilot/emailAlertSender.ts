@@ -16,7 +16,7 @@
  *      send log migration lists when). One row's failure is logged and the
  *      tick goes on. It stops claiming after 20 seconds or 20 sends; the
  *      source sweeps and lease recovery before that, and the send in flight,
- *      come on top (a token fetch has no cut-off of its own).
+ *      come on top (the token fetch is cut off at 10 seconds).
  *
  * RE-CHECKED BEFORE EVERY SEND (plan 5.2). The switch is on, under the row's
  * user type. Sign-in to this gym is on, as resolvePrincipal (auth.ts) would
@@ -35,8 +35,8 @@
  * nothing is sent. Asked twice: once before the gym's name and the token are
  * fetched, so a person not to be mailed costs no token; and again after them,
  * just before the lease check and the send, because either can be slow (the
- * token fetch has no cut-off), and the email goes to the address that second
- * answer gives (Codex on EM-3b-2).
+ * name's read has no cut-off, the token's has 10 seconds), and the email goes
+ * to the address that second answer gives (Codex on EM-3b-2).
  *
  * WHAT IS SENT (plan 5.3). Subject "<gym short name>: open the app", body
  * "open the app": no link, no word about the event. From the sign-in sender
@@ -70,7 +70,7 @@ import { isGymEmailAlertEventTicked } from './emailAlertGymEvents';
 import { emailAlertUserTypeFor } from './emailAlertSwitches';
 import { MailSendError, sendPlainTextMail, type OutboundMessage } from './graphMailer';
 import { SENDER } from './magicLinkStore';
-import { graphTokenProvider } from './managedIdentityToken';
+import { getGraphAccessToken } from './managedIdentityToken';
 import { getOrganizationProfile, OrganizationProfileUnavailableError } from './organizationProfileStore';
 
 /** The waits between tries, one fewer than the tries (emailAlertSender.test.ts pins it). */
@@ -83,6 +83,12 @@ export const EMAIL_ALERT_RETRY_WAIT_MINUTES = [1, 5, 15, 60] as const;
  */
 export const EMAIL_ALERT_LEASE_LEFT_TO_SEND_SECONDS = EMAIL_ALERT_LEASE_SECONDS - 60;
 export const EMAIL_ALERT_MAIL_TIMEOUT_MS = 30_000;
+/**
+ * The Graph token fetch is cut off at this. The shared provider
+ * (graphTokenProvider) has no cut-off; a hung identity endpoint becomes a
+ * ManagedIdentityError, recorded as SEND_ERROR and retried.
+ */
+export const EMAIL_ALERT_TOKEN_TIMEOUT_MS = 10_000;
 /** The tick stops claiming after this, or after this many sends. */
 export const EMAIL_ALERT_SEND_LIMITS = { budgetMs: 20_000, sendsPerTick: 20 } as const;
 
@@ -100,10 +106,17 @@ export interface EmailAlertSenderDependencies {
 
 export function emailAlertSenderDependencies(
   mailTimeoutMs: number = EMAIL_ALERT_MAIL_TIMEOUT_MS,
+  tokenTimeoutMs: number = EMAIL_ALERT_TOKEN_TIMEOUT_MS,
 ): EmailAlertSenderDependencies {
   return {
     prepareSend: async () => {
-      const token = await graphTokenProvider()();
+      // graphTokenProvider's own call, with the fetch cut off (a reviewer on EM-3b-2).
+      const token = await getGraphAccessToken({
+        fetchImpl: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(tokenTimeoutMs) }),
+        identityEndpoint: process.env.IDENTITY_ENDPOINT,
+        identityHeader: process.env.IDENTITY_HEADER,
+        now: () => Date.now(),
+      });
       return (message) =>
         sendPlainTextMail(message, { sender: SENDER, saveToSentItems: false }, {
           getAccessToken: async () => token,
