@@ -27,6 +27,12 @@ interface RouteContext {
 //                                     a tied session the register treats it as a tap made then, so
 //                                     an Absent or Excused set after it wins (OD-2026-10-21-004
 //                                     ruling 1). Without it the tap counts as made now, as before.
+//        optional page_id              the random in-memory id of the page that kept the tap (W4
+//                                     item 7; #2182 round 12), stored nowhere with the tap. On a
+//                                     tied session the register lets the tap win over an untouched
+//                                     Absent that this run's own no-shows tap set from the same page,
+//                                     which sends its kept saves in tap order. Without it, or from
+//                                     another page, an Absent set after the tap wins, as above.
 //        optional request_key          a kept tap's key, the same on every resend (OVERWATCH
 //                                     7170099938 on #2178): recorded with the tap, so a resend of a
 //                                     tap that landed writes nothing and is answered with the first
