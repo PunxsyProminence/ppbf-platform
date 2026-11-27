@@ -466,6 +466,92 @@ describe('email alert sender', () => {
     }
   });
 
+  // Codex on EM-3b-2: the gym's name and the Graph token can be slow, so the
+  // person is asked again after them, just before the lease check and the
+  // send, and is mailed at the address that answer gives.
+  test.each([
+    ['the switch turned off', 'prepareSend', 'switched_off', 'coach',
+      `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
+    ['the switch turned off', 'gymName', 'switched_off', 'coach',
+      `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
+    ['the account switched off', 'prepareSend', 'sign_in_off', 'coach',
+      `update pilot.accounts set active_flag = false where account_id = '${COACH_ID}'`],
+    ['the membership switched off', 'gymName', 'sign_in_off', 'coach',
+      `update pilot.organization_memberships set active_flag = false where account_id = '${COACH_ID}'`],
+    ['the date of birth corrected to under 18', 'prepareSend', 'not_offered', 'adult',
+      `update pilot.athletes set dob = '2012-06-01' where athlete_id = '${ADULT_ATHLETE}'`],
+    ['the event no longer readable', 'prepareSend', 'not_offered', 'coach', 'unread'],
+    ['the gym unticking the event', 'prepareSend', 'gym_unticked', 'coach',
+      `insert into pilot.organization_email_alert_events (organization_id, user_type, event_kind, ticked)
+       values ('${ORG_ID}', 'staff', 'safety_escalation', false)`],
+    ['the sign-in address removed', 'prepareSend', 'no_address', 'coach',
+      `update pilot.accounts set login_email = null where account_id = '${COACH_ID}'`],
+  ])('%s while %s runs: nothing is sent, and the send is skipped as %s', async (_label, step, reason, who, change) => {
+    const client = await freshDatabase('emailsender_recheck_late');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        who === 'adult'
+          ? candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_1)
+          : candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      let reads = true;
+      const makeChange = async () => {
+        if (change === 'unread') reads = false;
+        else await client.query(change);
+      };
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => reads,
+        gymName: async (organizationId) => {
+          if (step === 'gymName') await makeChange();
+          return dependencies.gymName(organizationId);
+        },
+        prepareSend: async () => {
+          if (step === 'prepareSend') await makeChange();
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(slow, [])).toMatchObject({ sent: 0, skipped: 1 });
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'skipped', skip_reason: reason, finished: true }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['a coach\'s sign-in address', 'coach', `update pilot.accounts set login_email = 'coach.next@example.com' where account_id = '${COACH_ID}'`,
+      'coach.next@example.com'],
+    ['an adult athlete\'s confirmed address', 'adult',
+      `update pilot.email_alert_switches set confirmed_address = 'adult.next@example.com' where account_id = '${ADULT_ID}'`,
+      'adult.next@example.com'],
+  ])('%s changed while the token is fetched: the email goes to the new address only', async (_label, who, change, address) => {
+    const client = await freshDatabase('emailsender_address_late');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        who === 'adult'
+          ? candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_1)
+          : candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        prepareSend: async () => {
+          await client.query(change);
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(slow, [])).toMatchObject({ sent: 1, skipped: 0 });
+      expect(sent).toEqual([{ to: address, subject: 'GYM: open the app', body: 'open the app' }]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sent', tries: 1 }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test.each([
     ['3 minutes 50 seconds', 'lost', 0],
     ['4 minutes 10 seconds', 'sent', 1],

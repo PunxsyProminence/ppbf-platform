@@ -9,7 +9,8 @@
  *   1. sweeps each event source and queues its sends (emailAlertQueue.ts);
  *   2. puts back sends whose lease ran out (emailAlertQueue.ts);
  *   3. claims due sends one at a time (emailAlertQueue.ts), re-checks the
- *      person, fetches the Graph token, and sends only while the claim's lease
+ *      person, fetches the gym's name and the Graph token, re-checks the person
+ *      again, and sends only while the claim's lease
  *      still has four of its five minutes left; the Graph call is cut off at
  *      30 seconds. A send cut off after Graph took it can still go twice (the
  *      send log migration lists when). One row's failure is logged and the
@@ -31,7 +32,11 @@
  * event's source names: can still read the event in the app, or for a
  * guardian's message is still nudged by it (emailAlertEvents.ts). The gym still has the event
  * ticked; there is an address. Any no: the row is skipped with its reason and
- * nothing is sent.
+ * nothing is sent. Asked twice: once before the gym's name and the token are
+ * fetched, so a person not to be mailed costs no token; and again after them,
+ * just before the lease check and the send, because either can be slow (the
+ * token fetch has no cut-off), and the email goes to the address that second
+ * answer gives (Codex on EM-3b-2).
  *
  * WHAT IS SENT (plan 5.3). Subject "<gym short name>: open the app", body
  * "open the app": no link, no word about the event. From the sign-in sender
@@ -235,16 +240,23 @@ export async function deliverEmailAlertSend(
   row: ClaimedEmailAlertSend,
   dependencies: EmailAlertSenderDependencies,
 ): Promise<Outcome> {
-  const decision = await recheck(row, dependencies);
-  if (!decision.send) {
-    const written = await finish(row, `status = 'skipped', skip_reason = $3, finished_at = clock_timestamp()`, [decision.reason]);
-    return written ? 'skipped' : 'lost';
-  }
+  const first = await recheck(row, dependencies);
+  if (!first.send) return skip(row, first.reason);
   const name = (await dependencies.gymName(row.organization_id)).trim();
+  let send: (message: OutboundMessage) => Promise<void>;
   try {
     // The token first: a slow refresh then costs this claim its lease, not a
     // second email.
-    const send = await dependencies.prepareSend();
+    send = await dependencies.prepareSend();
+  } catch (error) {
+    return failed(row, error);
+  }
+  // Asked again after the slow steps, just before the lease check and the
+  // send: a switch turned off, a sign-in or age change, or a new address
+  // meanwhile is what counts (Codex on EM-3b-2).
+  const decision = await recheck(row, dependencies);
+  if (!decision.send) return skip(row, decision.reason);
+  try {
     // Send only while this claim's lease has time to spare: a lease that ran
     // out may already be another replica's, and that one would send too.
     const live = await queryOne<{ live: boolean }>(
@@ -260,24 +272,34 @@ export async function deliverEmailAlertSend(
       body: 'open the app',
     });
   } catch (error) {
-    const mailError = error instanceof MailSendError ? error : undefined;
-    const status = mailError?.statusCode;
-    const code = mailError ? (mailError.graphErrorCode ?? mailError.reason) : 'SEND_ERROR';
-    const final = (status !== undefined && status >= 400 && status < 500 && status !== 429)
-      || mailError?.reason === 'RECIPIENT_MALFORMED' || mailError?.reason === 'MESSAGE_EMPTY';
-    if (final || row.tries >= EMAIL_ALERT_MAX_TRIES) {
-      const written = await finish(row, `status = 'failed', finished_at = clock_timestamp(),
-                                         last_status_code = $3, last_error_code = $4`, [status ?? null, code]);
-      return written ? 'failed' : 'lost';
-    }
-    const written = await finish(row, `status = 'queued',
-                                       next_try_at = clock_timestamp() + make_interval(mins => $5),
-                                       last_status_code = $3, last_error_code = $4`,
-    [status ?? null, code, EMAIL_ALERT_RETRY_WAIT_MINUTES[row.tries - 1]]);
-    return written ? 'retried' : 'lost';
+    return failed(row, error);
   }
   const written = await finish(row, `status = 'sent', finished_at = clock_timestamp(), last_status_code = null, last_error_code = null`, []);
   return written ? 'sent' : 'lost';
+}
+
+async function skip(row: ClaimedEmailAlertSend, reason: SkipReason): Promise<Outcome> {
+  const written = await finish(row, `status = 'skipped', skip_reason = $3, finished_at = clock_timestamp()`, [reason]);
+  return written ? 'skipped' : 'lost';
+}
+
+/** A try that failed: final, or queued again after its wait (plan 5.4). */
+async function failed(row: ClaimedEmailAlertSend, error: unknown): Promise<Outcome> {
+  const mailError = error instanceof MailSendError ? error : undefined;
+  const status = mailError?.statusCode;
+  const code = mailError ? (mailError.graphErrorCode ?? mailError.reason) : 'SEND_ERROR';
+  const final = (status !== undefined && status >= 400 && status < 500 && status !== 429)
+    || mailError?.reason === 'RECIPIENT_MALFORMED' || mailError?.reason === 'MESSAGE_EMPTY';
+  if (final || row.tries >= EMAIL_ALERT_MAX_TRIES) {
+    const written = await finish(row, `status = 'failed', finished_at = clock_timestamp(),
+                                       last_status_code = $3, last_error_code = $4`, [status ?? null, code]);
+    return written ? 'failed' : 'lost';
+  }
+  const written = await finish(row, `status = 'queued',
+                                     next_try_at = clock_timestamp() + make_interval(mins => $5),
+                                     last_status_code = $3, last_error_code = $4`,
+  [status ?? null, code, EMAIL_ALERT_RETRY_WAIT_MINUTES[row.tries - 1]]);
+  return written ? 'retried' : 'lost';
 }
 
 /** Writes an outcome only while this claim still holds the row's lease; says whether it did. */
