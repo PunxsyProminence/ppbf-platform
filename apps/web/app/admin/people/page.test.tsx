@@ -128,6 +128,11 @@ function fetchMock(options: MockOptions = {}) {
       } as Response;
     }
 
+    if (url.includes('/api/pilot/on-the-floor/classes')) {
+      // The classes and rounds above the names (lane W4-3, FN-4b): no class running.
+      return { ok: true, status: 200, json: async () => ({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] }) } as Response;
+    }
+
     if (url.includes('/api/pilot/on-the-floor')) {
       return {
         ok: true,
@@ -200,8 +205,9 @@ describe('who is on the floor now, on the admin home (lane W4-3, FN-3; Jason Q3.
     const strip = screen.getByRole('heading', { name: 'Morning check' }).closest('section');
     expect(strip).not.toBeNull();
     expect(line.closest('section')?.previousElementSibling).toBe(strip);
-    const floorReads = (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).includes('/api/pilot/on-the-floor'));
-    expect(floorReads).toHaveLength(1);
+    const floorReads = (route: string) => (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).endsWith(route));
+    expect(floorReads('/api/pilot/on-the-floor')).toHaveLength(1);
+    expect(floorReads('/api/pilot/on-the-floor/classes')).toHaveLength(1);
   });
 });
 
