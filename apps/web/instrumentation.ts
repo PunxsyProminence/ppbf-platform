@@ -7,7 +7,7 @@
 // (default 30, clamped 5-600).
 //
 // The loop's sweep slot runs every tick: the content-free email alert (lane
-// W4-1), then the video scan sweep.
+// W4-1), the web push alert (lane W5-WP), then the video scan sweep.
 //
 // The loop's housekeeping slot carries the platform's retention work: purging
 // terminal job rows and archiving SHADOW chat audit rows out of Postgres. Both
@@ -36,6 +36,7 @@ export async function register(): Promise<void> {
   const { sweepQuarantinedVideos } = await import('./src/server/pilot/videoScanSweep');
   const { createShadowArchivalSweep } = await import('./src/server/pilot/shadowArchival');
   const { runEmailAlertSweep } = await import('./src/server/pilot/emailAlertSender');
+  const { runPushAlertSweep } = await import('./src/server/pilot/pushAlertSender');
   const intervalMs = resolveShadowWorkerIntervalMs();
   const sweepShadowAudit = createShadowArchivalSweep();
   let loggedScanUnconfigured = false;
@@ -57,6 +58,17 @@ export async function register(): Promise<void> {
         if (Object.values(alerts).some((count) => count > 0)) console.log('Email alert sweep', alerts);
       } catch (error) {
         console.error('Email alert sweep failed', {
+          errorClass: error instanceof Error ? error.name : typeof error,
+        });
+      }
+      // The web push alert (lane W5-WP, WP-2b-2c) next, in its own try, the
+      // same way. It does nothing at all while the push settings are unset.
+      // Counts only, never an endpoint.
+      try {
+        const pushes = await runPushAlertSweep();
+        if (Object.values(pushes).some((count) => count > 0)) console.log('Push alert sweep', pushes);
+      } catch (error) {
+        console.error('Push alert sweep failed', {
           errorClass: error instanceof Error ? error.name : typeof error,
         });
       }
