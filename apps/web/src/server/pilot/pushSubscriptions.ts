@@ -154,8 +154,17 @@ function audit(client: PoolClient, subject: PushSubject, eventType: 'create' | '
   }, client);
 }
 
-/** Removes every browser row the caller holds in this gym, audited, when they are no longer offered push. */
-async function dropBrowsers(subject: PushSubject): Promise<void> {
+/**
+ * Removes every browser row the caller holds in this gym, audited, when they
+ * are no longer offered push -- asked again first, under the locks a save
+ * takes and in its order (Codex on #2236): the athlete's own row FOR SHARE
+ * (an athlete), then the account FOR NO KEY UPDATE. A date of birth corrected
+ * to 18 or over, or a save, made before then has committed by then, and the
+ * rows stay; one made after waits for this. As main's email store does
+ * (emailAlertSwitches.ts lockPerson), a record some other account is linked
+ * to (A5) is read, not locked.
+ */
+async function dropBrowsers(subject: PushSubject, now: Date): Promise<void> {
   // Most never had a row (every athlete under 18): one read, no lock, as the email store does.
   const any = await queryOne<{ found: boolean }>(
     'select true as found from pilot.push_subscriptions where organization_id = $1 and account_id = $2 limit 1',
@@ -163,6 +172,14 @@ async function dropBrowsers(subject: PushSubject): Promise<void> {
   );
   if (!any) return;
   await withTransaction(async (client) => {
+    const athleteId = emailAlertCandidateUserType(subject.role) === 'adult_athlete' ? subject.athleteId?.trim() || null : null;
+    if (athleteId) {
+      await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for share', [
+        subject.organizationId, athleteId,
+      ]);
+    }
+    await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
+    if (await emailAlertUserTypeFor(subject, now)) return;
     const { rowCount } = await client.query(
       'delete from pilot.push_subscriptions where organization_id = $1 and account_id = $2',
       [subject.organizationId, subject.accountId],
@@ -174,23 +191,30 @@ async function dropBrowsers(subject: PushSubject): Promise<void> {
 /** Whether push is offered to the caller, with the public key a browser subscribes with. */
 export async function readPushOffer(subject: PushSubject, env: PushSettings = process.env, now = new Date()): Promise<PushOffer> {
   if (!(await emailAlertUserTypeFor(subject, now))) {
-    await dropBrowsers(subject);
+    await dropBrowsers(subject, now);
     return { offered: false };
   }
   const keys = pushKeys(env);
   return keys ? { offered: true, public_key: keys.publicKey } : { offered: false };
 }
 
-/** Whether this browser is on for the caller in this gym. Read only: someone not offered is refused, not cleared. */
+/**
+ * Whether this browser is on for the caller in this gym, under the user type
+ * they have now. A row saved under another (a parent made a coach) is one the
+ * sender skips, so it is not on here, and the page offers to save it again,
+ * which saves it under the new one (Codex on #2236). Read only: someone not
+ * offered is refused, not cleared.
+ */
 export async function isPushOnHere(
   subject: PushSubject, body: unknown, env: PushSettings = process.env, now = new Date(),
 ): Promise<{ readonly on: boolean }> {
   const endpoint = parseEndpointBody(body);
-  if (!(await emailAlertUserTypeFor(subject, now)) || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
+  const userType = await emailAlertUserTypeFor(subject, now);
+  if (!userType || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
   const row = await queryOne<{ on: boolean }>(
     `select true as on from pilot.push_subscriptions
-      where organization_id = $1 and account_id = $2 and endpoint = $3`,
-    [subject.organizationId, subject.accountId, endpoint],
+      where organization_id = $1 and account_id = $2 and endpoint = $3 and user_type = $4`,
+    [subject.organizationId, subject.accountId, endpoint, userType],
   );
   return { on: row?.on === true };
 }
@@ -256,7 +280,7 @@ export async function savePushBrowser(
 ): Promise<{ readonly on: true }> {
   const browser = parsePushBrowser(body);
   const userType = await emailAlertUserTypeFor(subject, now);
-  if (!userType) await dropBrowsers(subject);
+  if (!userType) await dropBrowsers(subject, now);
   if (!userType || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
   let saved = false;
   try {
