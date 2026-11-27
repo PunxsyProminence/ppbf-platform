@@ -298,7 +298,8 @@ async function readTvs(client, organizationId) {
     [organizationId],
   )).rows;
   const marked = rows.filter((row) => STRICT_MARKERS.includes(row.marker));
-  const printed = ({ paired_raw: _p, revoked_raw: _r, run_raw: _s, ...row }) => row;
+  // The *_raw fields are for the fingerprint only, never printed.
+  const printed = (row) => Object.fromEntries(Object.entries(row).filter(([name]) => !name.endsWith('_raw')));
   return {
     report: { marked: marked.map(printed), others: rows.filter((row) => !STRICT_MARKERS.includes(row.marker)).map(printed) },
     // Not last_seen_at: a working TV moves it every few seconds.
