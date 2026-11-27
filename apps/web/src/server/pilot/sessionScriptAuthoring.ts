@@ -71,6 +71,16 @@ export const DEFAULT_STEP_MINUTES = 5;
 const MAX_OFFSET_MIN = 24 * 60;
 const MAX_TEXT_LENGTH = 200;
 
+/**
+ * A title cut to MAX_TEXT_LENGTH UTF-16 units (cleanText's measure) at a code-point boundary. A plain
+ * slice can end in half a surrogate pair, which the database stores as U+FFFD; this drops that half
+ * (App Overwatch on #2191; Codex on #2203).
+ */
+export function cutToLength(text: string): string {
+  const cut = text.slice(0, MAX_TEXT_LENGTH);
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
 export class SessionScriptAuthoringError extends Error {
   readonly status: number;
 
@@ -164,7 +174,7 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
       block_order: index + 1,
       start_offset_min: start,
       end_offset_min: offset,
-      block_label: label.slice(0, MAX_TEXT_LENGTH),
+      block_label: cutToLength(label),
       what_to_say: step.coach_note?.trim() || null,
       what_to_explain: `${FROM_TEMPLATE}${facts.length > 0 ? facts.join(', ') : templateName}`,
       block_kind: step.drill_id === null ? 'instruction' : 'drill_round',
@@ -690,7 +700,7 @@ export async function editSessionScript(
           refuse('SESSION_SCRIPT_COPY_CONTACT_ABOVE_DRILL');
         }
         return {
-          ...place, block_label: add.block_label ?? block_label.slice(0, MAX_TEXT_LENGTH), what_to_say,
+          ...place, block_label: add.block_label ?? cutToLength(block_label), what_to_say,
           // The "From the drill" line names the version the block links (audit 2026-10-17 item 4; reviewer C).
           what_to_explain: drill && what_to_explain?.startsWith(FROM_DRILL) ? `${FROM_DRILL}${drill.name}` : what_to_explain,
           what_to_watch, what_to_fix, block_kind, drill_id: drill?.drill_id ?? null, scale_level, contact_level,
@@ -699,7 +709,7 @@ export async function editSessionScript(
       const drill = drills.get(add.drill_id) as DrillForBlock;
       return {
         ...place,
-        block_label: add.block_label ?? (drill.name.trim().slice(0, MAX_TEXT_LENGTH) || `Step ${index + 1}`),
+        block_label: add.block_label ?? (cutToLength(drill.name.trim()) || `Step ${index + 1}`),
         what_to_say: null,
         what_to_explain: `${FROM_DRILL}${drill.name}`,
         what_to_watch: null,
