@@ -17,16 +17,25 @@ function load() {
   const showNotification = jest.fn().mockResolvedValue(undefined);
   const matchAll = jest.fn().mockResolvedValue([]);
   const openWindow = jest.fn().mockResolvedValue(null);
-  const self = {
+  // Any handler set by assignment (self.onpush = ..., self.onfetch = ...) is
+  // caught here too, not only addEventListener (reviewers C and D on #2234).
+  const assigned: string[] = [];
+  const self = new Proxy({
     addEventListener: (type: string, listener: Listener) => {
       listeners.set(type, [...(listeners.get(type) ?? []), listener]);
     },
     registration: { showNotification },
     clients: { matchAll, openWindow },
     location: { origin: ORIGIN },
-  };
+  } as Record<string, unknown>, {
+    set(target, property, value) {
+      assigned.push(String(property));
+      target[String(property)] = value;
+      return true;
+    },
+  });
   vm.runInNewContext(SOURCE, { self, URL });
-  return { listeners, showNotification, matchAll, openWindow };
+  return { listeners, assigned, showNotification, matchAll, openWindow };
 }
 
 /** Runs one listener and waits for what it handed to waitUntil. The event object is passed as is, getters included. */
@@ -39,11 +48,12 @@ async function dispatch(listener: Listener, event: object) {
 }
 
 test('it listens for a push and a tap on the pop-up, and for nothing else (no fetch handler, no install or cache step)', () => {
-  const { listeners } = load();
+  const { listeners, assigned } = load();
   expect([...listeners.keys()].sort()).toEqual(['notificationclick', 'push']);
   expect(listeners.get('push')).toHaveLength(1);
   expect(listeners.get('notificationclick')).toHaveLength(1);
-  expect(SOURCE).not.toMatch(/\bcaches\b|importScripts|indexedDB|localStorage/);
+  expect(assigned).toEqual([]);
+  expect(SOURCE).not.toMatch(/\bcaches\b|importScripts|indexedDB|localStorage|respondWith|skipWaiting|clients\.claim|\bon[a-z]+\s*=/);
 });
 
 test('a push shows one pop-up titled "Open the app", with no body, under one tag that alerts again', async () => {
@@ -75,7 +85,16 @@ test('a tap closes the pop-up and brings forward an open window of the app, open
     { url: `${ORIGIN}/coach`, focus },
   ]);
   const close = jest.fn();
-  await dispatch(listeners.get('notificationclick')![0], { notification: { close } });
+  let read = 0;
+  // A notification any script on the site could have shown, with a link in it: never followed.
+  await dispatch(listeners.get('notificationclick')![0], {
+    notification: {
+      close,
+      get data() { read += 1; return { url: 'https://elsewhere.example.test/' }; },
+      get title() { read += 1; return 'Go here'; },
+    },
+  });
+  expect(read).toBe(0);
   expect(close).toHaveBeenCalledTimes(1);
   expect(matchAll).toHaveBeenCalledWith({ type: 'window', includeUncontrolled: true });
   expect(focus).toHaveBeenCalledTimes(1);
@@ -90,8 +109,23 @@ test.each([
   const { listeners, matchAll, openWindow } = load();
   matchAll.mockResolvedValueOnce(windows);
   const close = jest.fn();
-  await dispatch(listeners.get('notificationclick')![0], { notification: { close } });
+  let read = 0;
+  await dispatch(listeners.get('notificationclick')![0], {
+    notification: {
+      close,
+      get data() { read += 1; return { url: 'https://elsewhere.example.test/' }; },
+      get title() { read += 1; return 'Go here'; },
+    },
+  });
+  expect(read).toBe(0);
   expect(close).toHaveBeenCalledTimes(1);
   expect(openWindow).toHaveBeenCalledWith('/');
   for (const window of windows) expect(window.focus).not.toHaveBeenCalled();
+});
+
+test('a window the browser will not bring forward still leaves the tap opening the app', async () => {
+  const { listeners, matchAll, openWindow } = load();
+  matchAll.mockResolvedValueOnce([{ url: `${ORIGIN}/coach`, focus: jest.fn().mockRejectedValue(new Error('not allowed')) }]);
+  await dispatch(listeners.get('notificationclick')![0], { notification: { close: jest.fn() } });
+  expect(openWindow).toHaveBeenCalledWith('/');
 });

@@ -31,7 +31,8 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
       const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
-      return open ? open.focus() : self.clients.openWindow('/');
+      // A window the browser will not bring forward still leaves the tap useful.
+      return open ? open.focus().catch(() => self.clients.openWindow('/')) : self.clients.openWindow('/');
     }),
   );
 });

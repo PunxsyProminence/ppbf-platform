@@ -28,6 +28,9 @@ export const dynamic = 'force-dynamic';
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const gym = await getOperatingOrganizationProfileOrNull();
   return {
+    // A fixed id, so the installed app keeps its identity if start_url ever
+    // changes (browsers otherwise derive it from start_url).
+    id: '/',
     name: gym ? `${gym.shortName} Platform` : 'Platform',
     short_name: gym ? gym.shortName : 'Platform',
     start_url: '/',

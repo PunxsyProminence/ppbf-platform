@@ -13,6 +13,7 @@ const { PPBF_PROFILE } = jest.requireActual('@/src/testing/organizationProfileFi
 test('it names the app from the gym profile, starts at "/", opens on its own, and lists only the existing seal', async () => {
   profile = PPBF_PROFILE;
   expect(await manifest()).toEqual({
+    id: '/',
     name: `${PPBF_PROFILE.shortName} Platform`,
     short_name: PPBF_PROFILE.shortName,
     start_url: '/',
@@ -31,9 +32,14 @@ test('another gym gets its own name', async () => {
 
 test('with no profile it falls back to the layout\'s "Platform" and invents no gym fact', async () => {
   profile = null;
-  const result = await manifest();
-  expect(result.name).toBe('Platform');
-  expect(result.short_name).toBe('Platform');
+  expect(await manifest()).toEqual({
+    id: '/',
+    name: 'Platform',
+    short_name: 'Platform',
+    start_url: '/',
+    display: 'standalone',
+    icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+  });
 });
 
 test('it is read per request, as the layout is (no build-time database)', () => {
