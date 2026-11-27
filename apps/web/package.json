@@ -293,6 +293,7 @@
     "test:migrations:email-alert-gym-events": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/organizationEmailAlertEvents.pg.test.ts --testTimeout=300000",
     "test:migrations:email-alert-sends": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertSendsMigration.pg.test.ts --testTimeout=300000",
     "test:migrations:email-alert-queue": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertQueue.pg.test.ts --testTimeout=300000",
+    "test:migrations:email-alert-sender": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertSender.pg.test.ts --testTimeout=300000",
     "test:migrations:pain-report-notes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/painReportNotes.pg.test.ts --testTimeout=300000",
     "test:migrations:learning-loop": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/learningLoopMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:intervention-execution-request-key": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/interventionExecutionRequestKey.pg.test.ts --testTimeout=180000",
