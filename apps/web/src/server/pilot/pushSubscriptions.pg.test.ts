@@ -90,10 +90,23 @@ const vapid = createECDH('prime256v1');
 vapid.generateKeys();
 const ENV = {
   PPBF_WEB_PUSH_VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'),
-  PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: vapid.getPrivateKey().toString('base64url'),
+  // Padded to 32 bytes, as web-push's own generateVAPIDKeys pads it (its src/vapid-helper.js).
+  PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: Buffer.from(vapid.getPrivateKey().toString('hex').padStart(64, '0'), 'hex').toString('base64url'),
   PPBF_WEB_PUSH_SUBJECT: 'https://www.example.test/contact',
 };
 const NO_KEYS = {};
+
+/** Waits until `count` sessions of this database are waiting on a lock. */
+async function waitForLockWaiters(client: Client, count: number): Promise<void> {
+  for (let tries = 0; tries < 200; tries += 1) {
+    const { rows: waiting } = await client.query<{ n: number }>(
+      `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+    );
+    if (waiting[0].n >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`test bug: ${count} lock waiters never appeared`);
+}
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -276,6 +289,10 @@ describe('who is offered push (OW27-18 A: the people the email switch is offered
        values ($1, $2, 'adult_athlete', $3, $4, $5)`,
       [ORG, MINOR, b.endpoint, b.keys.p256dh, b.keys.auth],
     );
+    // A check (POST) is read only (reviewers E and F on #2236): refused, nothing removed, nothing audited.
+    await expect(isPushOnHere(minor, { endpoint: b.endpoint }, ENV)).rejects.toMatchObject({ status: 403 });
+    expect(await rows(client)).toHaveLength(1);
+    expect((await client.query(`select 1 from pilot.audit_events where entity_type = 'push_browser'`)).rowCount).toBe(0);
     expect(await readPushOffer(minor, ENV)).toEqual({ offered: false });
     expect(await rows(client)).toEqual([]);
     const audit = await client.query(`select details from pilot.audit_events where entity_type = 'push_browser'`);
@@ -314,6 +331,18 @@ describe('turning push on and off for a browser', () => {
     // Across gyms (reviewer B on #2231): a shared family phone stops getting the first person's pop-ups.
     await savePushBrowser(otherParentElsewhere, b, ENV);
     expect((await rows(client)).map((row) => [row.organization_id, row.account_id])).toEqual([[OTHER_ORG, OTHER_PARENT]]);
+    // The gym that lost the row has its own audit row, naming nobody from the other gym (reviewers E and F on #2236).
+    const { rows: lost } = await client.query(
+      `select organization_id, actor_account_id, actor_role, entity_id, details from pilot.audit_events
+        where entity_type = 'push_browser' and actor_account_id is null order by created_at, audit_id`,
+    );
+    expect(lost).toEqual([
+      { organization_id: ORG, actor_account_id: null, actor_role: null, entity_id: PARENT,
+        details: { push_browser: 'off', reason: 'turned_on_by_another_person' } },
+      { organization_id: ORG, actor_account_id: null, actor_role: null, entity_id: COACH,
+        details: { push_browser: 'off', reason: 'turned_on_by_another_person' } },
+    ]);
+    expect(JSON.stringify(lost)).not.toContain(OTHER_PARENT);
   });
 
   test('one person in two gyms keeps the browser in each', async () => {
@@ -364,6 +393,64 @@ describe('turning push on and off for a browser', () => {
   });
 });
 
+describe('a save decides again under its own locks (reviewers E and F on #2236)', () => {
+  test('a date of birth corrected to under 18 while an adult athlete\'s save waits: refused, nothing written', async () => {
+    const client = await freshDatabase('pushstore_dob_race');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_dob_race'), max: 4 });
+    const b = browser('https://push.example.test/send/dob');
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_dob_race') });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query(`select pg_advisory_xact_lock(hashtext('push_browser:' || $1))`, [b.endpoint]);
+      // Past the first check (still 18 or over), now waiting on the endpoint lock.
+      const save = savePushBrowser(adult, b, ENV).then(() => 'saved', (error: { status?: number }) => error.status);
+      await waitForLockWaiters(client, 1);
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = 'ath-pushstore-adult'`);
+      await holder.query('commit');
+      expect(await save).toBe(403);
+    } finally {
+      await holder.end();
+    }
+    expect(await rows(client)).toEqual([]);
+    expect((await client.query(`select 1 from pilot.audit_events where entity_type = 'push_browser'`)).rowCount).toBe(0);
+  });
+
+  test.each([
+    ['the gym is suspended', `update pilot.organizations set status = 'suspended' where organization_id = '${ORG}'`],
+    ['the person\'s sign-in to the gym is switched off', `update pilot.organization_memberships set active_flag = false where account_id = '${PARENT}'`],
+    ['the login is switched off', `update pilot.accounts set active_flag = false where account_id = '${PARENT}'`],
+    ['the membership\'s role has no push', `update pilot.organization_memberships set role = 'volunteer' where account_id = '${PARENT}'`],
+  ])('a switch-on is refused when %s, and nothing is written', async (_label, change) => {
+    const client = await freshDatabase('pushstore_under_lock');
+    await client.query(change);
+    await expect(savePushBrowser(parent, browser(), ENV)).rejects.toMatchObject({ status: 403 });
+    expect(await rows(client)).toEqual([]);
+  });
+
+  test(`two saves of new browsers by one person at the cap, at once, still leave ${PUSH_BROWSERS_PER_PERSON}`, async () => {
+    const client = await freshDatabase('pushstore_cap_race');
+    for (let index = 0; index < PUSH_BROWSERS_PER_PERSON; index += 1) {
+      await savePushBrowser(parent, browser(`https://push.example.test/send/${String(index).padStart(2, '0')}`), ENV);
+    }
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_cap_race'), max: 4 });
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_cap_race') });
+    await holder.connect();
+    try {
+      // Both saves reach the oldest row together unless one person's saves queue on the account lock.
+      await holder.query('begin');
+      await holder.query(`select 1 from pilot.push_subscriptions where endpoint = 'https://push.example.test/send/00' for update`);
+      const saves = Promise.all(['a', 'b'].map((tag) => savePushBrowser(parent, browser(`https://push.example.test/send/new-${tag}`), ENV)));
+      await waitForLockWaiters(client, 2);
+      await holder.query('commit');
+      await saves;
+    } finally {
+      await holder.end();
+    }
+    expect(await rows(client)).toHaveLength(PUSH_BROWSERS_PER_PERSON);
+  });
+});
+
 test('no audit row carries an endpoint or a key; each save, move and removal is audited', async () => {
   const client = await freshDatabase('pushstore_audit');
   const b = browser('https://push.example.test/send/audited');
@@ -377,6 +464,7 @@ test('no audit row carries an endpoint or a key; each save, move and removal is 
   expect(audit.map((row) => [row.event_type, row.actor_account_id, row.details])).toEqual([
     ['create', PARENT, { push_browser: 'on', user_type: 'parent', moved_from_another_person: 0, oldest_dropped: 0 }],
     ['update', PARENT, { push_browser: 'saved_again', user_type: 'parent', moved_from_another_person: 0, oldest_dropped: 0 }],
+    ['update', null, { push_browser: 'off', reason: 'turned_on_by_another_person' }],
     ['create', COACH, { push_browser: 'on', user_type: 'staff', moved_from_another_person: 1, oldest_dropped: 0 }],
     ['update', COACH, { push_browser: 'off' }],
   ]);
