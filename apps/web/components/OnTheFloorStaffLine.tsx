@@ -56,7 +56,7 @@ export const ON_THE_FLOOR_WORDS = {
 
 export default function OnTheFloorStaffLine() {
   const [read, setRead] = useState<ReadState>({ state: 'loading' });
-  const classes = useOnTheFloorClasses();
+  const classes = useOnTheFloorClasses('coach');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,7 +84,10 @@ export default function OnTheFloorStaffLine() {
   }, []);
 
   let lines: string[];
-  if (read.state === 'failed' || classes.state === 'failed') lines = [ON_THE_FLOOR_WORDS.failed];
+  // Failed before checking: one read failed while the other hangs reads as failed, not as checking forever.
+  const failed = read.state === 'failed' || classes.state === 'failed';
+  const checking = !failed && (read.state === 'loading' || classes.state === 'loading');
+  if (failed) lines = [ON_THE_FLOOR_WORDS.failed];
   else if (read.state === 'loading' || classes.state === 'loading') lines = [ON_THE_FLOOR_WORDS.checking];
   else if (read.athletes.length === 0) lines = [...classesLineSentences(classes.read), ON_THE_FLOOR_WORDS.nobody];
   else {
@@ -97,7 +100,7 @@ export default function OnTheFloorStaffLine() {
 
   return (
     <section aria-label="Who is on the floor" className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
-      <FloorLines lines={lines} busy={read.state === 'loading' || classes.state === 'loading'} />
+      <FloorLines lines={lines} busy={checking} />
     </section>
   );
 }

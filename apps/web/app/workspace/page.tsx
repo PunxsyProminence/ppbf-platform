@@ -144,7 +144,7 @@ function WorkspaceContent() {
         </header>
 
         {/* What is running on the floor now, and how many are here (lane W4-3, FN-4b). */}
-        <OnTheFloorClassesLine />
+        <OnTheFloorClassesLine reader="staff" />
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Your Account</h2>

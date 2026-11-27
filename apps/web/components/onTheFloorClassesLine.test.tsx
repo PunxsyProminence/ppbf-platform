@@ -48,9 +48,12 @@ function respond(status: number, body: unknown) {
   global.fetch = jest.fn(async () => ({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response) as unknown as typeof fetch;
 }
 
-async function linesFor(body: unknown, status = 200): Promise<string[]> {
+/** The reader each answer is for: an answer with a total is the board's, any other the staff home's. */
+const readerOf = (body: unknown): 'board' | 'staff' => (body && typeof body === 'object' && 'total' in body ? 'board' : 'staff');
+
+async function linesFor(body: unknown, status = 200, reader = readerOf(body)): Promise<string[]> {
   respond(status, body);
-  render(<OnTheFloorClassesLine />);
+  render(<OnTheFloorClassesLine reader={reader} />);
   await screen.findAllByText((_text, node) => node?.tagName === 'P' && node.textContent !== CHECKING);
   const region = screen.getByRole('region', { name: 'What is running on the floor' });
   return Array.from(region.querySelectorAll('p'), (p) => p.textContent ?? '');
@@ -103,9 +106,22 @@ test('a class with no room is read without one', async () => {
     .toBe(`Running now: Bag work, ${at(CLASS.start_at)} to ${at(CLASS.end_at)}, 1 here`);
 });
 
-test('a round clock not started or already ended (round 0) is left out, not read as "round 0"', async () => {
-  const rounds = [{ ...ROUND, phase: 'ready', round: 0 }, { ...ROUND, tv_name: 'Back TV', phase: 'ended', round: 0 }];
+test('a round clock not started, finished or ended is left out: QH has no words for it', async () => {
+  const rounds = [
+    { ...ROUND, phase: 'ready', round: 0 },
+    { ...ROUND, tv_name: 'Back TV', phase: 'ended', round: 0 },
+    { ...ROUND, tv_name: 'Side TV', phase: 'done', round: 5 },
+  ];
   expect(await linesFor({ ...STAFF, rounds })).toEqual([`${CLASS_LINE}, 3 here`]);
+});
+
+test('a round being rested, or paused, is read out as the round it is in, as read', async () => {
+  const rounds = [{ ...ROUND, phase: 'rest', round: 3 }, { ...ROUND, tv_name: 'Back TV', round: 1, is_paused: true }];
+  expect(await linesFor({ ...STAFF, rounds })).toEqual([
+    `${CLASS_LINE}, 3 here`,
+    `Ring TV: round 3 of 5 (at ${at(READ_AT)})`,
+    `Back TV: round 1 of 5 (at ${at(READ_AT)})`,
+  ]);
 });
 
 test('no name, id, run, script or coach field reaches the page, whatever the server sends beside it', async () => {
@@ -114,14 +130,14 @@ test('no name, id, run, script or coach field reaches the page, whatever the ser
     classes: [{ ...CLASS, class_id: 'class-77', coach_account_id: 'coach-acct-9' }],
     rounds: [{ ...ROUND, run_id: 'run-55', script_name: 'Plan-X' }],
   });
-  const { container } = render(<OnTheFloorClassesLine />);
+  const { container } = render(<OnTheFloorClassesLine reader="board" />);
   await screen.findByText(CLASS_LINE);
   expect(container.innerHTML).not.toMatch(/class-77|coach-acct-9|run-55|Plan-X/);
 });
 
 test('while the read is in progress it says it is checking, never "No class" or a number', () => {
   global.fetch = jest.fn(() => new Promise(() => {})) as unknown as typeof fetch;
-  render(<OnTheFloorClassesLine />);
+  render(<OnTheFloorClassesLine reader="board" />);
   expect(screen.getByText(CHECKING).parentElement?.getAttribute('aria-busy')).toBe('true');
   expect(screen.queryByText(NONE)).toBeNull();
 });
@@ -143,13 +159,22 @@ test.each([
   ['a negative count', 200, { ...STAFF, classes: [{ ...CLASS, count: -1 }] }],
   ['a round with no TV name', 200, { ...BOARD, rounds: [{ ...ROUND, tv_name: '' }] }],
   ['a round that is not a whole number', 200, { ...BOARD, rounds: [{ ...ROUND, round: 1.5 }] }],
+  ['a round past its total', 200, { ...BOARD, rounds: [{ ...ROUND, round: 6 }] }],
+  ['a round total that is not a whole number', 200, { ...BOARD, rounds: [{ ...ROUND, rounds_total: '5' }] }],
+  ['a round total of 0', 200, { ...BOARD, rounds: [{ ...ROUND, round: 0, rounds_total: 0 }] }],
+  ['a round in an unknown phase', 200, { ...BOARD, rounds: [{ ...ROUND, phase: 'warmup' }] }],
+  ['a class with no end', 200, { ...BOARD, classes: [{ ...CLASS, end_at: 'later' }] }],
+  ['a read time that is only a year', 200, { ...BOARD, read_at: '2026' }],
+  ['a staff answer whose class has no count', 200, { ...STAFF, classes: [CLASS] }],
+  ['a staff answer that carries a total', 200, { ...STAFF, total: { status: 'available', count: 7 } }, 'staff'],
   ['a board total under the floor marked available', 200, { ...BOARD, total: { status: 'available', count: 4 } }],
   ['a board total of 0 marked available', 200, { ...BOARD, total: { status: 'available', count: 0 } }],
   ['a suppressed total that carries a number', 200, { ...BOARD, total: { status: 'insufficient_data', count: 3 } }],
   ['a total with an unknown status', 200, { ...BOARD, total: { status: 'unavailable', count: 9 } }],
   ['a total that is not an object', 200, { ...BOARD, total: 9 }],
-])('%s says the line could not be checked, never a number or "No class"', async (_label, status, body) => {
-  expect(await linesFor(body, status)).toEqual([FAILED]);
+] as [string, number, unknown, ('board' | 'staff')?][])('%s says the line could not be checked, never a number or "No class"', async (_label, status, body, ...reader) => {
+  // The reader is a rest argument: a fourth named parameter would read to jest as a `done` callback.
+  expect(await linesFor(body, status, reader[0] ?? readerOf(body))).toEqual([FAILED]);
 });
 
 test.each([
@@ -159,14 +184,14 @@ test.each([
   }],
 ])('%s says the line could not be checked', async (_label, arrange) => {
   arrange();
-  render(<OnTheFloorClassesLine />);
+  render(<OnTheFloorClassesLine reader="board" />);
   expect(await screen.findByText(FAILED)).toBeTruthy();
 });
 
 test('it reads once when the page opens, and leaving the page cancels the read', async () => {
   jest.useFakeTimers();
   respond(200, BOARD);
-  render(<OnTheFloorClassesLine />);
+  render(<OnTheFloorClassesLine reader="board" />);
   await act(async () => {
     jest.advanceTimersByTime(25 * 60 * 60 * 1000);
     window.dispatchEvent(new Event('focus'));
@@ -179,14 +204,14 @@ test('it reads once when the page opens, and leaving the page cancels the read',
     signal = init?.signal ?? undefined;
     return new Promise(() => {});
   }) as unknown as typeof fetch;
-  const { unmount } = render(<OnTheFloorClassesLine />);
+  const { unmount } = render(<OnTheFloorClassesLine reader="board" />);
   unmount();
   expect(signal?.aborted).toBe(true);
 });
 
 test('a neutral line at the floor size: no warning or hold colour', async () => {
   respond(200, BOARD);
-  const { container } = render(<OnTheFloorClassesLine />);
+  const { container } = render(<OnTheFloorClassesLine reader="board" />);
   const line = await screen.findByText(CLASS_LINE);
   expect(line.className).toBe('t-body');
   expect((line as HTMLElement).style.fontSize).toBe('var(--t-md)');
@@ -203,7 +228,7 @@ describe('the board\'s mount renders for a board reader only (GO 7206014991)', (
   // The board's shape is checked on the page too, not only on the server (flags 3 and 4).
   test.each([
     ['a class carrying a count', { ...BOARD, classes: [{ ...CLASS, count: 1 }] }],
-    ['no total', { ...BOARD, total: undefined }],
+    ['no total', Object.fromEntries(Object.entries(BOARD).filter(([key]) => key !== 'total'))],
   ])('a board answer with %s says the line could not be checked, never a count per class', async (_label, body) => {
     respond(200, body);
     render(<BoardOnTheFloorLine />);

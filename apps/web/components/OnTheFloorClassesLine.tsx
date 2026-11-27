@@ -40,9 +40,17 @@ interface ClassShown {
 
 interface RoundShown {
   readonly tvName: string;
+  readonly phase: string;
   readonly round: number;
   readonly roundsTotal: number;
 }
+
+/** Who the answer is for; each mount names its reader, and the answer must have that reader's shape. */
+export type ClassesReader = 'board' | 'staff' | 'coach';
+
+/** The round clock's phases (gym-tv-timer roundTimers.d.ts). Only a round being worked or rested is read out. */
+const PHASES = new Set(['ready', 'work', 'rest', 'done', 'ended']);
+const READ_OUT_PHASES = new Set(['work', 'rest']);
 
 export interface ClassesRead {
   readonly at: string;
@@ -57,7 +65,8 @@ const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 const whole = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const named = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
-const time = (value: unknown): string | null => (typeof value === 'string' ? formatGymTimeOfDay(value) : null);
+const time = (value: unknown): string | null =>
+  (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? formatGymTimeOfDay(value) : null);
 
 function parseClass(value: unknown): ClassShown | null {
   const row = record(value);
@@ -70,8 +79,9 @@ function parseClass(value: unknown): ClassShown | null {
 
 function parseRound(value: unknown): RoundShown | null {
   const row = record(value);
-  if (!row || !named(row.tv_name) || !whole(row.round) || !whole(row.rounds_total)) return null;
-  return { tvName: row.tv_name, round: row.round, roundsTotal: row.rounds_total };
+  if (!row || !named(row.tv_name) || typeof row.phase !== 'string' || !PHASES.has(row.phase)) return null;
+  if (!whole(row.round) || !whole(row.rounds_total) || row.rounds_total < 1 || row.round > row.rounds_total) return null;
+  return { tvName: row.tv_name, phase: row.phase, round: row.round, roundsTotal: row.rounds_total };
 }
 
 /** The board's total: a number only from 5 up, "Suppressed" only for the suppressed shape; else malformed. */
@@ -83,10 +93,11 @@ function parseTotal(value: unknown): string | null {
 }
 
 /**
- * `board`: the board's answer has its shape checked here too, not only on the server (flags 3 and 4):
- * a per-class count, or no total, is a malformed answer, so the board never reads a count per class.
+ * The reader's shape is checked here too, not only on the server (route.ts): the board's answer has a
+ * total and no per-class count (flags 3 and 4); staff and volunteers have a count on every class and no
+ * total; coaches and gym admins have neither (QG A). Any other shape is a malformed answer.
  */
-export function parseClassesRead(payload: unknown, board = false): ClassesRead | null {
+export function parseClassesRead(payload: unknown, reader: ClassesReader): ClassesRead | null {
   const body = record(payload);
   const at = body ? time(body.read_at) : null;
   if (!body || body.ok !== true || !at || !Array.isArray(body.classes) || !Array.isArray(body.rounds)) return null;
@@ -94,12 +105,13 @@ export function parseClassesRead(payload: unknown, board = false): ClassesRead |
   const rounds = body.rounds.map(parseRound);
   const total = 'total' in body ? parseTotal(body.total) : null;
   if (classes.some((item) => !item) || rounds.some((item) => !item) || ('total' in body && !total)) return null;
-  if (board && (!total || classes.some((item) => item?.count !== null))) return null;
+  const counted = reader === 'staff';
+  if ((reader === 'board') !== (total !== null) || classes.some((item) => (item?.count !== null) !== counted)) return null;
   return { at, classes: classes as ClassShown[], rounds: rounds as RoundShown[], total };
 }
 
 /** Reads the classes line once, when the component mounts; a cancelled read never lands. */
-export function useOnTheFloorClasses(board = false): ClassesState {
+export function useOnTheFloorClasses(reader: ClassesReader): ClassesState {
   const [state, setState] = useState<ClassesState>({ state: 'loading' });
   useEffect(() => {
     const controller = new AbortController();
@@ -112,7 +124,7 @@ export function useOnTheFloorClasses(board = false): ClassesState {
         });
         const payload: unknown = await response.json().catch(() => null);
         if (controller.signal.aborted) return;
-        const read = response.ok ? parseClassesRead(payload, board) : null;
+        const read = response.ok ? parseClassesRead(payload, reader) : null;
         setState(read ? { state: 'read', read } : { state: 'failed' });
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
@@ -120,11 +132,14 @@ export function useOnTheFloorClasses(board = false): ClassesState {
       }
     })();
     return () => controller.abort();
-  }, [board]);
+  }, [reader]);
   return state;
 }
 
-/** The line's sentences for one read. A round clock not started or already ended (round 0) is left out. */
+/**
+ * The line's sentences for one read. Only a round being worked or rested is read out, paused or not, as
+ * "round n of N" as read. A clock not started, finished or ended has no words in QH and is left out.
+ */
 export function classesLineSentences(read: ClassesRead): string[] {
   const classes = read.classes.length === 0
     ? [CLASSES_LINE_WORDS.none]
@@ -133,7 +148,7 @@ export function classesLineSentences(read: ClassesRead): string[] {
         .filter(Boolean)
         .join(', '));
   const rounds = read.rounds
-    .filter((item) => item.round >= 1)
+    .filter((item) => READ_OUT_PHASES.has(item.phase) && item.round >= 1)
     .map((item) => `${item.tvName}: round ${item.round} of ${item.roundsTotal} (at ${read.at})`);
   return [...classes, ...rounds, ...(read.total ? [`${CLASSES_LINE_WORDS.total}${read.total}`] : [])];
 }
@@ -149,8 +164,8 @@ export function FloorLines({ lines, busy }: { readonly lines: readonly string[];
 }
 
 /** The line on the staff-role and volunteer home, and inside the board's wrapper below. */
-export default function OnTheFloorClassesLine({ className = '', board = false }: { readonly className?: string; readonly board?: boolean }) {
-  const classes = useOnTheFloorClasses(board);
+export default function OnTheFloorClassesLine({ reader, className = '' }: { readonly reader: 'board' | 'staff'; readonly className?: string }) {
+  const classes = useOnTheFloorClasses(reader);
   const lines = classes.state === 'loading'
     ? [CLASSES_LINE_WORDS.checking]
     : classes.state === 'failed' ? [CLASSES_LINE_WORDS.failed] : classesLineSentences(classes.read);
@@ -164,5 +179,5 @@ export default function OnTheFloorClassesLine({ className = '', board = false }:
 /** The board's mount: a board reader only. A platform owner on /board does not get it (GO 7206014991). */
 export function BoardOnTheFloorLine({ className }: { readonly className?: string }) {
   const session = useBoardSession();
-  return session?.role === 'board' ? <OnTheFloorClassesLine className={className} board /> : null;
+  return session?.role === 'board' ? <OnTheFloorClassesLine reader="board" className={className} /> : null;
 }

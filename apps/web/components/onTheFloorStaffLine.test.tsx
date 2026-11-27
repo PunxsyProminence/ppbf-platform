@@ -131,10 +131,28 @@ test.each([
 });
 
 test.each([
+  ['the names read fails while the classes read never answers', 'names'],
+  ['the classes read fails while the names read never answers', 'classes'],
+])('failed comes before checking: when %s, the line says so, and is not busy', async (_label, failing) => {
+  global.fetch = jest.fn(async (url: unknown) => {
+    const isClasses = String(url).includes(CLASSES_URL);
+    if ((failing === 'classes') === isClasses) return reply(500, { error: 'Internal server error' });
+    return new Promise(() => {});
+  }) as unknown as typeof fetch;
+  render(<OnTheFloorStaffLine />);
+  expect(await screen.findByText(FAILED)).toBeTruthy();
+  expect(lines()).toEqual([FAILED]);
+  expect(screen.getByText(FAILED).parentElement?.getAttribute('aria-busy')).toBe('false');
+});
+
+test.each([
   ['a server error', [500, { error: 'Internal server error' }]],
   ['a refusal', [403, { error: 'Forbidden' }]],
   ['an answer with no class list', [200, { ...CLASSES, classes: undefined }]],
   ['a malformed round', [200, { ...CLASSES, rounds: [{ tv_name: '', round: 1, rounds_total: 3 }] }]],
+  // The coach's and admin's shape: no per-class count and no total (QG A: their count is the names').
+  ['a class carrying a count', [200, { ...CLASSES, classes: [{ ...CLASSES.classes[0], count: 4 }] }]],
+  ['a total', [200, { ...CLASSES, total: { status: 'available', count: 9 } }]],
 ] as [string, [number, unknown]][])('a classes read that fails (%s) fails the whole line: no names, no count', async (_label, classes) => {
   respond(200, LINE, classes);
   render(<OnTheFloorStaffLine />);
