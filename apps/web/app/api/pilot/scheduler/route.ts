@@ -844,10 +844,10 @@ export async function POST(request: NextRequest) {
       // reads every plan of the gym by id (app/api/pilot/session-scripts/route.ts,
       // the GET), so a link reveals nothing new. An older version of a plan may be
       // linked: SP-4 is to start the newest version of its lineage (W4-5 plan,
-      // finding 9). Whether a RETIRED plan may be linked is not settled by any
-      // source; it is asked of App Overwatch on #2238, and nothing here decides it
-      // yet. Another gym's plan or an unknown id is refused by
-      // createSchedulerClasses (CLASS_PLAN_NOT_FOUND).
+      // finding 9). A RETIRED plan is not (App Overwatch on #2238, 7211257563:
+      // "A, refuse it"). Another gym's plan or an unknown id (CLASS_PLAN_NOT_FOUND)
+      // and a retired plan (CLASS_PLAN_RETIRED) are refused by
+      // createSchedulerClasses.
       const rawScriptId: unknown = body.script_id;
       let scriptId: string | null = null;
       if (rawScriptId !== undefined && rawScriptId !== null) {

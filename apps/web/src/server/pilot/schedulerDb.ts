@@ -167,10 +167,16 @@ export async function getSchedulerClassById(organizationId: string, classId: str
  * must be one of this gym's, checked here so the caller is told in words
  * (CLASS_PLAN_NOT_FOUND, 400); the foreign key pilot_scheduler_classes_script_fk
  * (infra/azure/pilot_slice_postgres_scheduler_class_plan_migration.sql) is the
- * backstop. The plan is part of "exactly as asked": the same key with another
- * plan, or with none, is CLASS_REQUEST_KEY_REUSED.
+ * backstop. A plan whose newest version is retired is refused
+ * (CLASS_PLAN_RETIRED, 400; App Overwatch on #2238). The plan is part of
+ * "exactly as asked": the same key with another plan, or with none, is
+ * CLASS_REQUEST_KEY_REUSED.
  */
 export type CreateClassesOutcome = 'created' | 'already_created';
+
+/** The words App Overwatch approved for a retired plan (#2238, 7211257563). */
+export const CLASS_PLAN_RETIRED =
+  'This plan is retired. Bring it back on Session Plans to schedule a class with it.';
 
 export const CLASS_REQUEST_KEY_REUSED =
   'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.';
@@ -198,12 +204,31 @@ export async function createSchedulerClasses(
       // (contentImport/apply.ts:88), held to commit. A DELETE takes FOR UPDATE,
       // which conflicts with it (PostgreSQL docs, "Row-Level Locks"), so the
       // plan row cannot go between this read and the insert below.
-      const plan = await client.query(
-        `select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for key share`,
+      const plan = await client.query<{ lineage_id: string }>(
+        `select lineage_id from pilot.session_scripts where organization_id = $1 and script_id = $2 for key share`,
         [organizationId, scriptId],
       );
       if (plan.rows.length === 0) {
         throw new ValidationError('script_id must name a session plan of this gym', 'CLASS_PLAN_NOT_FOUND');
+      }
+      // A RETIRED PLAN IS NOT SCHEDULED (App Overwatch on #2238, 7211257563: "A, refuse it"; "a
+      // retired script is one the gym has decided not to run", sessionScripts.ts:138-139). Asked of
+      // the newest version of the plan's lineage, the one a retire writes (setSessionScriptRetired
+      // writes the current version, sessionScriptAuthoring.ts), in a statement of its own after the
+      // lock above. A retire holds that row FOR UPDATE (lockCurrentScript), which this FOR KEY SHARE
+      // waits for, so a retire in progress is seen once it commits. Bringing the plan back on
+      // Session Plans undoes it; a class already scheduled keeps its link if its plan is retired
+      // later.
+      const newest = await client.query<{ authoring_state: string }>(
+        `select authoring_state from pilot.session_scripts
+          where organization_id = $1 and lineage_id = $2
+          order by version desc
+          limit 1
+            for key share`,
+        [organizationId, plan.rows[0].lineage_id],
+      );
+      if (newest.rows[0]?.authoring_state === 'retired') {
+        throw new ValidationError(CLASS_PLAN_RETIRED, 'CLASS_PLAN_RETIRED');
       }
     }
     const inserted = await client.query<{ class_id: string }>(

@@ -3175,5 +3175,18 @@ describe('create_class repeat weekly', () => {
         code: 'CLASS_PLAN_NOT_FOUND',
       });
     });
+
+    test('a retired plan is answered 400 with the words App Overwatch approved (#2238)', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      mockCreateClasses.mockRejectedValueOnce(
+        new ValidationError('This plan is retired. Bring it back on Session Plans to schedule a class with it.', 'CLASS_PLAN_RETIRED'),
+      );
+      const response = await POST(jsonRequest({ ...CLASS, script_id: 'plan-retired' }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: 'This plan is retired. Bring it back on Session Plans to schedule a class with it.',
+        code: 'CLASS_PLAN_RETIRED',
+      });
+    });
   });
 });

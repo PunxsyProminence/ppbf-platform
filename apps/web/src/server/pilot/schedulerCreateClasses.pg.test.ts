@@ -414,6 +414,100 @@ describe('createSchedulerClasses names the plan the classes run (lane W4-5, SP-3
     expect(await stored(client)).toEqual([]);
   });
 
+  describe('a retired plan is not scheduled (App Overwatch on #2238, 7211257563: "A, refuse it")', () => {
+    const LINEAGE = 'plan-create-classes-lineage';
+    const V1 = 'plan-create-classes-lineage-v1';
+    const V2 = 'plan-create-classes-lineage-v2';
+
+    /** A plan of this gym in two versions: v1 and v2 (the newest), in the states given. */
+    async function twoVersions(client: Client, v1State: string, v2State: string) {
+      for (const [script, version, state] of [[V1, 1, v1State], [V2, 2, v2State]] as const) {
+        await client.query(
+          `insert into pilot.session_scripts
+             (organization_id, script_id, lineage_id, version, name, authoring_state, created_by_account_id)
+           values ($1, $2, $3, $4, 'Evening plan', $5, 'acct-plan-author')`,
+          [ORG_ID, script, LINEAGE, version, state],
+        );
+      }
+    }
+
+    async function refusedAsRetired(plan: string) {
+      const error = await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: plan })).catch((caught) => caught);
+      expect(error).toBeInstanceOf(ValidationError);
+      expect(error).toMatchObject({
+        status: 400,
+        code: 'CLASS_PLAN_RETIRED',
+        message: 'This plan is retired. Bring it back on Session Plans to schedule a class with it.',
+      });
+    }
+
+    test('a retired plan is refused with CLASS_PLAN_RETIRED (400), and nothing is written', async () => {
+      const client = await freshDatabase('w45_plan_retired');
+      await seedPlans(client);
+      await client.query(`update pilot.session_scripts set authoring_state = 'retired' where script_id = $1`, [PLAN_ID]);
+      await refusedAsRetired(PLAN_ID);
+      expect(await stored(client)).toEqual([]);
+    });
+
+    test('an older version is refused when the newest version is retired', async () => {
+      const client = await freshDatabase('w45_plan_retired_head');
+      await seedPlans(client);
+      await twoVersions(client, 'in_use', 'retired');
+      await refusedAsRetired(V1);
+      expect(await stored(client)).toEqual([]);
+    });
+
+    test('the newest version decides: an older version once retired is scheduled when the plan was brought back', async () => {
+      // A retire writes the current version; bringing the plan back writes the version current then,
+      // so an older version can still read retired (setSessionScriptRetired, sessionScriptAuthoring.ts).
+      const client = await freshDatabase('w45_plan_back');
+      await seedPlans(client);
+      await twoVersions(client, 'retired', 'in_use');
+      await expect(createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: V1 }))).resolves.toBe('created');
+      expect((await storedPlans(client)).map(([, plan]) => plan)).toEqual([V1, V1, V1, V1]);
+    });
+
+    test('a class already scheduled keeps its plan when the plan is retired afterwards', async () => {
+      const client = await freshDatabase('w45_plan_retired_later');
+      await seedPlans(client);
+      await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }));
+      await client.query(`update pilot.session_scripts set authoring_state = 'retired' where script_id = $1`, [PLAN_ID]);
+      expect((await storedPlans(client)).map(([, plan]) => plan)).toEqual([PLAN_ID, PLAN_ID, PLAN_ID, PLAN_ID]);
+    });
+
+    // A retire holds the newest version FOR UPDATE (lockCurrentScript) while it writes; the create's
+    // FOR KEY SHARE read of that row waits, and then sees the plan retired. Linking the newest version
+    // itself, the first read already waits; linking an older one, only the newest-version read does.
+    test.each([
+      ['the newest version linked', 'w45_plan_retire_race_head', PLAN_ID, PLAN_ID],
+      ['an older version linked', 'w45_plan_retire_race_older', V1, V2],
+    ])('a retire in progress makes the create wait, then refuses it (%s)', async (_label, database, linked, retired) => {
+      const client = await freshDatabase(database);
+      await seedPlans(client);
+      await twoVersions(client, 'in_use', 'in_use');
+      const retirer = await secondConnection(database);
+      const creator = await secondConnection(database);
+      const creatorPid = (await creator.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+      transactionClients.push(creator);
+
+      await retirer.query('BEGIN');
+      await retirer.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for update`, [ORG_ID, retired]);
+      await retirer.query(`update pilot.session_scripts set authoring_state = 'retired' where organization_id = $1 and script_id = $2`, [ORG_ID, retired]);
+      const outcome = createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: linked })).catch((caught) => caught);
+      for (let tries = 0; ; tries += 1) {
+        const waiting = await client.query(`select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock'`, [creatorPid]);
+        if (waiting.rows.length > 0) break;
+        if (tries > 200) throw new Error('test bug: the create never waited on the retire');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await retirer.query('COMMIT');
+
+      const error = await outcome;
+      expect(error).toMatchObject({ status: 400, code: 'CLASS_PLAN_RETIRED' });
+      expect(await stored(client)).toEqual([]);
+    });
+  });
+
   test('classes of one create naming different plans are a programming error, and nothing is written', async () => {
     const client = await freshDatabase('w45_plan_mixed');
     await seedPlans(client);
