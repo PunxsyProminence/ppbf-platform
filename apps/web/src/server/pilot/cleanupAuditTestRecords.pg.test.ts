@@ -504,13 +504,21 @@ describe('the fingerprint', () => {
     ['a floor plan naming a planned class', `insert into pilot.floor_plans_daily (organization_id, plan_id, plan_on, created_by_account_id, class_id)
        values ('${GYM}', 'plan-b6', '2026-10-05', '${COACH}', 'c-strict-1')`],
     ['a STRICT TV paired', "update pilot.gym_tvs set device_key_hash = 'k', paired_at = now() where tv_id = 'tv-strict'"],
+    // Each alone, with pairing already done: a code issued, or a session put on the TV.
+    ['a pair code issued to a STRICT TV',
+      "update pilot.gym_tvs set pair_code_hash = 'h', pair_code_expires_at = now() + interval '1 hour' where tv_id = 'tv-strict'"],
+    ['a session put on a paired STRICT TV', "update pilot.gym_tvs set current_run_id = 'run-done' where tv_id = 'tv-strict'",
+      "update pilot.gym_tvs set device_key_hash = 'k', paired_at = '2026-10-19T22:00:00Z' where tv_id = 'tv-strict'"],
     ['a test gym\'s status', `update pilot.organizations set status = 'active' where organization_id = '${TEST_GYM_1}'`],
     ['"hiit fit" holding a row', `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
        values ('acct-b6-hiit', 'coach', '${HIIT_FIT_ID}', 'microsoft')`],
-  ])('moves when %s changes', async (_label, sql) => {
+    // A rest parameter: jest reads a test function's declared arity, and one
+    // more named parameter than a row has values is taken as a done callback.
+  ])('moves when %s changes', async (_label, sql, ...setup: string[]) => {
     const { client } = await freshDatabase();
     try {
       const options = { allOrganizations: true };
+      for (const statement of setup) await client.query(statement);
       const before = await print(client, options);
       await client.query(sql);
       expect(await print(client, options)).not.toBe(before);
