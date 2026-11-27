@@ -170,7 +170,10 @@ export async function getSchedulerClassById(organizationId: string, classId: str
  * backstop. A plan whose newest version is retired is refused
  * (CLASS_PLAN_RETIRED, 400; App Overwatch on #2238). The plan is part of
  * "exactly as asked": the same key with another plan, or with none, is
- * CLASS_REQUEST_KEY_REUSED.
+ * CLASS_REQUEST_KEY_REUSED. The plan is checked only for a request that has
+ * made nothing yet: a repeat of one that already made its classes is answered
+ * as a repeat, even if its plan was retired or removed since (reviewer M on
+ * #2240).
  */
 export type CreateClassesOutcome = 'created' | 'already_created';
 
@@ -199,7 +202,20 @@ export async function createSchedulerClasses(
     throw new Error('createSchedulerClasses: every class of one create must name the same plan');
   }
   return withTransaction(async (client) => {
-    if (scriptId !== null) {
+    // A REPEAT IS ANSWERED BEFORE THE PLAN IS CHECKED (reviewer M on #2240). The ids come from the
+    // request key (route.ts classIdFor), so a class already here means this key already made
+    // something, and the comparison at the end answers it, plan included. Checking the plan first
+    // would refuse the repeat of a create whose answer was lost if its plan was retired in
+    // between; the page would then drop its key, and its next press would make the classes twice.
+    // Not locked: a create on the same key still in flight is waited for by the insert's conflict.
+    const made = await client.query<{ count: string }>(
+      `select count(*)::text as count
+         from pilot.scheduler_classes
+        where organization_id = $1 and class_id = any($2::text[])`,
+      [organizationId, column('class_id')],
+    );
+    const isNew = Number(made.rows[0]?.count ?? 0) === 0;
+    if (isNew && scriptId !== null) {
       // FOR KEY SHARE is the lock the foreign key's own check takes
       // (contentImport/apply.ts:88), held to commit. A DELETE takes FOR UPDATE,
       // which conflicts with it (PostgreSQL docs, "Row-Level Locks"), so the
@@ -231,7 +247,7 @@ export async function createSchedulerClasses(
         throw new ValidationError(CLASS_PLAN_RETIRED, 'CLASS_PLAN_RETIRED');
       }
     }
-    const inserted = await client.query<{ class_id: string }>(
+    const inserted = isNew ? await client.query<{ class_id: string }>(
       `insert into pilot.scheduler_classes (
          organization_id, class_id, title, start_at, end_at, location, capacity,
          scheduled_by_account_id, coach_account_id, covering_coach_account_id,
@@ -246,7 +262,7 @@ export async function createSchedulerClasses(
        on conflict (organization_id, class_id) do nothing
        returning class_id`,
       params,
-    );
+    ) : { rows: [] };
     if (inserted.rows.length === items.length) return 'created';
     if (inserted.rows.length === 0) {
       // The same request again only if every class is there as asked, its plan

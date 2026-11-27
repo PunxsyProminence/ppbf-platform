@@ -361,6 +361,49 @@ describe('createSchedulerClasses names the plan the classes run (lane W4-5, SP-3
     expect(await storedPlans(client)).toEqual(before);
   });
 
+  // A repeat is answered before the plan is checked (reviewers L and M on #2240): the answer to a
+  // create that landed can be lost, and the plan retired or removed before the page sends it again.
+  describe('a repeat of a create that landed is answered as a repeat, whatever happened to its plan since', () => {
+    test('its plan retired since: already_created, and nothing changes', async () => {
+      const client = await freshDatabase('w45_plan_replay_retired');
+      await seedPlans(client);
+      await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }));
+      await client.query(`update pilot.session_scripts set authoring_state = 'retired' where script_id = $1`, [PLAN_ID]);
+      const before = await storedPlans(client);
+
+      await expect(createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }))).resolves.toBe('already_created');
+      expect(await storedPlans(client)).toEqual(before);
+    });
+
+    test('its plan deleted since: CLASS_REQUEST_KEY_REUSED (its classes exist), not CLASS_PLAN_NOT_FOUND', async () => {
+      const client = await freshDatabase('w45_plan_replay_deleted');
+      await seedPlans(client);
+      await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }));
+      await client.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = $2`, [ORG_ID, PLAN_ID]);
+      const before = await storedPlans(client);
+      // The key cleared each class's link (on delete set null), so the repeat is no longer "as asked".
+      expect(before.map(([, plan]) => plan)).toEqual([null, null, null, null]);
+
+      const error = await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID })).catch((caught) => caught);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ status: 409, code: 'CLASS_REQUEST_KEY_REUSED' });
+      expect(await storedPlans(client)).toEqual(before);
+    });
+
+    test('a key that made only some of these, its plan retired since: refused as reused, and nothing is added', async () => {
+      const client = await freshDatabase('w45_plan_replay_part_retired');
+      await seedPlans(client);
+      await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }).slice(0, 2));
+      await client.query(`update pilot.session_scripts set authoring_state = 'retired' where script_id = $1`, [PLAN_ID]);
+      const before = await storedPlans(client);
+
+      const error = await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID })).catch((caught) => caught);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ status: 409, code: 'CLASS_REQUEST_KEY_REUSED' });
+      expect(await storedPlans(client)).toEqual(before);
+    });
+  });
+
   test.each<[string, string | null, string | null]>([
     ['made with a plan, sent again with another', PLAN_ID, SECOND_PLAN_ID],
     ['made with a plan, sent again with none', PLAN_ID, null],
