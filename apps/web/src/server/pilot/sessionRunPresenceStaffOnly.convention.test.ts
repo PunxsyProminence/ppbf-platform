@@ -45,9 +45,11 @@ const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).
 const source = (file: string) => fs.readFileSync(file, 'utf8');
 // Every JS and TS source extension: .ts .tsx .js .jsx and their c/m forms (lane W5-FU, F1). A
 // .jsx, .cjs or .cts file was not swept, and reviewer J got a .jsx re-export past the same pattern
-// in #2206's sweep.
+// in #2206's sweep. Left out: only the test files jest runs (jest.config.js testMatch: *.test.ts and
+// *.test.tsx). A file named x.test.js is not a test jest runs, so it is swept like any source.
 const SOURCE_EXT = /\.[cm]?[jt]sx?$/;
-const isSource = (file: string) => SOURCE_EXT.test(file) && !/\.test\.[a-z]+$/.test(file);
+const TEST_FILE = /\.test\.tsx?$/;
+const isSource = (file: string) => SOURCE_EXT.test(file) && !TEST_FILE.test(file);
 
 // Every shipped source file: routes, pages, components, server modules.
 const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnder(path.join(WEB_DIR, dir), isSource));
@@ -197,17 +199,20 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     for (const file of ['a.ts', 'a.tsx', 'a.js', 'a.jsx', 'a.mts', 'a.mjs', 'a.cts', 'a.cjs']) {
       expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: true });
     }
-    for (const file of ['a.test.ts', 'a.test.jsx', 'a.test.cjs', 'a.json', 'a.md']) {
+    // A file named like a test that jest does not run (testMatch is *.test.ts and *.test.tsx) is swept.
+    for (const file of ['a.test.js', 'a.test.jsx', 'a.test.mjs', 'a.test.cjs', 'a.test.mts', 'a.test.cts']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: true });
+    }
+    for (const file of ['a.test.ts', 'a.test.tsx', 'a.pg.test.ts', 'a.json', 'a.md']) {
       expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: false });
     }
-    // Reviewer J's .jsx re-export (#2206), and the same re-export written with a file ending.
-    for (const text of [
-      "export { setRunAthletePresent as mark } from '@/src/server/pilot/sessionRunAthletes';",
-      "export * from '@/src/server/pilot/sessionRunAthletes.js';",
-      "export * from './sessionRunAthletes.ts';",
-      'import * as presence from "../pilot/sessionRunAthletes.mjs";',
-    ]) {
-      expect({ text, reaches: REACHES.test(text) }).toEqual({ text, reaches: true });
+    // A named re-export, and `export *` with the module named with every file ending.
+    expect(REACHES.test("export { setRunAthletePresent as mark } from '@/src/server/pilot/sessionRunAthletes';")).toBe(true);
+    for (const ending of ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '.cts', '.cjs']) {
+      for (const quote of ["'", '"']) {
+        const text = `export * from ${quote}./sessionRunAthletes${ending}${quote};`;
+        expect({ text, reaches: REACHES.test(text) }).toEqual({ text, reaches: true });
+      }
     }
     expect(REACHES.test("import { x } from './sessionRunAthletesMigration';")).toBe(false);
     for (const file of ['route.ts', 'route.tsx', 'route.js', 'route.jsx', 'route.mjs', 'route.cjs', 'route.mts', 'route.cts']) {
@@ -215,7 +220,10 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     }
     expect(ROUTE_FILE.test('/app/api/x/route.test.ts')).toBe(false);
     for (const file of ['a.tsx', 'a.jsx']) expect({ file, client: CLIENT_FILE.test(`/app/${file}`) }).toEqual({ file, client: true });
-    expect(VALUE_IMPORT.test("import { listPresentAthletes } from '@/src/server/pilot/sessionRunAthletes.js';")).toBe(true);
+    for (const ending of ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '.cts', '.cjs']) {
+      const text = `import { listPresentAthletes } from '@/src/server/pilot/sessionRunAthletes${ending}';`;
+      expect({ text, value: VALUE_IMPORT.test(text) }).toEqual({ text, value: true });
+    }
     expect(VALUE_IMPORT.test("import type { RunAthlete } from '@/src/server/pilot/sessionRunAthletes';")).toBe(false);
   });
 
