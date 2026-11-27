@@ -1549,3 +1549,105 @@ describe('the class a new session is for', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Another live session is already running this class.');
   });
 });
+
+// OW27-29 A, "Class keeps the plan; Start runs it" (docs/current/OWNER_DECISIONS.md:1514-1523): the
+// opened plan offers "Schedule a class", which opens /schedule with this plan named (lane W4-5, SP-4b).
+describe('Schedule a class from the opened plan', () => {
+  // An id that needs encoding: a space, a slash and an ampersand.
+  const ODD_ID = 'scr friday/2&x';
+
+  function planFetch(opened: Record<string, unknown>, handlers: Parameters<typeof routedFetch>[0] = {}) {
+    return routedFetch({
+      scripts: (url) => (url.includes('script_id') ? jsonResponse({ script: detail(opened) }) : jsonResponse({ scripts: [FRIDAY] })),
+      ...handlers,
+    });
+  }
+
+  async function openPlan() {
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
+    await screen.findByRole('heading', { name: 'Friday sparring' });
+  }
+
+  it('opens /schedule with the plan named, its id encoded', async () => {
+    planFetch({ script_id: ODD_ID });
+    await openPlan();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Schedule a class' }));
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/schedule?plan=scr%20friday%2F2%26x');
+    expect(mockRouter.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('is offered for a plan with no blocks: a class can be planned ahead', async () => {
+    planFetch({ blocks: [] });
+    await openPlan();
+
+    expect(await screen.findByText(/cannot be delivered live until it has blocks/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule a class' }));
+    expect(mockRouter.push).toHaveBeenCalledWith('/schedule?plan=scr-friday');
+  });
+
+  it('is not offered on a retired plan', async () => {
+    planFetch({ authoring_state: 'retired' });
+    await openPlan();
+
+    expect(await screen.findByRole('button', { name: 'Bring this plan back' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schedule a class' })).toBeNull();
+  });
+
+  it('is not offered while the plan is being edited, and comes back on Cancel', async () => {
+    planFetch({});
+    await openPlan();
+    expect(await screen.findByRole('button', { name: 'Schedule a class' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit minutes and titles' }));
+    await screen.findByRole('form', { name: 'Edit plan' });
+    expect(screen.queryByRole('button', { name: 'Schedule a class' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Schedule a class' })).toBeInTheDocument();
+  });
+
+  it('is disabled while a start is in progress, like the buttons beside it', async () => {
+    planFetch({}, { runsPost: () => new Promise<Response>(() => {}) as unknown as Response });
+    await openPlan();
+    const start = screen.getByRole('button', { name: 'Start live delivery' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Schedule a class' })).not.toBeDisabled();
+
+    fireEvent.click(start);
+
+    expect(await screen.findByRole('button', { name: 'Starting...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Schedule a class' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule a class' }));
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
+  it('is disabled while a save is in progress (a retire), and goes with the plan once it is retired', async () => {
+    let finish: ((value: Response) => void) | null = null;
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs')) {
+        return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
+      }
+      if (init?.method === 'PATCH') return new Promise<Response>((resolve) => { finish = resolve; }) as unknown as Response;
+      return url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [FRIDAY] });
+    });
+    await openPlan();
+    expect(screen.getByRole('button', { name: 'Schedule a class' })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, retire it' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Schedule a class' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeDisabled();
+
+    await act(async () => {
+      finish?.(jsonResponse({ outcome: 'retired', script: detail({ authoring_state: 'retired' }) }));
+    });
+    // Retired: the plan is closed, so the button goes with it.
+    expect(await screen.findByText(/Friday sparring is retired\. It is kept,/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schedule a class' })).toBeNull();
+  });
+});

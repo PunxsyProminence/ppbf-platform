@@ -742,6 +742,17 @@ function CoachSessionScripts() {
                         {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}
                       </button>
                     )}
+                    {/* OW27-29 A, "Class keeps the plan; Start runs it" (docs/current/OWNER_DECISIONS.md:1514-1523):
+                        /schedule schedules a class that keeps this plan. Offered with or without blocks, to
+                        plan ahead (the ruling's "Pros: Plan ahead"). */}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/schedule?plan=${encodeURIComponent(detail.script_id)}`)}
+                      disabled={startBusyScriptId !== null || saving}
+                      className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Schedule a class
+                    </button>
                     <button
                       type="button"
                       onClick={() => { setEditing(true); setEditNotice(''); setConfirmRetireId(null); }}

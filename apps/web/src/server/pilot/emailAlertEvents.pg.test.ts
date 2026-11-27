@@ -13,6 +13,9 @@
 //   - coach_message: app/api/pilot/athlete/coach-messages/route.ts --
 //     assertActorCanAccessAthlete for the linked athlete, then
 //     listAthleteCoachMessages.
+//   - guardian_message: countUnseenFamilyThreadPostsForStaff (familyThreads.ts,
+//     the staff unread count, Q4.5 A), signed in with each membership: the
+//     email goes to the people a guardian's post nudges (Q-2 A on #2159).
 // Each also asks the send-time check for every person and event. Someone whose
 // membership is off cannot sign in, so reads nothing.
 //
@@ -76,6 +79,7 @@ import {
   EMAIL_ALERT_READ_RULE_KINDS,
   emailAlertEventStillReadable,
   familyNoteSource,
+  guardianMessageSource,
   gymNoticeSource,
   NOTICE_PLACEMENTS_EMAILED,
   NOTICE_READER_ROLES,
@@ -85,6 +89,7 @@ import {
 import { emailAlertSenderDependencies, runEmailAlertSweep, type EmailAlertSenderDependencies } from './emailAlertSender';
 import { listEscalations } from './escalationLadder';
 import { listRepliesForStaff } from './familyMessageReplies';
+import { countUnseenFamilyThreadPostsForStaff } from './familyThreads';
 import { MailSendError, type OutboundMessage } from './graphMailer';
 import { PILOT_SESSION_COOKIE } from './env';
 import { hashToken } from './security';
@@ -703,6 +708,94 @@ async function switchOn(client: Client, accountIds: readonly string[]) {
   }
 }
 
+/**
+ * Guardian records for family threads (W4-4): acct-ev-parent is a guardian of
+ * every athlete of this gym, and a second login of the other gym of its ATH_OTHER
+ * and live ATH_B, so the trigger takes their posts (a guardian of this child).
+ */
+async function threadFixture(client: Client) {
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email)
+     values ('acct-ev-other-guardian', 'parent', $1, 'magic_link', null)`,
+    [OTHER_ORG],
+  );
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ('acct-ev-other-guardian', $1, 'parent', true)`,
+    [OTHER_ORG],
+  );
+  const guardians: Array<[string, string, string, string[]]> = [
+    [ORG, 'par-ev-thread', 'acct-ev-parent', [ATH_A, ATH_B, ATH_C, ATH_GONE, ATH_GONE_COVERED]],
+    [OTHER_ORG, 'par-ev-thread-other', 'acct-ev-other-guardian', [ATH_OTHER, ATH_B]],
+  ];
+  for (const [org, parentId, accountId, athleteIds] of guardians) {
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Thread Guardian')`,
+      [org, parentId, accountId],
+    );
+    for (const athleteId of athleteIds) {
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, $2, $3, 'parent')`,
+        [org, parentId, athleteId],
+      );
+    }
+  }
+}
+
+/** A post in a family thread: a guardian's opening post unless told otherwise. Its time is the trigger's clock. */
+async function threadPost(
+  client: Client,
+  org: string,
+  athleteId: string,
+  values: { threadId?: string; author?: string; role?: string } = {},
+): Promise<string> {
+  const postId = randomUUID();
+  await client.query(
+    `insert into pilot.family_thread_posts (organization_id, post_id, thread_id, athlete_id, author_account_id, author_role, post_text)
+     values ($1, $2::uuid, $3::uuid, $4, $5, $6, 'Can we talk about Saturday?')`,
+    [org, postId, values.threadId ?? postId, athleteId,
+      values.author ?? (org === ORG ? 'acct-ev-parent' : 'acct-ev-other-guardian'), values.role ?? 'parent'],
+  );
+  return postId;
+}
+
+/**
+ * Whose unread count each guardian post raises: countUnseenFamilyThreadPostsForStaff
+ * (PM-2) for every signed-in person, by athlete. A person whose count for an
+ * athlete is above 0 is nudged by every guardian post on that athlete they have
+ * not seen, and the count must be exactly that many; a count of 0 nudges them
+ * about none. `posts` is every guardian post in the window as [gym, athlete,
+ * post]; `seen` is "account|post" for the posts each person has opened.
+ */
+async function unreadCountReach(
+  posts: ReadonlyArray<readonly [string, string, string]>,
+  seen: ReadonlySet<string>,
+): Promise<Reach> {
+  const reach: Reach = new Map();
+  for (const [accountId, org, role, on] of PEOPLE) {
+    if (!on) continue;
+    let counts: Array<{ athlete_id: string; unseen: number }>;
+    try {
+      counts = await countUnseenFamilyThreadPostsForStaff({ organizationId: org, accountId, role: role as PilotRole });
+    } catch {
+      continue; // not a staff role: no count at all
+    }
+    const ids: string[] = [];
+    for (const athleteId of new Set(posts.filter(([o]) => o === org).map(([, a]) => a))) {
+      const unseen = counts.find((row) => row.athlete_id === athleteId)?.unseen ?? 0;
+      if (unseen === 0) continue;
+      const notSeen = posts
+        .filter(([o, a, id]) => o === org && a === athleteId && !seen.has(`${accountId}|${id}`))
+        .map(([, , id]) => id);
+      expect({ accountId, athleteId, unseen }).toEqual({ accountId, athleteId, unseen: notSeen.length });
+      ids.push(...notSeen);
+    }
+    if (ids.length) reach.set(`${org}|${accountId}`, ids.sort());
+  }
+  return reach;
+}
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
   serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
@@ -865,8 +958,8 @@ describe('email alert staff event sources', () => {
     expect((await runEmailAlertSweep(dependencies)).queued).toBe(0);
     expect((await client.query('select event_kind from pilot.email_alert_checkpoints order by 1')).rows)
       .toEqual([
-        { event_kind: 'coach_message' }, { event_kind: 'family_note' }, { event_kind: 'gym_notice' },
-        { event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' },
+        { event_kind: 'coach_message' }, { event_kind: 'family_note' }, { event_kind: 'guardian_message' },
+        { event_kind: 'gym_notice' }, { event_kind: 'parent_reply' }, { event_kind: 'safety_escalation' },
       ]);
 
     await escalation(client, ORG, ATH_A, 'near_miss', { minutesAgo: JUST_NOW });
@@ -1600,15 +1693,160 @@ describe('email alert staff event sources', () => {
     expect(Object.values(NOTICE_PLACEMENTS_EMAILED).flat()).not.toContain('gym_notices');
   });
 
+  test('guardian_message names exactly the staff whose unread count each new guardian post raises (OW27-27 A), and nobody for a staff post', async () => {
+    const client = await freshDatabase('emailevents_threads');
+    activeClient = client;
+    await threadFixture(client);
+
+    const onA = await threadPost(client, ORG, ATH_A);
+    const againOnA = await threadPost(client, ORG, ATH_A, { threadId: onA });
+    const staffOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-coach-own', role: 'coach' });
+    // Staff replies of every staff role nudge nobody (reviewer B).
+    const adminOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-admin', role: 'admin' });
+    const orgadminOnA = await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-orgadmin', role: 'organization_admin' });
+    const onB = await threadPost(client, ORG, ATH_B);
+    const onC = await threadPost(client, ORG, ATH_C);
+    const onGone = await threadPost(client, ORG, ATH_GONE);
+    const onGoneCovered = await threadPost(client, ORG, ATH_GONE_COVERED);
+    const otherGym = await threadPost(client, OTHER_ORG, ATH_OTHER);
+    const otherGymB = await threadPost(client, OTHER_ORG, ATH_B);
+    // Opened already: the admin has seen the post on ATH_B, the coach of record the second one on ATH_A.
+    await client.query(
+      `insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+       values ($1, $2::uuid, 'acct-ev-admin', 'admin'), ($1, $3::uuid, 'acct-ev-coach-own', 'coach')`,
+      [ORG, onB, againOnA],
+    );
+    const seen = new Set([`acct-ev-admin|${onB}`, `acct-ev-coach-own|${againOnA}`]);
+    // A volunteer covering ATH_A now: not a staff role, so neither counted nor named (reviewer B).
+    await client.query(
+      `insert into pilot.coach_coverage
+         (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, 'acct-ev-volunteer', 'acct-ev-admin', now() - interval '1 hour', now() + interval '1 hour')`,
+      [ORG, ATH_A],
+    );
+
+    // The window ends a second after the last post, so no post can fall past it (reviewer B).
+    const { from } = await lastHour(client);
+    const to = (await client.query<{ to: Date }>(`select clock_timestamp() + interval '1 second' as "to"`)).rows[0].to;
+    const source = reachOf(await guardianMessageSource.candidates(from, to), 'guardian_message');
+    const guardianPosts: Array<[string, string, string]> = [
+      [ORG, ATH_A, onA], [ORG, ATH_A, againOnA], [ORG, ATH_B, onB], [ORG, ATH_C, onC], [ORG, ATH_GONE, onGone],
+      [ORG, ATH_GONE_COVERED, onGoneCovered], [OTHER_ORG, ATH_OTHER, otherGym], [OTHER_ORG, ATH_B, otherGymB],
+    ];
+    const page = await unreadCountReach(guardianPosts, seen);
+
+    expect(sorted(source)).toEqual(sorted(page));
+
+    // Admins and organization admins across the gym; a coach for the children
+    // they coach on record or cover now (not an ended or future cover, not a
+    // coach whose membership is off, not a coach of no one); nothing about a
+    // deleted athlete; nothing once opened; nothing across gyms.
+    expect(sorted(source)).toEqual(sorted(new Map([
+      [`${ORG}|acct-ev-admin`, [onA, againOnA, onC].sort()],
+      [`${ORG}|acct-ev-orgadmin`, [onA, againOnA, onB, onC].sort()],
+      [`${ORG}|acct-ev-coach-own`, [onA, onC].sort()],
+      [`${ORG}|acct-ev-coach-cover`, [onB]],
+      [`${OTHER_ORG}|acct-ev-other-admin`, [otherGym, otherGymB].sort()],
+      [`${OTHER_ORG}|acct-ev-other-coach`, [otherGym]],
+    ])));
+    for (const staffPost of [staffOnA, adminOnA, orgadminOnA]) expect([...source.values()].flat()).not.toContain(staffPost);
+    await expectStillReadableAsPage(
+      page,
+      new Set([...guardianPosts.map(([, , id]) => id), staffOnA, adminOnA, orgadminOnA]),
+      'guardian_message',
+    );
+  });
+
+  test('guardian_message reads only the posts inside its window, by each post\'s own time: a later post in an earlier thread is in; the window is (from, to] (reviewer B)', async () => {
+    const client = await freshDatabase('emailevents_threads_window');
+    activeClient = client;
+    await threadFixture(client);
+    // The post's time to the microsecond, as text: a JS Date keeps only milliseconds, so a Date
+    // bound would sit just below the post and could not test (from, to] at its edges. The source
+    // passes the bound straight to Postgres, which reads the text as a timestamptz.
+    const createdAt = async (postId: string) =>
+      (await client.query<{ t: string }>('select created_at::text as t from pilot.family_thread_posts where post_id = $1::uuid', [postId]))
+        .rows[0].t as unknown as Date;
+
+    // A thread opened before the window, and a post on another child at its very start.
+    const earlyThread = await threadPost(client, ORG, ATH_A);
+    const atFrom = await threadPost(client, ORG, ATH_C);
+    // Inside: a second post in the earlier thread, and a new thread.
+    const laterInEarlyThread = await threadPost(client, ORG, ATH_A, { threadId: earlyThread });
+    const atTo = await threadPost(client, ORG, ATH_C);
+    // After the window.
+    const after = await threadPost(client, ORG, ATH_C, { threadId: atTo });
+
+    // Bounds at the posts' own times: (from, to] takes atTo and leaves atFrom out.
+    const from = await createdAt(atFrom);
+    const to = await createdAt(atTo);
+    const named = new Set((await guardianMessageSource.candidates(from, to)).map((c) => c.eventId));
+    expect([...named].sort()).toEqual([laterInEarlyThread, atTo].sort());
+    for (const outside of [earlyThread, atFrom, after]) expect(named.has(outside)).toBe(false);
+  });
+
+  test('a guardian post reaches each switched-on person it nudges, once; one who opened it, or whose cover ended, by the send is skipped', async () => {
+    const client = await freshDatabase('emailevents_threads_send');
+    activeClient = client;
+    await threadFixture(client);
+    await switchOn(client, ['acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-own', 'acct-ev-coach-cover', 'acct-ev-coach-none']);
+    const { sent, dependencies } = recorder();
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const onA = await threadPost(client, ORG, ATH_A);
+    const onB = await threadPost(client, ORG, ATH_B);
+    await threadPost(client, ORG, ATH_A, { threadId: onA, author: 'acct-ev-coach-own', role: 'coach' });
+    const label = new Map([[onA, 'onA'], [onB, 'onB']]);
+
+    // Queued while each can be nudged: both admins for both posts, the coach of
+    // record for ATH_A's, the covering coach for ATH_B's; the coach of no one, nothing.
+    for (const source of EMAIL_ALERT_EVENT_SOURCES) await sweepEmailAlertSource(source);
+    expect(Number((await client.query('select count(*) from pilot.email_alert_sends')).rows[0].count)).toBe(6);
+
+    // Before the send: the organization admin opens ATH_A's post, and ATH_B's cover ends.
+    await client.query(
+      `insert into pilot.family_thread_reads (organization_id, post_id, reader_account_id, reader_role)
+       values ($1, $2::uuid, 'acct-ev-orgadmin', 'organization_admin')`,
+      [ORG, onA],
+    );
+    await client.query(`update pilot.coach_coverage set expires_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ATH_B]);
+
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 4, skipped: 2 });
+    const { rows } = await client.query(
+      `select account_id, event_id, status, skip_reason from pilot.email_alert_sends order by account_id, event_id`,
+    );
+    const outcome = (accountId: string) => rows
+      .filter((row) => row.account_id === accountId)
+      .map((row) => `${label.get(row.event_id)} ${row.status === 'sent' ? 'sent' : row.skip_reason}`)
+      .sort();
+    expect(outcome('acct-ev-admin')).toEqual(['onA sent', 'onB sent']);
+    expect(outcome('acct-ev-orgadmin')).toEqual(['onA not_offered', 'onB sent']);
+    expect(outcome('acct-ev-coach-own')).toEqual(['onA sent']);
+    expect(outcome('acct-ev-coach-cover')).toEqual(['onB not_offered']);
+    expect(outcome('acct-ev-coach-none')).toEqual([]);
+    for (const message of sent) {
+      expect(message).toEqual({ to: message.to, subject: 'GYM: open the app', body: 'open the app' });
+    }
+    expect(sent.map((message) => message.to).sort()).toEqual([
+      'acct-ev-admin@example.com', 'acct-ev-admin@example.com', 'acct-ev-coach-own@example.com', 'acct-ev-orgadmin@example.com',
+    ]);
+
+    // Once: the next tick finds the same posts in its overlap and sends nothing.
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(sent).toHaveLength(4);
+  });
+
   test('the sender reads these sources and this read check unless told otherwise', () => {
     expect(emailAlertSenderDependencies().stillReads).toBe(emailAlertEventStillReadable);
   });
 
   test('each source is an event on the shared list, read in a fixed order, with a send-time read rule', () => {
     expect(EMAIL_ALERT_EVENT_SOURCES.map((source) => source.checkpointKey))
-      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message', 'family_note']);
-    expect([safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource].map((source) => source.checkpointKey))
-      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message']);
+      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message', 'family_note', 'guardian_message']);
+    expect([
+      safetyEscalationSource, parentReplySource, gymNoticeSource, coachMessageSource, familyNoteSource, guardianMessageSource,
+    ].map((source) => source.checkpointKey))
+      .toEqual(['safety_escalation', 'parent_reply', 'gym_notice', 'coach_message', 'family_note', 'guardian_message']);
     const listed = Object.values(EMAIL_ALERT_EVENTS).flat() as string[];
     for (const source of EMAIL_ALERT_EVENT_SOURCES) {
       expect(listed).toContain(source.checkpointKey);
