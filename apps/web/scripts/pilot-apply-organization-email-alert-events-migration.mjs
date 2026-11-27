@@ -19,8 +19,10 @@ function sslConfig() {
 }
 
 // Asserts the table, its exact column list with each column's type and
-// nullability, ticked with no default (every row is a choice somebody made),
-// exactly the CHECKs below and no others, each compared IN FULL against the text Postgres stores
+// nullability, its defaults exactly: set_at's clock_timestamp() (an insert may
+// leave set_at out; Codex on #2180) and none on any other column, so ticked
+// has none (every row is a choice somebody made); exactly the CHECKs below and
+// no others, each compared IN FULL against the text Postgres stores
 // (organizationEmailAlertEventsMigration.pg.test.ts drives this runner against
 // a real database), the three-column primary key in order, and exactly two
 // foreign keys: the gym key (cascade) and the setter key (set null), each by
@@ -69,6 +71,12 @@ const READINESS_QUERY = `
       where table_schema = 'pilot' and table_name = 'organization_email_alert_events'
         and column_name = 'ticked' and is_nullable = 'NO' and column_default is null
     ) as ticked_is_a_choice,
+    (
+      select coalesce(array_agg(column_name::text || '=' || column_default::text order by ordinal_position), '{}')
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'organization_email_alert_events'
+        and column_default is not null
+    ) = array['set_at=clock_timestamp()'] as defaults_ready,
     (
       select count(*) = $1 from pg_constraint c
       join unnest($2::text[], $3::text[]) as expected(conname, condef) on expected.conname = c.conname
