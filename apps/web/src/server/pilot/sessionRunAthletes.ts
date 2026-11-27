@@ -114,7 +114,7 @@ export async function setRunAthletePresent(input: {
     await client.query('set transaction isolation level read committed');
     // The marker must still be staff here now, not only when the check above ran: an admin
     // ending the membership, or deactivating the account, in between gets no mark. Lock order,
-    // one way only: membership and account, run row, athlete row, mark row (lockStaffMembership).
+    // one way only: account and membership, run row, athlete row, mark row (lockStaffMembership).
     const role = await lockStaffMembership(client, actor);
     if (!role) {
       throw new ForbiddenError(NOT_PERMITTED, 'SESSION_RUN_ATHLETE_NOT_PERMITTED');
