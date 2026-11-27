@@ -258,6 +258,7 @@ function newRequestKey(): string {
    server answers. Storage can be blocked or full: every touch is in a try, and
    the page works without it (the key then lives in memory only, as before). */
 const PENDING_CLASS_KEY = 'ppbf.schedule.pendingCreateClassKey';
+
 const STORED_KEY_SHAPE = /^[A-Za-z0-9_-]{8,128}$/;
 
 function pendingClassKey(): string | null {
@@ -322,6 +323,17 @@ const HOLD_REASON_WORDS: Readonly<Record<string, string>> = {
 
 /** The admin's coach picker: active coaches of this gym only, the set
  *  review_coaching_request's assertActiveCoachAccount accepts. */
+/**
+ * The words for classes scheduled. With a session plan they name it, so the plan line going from
+ * the form never reads as "dropped" (App Overwatch on #2240, 7216136881: "A"); without one they are
+ * as before.
+ */
+function classesScheduledWords(count: number, planName: string | null): string {
+  const plan = planName ? ` with the session plan ${planName}` : '';
+  if (count > 1) return `${count} weekly classes scheduled${plan}.`;
+  return planName ? `Class scheduled${plan}.` : 'Class scheduled successfully.';
+}
+
 function coachOptionsFrom(members: unknown): CoachOption[] {
   if (!Array.isArray(members)) return [];
   const options = coachOptionRows(members);
@@ -772,7 +784,11 @@ export default function SchedulerPage() {
             : payload.action === 'create_class' && result.already_created === true
               ? 'Already scheduled: your earlier tap went through. Nothing was added twice.'
               : payload.action === 'create_class' && (result.class_ids?.length ?? 0) > 1
-                ? `${result.class_ids?.length} weekly classes scheduled.`
+                // The plan sent is the one this render names (the press built the payload from it).
+                ? classesScheduledWords(
+                  result.class_ids?.length ?? 0,
+                  planRead && payload.script_id === planRead.scriptId ? planRead.name : null,
+                )
                 : successMessage;
       if (payload.action === 'attendance_checkin') {
         const warned = checkInHoldWarningFrom(result.hold_warning);
@@ -1398,7 +1414,7 @@ export default function SchedulerPage() {
                                 : { repeat_until: newClassRepeatRule.until }
                               : {}),
                           },
-                          'Class scheduled successfully.',
+                          classesScheduledWords(1, planRead ? planRead.name : null),
                           () => {
                             setNewClassTitle('');
                             setNewClassStartAt('');

@@ -145,7 +145,8 @@ describe('a class that keeps its session plan', () => {
 
     const [sent] = creates(fetchMock);
     expect(sent).toMatchObject({ action: 'create_class', title: 'Evening boxing', script_id: PLAN_ID });
-    expect(await screen.findByText('Class scheduled successfully.')).toBeInTheDocument();
+    // The success words name the plan (App Overwatch on #2240, 7216136881: "A").
+    expect(await screen.findByText(`Class scheduled with the session plan ${PLAN_NAME}.`)).toBeInTheDocument();
     expect(screen.queryByText(`Session plan: ${PLAN_NAME}`)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Schedule without a plan' })).toBeNull();
     expect(window.location.search).toBe('');
@@ -171,7 +172,7 @@ describe('a class that keeps its session plan', () => {
     const sent = creates(fetchMock);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ script_id: PLAN_ID, repeat_weeks: 4 });
-    expect(await screen.findByText('4 weekly classes scheduled.')).toBeInTheDocument();
+    expect(await screen.findByText(`4 weekly classes scheduled with the session plan ${PLAN_NAME}.`)).toBeInTheDocument();
   });
 
   test('"Schedule without a plan" drops it from the form and the address, and Schedule Class sends none', async () => {
@@ -190,6 +191,8 @@ describe('a class that keeps its session plan', () => {
     await pressSchedule();
     expect(creates(fetchMock)[0]).not.toHaveProperty('script_id');
     expect(planReads(fetchMock)).toHaveLength(1);
+    // Without a plan, the success words are as before.
+    expect(await screen.findByText('Class scheduled successfully.')).toBeInTheDocument();
   });
 
   test.each<[string, () => PlanAnswer]>([
