@@ -30,8 +30,8 @@ function sslConfig() {
 // the primary key and every unique key by name and columns, none deferrable
 // (ON CONFLICT refuses a deferrable key); exactly the foreign keys below, each
 // by name, columns on both sides, target, cascade on delete, the default
-// update rule, validated, not deferrable, and with none of its triggers
-// switched off; and every index on the table by its full definition, each
+// update rule, validated, not deferrable, and with every one of its triggers
+// firing in ordinary sessions (not switched off, and not replica-only); and every index on the table by its full definition, each
 // valid and ready (a failed concurrent build leaves an invalid one that
 // `create index if not exists` never repairs).
 
@@ -196,7 +196,7 @@ const READINESS_QUERY = `
         and c.confdeltype = 'c' and c.confupdtype = 'a'
         and ${keyColumns('conkey', 'conrelid')} = string_to_array(e.cols, ',')
         and ${keyColumns('confkey', 'confrelid')} = string_to_array(e.refcols, ',')
-        and not exists (select 1 from pg_trigger g where g.tgconstraint = c.oid and g.tgenabled = 'D'))
+        and not exists (select 1 from pg_trigger g where g.tgconstraint = c.oid and g.tgenabled not in ('O', 'A')))
       and (select count(*) = cardinality($8::text[]) from pg_constraint c, t
             where c.conrelid = t.rel and c.contype = 'f') as foreign_keys_ready,
     coalesce((select array_agg(indexdef::text order by indexname collate "C") from pg_indexes

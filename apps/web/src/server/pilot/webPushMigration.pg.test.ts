@@ -269,6 +269,13 @@ describe('web push migration', () => {
            references pilot.accounts(account_id) on delete cascade on update cascade`],
     ['push_subscriptions.foreign_keys_ready', 'the membership key\'s triggers switched off',
       'alter table pilot.push_subscriptions disable trigger all'],
+    ['push_subscriptions.foreign_keys_ready', 'the foreign-key triggers set to fire only for replication',
+      `do $$ declare t record; begin
+         for t in select tgname from pg_trigger
+                   where tgrelid = 'pilot.push_subscriptions'::regclass and tgisinternal and tgconstraint <> 0 loop
+           execute format('alter table pilot.push_subscriptions enable replica trigger %I', t.tgname);
+         end loop;
+       end $$`],
     ['push_subscriptions.columns_ready', 'an endpoint on another collation',
       'alter table pilot.push_subscriptions alter column endpoint type text collate "C"'],
     ['push_subscriptions.identity_ready', 'an id that cycles back to 1',
