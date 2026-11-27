@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
+import { keepSave, readSaveQueue, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 
 // Staff notes on one athlete's session (OD-2026-10-06-025 ruling 4): the
 // athlete's own note stays theirs, and a coach or organization admin adds a
@@ -33,6 +35,12 @@ import { formatGymDateNumeric, formatGymDateTimeShort } from '@/src/lib/gymTime'
 // route's own refusals (400, 401, 403, 404, 409, 422) say the note was not
 // saved. Anything else, or no answer, says it is not known, and the list is
 // read again so the coach can see.
+//
+// KEPT ON THE LIVE FLOOR (W4 item 7, OQ-4; OW27-35 A). Only where the live session's "Who is here"
+// list mounts this panel (keptOnThisPage), a write whose answer is lost is kept on the open page and
+// sent again until it goes through: a new note with one request key and the account that made it, so
+// it is written once however often it is sent. Every other mount keeps today's behaviour (Overwatch
+// condition 4).
 
 interface NoteRow {
   note_id: string;
@@ -71,9 +79,21 @@ export default function SessionStaffNotesPanel(
     /** The closed button's words, when "on this session" is not enough (several athletes on one screen).
      *  The open panel's heading says the same words (F-173), so the button and the panel name one thing. */
     buttonLabel?: string;
+    /** The live floor only: writes are kept on the open page and sent again until they go through. */
+    keptOnThisPage?: boolean;
+    /** Whether a finish is kept and waiting now: once it lands this panel goes, so a refusal is said in the page's list. */
+    isFinishWaiting?: () => boolean;
+    /**
+     * The live floor: a kept note refused while this panel is closed is handed to the list that mounts
+     * it, which names the athlete and keeps the words through a remount of this row.
+     */
+    onKeptRefused?: (words: string, noteText: string) => boolean;
+    /** Refused notes' words the list kept while this panel was closed: they go back into the box when it opens. */
+    returnedWords?: string;
+    onWordsReturned?: () => void;
   },
 ) {
-  const { athleteId, buttonLabel } = props;
+  const { athleteId, buttonLabel, keptOnThisPage = false, isFinishWaiting, onKeptRefused, returnedWords, onWordsReturned } = props;
   const subjectKey = props.runId !== undefined ? 'run_id' : 'session_id';
   const subjectId = props.runId !== undefined ? props.runId : props.sessionId;
   const [reading, setReading] = useState<Reading>({ state: 'closed' });
@@ -90,12 +110,47 @@ export default function SessionStaffNotesPanel(
   // read started, is dropped -- so a panel never reopens itself.
   const latestRead = useRef(0);
   const isOpen = useRef(false);
+  // Kept writes of this panel not yet saved, said in the panel; cleared once nothing kept waits on the
+  // page (a sign-out drop tells this panel nothing otherwise).
+  const [waitingWrites, setWaitingWrites] = useState(0);
+  useEffect(
+    () =>
+      subscribeSaveQueue(() => {
+        const state = readSaveQueue();
+        if (state.waiting.length === 0 && state.checking === 0) setWaitingWrites(0);
+      }),
+    [],
+  );
+  // On the live floor the box can hold a refused note's words, one person's: any drop of the queue (a
+  // sign-out, another account, a 401) clears it and its refusal, so the next person never writes them
+  // as their own.
+  useEffect(() => {
+    if (!keptOnThisPage) return undefined;
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      setDraft('');
+      setRefusal(null);
+    });
+  }, [keptOnThisPage]);
+  // While this panel is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
 
-  const read = useCallback(async () => {
+  // Quiet: the list as shown stays until the new one is in (a kept write landing while the coach types
+  // must not take the draft or a change box away), and a read that fails leaves it as it was.
+  const read = useCallback(async (quiet = false) => {
     const ticket = latestRead.current + 1;
     latestRead.current = ticket;
     isOpen.current = true;
-    setReading({ state: 'loading' });
+    if (!quiet) setReading({ state: 'loading' });
     const landed = () => isOpen.current && latestRead.current === ticket;
     try {
       const response = await fetch(
@@ -117,7 +172,8 @@ export default function SessionStaffNotesPanel(
       setReading({ state: 'loaded', notes: payload.notes as NoteRow[], noteMax: payload.note_max });
     } catch {
       // Unknown is never shown as "no notes".
-      if (landed()) setReading({ state: 'unavailable' });
+      // A quiet read keeps a loaded list; with none shown (a read already under way), it says so.
+      if (landed()) setReading((current) => (quiet && current.state === 'loaded' ? current : { state: 'unavailable' }));
     }
   }, [athleteId, subjectId, subjectKey]);
 
@@ -131,23 +187,135 @@ export default function SessionStaffNotesPanel(
       // the panel is still there to read when it is opened again.
       setRefusal(null);
     } else {
+      // Refused notes' words kept by the list come back into the box, after anything already in it.
+      if (returnedWords) {
+        setDraft((current) => (current === '' ? returnedWords : `${current}\n\n${returnedWords}`));
+        onWordsReturned?.();
+      }
       void read();
     }
-  }, [read]);
+  }, [onWordsReturned, read, returnedWords]);
 
   // One write path for add, change and remove. `done` runs only on the
   // server's own yes; the list is then re-read (unless the coach closed the
   // panel meanwhile -- a write must never reopen what the coach closed).
+  // Only a NEW note is kept: it carries one request key, so it is written once however often it is sent.
+  // A change or a removal has no key (the server applies every send of a change), so it goes today's way.
+  const keptAdd = useCallback(
+    (
+      request: { url: string; method: string; body?: unknown },
+      failed: { heading: string; verb: string },
+      what: { text: string },
+      resolved: { done: boolean; counted: boolean },
+    ): KeptSave => {
+      let reason = '';
+      // A resend refused because this save's own key already added a note (one edited since): it landed.
+      let ownKeyUsed = false;
+      let refusedCode: unknown;
+      // No note text and no name: the line can outlive this panel on a shared floor screen.
+      const label = 'Staff note';
+      const settle = () => {
+        resolved.done = true;
+        if (!resolved.counted) return;
+        resolved.counted = false;
+        setWaitingWrites((count) => Math.max(0, count - 1));
+      };
+      return {
+        label,
+        send: ({ signal, requestKey, madeByAccountId }) =>
+          fetch(`${apiBase()}${request.url}`, {
+            method: request.method,
+            credentials: 'include',
+            ...(request.body === undefined
+              ? {}
+              : {
+                headers: { 'content-type': 'application/json' },
+                // The note's key and the account that made it (OQ-1).
+                body: JSON.stringify({ ...(request.body as Record<string, unknown>), request_key: requestKey, made_by_account_id: madeByAccountId }),
+              }),
+            signal,
+          }),
+        // A yes is a yes (as today); the route's own refusals are a no; anything else proves nothing.
+        answerOf: async (response) => {
+          if (response.ok) return 'saved';
+          if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
+          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
+          reason = typeof payload?.error === 'string' && payload.error ? payload.error : `The note was not ${failed.verb} (${response.status}).`;
+          refusedCode = payload?.code;
+          if (payload?.code === 'SESSION_STAFF_NOTE_REQUEST_KEY_REUSED') ownKeyUsed = true;
+          return 'refused';
+        },
+        // A refused resend, decided by this note's own request key alone (OVERWATCH 7170099938 on #2178):
+        // never by a note with the same words, which another tab or device writing the same note would
+        // also give. The server says this key already added a note (edited since): it landed. Refused
+        // after the server's key lookup found nothing: it did not land. Anything else: not known.
+        checkLanded: async () => {
+          if (ownKeyUsed) return true;
+          if (refusedCode === 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT') return false;
+          return null;
+        },
+        onSaved: () => {
+          settle();
+          if (onPage.current && isOpen.current) void read(true);
+        },
+        // Refused: said in this panel, where the coach wrote, with the note's own words (the box may hold
+        // the next note by now); a refused note's words also go back into an empty box (a not-known one
+        // may have been written, so they do not).
+        onRefused: (_response, landed) => {
+          settle();
+          // The panel closed: handed to the list, which names the athlete (never the note's words, which
+          // stay out of sight on the floor) and keeps a refused note's words for the box until the
+          // notes are opened, even if this row is filtered away and back.
+          // Also when this row has gone (filtered away) while the list is still there: the list says it.
+          if ((!onPage.current || !isOpen.current) && !isFinishWaiting?.() && onKeptRefused?.(
+            landed === null
+              ? 'whether a new note was saved is not known. Check the notes before writing it again.'
+              : `a new note was not saved: ${reason} Its words are back in the box when this athlete's notes are next opened.`,
+            landed === null ? '' : what.text.trim(),
+          )) {
+            return undefined;
+          }
+          if (landed === false) setDraft((current) => (current === '' ? what.text : current));
+          // Off the page, or while a kept finish waits (or with no list to tell): said in the page's list.
+          if (!onPage.current || isFinishWaiting?.() || !isOpen.current) {
+            return landed === null ? unknownOffPage('Check the staff notes on the class screen before writing it again.') : reason;
+          }
+          const itsWords = ` Its words: “${what.text.trim()}”`;
+          setRefusal(landed === null
+            ? { heading: 'NOT KNOWN', text: `${unknownOutcomeWords(label)}${itsWords}` }
+            : { heading: failed.heading, text: `${reason}${itsWords}` });
+          // The list as last read stays (a read again that fails would hide the words).
+          return undefined;
+        },
+      };
+    },
+    [isFinishWaiting, onKeptRefused, read],
+  );
+
   const write = useCallback(
     async (
       kind: 'add' | 'change' | 'remove',
       request: { url: string; method: string; body?: unknown },
       failed: { heading: string; verb: string },
       done: () => void,
+      what: { text: string } = { text: '' },
     ) => {
       setRefusal(null);
       setBusy(kind);
       try {
+        if (keptOnThisPage && kind === 'add') {
+          // Kept: done at once (the draft clears), so a second tap is a new note, not this one twice.
+          // Not kept (the page does not know who is signed in): sent once, as before.
+          const resolved = { done: false, counted: false };
+          if ((await keepSave(keptAdd(request, failed, { text: what.text }, resolved))) === 'kept') {
+            if (!resolved.done) {
+              resolved.counted = true;
+              setWaitingWrites((count) => count + 1);
+            }
+            done();
+            return;
+          }
+        }
         const response = await fetch(`${apiBase()}${request.url}`, {
           method: request.method,
           credentials: 'include',
@@ -191,7 +359,7 @@ export default function SessionStaffNotesPanel(
         setBusy(null);
       }
     },
-    [read],
+    [keptAdd, keptOnThisPage, read],
   );
 
   const add = () => write(
@@ -199,6 +367,7 @@ export default function SessionStaffNotesPanel(
     { url: ROUTE, method: 'POST', body: { [subjectKey]: subjectId, athlete_id: athleteId, note: draft } },
     { heading: 'NOT SAVED', verb: 'saved' },
     () => setDraft(''),
+    { text: draft },
   );
 
   const saveEdit = (noteId: string, text: string) => write(
@@ -236,6 +405,14 @@ export default function SessionStaffNotesPanel(
       >
         {open ? 'Hide staff notes' : subjectWords}
       </button>
+      {/* Beside the button, open or closed, and mounted always, so a screen reader announces it when it fills. */}
+      <p className={waitingWrites > 0 ? 't-body mt-[var(--s2)] font-semibold' : 'sr-only'} role="status">
+        {waitingWrites === 0
+          ? ''
+          : waitingWrites === 1
+            ? 'One new note is not saved yet. This page keeps sending it while it stays open.'
+            : `${waitingWrites} new notes are not saved yet. This page keeps sending them while it stays open.`}
+      </p>
 
       {open ? (
         <div id={panelId} className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">

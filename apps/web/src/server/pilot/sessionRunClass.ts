@@ -121,7 +121,7 @@ function auditRegister(client: PoolClient, tap: TapOnRegister, result: RegisterR
  * A "here" tap on a tied session: the register, after the session mark is written and locked.
  * `tappedAt` is set when an earlier tap is copied on a tie: a register change since then wins.
  */
-export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, tappedAt?: string): Promise<RegisterResult> {
+export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, tappedAt?: string, pageId?: string): Promise<RegisterResult> {
   const item = await lockSchedulerClass(client, tap.organizationId, tap.classId);
   if (!item || item.status === 'cancelled') return { effect: 'skipped', reason: 'class_cancelled' };
   if (!isOrganizationAdminRole(tap.role) && !actorRunsClass({ accountId: tap.accountId }, item)) {
@@ -141,9 +141,10 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, 
     },
     new Date().toISOString(),
     tappedAt,
-    // An Absent this run's own no-shows tap wrote, untouched since, is never a later register
-    // change: on one page the tap came first (writeSessionRegisterPresent).
+    // An Absent this run's own no-shows tap wrote from the same page, untouched since, is never a
+    // later register change: on one page the tap came first (writeSessionRegisterPresent).
     tap.runId,
+    pageId,
   );
   if (written.effect === 'created') {
     await client.query(
@@ -357,6 +358,8 @@ export interface NoShowsTap {
   requestKey: string | null;
   /** The class the screen showed them for: a run tied to another class since is refused, marking nobody. */
   classId: string;
+  /** The page a kept tap was made on, recorded with it: see writeSessionRegisterPresent's pageId. */
+  pageId?: string | null;
 }
 
 /**
@@ -446,7 +449,7 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
         entity_id: runId,
         details: {
           run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey,
-          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt,
+          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt, page_id: tap.pageId ?? null,
         },
         shadow_mirror: false,
       },
