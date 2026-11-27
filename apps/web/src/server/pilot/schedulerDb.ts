@@ -856,8 +856,15 @@ export async function writeSessionRegisterPresent(
   // change: the page sends its
   // kept saves one at a time in tap order, so a here tap landing after it was tapped after it, and
   // here wins (OD-2026-10-21-004 ruling 1). Two times worked out from two requests are each off by
-  // their request's delay and are not compared (review of #2165; round 13 of #2178).
+  // their request's delay and are not compared (review of #2165; round 13 of #2178). Only from the
+  // same page (pageId, recorded with the no-shows tap): each tab keeps its own queue, so a here tap
+  // from the coach's other tab or device has no place in this page's order, and an Absent set after
+  // it still wins (condition 1; #2182 round 12, reviewer A). Without a page id, never. Known limit
+  // (saveQueue.ts, "a send given up on"): a here tap the page gave up on after 30 seconds while the
+  // server still worked on it can be written after a newer no-shows tap of the same page, and then
+  // flips that tap's Absent (#2182 round 13, reviewer A; it needs a server stall over 30 seconds).
   runId?: string,
+  pageId?: string,
 ): Promise<SessionRegisterWrite> {
   const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
   let previous: SchedulerAttendance['status'] | undefined;
@@ -882,13 +889,14 @@ export async function writeSessionRegisterPresent(
                   where e.organization_id = a.organization_id and e.entity_type = 'session_script_run'
                     and e.entity_id = $5 and e.details->>'action' = 'mark_no_shows'
                     and e.details->>'class_id' = a.class_id
+                    and e.details->>'page_id' = $6
                     and e.details->'marked_athlete_ids' ? a.athlete_id
                     and (e.details->>'marked_at')::timestamptz = a.updated_at
                     and a.status = 'absent')) as newer
          from pilot.scheduler_attendance a
         where a.organization_id = $1 and a.class_id = $2 and a.athlete_id = $3
           for update`,
-      [...params.slice(0, 3), tappedAt ?? null, runId ?? null],
+      [...params.slice(0, 3), tappedAt ?? null, runId ?? null, pageId ?? null],
     );
     previous = rows[0]?.status;
     newer = rows[0]?.newer === true;

@@ -107,7 +107,10 @@ export interface WorkoutTemplateItemRow {
    * Every Backbone field of the item with no column of its own (lane YR), e.g. a sheet's
    * duration_minutes on a controlled-sparring item, which the duration column may not hold
    * (pilot_wti_no_contact_volume). SHOWN AS INFORMATION ONLY (OD-2026-11-17-002): issuing,
-   * timers and presets read duration_minutes and rep_count, never details.
+   * timers and presets read duration_minutes and rep_count, never details. The one key read is
+   * `within_item_id`, an owner's placement of the item inside another step: issueOrder issues the
+   * item after that step (TL-ORD), and a plan made from the template places and times it there
+   * (TL-ORD-2).
    */
   details: Record<string, unknown>;
   created_at: string;
@@ -895,12 +898,42 @@ export function issueOrder<T extends { item_id: string; ordinal: number; details
   items: readonly T[],
 ): T[] {
   const byOrdinal = [...items].sort((a, b) => a.ordinal - b.ordinal);
-  const ids = new Set(byOrdinal.map((item) => item.item_id));
+  const parents = issueParents(byOrdinal);
+  const inside = new Map<string, T[]>();
+  const top: T[] = [];
+  for (const item of byOrdinal) {
+    const parent = parents.get(item.item_id) ?? null;
+    if (parent === null) top.push(item);
+    else inside.set(parent, [...(inside.get(parent) ?? []), item]);
+  }
+  const ordered: T[] = [];
+  const place = (item: T) => {
+    ordered.push(item);
+    for (const child of inside.get(item.item_id) ?? []) place(child);
+  };
+  top.forEach(place);
+  return ordered;
+}
+
+/**
+ * The step each item sits inside, as issueOrder follows it: its
+ * `details.within_item_id`, or null for a step that sits inside nothing and for
+ * a link issueOrder does not follow (one naming no step of these items, the
+ * step itself, or a loop). A session plan made from the template times its
+ * nested steps by it (sessionScriptAuthoring.ts blocksFromTemplateSteps; lane
+ * W4-8, TL-ORD-2), so the plan and the issue path read one rule.
+ *
+ * Pure: keyed by item_id; the items are not changed.
+ */
+export function issueParents<T extends { item_id: string; details?: Record<string, unknown> | null }>(
+  items: readonly T[],
+): Map<string, string | null> {
+  const ids = new Set(items.map((item) => item.item_id));
   const named = (item: T): string | null => {
     const parent = item.details?.within_item_id;
     return typeof parent === 'string' && parent !== item.item_id && ids.has(parent) ? parent : null;
   };
-  const parentById = new Map(byOrdinal.map((item) => [item.item_id, named(item)]));
+  const parentById = new Map(items.map((item) => [item.item_id, named(item)]));
   // A parent is followed only when its chain of parents reaches a step that
   // sits inside nothing; a chain that comes back on itself is a loop.
   const followed = (itemId: string): string | null => {
@@ -912,20 +945,7 @@ export function issueOrder<T extends { item_id: string; ordinal: number; details
     }
     return parent;
   };
-  const inside = new Map<string, T[]>();
-  const top: T[] = [];
-  for (const item of byOrdinal) {
-    const parent = followed(item.item_id);
-    if (parent === null) top.push(item);
-    else inside.set(parent, [...(inside.get(parent) ?? []), item]);
-  }
-  const ordered: T[] = [];
-  const place = (item: T) => {
-    ordered.push(item);
-    for (const child of inside.get(item.item_id) ?? []) place(child);
-  };
-  top.forEach(place);
-  return ordered;
+  return new Map(items.map((item) => [item.item_id, followed(item.item_id)]));
 }
 
 /**

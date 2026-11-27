@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { EMAIL_ALERT_USER_TYPES, emailAlertCandidateUserType, isEmailAlertUserType } from './emailAlerts';
+import {
+  EMAIL_ALERT_EVENTS,
+  EMAIL_ALERT_USER_TYPES,
+  emailAlertCandidateUserType,
+  isEmailAlertEventFor,
+  isEmailAlertUserType,
+} from './emailAlerts';
 
 /*
  * Who may have an email alert switch (lane W4-1, EM-1). OW27-02 C: "Coach,
@@ -46,4 +52,49 @@ describe('the user types', () => {
       expect(isEmailAlertUserType(value)).toBe(expected);
     },
   );
+});
+
+describe('the events each user type can be sent (EM-5)', () => {
+  it('are Overwatch\'s Q1.9 reading, gym notices only (GO on #2159, condition 1)', () => {
+    expect(EMAIL_ALERT_EVENTS).toEqual({
+      staff: ['safety_escalation', 'parent_reply', 'gym_notice'],
+      parent: ['family_note', 'gym_notice'],
+      adult_athlete: ['coach_message', 'gym_notice'],
+    });
+  });
+
+  it('the gym-choice table allows exactly the same three user types', () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_email_alert_events_migration.sql'),
+      'utf8',
+    );
+    const match = sql.match(/check \(user_type in \(([^)]*)\)\)/);
+    expect(match?.[1].split(',').map((part) => part.trim().replace(/'/g, ''))).toEqual([...EMAIL_ALERT_USER_TYPES]);
+  });
+
+  it('every key has the shape the table CHECK allows', () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, '../../../../infra/azure/pilot_slice_postgres_organization_email_alert_events_migration.sql'),
+      'utf8',
+    );
+    const pattern = sql.match(/check \(event_kind ~ '([^']+)'\)/)?.[1];
+    expect(pattern).toBeDefined();
+    for (const kinds of Object.values(EMAIL_ALERT_EVENTS)) {
+      for (const kind of kinds) expect(kind).toMatch(new RegExp(pattern as string));
+    }
+  });
+
+  it.each([
+    ['staff', 'safety_escalation', true],
+    ['staff', 'family_note', false],
+    ['parent', 'family_note', true],
+    ['parent', 'safety_escalation', false],
+    ['adult_athlete', 'coach_message', true],
+    ['adult_athlete', 'family_note', false],
+    ['volunteer', 'gym_notice', false],
+    ['staff', 'motivation', false],
+    ['staff', null, false],
+  ])('isEmailAlertEventFor(%p, %p) is %p', (userType, eventKind, expected) => {
+    expect(isEmailAlertEventFor(userType, eventKind)).toBe(expected);
+  });
 });

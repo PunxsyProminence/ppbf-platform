@@ -42,6 +42,7 @@
 // use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -95,6 +96,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { readCsv } from './contentImport/csv';
 import { query } from './db';
 import {
   SessionScriptAuthoringError,
@@ -224,14 +226,59 @@ async function insertTemplate(gym: Gym, opts: { steps?: boolean; active?: boolea
   );
 }
 
-function create(gym: Gym, name?: string) {
+function create(gym: Gym, name?: string, templateId = TEMPLATE_ID) {
   return createSessionScriptFromTemplate({
     organizationId: gym.organizationId,
     actorAccountId: gym.coachId,
     actorRole: 'coach',
-    templateId: TEMPLATE_ID,
+    templateId,
     name,
   });
+}
+
+const SEED_DIR = path.resolve(__dirname, '../../../seed-data');
+
+/** A committed seed file's rows by column name, read with the content import's own CSV reader. */
+function seedRows(file: string): Record<string, string>[] {
+  const table = readCsv(readFileSync(path.join(SEED_DIR, file), 'utf8'));
+  expect(table.problems).toEqual([]);
+  return table.records.map(({ cells }) => Object.fromEntries(table.header.map((name, at) => [name, cells[at]])));
+}
+
+/**
+ * A template (its id, name, minutes and intent) and its steps, as given, in cells as the seed CSVs hold
+ * them ('' is null); each linked drill is written as a reference drill of the name given.
+ */
+async function insertTemplateRows(
+  gym: Gym,
+  template: Record<string, string>,
+  items: Record<string, string>[],
+  drillNames: Map<string, string>,
+): Promise<void> {
+  await client.query(
+    `insert into pilot.workout_templates
+       (organization_id, template_id, lineage_id, version, name, session_type, difficulty, age_band, active,
+        duration_minutes, intent)
+     values ($1,$2,$2,1,$3,'technical','intermediate','any',true,$4,$5)`,
+    [gym.organizationId, template.template_id, template.name, Number(template.duration_minutes), template.intent],
+  );
+  const orNull = (cell: string) => (cell === '' ? null : cell);
+  for (const item of items) {
+    if (item.drill_id !== '') await insertReference(gym, item.drill_id, drillNames.get(item.drill_id) ?? item.drill_id);
+    await client.query(
+      `insert into pilot.workout_template_items
+         (organization_id, item_id, template_id, ordinal, block, drill_id, free_text_drill, scale_level,
+          duration_minutes, rep_count, contact_level, coach_note, details)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)`,
+      [
+        gym.organizationId, item.item_id, template.template_id, Number(item.ordinal), item.block,
+        orNull(item.drill_id), orNull(item.free_text_drill), orNull(item.scale_level),
+        item.duration_minutes === '' ? null : Number(item.duration_minutes),
+        item.rep_count === '' ? null : Number(item.rep_count), item.contact_level, orNull(item.coach_note),
+        item.details === '' ? '{}' : item.details,
+      ],
+    );
+  }
 }
 
 type EditChange = Pick<Parameters<typeof editSessionScript>[0], 'name' | 'blocks' | 'add' | 'remove' | 'order' | 'expectedUpdatedAt'>;
@@ -471,6 +518,131 @@ describe('making a session script from a workout template', () => {
 
     const plain = await startSessionScriptRun(gym.organizationId, gym.coachId, {});
     expect(plain).toMatchObject({ script_id: null, script_version: null, current_block_id: null, run_state: 'in_progress' });
+  });
+
+  // TL-ORD-2 (lane W4-8; App Overwatch on #2205, comment 7181958209): a plan runs the template's steps in
+  // the order a workout issued from it does, and an owner's step placed inside another, stating no
+  // minutes, runs inside its parent's time (D-PK73-3: "no Long Road minutes change").
+  test("a plan made from Conditioning session A, as committed, lists the owner's checks where D-PK73-3 put them, and its total minutes are the template's", async () => {
+    const CONDITIONING_A = 'wtp_01de3f48606d4c';
+    const template = seedRows('workout-templates/seed_workout_templates.csv').find((row) => row.template_id === CONDITIONING_A)!;
+    const items = seedRows('workout-templates/seed_workout_template_items.csv').filter((row) => row.template_id === CONDITIONING_A);
+    const names = new Map(seedRows('drill-library/seed_drill_library.csv').map((row) => [row.drill_id, row.name]));
+    expect(template).toMatchObject({ name: 'Conditioning session A — SIT, 45 min', duration_minutes: '45' });
+    const byOrdinal = new Map(items.map((row) => [Number(row.ordinal), row]));
+    // The owner's placement, as the seed holds it: ordinal 5 inside 1 (the warm-up), 6 inside 2 (the main set).
+    expect(JSON.parse(byOrdinal.get(5)!.details).within_item_id).toBe(byOrdinal.get(1)!.item_id);
+    expect(JSON.parse(byOrdinal.get(6)!.details).within_item_id).toBe(byOrdinal.get(2)!.item_id);
+    const gym = await newGym('conditioning-a');
+    await insertTemplateRows(gym, template, items, names);
+
+    const created = await create(gym, undefined, CONDITIONING_A);
+
+    const ordinalOf = new Map(items.map((row) => [row.drill_id, Number(row.ordinal)]));
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(detail?.blocks.map((block) => ({
+      order: block.block_order,
+      ordinal: ordinalOf.get(block.drill_id ?? ''),
+      window: [block.start_offset_min, block.end_offset_min],
+      label: block.block_label,
+    }))).toEqual([
+      { order: 1, ordinal: 1, window: [0, 15], label: names.get(byOrdinal.get(1)!.drill_id) },
+      // "at the end of the warm-up": inside the warm-up's 15 minutes.
+      { order: 2, ordinal: 5, window: [0, 15], label: names.get(byOrdinal.get(5)!.drill_id) },
+      // The main set states no minutes, so it has the 5 any such step has.
+      { order: 3, ordinal: 2, window: [15, 20], label: names.get(byOrdinal.get(2)!.drill_id) },
+      // "straight after the main set": inside the main set's minutes.
+      { order: 4, ordinal: 6, window: [15, 20], label: names.get(byOrdinal.get(6)!.drill_id) },
+      { order: 5, ordinal: 3, window: [20, 28], label: names.get(byOrdinal.get(3)!.drill_id) },
+      { order: 6, ordinal: 4, window: [28, 33], label: names.get(byOrdinal.get(4)!.drill_id) },
+    ]);
+    // The template's 45 minutes; the checks add none, so the blocks run to minute 33, not 43.
+    expect(detail).toMatchObject({ total_minutes: 45, contact_structure: 'non_contact' });
+    expect(Math.max(...detail!.blocks.map((block) => block.end_offset_min))).toBe(33);
+  });
+
+  test("a plan made from the Phase 1 skill session, as committed, is the template's 90 minutes: its nested step adds none", async () => {
+    const PHASE_1_SKILL = 'wtp_c2c4bec001a56b';
+    const template = seedRows('workout-templates/seed_workout_templates.csv').find((row) => row.template_id === PHASE_1_SKILL)!;
+    const items = seedRows('workout-templates/seed_workout_template_items.csv').filter((row) => row.template_id === PHASE_1_SKILL);
+    const names = new Map(seedRows('drill-library/seed_drill_library.csv').map((row) => [row.drill_id, row.name]));
+    expect(template.duration_minutes).toBe('90');
+    const byOrdinal = new Map(items.map((row) => [Number(row.ordinal), row]));
+    // Steps 1-6 state 90 minutes between them; step 7 sits inside step 6 and states none.
+    expect([1, 2, 3, 4, 5, 6].map((ordinal) => Number(byOrdinal.get(ordinal)!.duration_minutes)).reduce((a, b) => a + b, 0)).toBe(90);
+    expect(byOrdinal.get(7)).toMatchObject({ duration_minutes: '' });
+    expect(JSON.parse(byOrdinal.get(7)!.details).within_item_id).toBe(byOrdinal.get(6)!.item_id);
+    const gym = await newGym('phase-1');
+    await insertTemplateRows(gym, template, items, names);
+
+    const created = await create(gym, undefined, PHASE_1_SKILL);
+
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    // Until now step 7 added 5 minutes after step 6, and the plan read 95.
+    expect(detail?.total_minutes).toBe(90);
+    expect(detail?.blocks.slice(-2).map((block) => [block.start_offset_min, block.end_offset_min])).toEqual([[80, 90], [80, 90]]);
+  });
+
+  test("a step inside another that states its own minutes keeps them, and the plan's length reaches them", async () => {
+    const gym = await newGym('own-minutes');
+    const step = (item_id: string, ordinal: number, duration_minutes: string, within: string | null) => ({
+      item_id, ordinal: String(ordinal), block: 'technical', drill_id: '', free_text_drill: `Step ${item_id}`,
+      scale_level: '', duration_minutes, rep_count: '', contact_level: 'none', coach_note: '',
+      details: within === null ? '' : JSON.stringify({ within_item_id: within }),
+    });
+    await insertTemplateRows(gym, { template_id: 'wtp_own', name: 'Own minutes', duration_minutes: '15', intent: 'Fixture intent' }, [
+      step('wti_p', 1, '14', null),
+      step('wti_own', 2, '3', 'wti_p'),
+      step('wti_none', 3, '', 'wti_p'),
+    ], new Map());
+
+    const created = await create(gym, undefined, 'wtp_own');
+
+    const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(detail?.blocks.map((block) => [block.block_label, block.start_offset_min, block.end_offset_min])).toEqual([
+      ['Step wti_p', 0, 14],
+      ['Step wti_own', 14, 17],
+      ['Step wti_none', 0, 14],
+    ]);
+    // The last block ends at 14, but the plan runs to 17: longer than the template's stated 15.
+    expect(detail?.total_minutes).toBe(17);
+  });
+
+  test('the contact label reads the blocks in the order the plan runs them, either way', async () => {
+    const step = (item_id: string, ordinal: number, duration_minutes: string, contact_level: string, within: string | null) => ({
+      item_id, ordinal: String(ordinal), block: 'technical', drill_id: '', free_text_drill: `Step ${item_id}`,
+      scale_level: '', duration_minutes, rep_count: '', contact_level, coach_note: '',
+      details: within === null ? '' : JSON.stringify({ within_item_id: within }),
+    });
+    const labelOf = async (label: string, items: ReturnType<typeof step>[]) => {
+      const gym = await newGym(label);
+      await insertTemplateRows(gym, { template_id: 'wtp_contact', name: 'Contact order', duration_minutes: '15', intent: 'Fixture intent' }, items, new Map());
+      const created = await create(gym, undefined, 'wtp_contact');
+      const detail = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+      return { blocks: detail?.blocks.map((block) => [block.block_label, block.contact_level]), label: detail?.contact_structure };
+    };
+
+    // By ordinal: without contact, with, without ('contact'). As run: the step inside the first comes
+    // straight after it, so without, without, then with.
+    expect(await labelOf('contact-later', [
+      step('wti_a', 1, '10', 'none', null),
+      step('wti_spar', 2, '', 'controlled_sparring', null),
+      step('wti_in_a', 3, '', 'none', 'wti_a'),
+    ])).toEqual({
+      blocks: [['Step wti_a', 'none'], ['Step wti_in_a', 'none'], ['Step wti_spar', 'controlled_sparring']],
+      label: 'split_non_contact_then_contact',
+    });
+    // The other way, the one that matters for safety: by ordinal without, without, then with, but the
+    // contact step sits inside the first and runs before the second, so the session has contact and
+    // then none again ('contact'), not "without, then with".
+    expect(await labelOf('contact-earlier', [
+      step('wti_a', 1, '10', 'none', null),
+      step('wti_b', 2, '5', 'none', null),
+      step('wti_spar_in_a', 3, '', 'controlled_sparring', 'wti_a'),
+    ])).toEqual({
+      blocks: [['Step wti_a', 'none'], ['Step wti_spar_in_a', 'controlled_sparring'], ['Step wti_b', 'none']],
+      label: 'contact',
+    });
   });
 });
 
