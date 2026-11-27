@@ -20,7 +20,7 @@ import type { ShadowValidationResult } from './shadowChat';
  * No text, and no email or push that says what happened -- the escalation
  * list is the only place it is read. A staff member who switches email alerts
  * on gets only "open the app" (lane W4-1, emailAlertEvents.ts), and so does a
- * browser they turn pop-ups on for (lane W5-WP, pushAlertSender.ts).
+ * browser they turn push on in (lane W5-WP, pushAlertSender.ts).
  *
  * SHADOW STILL ANSWERS (OD-2026-10-10-007). The mark this module adds to the
  * request carries no topic and no fallback classification, so the answer, its

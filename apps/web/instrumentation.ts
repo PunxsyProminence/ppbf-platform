@@ -63,7 +63,11 @@ export async function register(): Promise<void> {
       }
       // The web push alert (lane W5-WP, WP-2b-2c) next, in its own try, the
       // same way. It does nothing at all while the push settings are unset.
-      // Counts only, never an endpoint.
+      // Counts only, never an endpoint. It has the email's limits, not a share
+      // of them (20 s or 20 sends, each send's posts cut off at 10 s), so with
+      // push on a slow tick runs about 30 s longer. The loop schedules the next
+      // tick only when this one ends (shadowJobWorker.ts), so ticks never
+      // overlap on a replica; they come further apart.
       try {
         const pushes = await runPushAlertSweep();
         if (Object.values(pushes).some((count) => count > 0)) console.log('Push alert sweep', pushes);
