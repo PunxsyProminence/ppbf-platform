@@ -124,9 +124,10 @@ it('a family refusal is the one fixed text, with no id and no reason passed thro
   expect(await response.json()).toEqual(FAMILY_FAILURE);
 });
 
-// Codex on #2220 (4723722713); App Overwatch 7228636120. A session that outlived the athlete's record is
-// refused with a 403, as the other athlete-self routes refuse it (assertAthleteBelongsToOrganization),
-// never answered "not counted".
+// Codex on #2220 (4723722713); App Overwatch 7228636120. The module now refuses a session that outlived
+// the athlete's record (onTheFloor.pg.test.ts proves that); this pins what the route makes of that refusal:
+// a 403, the status the other athlete-self routes give it (assertAthleteBelongsToOrganization), with the
+// family's one fixed text and no "not counted" answer. The route itself is unchanged by the fix.
 it('an athlete whose record is gone is refused with a 403 and the one fixed text, never "not counted"', async () => {
   mockPrincipal.mockResolvedValue(principal('athlete', 'org-1', 'a-gone'));
   mockFamily.mockRejectedValue(forbidden('Forbidden: athlete does not belong to organization'));
