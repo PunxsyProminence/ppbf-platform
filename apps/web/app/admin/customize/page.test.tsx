@@ -14,7 +14,7 @@
 // The 26th-newest notice is not reachable from any screen.
 
 import type { ReactNode } from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 
 import CustomizePage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -144,6 +144,31 @@ test('a gym admin gets the gym tablet sign-out section, and a platform owner doe
   clearRoleSession();
 });
 
+// Lane W4-6, SC-0b (OW27-30 A: the gym admin sets the stopped-coming days in
+// gym settings). The section's own behaviour is stoppedComingSettings.test.tsx;
+// this file's fetch mock answers every URL with announcements, so the drawer
+// shows its read alert here.
+test('a gym admin gets the Stopped coming section, and a platform owner does not', async () => {
+  render(<CustomizePage />);
+  const heading = await screen.findByRole('heading', { name: 'Stopped coming' });
+  const section = heading.closest('section') as HTMLElement;
+  expect(section.getAttribute('aria-labelledby')).toBe('customize-stopped-coming');
+  expect(within(section).getByText(/^The Stopped Coming page lists athletes on the roster who have come before/)).toBeTruthy();
+  expect(await within(section).findByRole('alert')).toBeTruthy();
+  expect(within(section).getByRole('alert').textContent).toBe('The setting could not be read. Reload to try again.');
+  expect(
+    (global.fetch as unknown as jest.Mock).mock.calls.some(([url]) => String(url).endsWith('/api/pilot/stopped-coming/gap')),
+  ).toBe(true);
+  cleanup();
+
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  createPersistentRoleSession('platform_owner');
+  render(<CustomizePage />);
+  await screen.findByText(/ADMINS ONLY/);
+  expect(screen.queryByRole('heading', { name: 'Stopped coming' })).toBeNull();
+  clearRoleSession();
+});
+
 // Lane N4-02: each board says where it is SHOWN, not who is kept from it. The
 // announcements read (api/pilot/announcements/get) carries no role check, so
 // "Coaches only" and "never see it" claimed a guarantee the server does not
@@ -184,11 +209,14 @@ test('the desk opens on an index of its own sections, then Quotes', async () => 
     ['Photographs on the wall', '#customize-photos'],
     ['The boards', '#customize-boards'],
     ['Gym tablet sign-out', '#customize-tablet'],
+    ['Stopped coming', '#customize-stopped-coming'],
     ['The record', '#customize-record'],
     ['Quotes', '/admin/quotes'],
   ]);
   // Each in-page entry lands on the heading it is named after.
-  for (const [label, href] of links.slice(0, 5)) {
+  const inPage = links.filter(([, href]) => String(href).startsWith('#'));
+  expect(inPage).toHaveLength(6);
+  for (const [label, href] of inPage) {
     const target = document.getElementById(String(href).slice(1));
     expect(target?.tagName).toBe('H2');
     expect(target?.textContent?.trim()).toBe(label);
