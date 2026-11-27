@@ -175,6 +175,49 @@ test('a gym admin gets the Stopped coming section, and a platform owner does not
   clearRoleSession();
 });
 
+// Lane W4-1, EM-6 (OW27-10 A, OW27-39 A): the gym admin picks which events
+// may send the email alert. The drawer's own behaviour is
+// components/admin/EmailAlertSettings.test.tsx; this file's fetch mock answers
+// every URL with announcements, so the drawer shows its read alert here and
+// no tick box.
+test('a gym admin gets the Email alerts section after Stopped coming, and a platform owner does not', async () => {
+  render(<CustomizePage />);
+  const heading = await screen.findByRole('heading', { name: 'Email alerts' });
+  const section = heading.closest('section') as HTMLElement;
+  expect(section.getAttribute('aria-labelledby')).toBe('customize-email-alerts');
+  const headings = Array.from(document.querySelectorAll('h2')).map((h2) => h2.id);
+  expect(headings.indexOf('customize-email-alerts')).toBe(headings.indexOf('customize-stopped-coming') + 1);
+  expect(headings.indexOf('customize-record')).toBe(headings.indexOf('customize-email-alerts') + 1);
+  const intro = (within(section).getByText(/^Which events may send the email alert/).textContent ?? '').replace(/\s+/g, ' ');
+  expect(intro).toBe(
+    'Which events may send the email alert to each kind of person at this gym. Every event starts ticked; an '
+    + 'unticked one emails nobody of that kind. A ticked one emails only people who can see it in the app and '
+    + 'have switched email alerts on for themselves, on their own page, where everyone\'s switch starts off. '
+    + 'The email says only “open the app”, with the gym\'s name in its subject: no link, and nothing about '
+    + 'what happened or who it is about. A chalk line on the boards above, and a notice on the sign-in page, '
+    + 'email nobody.',
+  );
+  expect(await within(section).findByRole('alert')).toBeTruthy();
+  expect(within(section).getByRole('alert').textContent).toBe('▲ The email alert choices could not be read. Reload to try again.');
+  expect(within(section).queryAllByRole('checkbox')).toEqual([]);
+  expect(
+    (global.fetch as unknown as jest.Mock).mock.calls.some(([url]) => String(url).endsWith('/api/pilot/email-alerts/gym')),
+  ).toBe(true);
+  cleanup();
+
+  (global.fetch as unknown as jest.Mock).mockClear();
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  createPersistentRoleSession('platform_owner');
+  render(<CustomizePage />);
+  await screen.findByText(/ADMINS ONLY/);
+  expect(screen.queryByRole('heading', { name: 'Email alerts' })).toBeNull();
+  // The drawer is not mounted: it asks nothing.
+  expect(
+    (global.fetch as unknown as jest.Mock).mock.calls.some(([url]) => String(url).endsWith('/api/pilot/email-alerts/gym')),
+  ).toBe(false);
+  act(() => clearRoleSession());
+});
+
 // Lane N4-02: each board says where it is SHOWN, not who is kept from it. The
 // announcements read (api/pilot/announcements/get) carries no role check, so
 // "Coaches only" and "never see it" claimed a guarantee the server does not
@@ -216,12 +259,13 @@ test('the desk opens on an index of its own sections, then Quotes', async () => 
     ['The boards', '#customize-boards'],
     ['Gym tablet sign-out', '#customize-tablet'],
     ['Stopped coming', '#customize-stopped-coming'],
+    ['Email alerts', '#customize-email-alerts'],
     ['The record', '#customize-record'],
     ['Quotes', '/admin/quotes'],
   ]);
   // Each in-page entry lands on the heading it is named after.
   const inPage = links.filter(([, href]) => String(href).startsWith('#'));
-  expect(inPage).toHaveLength(6);
+  expect(inPage).toHaveLength(7);
   for (const [label, href] of inPage) {
     const target = document.getElementById(String(href).slice(1));
     expect(target?.tagName).toBe('H2');
