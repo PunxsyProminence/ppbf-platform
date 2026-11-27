@@ -742,6 +742,8 @@ describe('the on-the-floor tile', () => {
     ['a count under the floor', { status: 'available', count: 3 }, true],
     ['a zero marked available', { status: 'available', count: 0 }, true],
     ['an unknown status', { status: 'unavailable', count: null }, true],
+    ['an unknown status carrying a count from 5 up', { status: 'unavailable', count: 9 }, true],
+    ['a suppressed status carrying a count', { status: 'insufficient_data', count: 9 }, true],
     ['a count that is not a number', { status: 'available', count: '9' }, true],
     ['not an object', 12, true],
   ])('%s reads "Could not be checked", never a number', async (_label, value, present) => {
