@@ -36,7 +36,9 @@ interface RouteContext {
 // STAFF ONLY, like every other route under runs/: coach, organization admin and the legacy admin
 // name. platform_owner is refused (running a session is gym work, OD-2026-10-08-003 R2), and so
 // are athlete, parent, board and every other role: who was in a session is a staff record with no
-// athlete or parent view (OD-2026-10-10-003 items 3 and 4).
+// athlete or parent view of the run (OD-2026-10-10-003 items 3 and 4). The one derived fact a family
+// is given, whether their own child (or the athlete themselves) is on the floor now, comes from the
+// on-the-floor route, not from here (lane W4-3; OD-2026-11-21-006, FN-0 F1).
 //
 // THE WRITE IS THE DELIVERING COACH'S, WHILE THE RUN IS LIVE, decided in the module with the
 // run row locked; another coach's run answers exactly like a missing one. The module also
