@@ -154,43 +154,101 @@ function audit(client: PoolClient, subject: PushSubject, eventType: 'create' | '
   }, client);
 }
 
-/** Removes every browser row the caller holds in this gym, audited, when they are no longer offered push. */
-async function dropBrowsers(subject: PushSubject): Promise<void> {
-  // Most never had a row (every athlete under 18): one read, no lock, as the email store does.
+/**
+ * The user type this person has now, read on the transaction's own client
+ * once its locks are held -- never through the pool, which this transaction,
+ * holding a connection and the account lock, could wait on for ever (reviewer
+ * M). As emailAlertUserTypeFor reads it, but from their membership of this
+ * gym as stored, not the request's role: an athlete's own record, and for
+ * anyone else the record their account is linked to (A5), must be live and
+ * 18 or over.
+ */
+async function userTypeUnderLock(client: PoolClient, subject: PushSubject, now: Date): Promise<EmailAlertUserType | null> {
+  const found = await client.query<{ role: string | null; athlete_id: string | null }>(
+    `select m.role, a.athlete_id
+       from pilot.accounts a
+       left join pilot.organization_memberships m on m.account_id = a.account_id and m.organization_id = $2
+      where a.account_id = $1`,
+    [subject.accountId, subject.organizationId],
+  );
+  const role = found.rows[0]?.role ?? null;
+  const userType = role ? emailAlertCandidateUserType(role) : null;
+  if (!userType) return null;
+  const record = found.rows[0]?.athlete_id ?? null;
+  if (!record) return userType === 'adult_athlete' ? null : userType;
+  const athlete = await client.query<{ dob: string | null }>(LINKED_ATHLETE_DOB_SQL, [subject.organizationId, subject.accountId, record]);
+  return athlete.rows[0] !== undefined && !isMinor(athlete.rows[0].dob, now) ? userType : null;
+}
+
+/**
+ * Removes the caller's browser rows in this gym that are not of the user type
+ * they have now: every row when they have none (an athlete under 18), and
+ * the rows saved under another when it changed (a parent made a coach), as
+ * main's email store retires a switch saved under another user type (T-1 A
+ * on #2169; reviewer M), so a browser shown as off does not come back on if
+ * the role changes back. Decided under the locks a save takes, in its order
+ * (Codex on #2236): the athlete's own row FOR SHARE (an athlete), then the
+ * account FOR NO KEY UPDATE. A date of birth corrected, or a save, made before
+ * then has committed by then and is seen; one made after waits. As main's
+ * email store does (lockPerson), a record some other account is linked to
+ * (A5) is read under the account lock, not locked itself. Audited, never with
+ * an endpoint.
+ */
+async function settleBrowsers(subject: PushSubject, userType: EmailAlertUserType | null, now: Date): Promise<void> {
+  // Most have no such row: one read, no lock, as the email store does.
   const any = await queryOne<{ found: boolean }>(
-    'select true as found from pilot.push_subscriptions where organization_id = $1 and account_id = $2 limit 1',
-    [subject.organizationId, subject.accountId],
+    `select true as found from pilot.push_subscriptions
+      where organization_id = $1 and account_id = $2 and user_type is distinct from $3::text limit 1`,
+    [subject.organizationId, subject.accountId, userType],
   );
   if (!any) return;
   await withTransaction(async (client) => {
+    const athleteId = emailAlertCandidateUserType(subject.role) === 'adult_athlete' ? subject.athleteId?.trim() || null : null;
+    if (athleteId) {
+      await client.query('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for share', [
+        subject.organizationId, athleteId,
+      ]);
+    }
+    await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [subject.accountId]);
+    const current = await userTypeUnderLock(client, subject, now);
     const { rowCount } = await client.query(
-      'delete from pilot.push_subscriptions where organization_id = $1 and account_id = $2',
-      [subject.organizationId, subject.accountId],
+      `delete from pilot.push_subscriptions
+        where organization_id = $1 and account_id = $2 and user_type is distinct from $3::text`,
+      [subject.organizationId, subject.accountId, current],
     );
-    if (rowCount) await audit(client, subject, 'update', { push_browsers: 'all_off', reason: 'not_offered', count: rowCount });
+    if (!rowCount) return;
+    await audit(client, subject, 'update', current
+      ? { push_browsers: 'off', reason: 'user_type_changed', count: rowCount }
+      : { push_browsers: 'all_off', reason: 'not_offered', count: rowCount });
   });
 }
 
 /** Whether push is offered to the caller, with the public key a browser subscribes with. */
 export async function readPushOffer(subject: PushSubject, env: PushSettings = process.env, now = new Date()): Promise<PushOffer> {
-  if (!(await emailAlertUserTypeFor(subject, now))) {
-    await dropBrowsers(subject);
-    return { offered: false };
-  }
+  const userType = await emailAlertUserTypeFor(subject, now);
+  await settleBrowsers(subject, userType, now);
+  if (!userType) return { offered: false };
   const keys = pushKeys(env);
   return keys ? { offered: true, public_key: keys.publicKey } : { offered: false };
 }
 
-/** Whether this browser is on for the caller in this gym. Read only: someone not offered is refused, not cleared. */
+/**
+ * Whether this browser is on for the caller in this gym, under the user type
+ * they have now. A row saved under another (a parent made a coach) is one the
+ * sender skips, so it is not on here, and the page offers to save it again,
+ * which saves it under the new one (Codex on #2236). Read only: someone not
+ * offered is refused, not cleared.
+ */
 export async function isPushOnHere(
   subject: PushSubject, body: unknown, env: PushSettings = process.env, now = new Date(),
 ): Promise<{ readonly on: boolean }> {
   const endpoint = parseEndpointBody(body);
-  if (!(await emailAlertUserTypeFor(subject, now)) || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
+  const userType = await emailAlertUserTypeFor(subject, now);
+  if (!userType || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
   const row = await queryOne<{ on: boolean }>(
     `select true as on from pilot.push_subscriptions
-      where organization_id = $1 and account_id = $2 and endpoint = $3`,
-    [subject.organizationId, subject.accountId, endpoint],
+      where organization_id = $1 and account_id = $2 and endpoint = $3 and user_type = $4`,
+    [subject.organizationId, subject.accountId, endpoint, userType],
   );
   return { on: row?.on === true };
 }
@@ -256,7 +314,7 @@ export async function savePushBrowser(
 ): Promise<{ readonly on: true }> {
   const browser = parsePushBrowser(body);
   const userType = await emailAlertUserTypeFor(subject, now);
-  if (!userType) await dropBrowsers(subject);
+  if (!userType) await settleBrowsers(subject, null, now);
   if (!userType || !pushKeys(env)) throw new ForbiddenError(NOT_OFFERED);
   let saved = false;
   try {

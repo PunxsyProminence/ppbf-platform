@@ -32,9 +32,11 @@
  *
  * OUTCOMES, one per row for all the person's browsers in that gym:
  *   - a browser answering 2xx took it, and the push is sent;
- *   - 404 or 410: that browser is gone. Its row is deleted in every gym where
- *     that browser is still this person's (the endpoint key is endpoint-first
- *     for this), with an audit row in each, as the store's removals have;
+ *   - 404 or 410: that browser is gone. Its rows are deleted in every gym
+ *     where that browser is still this person's (the endpoint key is
+ *     endpoint-first for this), each exactly as the re-check read it, so a
+ *     row saved again since is kept (Codex on #2253); with an audit row in
+ *     each gym, as the store's removals have;
  *   - 429, any 5xx, or no answer (a time-out or a network error): worth another try;
  *   - any other answer, a host that is not public, or a request that cannot be
  *     built: final for that browser. (A status outside 100-599 never comes
@@ -111,7 +113,14 @@ export function pushAlertSenderDependencies(env: PushSettings = process.env): Pu
 }
 
 type SkipReason = 'switched_off' | 'gym_unticked' | 'sign_in_off' | 'not_offered' | 'no_subscription';
-type Browser = { readonly subscription_id: string; readonly endpoint: string; readonly key_p256dh: string; readonly key_auth: string };
+type Browser = {
+  readonly subscription_id: string;
+  readonly endpoint: string;
+  readonly key_p256dh: string;
+  readonly key_auth: string;
+  /** Every row of this browser the person held, in any gym, when the re-check read it: its id and when it was last saved (exact, ISO 8601). */
+  readonly versions: ReadonlyArray<{ readonly id: string; readonly saved_at: string }>;
+};
 type Decision = { readonly send: true; readonly browsers: readonly Browser[] } | { readonly send: false; readonly reason: SkipReason };
 
 interface Person {
@@ -171,10 +180,20 @@ async function recheck(row: ClaimedPushAlertSend, dependencies: PushAlertSenderD
   if (!(await isGymEmailAlertEventTicked(row.organization_id, userType, row.event_kind))) {
     return { send: false, reason: 'gym_unticked' };
   }
+  // Each browser with every row of it this person holds, in any gym, read in
+  // the same statement: a gone browser deletes only those rows, as they were
+  // (Codex on #2253). A save again moves saved_at (pushSubscriptions.ts's
+  // upsert, pinned there), so it is never one of them. The time goes into the
+  // JSON as JSON writes it, ISO 8601 whatever the session's DateStyle
+  // (reviewer N).
   const browsers = await query<Browser>(
-    `select subscription_id::text, endpoint, key_p256dh, key_auth from pilot.push_subscriptions
-      where organization_id = $1 and account_id = $2 and user_type = $3
-      order by subscription_id limit $4`,
+    `select s.subscription_id::text, s.endpoint, s.key_p256dh, s.key_auth,
+            (select coalesce(json_agg(json_build_object('id', o.subscription_id::text, 'saved_at', o.saved_at)), '[]'::json)
+               from pilot.push_subscriptions o
+              where o.account_id = s.account_id and o.endpoint = s.endpoint) as versions
+       from pilot.push_subscriptions s
+      where s.organization_id = $1 and s.account_id = $2 and s.user_type = $3
+      order by s.subscription_id limit $4`,
     [row.organization_id, row.account_id, row.user_type, PUSH_BROWSERS_PER_PERSON],
   );
   return browsers.length > 0 ? { send: true, browsers } : { send: false, reason: 'no_subscription' };
@@ -259,7 +278,7 @@ export async function deliverPushAlertSend(
   let took = false;
   let worthAgain: Extract<Answer, { took: false }> | null = null;
   let last: Extract<Answer, { took: false }> | null = null;
-  const gone: string[] = [];
+  const gone: Array<{ readonly id: string; readonly saved_at: string }> = [];
   for (const [index, answer] of answers.entries()) {
     if (answer.took) {
       took = true;
@@ -267,24 +286,26 @@ export async function deliverPushAlertSend(
     }
     last = answer;
     if (answer.again) worthAgain = answer;
-    if (answer.gone) gone.push(decision.browsers[index].endpoint);
+    if (answer.gone) gone.push(...decision.browsers[index].versions);
   }
   if (gone.length > 0) {
-    // Every gym's row of a gone browser that is still this person's (a
-    // browser moved to someone else since is theirs), audited in each gym
-    // with no actor and never the endpoint, in one statement.
+    // A gone browser's rows in every gym, exactly as the re-check read them
+    // (Codex on #2253): a row saved again since (new keys, a later saved_at)
+    // or moved to someone else is left alone. Audited in each gym with no
+    // actor and never the endpoint, in one statement.
     await query(
       `with gone as (
-         delete from pilot.push_subscriptions
-          where endpoint = any($1::text[]) and account_id = $2
-          returning organization_id, account_id
+         delete from pilot.push_subscriptions s
+          using json_to_recordset($1::json) as v(id bigint, saved_at timestamptz)
+          where s.subscription_id = v.id and s.saved_at = v.saved_at and s.account_id = $2
+          returning s.organization_id, s.account_id
        )
        insert into pilot.audit_events
          (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
        select 'update', null, null, organization_id, 'push_browser', account_id,
               jsonb_build_object('push_browser', 'off', 'reason', 'gone', 'count', count(*))
          from gone group by organization_id, account_id`,
-      [gone, row.account_id],
+      [JSON.stringify(gone), row.account_id],
     );
   }
   if (took) {

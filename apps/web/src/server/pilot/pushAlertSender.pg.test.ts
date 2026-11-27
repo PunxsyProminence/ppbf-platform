@@ -505,6 +505,51 @@ describe('web push sender', () => {
     }
   });
 
+  test.each([
+    ['this gym', 'ORG'],
+    ['the other gym', 'OTHER'],
+  ])('a gone browser saved again in %s while the push was out keeps that row; the rows as read go (Codex on #2253)', async (_label, which) => {
+    const client = await freshDatabase('pushsender_gone_saved_again');
+    activeClient = client;
+    try {
+      const [endpoint] = await browsersOf(client, COACH_ID);
+      // The same browser is the coach's in a second gym too.
+      await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [OTHER_ORG_ID]);
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+        [COACH_ID, OTHER_ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+         select $1, account_id, user_type, endpoint, key_p256dh, key_auth from pilot.push_subscriptions where endpoint = $2`,
+        [OTHER_ORG_ID, endpoint],
+      );
+      const savedAgain = which === 'ORG' ? ORG_ID : OTHER_ORG_ID;
+      const kept = which === 'ORG' ? OTHER_ORG_ID : ORG_ID;
+      await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { dependencies } = recorder({
+        [endpoint]: async () => {
+          // The coach's browser saved its subscription again, new keys, while the old one was refused.
+          await client.query(
+            `update pilot.push_subscriptions set key_auth = $1, saved_at = clock_timestamp()
+              where endpoint = $2 and organization_id = $3`,
+            [b64url(crypto.randomBytes(16)), endpoint, savedAgain],
+          );
+          return 410;
+        },
+      });
+      expect((await runPushAlertSweep(dependencies, [])).failed).toBe(1);
+      const { rows: left } = await client.query('select organization_id from pilot.push_subscriptions where account_id = $1', [COACH_ID]);
+      expect(left).toEqual([{ organization_id: savedAgain }]);
+      const audit = await client.query(
+        `select organization_id, details from pilot.audit_events where entity_type = 'push_browser'`,
+      );
+      expect(audit.rows).toEqual([{ organization_id: kept, details: { push_browser: 'off', reason: 'gone', count: 1 } }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a browser the person has in another gym is not posted to', async () => {
     const client = await freshDatabase('pushsender_other_gym');
     activeClient = client;

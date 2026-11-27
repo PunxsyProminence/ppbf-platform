@@ -108,6 +108,18 @@ async function waitForLockWaiters(client: Client, count: number): Promise<void> 
   throw new Error(`test bug: ${count} lock waiters never appeared`);
 }
 
+/** Whether `count` sessions of this database come to wait on a lock within `ms`: a test asserts on what happened, then on this. */
+async function lockWaitersAppear(client: Client, count: number, ms = 3_000): Promise<boolean> {
+  for (const started = Date.now(); Date.now() - started < ms;) {
+    const { rows: waiting } = await client.query<{ n: number }>(
+      `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+    );
+    if (waiting[0].n >= count) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
@@ -322,6 +334,46 @@ describe('turning push on and off for a browser', () => {
     expect(await rows(client)).toHaveLength(1);
   });
 
+  test('a browser saved under another user type (the person\'s role changed) is not on here, and goes at their next offer read; saving it again puts it under the new one (Codex on #2236; reviewer M)', async () => {
+    const client = await freshDatabase('pushstore_user_type');
+    const b = browser('https://push.example.test/send/role');
+    await savePushBrowser(coach, b, ENV);
+    // Saved while this account was a parent, say: the sender skips it for a coach.
+    await client.query(`update pilot.push_subscriptions set user_type = 'parent' where account_id = $1`, [COACH]);
+    // A check is read only: not on, and nothing removed.
+    expect(await isPushOnHere(coach, { endpoint: b.endpoint }, ENV)).toEqual({ on: false });
+    expect(await rows(client)).toHaveLength(1);
+    // The offer read retires it, as the email store retires a switch saved under another user type (T-1 A):
+    // were the role to change back, the browser shown as off would not come back on by itself.
+    expect(await readPushOffer(coach, ENV)).toEqual({ offered: true, public_key: ENV.PPBF_WEB_PUSH_VAPID_PUBLIC_KEY });
+    expect(await rows(client)).toEqual([]);
+    const audit = await client.query(
+      `select details from pilot.audit_events where entity_type = 'push_browser' order by audit_id desc limit 1`,
+    );
+    expect(audit.rows[0].details).toEqual({ push_browsers: 'off', reason: 'user_type_changed', count: 1 });
+    await savePushBrowser(coach, b, ENV);
+    expect(await isPushOnHere(coach, { endpoint: b.endpoint }, ENV)).toEqual({ on: true });
+    expect((await rows(client)).map((row) => [row.account_id, row.user_type])).toEqual([[COACH, 'staff']]);
+    // The offer read leaves a browser of the user type they have alone.
+    expect(await readPushOffer(coach, ENV)).toEqual({ offered: true, public_key: ENV.PPBF_WEB_PUSH_VAPID_PUBLIC_KEY });
+    expect(await rows(client)).toHaveLength(1);
+  });
+
+  test('saving the same browser again keeps its row and moves its saved time on (the sender deletes a gone browser only as it read it: Codex on #2253, reviewer N)', async () => {
+    const client = await freshDatabase('pushstore_saved_again');
+    const b = browser('https://push.example.test/send/again');
+    await savePushBrowser(coach, b, ENV);
+    const before = await client.query<{ id: string; saved_at: string }>(
+      `select subscription_id::text as id, to_json(saved_at)#>>'{}' as saved_at from pilot.push_subscriptions`,
+    );
+    await savePushBrowser(coach, { endpoint: b.endpoint, keys: browser().keys }, ENV);
+    const after = await client.query<{ id: string; later: boolean }>(
+      `select subscription_id::text as id, saved_at > $1::timestamptz as later from pilot.push_subscriptions`,
+      [before.rows[0].saved_at],
+    );
+    expect(after.rows).toEqual([{ id: before.rows[0].id, later: true }]);
+  });
+
   test('one person per browser: someone else turning it on in this gym or another gym takes it over', async () => {
     const client = await freshDatabase('pushstore_move');
     const b = browser();
@@ -507,6 +559,107 @@ describe('a save decides again under its own locks (reviewers E and F on #2236)'
     expect(counts.map((row) => row.n)).toEqual([PUSH_BROWSERS_PER_PERSON - 1, PUSH_BROWSERS_PER_PERSON]);
     expect((await client.query(`select 1 from pilot.audit_events where entity_type = 'push_browser'
       and details->>'reason' = 'turned_on_by_another_person'`)).rowCount).toBe(1);
+  });
+});
+
+describe('a removal of browsers decides again under the save\'s locks (Codex on #2236; reviewer M)', () => {
+  test('an athlete\'s date of birth corrected to 18 or over while an offer read waits to remove the browsers: they stay', async () => {
+    const client = await freshDatabase('pushstore_drop_race');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_drop_race'), max: 4 });
+    const b = browser('https://push.example.test/send/drop');
+    await savePushBrowser(adult, b, ENV);
+    // A date of birth wrongly entered as under 18 since.
+    await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = 'ath-pushstore-adult'`);
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_drop_race') });
+    await holder.connect();
+    let waited = false;
+    try {
+      await holder.query('begin');
+      // The correction, made and not yet committed: it holds the athlete row.
+      await holder.query(`update pilot.athletes set dob = '2000-03-14' where athlete_id = 'ath-pushstore-adult'`);
+      // The offer read still sees under 18, and goes to remove the browsers: it waits on the athlete row.
+      const offer = readPushOffer(adult, ENV);
+      waited = await lockWaitersAppear(client, 1);
+      await holder.query('commit');
+      expect(await offer).toEqual({ offered: false });
+    } finally {
+      await holder.end();
+    }
+    // Asked again under the lock, they are 18 or over: the browser stays, and nothing says it went.
+    expect(await rows(client)).toEqual([{ organization_id: ORG, account_id: ADULT, endpoint: b.endpoint, user_type: 'adult_athlete' }]);
+    const audit = await client.query(`select details from pilot.audit_events where entity_type = 'push_browser'`);
+    expect(audit.rows.map((row) => row.details.push_browsers ?? row.details.push_browser)).toEqual(['on']);
+    expect(waited).toBe(true);
+    // Still under 18 under the lock: removed, as before.
+    await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = 'ath-pushstore-adult'`);
+    expect(await readPushOffer(adult, ENV)).toEqual({ offered: false });
+    expect(await rows(client)).toEqual([]);
+  });
+
+  test('a parent whose account is linked to an athlete record (A5): the record corrected and a browser saved while an offer read waits to remove: both browsers stay', async () => {
+    const client = await freshDatabase('pushstore_drop_a5');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_drop_a5'), max: 4 });
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'ath-pushstore-linked', 'Push Linked', '2000-03-14'::date, '100', 'active', 'contact', true, $2, now(), now())`,
+      [ORG, COACH],
+    );
+    await client.query(`update pilot.accounts set athlete_id = 'ath-pushstore-linked' where account_id = $1`, [PARENT]);
+    const first = browser('https://push.example.test/send/a5-one');
+    await savePushBrowser(parent, first, ENV);
+    // The linked record wrongly entered as under 18 since: the parent is offered nothing (A5).
+    await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = 'ath-pushstore-linked'`);
+    const second = browser('https://push.example.test/send/a5-two');
+    const holder = new Client({ connectionString: connectionStringFor('pushstore_drop_a5') });
+    await holder.connect();
+    let waited = false;
+    try {
+      // A save in progress: it holds the account; the record is corrected in the same transaction.
+      await holder.query('begin');
+      await holder.query('select 1 from pilot.accounts where account_id = $1 for no key update', [PARENT]);
+      await holder.query(`update pilot.athletes set dob = '2000-03-14' where athlete_id = 'ath-pushstore-linked'`);
+      await holder.query(
+        `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+         values ($1, $2, 'parent', $3, $4, $5)`,
+        [ORG, PARENT, second.endpoint, second.keys.p256dh, second.keys.auth],
+      );
+      // The offer read sees the record under 18 and goes to remove the browsers: it waits on the account.
+      const offer = readPushOffer(parent, ENV);
+      waited = await lockWaitersAppear(client, 1);
+      await holder.query('commit');
+      expect(await offer).toEqual({ offered: false });
+    } finally {
+      await holder.end();
+    }
+    expect((await rows(client)).map((row) => row.endpoint).sort()).toEqual([first.endpoint, second.endpoint].sort());
+    expect(waited).toBe(true);
+    // The linked record under 18 under the lock: both go, as an athlete's own would.
+    await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = 'ath-pushstore-linked'`);
+    expect(await readPushOffer(parent, ENV)).toEqual({ offered: false });
+    expect(await rows(client)).toEqual([]);
+  });
+
+  test('the removal reads only on its own connection: with a pool of one it still finishes (reviewer M: a pool read inside it would wait for ever)', async () => {
+    const client = await freshDatabase('pushstore_drop_pool_one');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_drop_pool_one'), max: 1 });
+    const b = browser('https://push.example.test/send/pool-one');
+    // A row left from before, for an athlete now under 18.
+    await client.query(
+      `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+       values ($1, $2, 'adult_athlete', $3, $4, $5)`,
+      [ORG, MINOR, b.endpoint, b.keys.p256dh, b.keys.auth],
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      readPushOffer(minor, ENV).then(() => 'finished'),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve('waited for ever'), 5_000);
+      }),
+    ]);
+    clearTimeout(timer);
+    expect(outcome).toBe('finished');
+    expect(await rows(client)).toEqual([]);
   });
 });
 
