@@ -7,11 +7,12 @@ import { Client } from 'pg';
 // Applies the second email alert sweep indexes migration (lane W4-1,
 // EM-IX-2: created_at on pilot.family_thread_posts and
 // pilot.coach_observations) inside one transaction, with the same
-// target-verification discipline as every other pilot:apply-* script: the
-// operator must state which host and database they believe they are pointing
-// at, and a mismatch refuses before any DDL runs. Adapted from EM-IX's runner
-// (pilot-apply-email-alert-sweep-indexes-migration.mjs); only the index list,
-// the file, the error code and the log lines differ.
+// target-verification discipline as EM-IX's runner: the operator must state
+// which host and database they believe they are pointing at, and a mismatch
+// refuses before any DDL runs. Adapted from EM-IX's runner
+// (pilot-apply-email-alert-sweep-indexes-migration.mjs); the index list, the
+// file, the error code and the log lines differ, and the readiness check also
+// requires each index to be ready and live.
 
 function required(name) {
   const value = process.env[name];
@@ -69,7 +70,9 @@ export const SWEEP_INDEXES = [
 // Asserts each index by what it IS, not only by name: on its own table,
 // valid (a CONCURRENTLY build that failed would leave an invalid index of
 // this name; this file never builds that way, but the check should not trust
-// the name), a plain b-tree (not partial, not unique, not an exclusion
+// the name), ready and live (pg_index's indisready and indislive: an index
+// marked valid but not ready is not updated by new writes, so a read through
+// it misses new rows), a plain b-tree (not partial, not unique, not an exclusion
 // constraint's index, which would refuse two rows with the same time), and
 // keyed on exactly
 // (created_at): one column in all (indnatts, so no INCLUDE column and no
@@ -94,6 +97,8 @@ const READINESS_QUERY = `
         and c.relname = want.index_name
         and i.indrelid = to_regclass(want.table_name)
         and i.indisvalid
+        and i.indisready
+        and i.indislive
         -- A same-named partial, unique or non-btree index would also satisfy
         -- "if not exists"; it is not the index this migration promises.
         and i.indpred is null
@@ -122,12 +127,13 @@ export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
     // Each index build takes a SHARE lock on its table (reads go on, writes
-    // wait), held until COMMIT, and a re-run takes it too. Rather than queue
-    // behind a long transaction already holding a write lock, and hold every
-    // new family thread post or coach note up behind it, give up after 10
-    // seconds and let the operator re-run in a quieter moment, as EM-IX's
-    // runner and the other pilot:apply-* runners that lock busy tables do.
-    // Nothing is half-applied: it is one transaction.
+    // wait), held until COMMIT, and a re-run takes it too. Behind a long
+    // transaction already writing to a table, the runner waits for that lock,
+    // and new writes to the table queue behind the runner while it waits. The
+    // timeout caps each such wait at 10 seconds: then the runner fails with
+    // 55P03 and rolls back, and the operator re-runs in a quieter moment.
+    // EM-IX's runner does the same. Nothing is half-applied: it is one
+    // transaction.
     await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);

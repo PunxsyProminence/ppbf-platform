@@ -5,8 +5,9 @@
 -- indexed the two tables EM-4a's sources read. EM-4b's and EM-4c's sources
 -- read two more tables the same way, for the rows created since the source's
 -- checkpoint less the sweep's ten-minute overlap: `created_at > <from> and
--- created_at <= <to>` (emailAlertEvents.ts and emailAlertQueue.ts, on main
--- since EM-4b, #2193, and EM-4c, #2217):
+-- created_at <= <to>` (the predicate is in emailAlertEvents.ts, lines 191,
+-- 219 and 395, on main since EM-4b, #2193, and EM-4c, #2217; emailAlertQueue.ts
+-- computes the window):
 --   - EM-4b's coach_message source (a coach's message to an athlete) and its
 --     family_note source (a coach's message to a family) read
 --     pilot.coach_observations;
@@ -46,24 +47,37 @@
 -- one runner and one pg test." and "An index on W4-4's table adds no column
 -- and changes no data."
 --
--- FORM. Plain `create index`, not CONCURRENTLY, as EM-IX: every
--- pilot:apply-* runner in this repository applies its file inside one
--- BEGIN/COMMIT, and PostgreSQL refuses CREATE INDEX CONCURRENTLY inside a
--- transaction block. Each build takes a SHARE lock on its table, and both
--- locks are held until the one COMMIT: reads continue, writes (a post in a
--- family thread, a coach note) wait. `if not exists` does not avoid the lock,
--- so a re-run under `all` takes it too. Two things bound the wait:
---   - the family thread posts index is built first, so while the runner
---     waits for that table it holds nothing on pilot.coach_observations,
---     which every coach note writes (createCoachObservation, intake.ts), and
---     coach notes go on being written;
---   - the runner sets lock_timeout to 10 seconds, so behind a long
---     transaction it gives up and rolls back rather than queue, and the
---     operator re-runs in a quieter moment.
--- The tables' production row counts are not known from the repository.
+-- FORM. Plain `create index`, not CONCURRENTLY, as EM-IX: this runner, like
+-- EM-IX's, applies the file inside one BEGIN/COMMIT, and PostgreSQL refuses
+-- CREATE INDEX CONCURRENTLY inside a transaction block. Each build takes a
+-- SHARE lock on its table, and both locks are held until the one COMMIT:
+-- reads continue, writes wait. `if not exists` does not avoid the lock, so a
+-- re-run under `all` takes it too. The runner sets lock_timeout to 10
+-- seconds, which limits each lock wait on its own. Behind a long write
+-- already open on a table, the runner waits for that table's lock, and new
+-- writes to that table queue behind the runner for as long as it waits. So:
+--   - the family thread posts index is built first. New family thread posts
+--     (a guardian's message, familyThreads.ts startFamilyThread and
+--     writeAgainInFamilyThread; a staff reply, replyInFamilyThread) are held
+--     from the moment the runner starts waiting for that table until COMMIT:
+--     through that wait and build, and then through the wait for
+--     pilot.coach_observations and its build;
+--   - new coach notes (createCoachObservation, intake.ts) are held only from
+--     the moment the runner starts waiting for pilot.coach_observations until
+--     COMMIT: that wait and that build;
+--   - a wait that reaches 10 seconds fails the runner with 55P03 and rolls
+--     everything back, and the operator re-runs in a quieter moment.
+-- The worst case for a new family thread post is therefore about 20 seconds
+-- of waiting plus both builds. The tables' production row counts are not
+-- known from the repository, so neither are the build times.
 --
 -- Idempotent: `if not exists` makes a re-run under `all` a no-op for the
--- schema (it still takes the locks, as FORM says). Depends on the base schema
+-- schema, though it still takes the locks, as FORM says. The release
+-- workflow re-runs every migration in `all` (release-one-approval.yml). A
+-- re-run that times out behind a long write rolls back and leaves the
+-- indexes as they were; the runner exits 1, which fails that release run at
+-- this slug, after every migration before it in `all` has committed. A retry
+-- is safe: the re-run changed nothing. Depends on the base schema
 -- (pilot.coach_observations) and the family-threads migration
 -- (pilot.family_thread_posts); the guard below names a missing table rather
 -- than failing inside the create. No begin;/commit; here, matching the

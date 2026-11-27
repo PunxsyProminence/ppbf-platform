@@ -5,12 +5,13 @@
 // What needs proving that reading SQL cannot prove: on the schema production
 // runs, neither pilot.family_thread_posts nor pilot.coach_observations has an
 // index that starts with created_at before this migration; the migration adds
-// exactly one b-tree on (created_at) to each and a re-apply is a no-op; the
-// SQL names a missing table, either one; the runner's readiness check refuses
-// a database where either index is absent or is not the index promised, and
-// accepts one where both are; the runner refuses a database the operator did
-// not name; behind a long write on the family thread posts
-// it gives up at its lock timeout while coach notes go on being written; and
+// exactly one b-tree on (created_at) to each and nothing else to the pilot
+// catalog, and a re-apply is a no-op; the SQL names a missing table, either
+// one; the runner's readiness check refuses a database where either index is
+// absent or is not the index promised (and rolls back what it built), and
+// accepts one where both are; the runner refuses a host or database the
+// operator did not name; behind a long write on the family thread posts it
+// gives up at its lock timeout while coach notes go on being written; and
 // the planner can serve the sweep's window read (`created_at > $1 and
 // created_at <= $2`) from each index, returning the same rows as a plain scan.
 //
@@ -109,10 +110,10 @@ async function adminQuery(sql: string): Promise<void> {
 }
 
 /**
- * The schema production runs, as it stands BEFORE this migration: the full
- * schema (which applies this migration too, in its place in the deploy order)
- * with this migration's two indexes dropped again, plus one gym, coach,
- * guardian and child for the event rows to hang from.
+ * The schema production runs, as it stands BEFORE this migration: the base
+ * schema and every migration ahead of this one in the deploy order (see
+ * beforeAll), plus one gym, coach, guardian and child for the event rows to
+ * hang from.
  */
 async function freshDatabase(name: string): Promise<Client> {
   await adminQuery(`drop database if exists ${name}`);
@@ -156,6 +157,38 @@ async function leadingColumns(client: Client, table: string): Promise<string[]> 
     [`pilot.${table}`],
   );
   return result.rows.map((row) => row.attname);
+}
+
+/**
+ * Every column, constraint and index the pilot schema holds, as comparable
+ * strings: the snapshot of migrationReadinessGates.pg.test.ts (CATALOG_SNAPSHOT).
+ */
+const CATALOG_SNAPSHOT = `
+  select 'COLUMN ' || table_name || '.' || column_name || ' ' || data_type
+         || ' null=' || is_nullable || ' default=' || coalesce(column_default, '-') as item
+  from information_schema.columns
+  where table_schema = 'pilot'
+  union all
+  select 'CONSTRAINT ' || conrelid::regclass::text || ' ' || conname
+         || ' :: ' || pg_get_constraintdef(oid)
+  from pg_constraint
+  where connamespace = 'pilot'::regnamespace
+  union all
+  select 'INDEX ' || indexname || ' :: ' || indexdef
+  from pg_indexes
+  where schemaname = 'pilot'
+  order by 1
+`;
+
+async function catalogOf(client: Client): Promise<string[]> {
+  const { rows } = await client.query<{ item: string }>(CATALOG_SNAPSHOT);
+  return rows.map((row) => row.item);
+}
+
+/** Whether any relation of this name exists in pilot, valid or not. */
+async function relationExists(client: Client, name: string): Promise<boolean> {
+  const { rows } = await client.query<{ found: string | null }>('select to_regclass($1)::text as found', [`pilot.${name}`]);
+  return rows[0].found !== null;
 }
 
 /** Every node of an EXPLAIN (format json) plan tree, flattened. */
@@ -279,18 +312,28 @@ beforeAll(async () => {
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
   runMigration = runnerModule.run as () => Promise<void>;
   const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
-  const applyFullSchema = fullSchema.applyFullSchema as (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
+  const listMigrationFiles = fullSchema.listMigrationFiles as (infraDir?: string) => Promise<string[]>;
+  const baseSchemaFile = fullSchema.BASE_SCHEMA_FILE as string;
+  const inOrder = await listMigrationFiles(INFRA_DIR);
+  if (!inOrder.includes(MIGRATION_FILE)) throw new Error(`${MIGRATION_FILE} is not in the deploy order`);
 
-  // Built once and cloned per test: the full schema takes a while to apply.
+  // Built once and cloned per test: the schema takes a while to apply.
   await adminQuery(`drop database if exists ${TEMPLATE_DB}`);
   await adminQuery(`create database ${TEMPLATE_DB}`);
   const template = new Client({ connectionString: connectionStringFor(TEMPLATE_DB) });
   await template.connect();
   try {
-    await applyFullSchema(template, { infraDir: INFRA_DIR });
-    // The full schema includes this migration in its deploy-order place; the
-    // suite needs the database as it was before it.
-    for (const { index } of TABLES) await template.query(`drop index if exists pilot.${index}`);
+    // BEFORE this migration: the base schema, then every migration ahead of
+    // this one in the workflow's order, each in its own transaction (as
+    // applyFullSchema does; as schedulerClassPlanMigration.pg.test.ts builds
+    // its BEFORE). This file is left out, so nothing it does is already in the
+    // starting state that the catalog comparison below reads.
+    await template.query(await fs.readFile(path.join(INFRA_DIR, baseSchemaFile), 'utf8'));
+    for (const file of inOrder.slice(0, inOrder.indexOf(MIGRATION_FILE))) {
+      await template.query('BEGIN');
+      await template.query(await fs.readFile(path.join(INFRA_DIR, file), 'utf8'));
+      await template.query('COMMIT');
+    }
     await template.query(
       `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
       [ORG_ID],
@@ -353,7 +396,24 @@ describe('email alert sweep indexes 2 migration', () => {
         expect(await leadingColumns(client, table)).not.toContain('created_at');
       }
 
+      const before = await catalogOf(client);
       await client.query(migrationSql);
+      const after = await catalogOf(client);
+
+      // The two indexes and nothing else: no column, constraint or other
+      // index added, and nothing dropped or changed.
+      expect({
+        added: after.filter((item) => !before.includes(item)).sort(),
+        removed: before.filter((item) => !after.includes(item)).sort(),
+        growth: after.length - before.length,
+      }).toEqual({
+        added: [
+          `INDEX ${NOTES_INDEX} :: CREATE INDEX ${NOTES_INDEX} ON pilot.coach_observations USING btree (created_at)`,
+          `INDEX ${POSTS_INDEX} :: CREATE INDEX ${POSTS_INDEX} ON pilot.family_thread_posts USING btree (created_at)`,
+        ],
+        removed: [],
+        growth: 2,
+      });
 
       for (const { index, table } of TABLES) {
         expect({ index, columns: await indexColumns(client, index) }).toEqual({ index, columns: ['created_at'] });
@@ -454,7 +514,10 @@ describe('email alert sweep indexes 2 migration', () => {
     }
   });
 
-  test('the real runner refuses a database the operator did not name, and builds nothing there', async () => {
+  test.each([
+    ['database', 'localhost', 'some_other_database'],
+    ['host', 'some-other-host.example', 'sweep2_index_target'],
+  ])('the real runner refuses a %s the operator did not name, and builds nothing there', async (_label, host, database) => {
     // The target check: the operator states the host and database they believe
     // they are pointing at, and a mismatch refuses before any DDL. Plaintext is
     // allowed here, so without the check the runner would reach this database.
@@ -463,14 +526,30 @@ describe('email alert sweep indexes 2 migration', () => {
     try {
       process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
       process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('sweep2_index_target');
-      process.env.PPBF_EXPECTED_POSTGRES_HOSTNAME = 'localhost';
-      process.env.PPBF_EXPECTED_POSTGRES_DATABASE = 'some_other_database';
+      process.env.PPBF_EXPECTED_POSTGRES_HOSTNAME = host;
+      process.env.PPBF_EXPECTED_POSTGRES_DATABASE = database;
       await expect(runMigration()).rejects.toThrow('POSTGRES_TARGET_MISMATCH');
-      for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
+      for (const { index } of TABLES) expect(await relationExists(client, index)).toBe(false);
     } finally {
       process.env = saved;
       await client.end();
     }
+  });
+
+  test('the runner requires a verified TLS certificate everywhere but the opted-out test run', async () => {
+    // Read from the source: embedded Postgres serves no TLS, so this cannot be
+    // exercised here. The only plaintext path is NODE_ENV=test with the opt-in.
+    const source = await fs.readFile(MIGRATION_RUNNER_PATH, 'utf8');
+    expect(/function resolveSslConfig\(\) \{[\s\S]*?\n\}/.exec(source)?.[0]).toBe([
+      'function resolveSslConfig() {',
+      "  if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {",
+      '    return false;',
+      '  }',
+      '  return { rejectUnauthorized: true };',
+      '}',
+    ].join('\n'));
+    expect(source.match(/rejectUnauthorized/g)).toHaveLength(1);
+    expect(source).toContain('ssl: resolveSslConfig(),');
   });
 
   test.each([
@@ -498,6 +577,7 @@ describe('email alert sweep indexes 2 migration', () => {
     ['keyed on created_at with an INCLUDE column', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at) include (thread_id)`],
     ['led by an expression', `create index ${POSTS_INDEX} on pilot.family_thread_posts (lower(post_text), created_at)`],
     ['an exclusion constraint\'s index', `alter table pilot.family_thread_posts add constraint ${POSTS_INDEX} exclude using btree (created_at with =)`],
+    ['a BRIN index', `create index ${POSTS_INDEX} on pilot.family_thread_posts using brin (created_at)`],
   ])('the runner refuses an index of the right name that is %s', async (_label, wrong) => {
     const client = await freshDatabase('sweep2_index_wrong');
     try {
@@ -505,19 +585,27 @@ describe('email alert sweep indexes 2 migration', () => {
       // `if not exists` sees the name and leaves the wrong index in place;
       // the readiness check must notice and refuse.
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY');
+      // And roll back: the coach notes index the SQL built in the same
+      // transaction is gone too.
+      expect(await relationExists(client, NOTES_INDEX)).toBe(false);
     } finally {
       await client.end();
     }
   });
 
-  test('the runner refuses an index of the right name that is not valid', async () => {
-    const client = await freshDatabase('sweep2_index_invalid');
+  test.each([
+    // As a CREATE INDEX CONCURRENTLY that failed would leave it.
+    ['not valid', 'indisvalid'],
+    // Valid but not ready: new writes do not go into it, so a read through it misses them.
+    ['not ready', 'indisready'],
+    ['not live', 'indislive'],
+  ])('the runner refuses an index of the right name that is %s', async (_label, flag) => {
+    const client = await freshDatabase('sweep2_index_flag');
     try {
       await applyMigrationTransaction(client, migrationSql);
-      // As a CREATE INDEX CONCURRENTLY that failed would leave it (the test
-      // server's superuser marks it so directly).
+      // The test server's superuser sets the catalog flag directly.
       await client.query(
-        `update pg_index set indisvalid = false where indexrelid = to_regclass('pilot.${POSTS_INDEX}')`,
+        `update pg_index set ${flag} = false where indexrelid = to_regclass('pilot.${POSTS_INDEX}')`,
       );
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow('EMAIL_ALERT_SWEEP_INDEXES_2_NOT_READY');
     } finally {
@@ -558,7 +646,8 @@ describe('email alert sweep indexes 2 migration', () => {
       expect(await apply).toBe('55P03');
       const waited = Date.now() - started;
       expect(waited).toBeGreaterThanOrEqual(9_000);
-      expect(waited).toBeLessThan(30_000);
+      // Under 15 s: the 10 s timeout, not a longer one.
+      expect(waited).toBeLessThan(15_000);
       // Rolled back: neither index, and the session is usable.
       for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
       expect((await client.query<{ ok: number }>('select 1 as ok')).rows[0].ok).toBe(1);
