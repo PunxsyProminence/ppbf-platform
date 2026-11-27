@@ -12,8 +12,10 @@
 //    organization admin and admin; the platform owner, parents and athletes refused (approved by name
 //    in the GO). Its answers' fields are asserted in its own route test.
 //
-// 3. ONLY THE CLASSES LINE READS THE COUNT. No attendance figure, report or export may use floorCount.ts
-//    (App Overwatch's answer A, 7206212516): every source file that names it is pinned.
+// 3. ONLY THE "ON THE FLOOR NOW" READS USE THE COUNT: the classes line route and, for the platform
+//    owner's floored total (FN-4c), the platform gym summary, which takes only the total and the floor.
+//    No attendance figure, report or export may use floorCount.ts (App Overwatch's answer A,
+//    7206212516): every source file that names it is pinned.
 //
 // WHAT IT IS AND IS NOT. A source check: it proves which files these files reach and which names their
 // text, and every reached file's text, holds; not what any of them returns at run time. The module walk
@@ -156,14 +158,15 @@ describe('the floor count is register-only, and the platform owner stays off the
   });
 });
 
-describe('only the classes line reads the floor count (App Overwatch, 7206212516)', () => {
+describe('only the on-the-floor reads use the floor count (App Overwatch, 7206212516)', () => {
   // No attendance figure, report or export may use floorCount.ts: every non-test source file that names
   // it at all, by any import form or none, is pinned, and a new one fails here until App Overwatch
   // approves it by name. scripts/ (the app's and the repository's) holds this repo's exports.
-  const ALLOWED_NAMERS = [CLASSES_ROUTE];
+  // FN-4c adds the platform owner's gym summary, named in the GO's approved list (7206014991).
+  const ALLOWED_NAMERS = [CLASSES_ROUTE, 'app/api/pilot/platform/gym-summary/route.ts'].sort();
   const REPO_SCRIPTS = path.resolve(WEB_DIR, '..', '..', 'scripts');
 
-  it('is named by the classes line route and no other source file', () => {
+  it('is named by the classes line route and the platform gym summary, and no other source file', () => {
     const roots = ['app', 'components', 'lib', 'src', 'scripts'].map((dir) => path.join(WEB_DIR, dir)).concat(REPO_SCRIPTS);
     const namers = roots
       .filter((dir) => fs.existsSync(dir))
@@ -172,6 +175,19 @@ describe('only the classes line reads the floor count (App Overwatch, 7206212516
       .filter((file) => /floorCount/.test(fs.readFileSync(path.join(WEB_DIR, file), 'utf8')))
       .sort();
     expect(namers).toEqual(ALLOWED_NAMERS);
+  });
+
+  // The platform owner gets only the floored total (QC A; flag 6): never a class, title, time or room.
+  it('the platform gym summary takes only the total and the floor from it, and no platform file names the classes read', () => {
+    const summary = 'app/api/pilot/platform/gym-summary/route.ts';
+    expect(read(summary)).toContain("import { floored, registerTotalToday } from '@/src/server/pilot/floorCount';");
+    // Exactly one import leads to the module, by any spelling ("@/src", "@/server", relative, either
+    // quote), and it is not a namespace import.
+    const leadsToCount = Array.from(read(summary).matchAll(SPECIFIER), (m) => resolveSpecifier(path.join(WEB_DIR, summary), m[1]))
+      .filter((file) => file === path.join(WEB_DIR, FLOOR_COUNT));
+    expect(leadsToCount).toHaveLength(1);
+    expect(read(summary)).not.toMatch(/import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]*floorCount['"]/);
+    expect(PLATFORM_FILES.filter((file) => /classesRunningNow|ClassRunningNow/.test(read(file)))).toEqual([]);
   });
 
   it('control: the classes line route imports it, by the "@/src" form', () => {
