@@ -284,6 +284,9 @@ export default function PlatformConsole() {
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingSummary(true);
+    // The last read leaves the screen when a new one starts, so a read still running, or one that
+    // fails, never leaves an earlier "on the floor now" number standing as current (lane W4-3, FN-4c).
+    setSummary(null);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -726,7 +729,7 @@ export default function PlatformConsole() {
           {loadingSummary && <p className="t-muted mt-[var(--s4)]">Loading summary...</p>}
 
           {summary && summary.organization_id === selectedOrgId && (
-            <div className="mt-[var(--s5)] grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-5">
+            <div className="mt-[var(--s5)] grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-4">
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">Active Athletes</p>
                 <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{metricLabel(summary.board.activeAthletes)}</p>

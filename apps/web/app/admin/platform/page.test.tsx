@@ -733,13 +733,58 @@ describe('the on-the-floor tile', () => {
     expect(within(await tileFor({ status: 'available', count: 9 })).getByText('9')).toBeInTheDocument();
   });
 
+  test('the floor itself: 5 reads "5"', async () => {
+    expect(within(await tileFor({ status: 'available', count: 5 })).getByText('5')).toBeInTheDocument();
+  });
+
   test('a suppressed count reads "Suppressed"', async () => {
     expect(within(await tileFor({ status: 'insufficient_data', count: null })).getByText('Suppressed')).toBeInTheDocument();
+  });
+
+  // A re-read of the same gym (away to "Select a gym..." and back) that is still running, or that
+  // fails, must not leave the first read's number on screen as current.
+  // A failed count fails the whole summary on the server (route.test.ts), so the page shows no tile.
+  test.each([
+    ['still running', 'pending'],
+    ['failed', 'throws'],
+    ['answered with an error', 'error'],
+  ])('a re-read that is %s never leaves the last number on screen', async (_label, second) => {
+    let reads = 0;
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) {
+        reads += 1;
+        if (reads === 1) return jsonResponse({ ...baseSummary, on_the_floor: { status: 'available', count: 9 } });
+        if (second === 'throws') throw new Error('network down');
+        if (second === 'error') return jsonResponse({ error: 'Internal server error' }, false, 500);
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+    expect(within(screen.getByText('On the floor now').parentElement as HTMLElement).getByText('9')).toBeInTheDocument();
+
+    const select = screen.getByLabelText(/choose a gym/i);
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    if (second === 'pending') {
+      expect(screen.getByText(/Loading summary/i)).toBeInTheDocument();
+    } else {
+      await waitFor(() => expect(screen.queryByText(/Loading summary/i)).toBeNull());
+    }
+    expect(reads).toBe(2);
+    expect(screen.queryByText('On the floor now')).toBeNull();
+    expect(screen.queryByText('9')).toBeNull();
   });
 
   test.each([
     ['a missing field', undefined, false],
     ['a count under the floor', { status: 'available', count: 3 }, true],
+    ['a count of 4, one under the floor', { status: 'available', count: 4 }, true],
     ['a zero marked available', { status: 'available', count: 0 }, true],
     ['an unknown status', { status: 'unavailable', count: null }, true],
     ['an unknown status carrying a count from 5 up', { status: 'unavailable', count: 9 }, true],

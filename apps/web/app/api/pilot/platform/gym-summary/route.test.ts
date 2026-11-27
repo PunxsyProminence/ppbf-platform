@@ -149,8 +149,10 @@ describe('on the floor now', () => {
   });
 
   test('nothing is counted for a role the route refuses, or without a gym', async () => {
-    as('board');
-    expect((await GET(get())).status).toBe(403);
+    for (const role of ['board', 'staff', 'volunteer', 'coach', 'organization_admin', 'admin', 'parent', 'athlete']) {
+      as(role);
+      expect((await GET(get())).status).toBe(403);
+    }
     as('platform_owner');
     expect((await GET(get(''))).status).toBe(400);
     expect(mockTotal).not.toHaveBeenCalled();
