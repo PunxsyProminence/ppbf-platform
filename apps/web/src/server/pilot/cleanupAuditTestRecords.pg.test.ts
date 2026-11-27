@@ -1253,6 +1253,27 @@ describe('the apply refuses, writing nothing', () => {
     }
   });
 
+  test('a tied run that does not come out untied rolls back: WRITE_COUNT_MISMATCH on session_script_runs', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await clearBlockers(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const before = await snapshot(client);
+      // Fault injection: just before the classes go, the planned run is re-tied to a class that stays.
+      const spy = { query: async (text: string, values?: unknown[]) => {
+        if (text.startsWith('delete from pilot.scheduler_classes')) {
+          await client.query("update pilot.session_script_runs set class_id = 'c-real' where run_id = 'run-done'");
+        }
+        return client.query(text, values);
+      } };
+      expect(await apply(spy, applyOptions({ organizationId: GYM }, ['classes'], fp), { log: () => {} }))
+        .toEqual({ status: 'refused', reason: 'WRITE_COUNT_MISMATCH', table: 'session_script_runs', planned: 1, written: 0 });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('an end state that is not what was planned rolls back: END_STATE_MISMATCH', async () => {
     const { client } = await freshDatabase();
     try {
