@@ -384,6 +384,36 @@ describe('createSchedulerClasses names the plan the classes run (lane W4-5, SP-3
     expect(await storedPlans(client)).toEqual([['a-0', null], ['a-1', null], ['a-2', null], ['a-3', null]]);
   });
 
+  test('a plan delete in progress makes the create wait, then refuses it in words, not with a database error', async () => {
+    // The plan check reads the row FOR KEY SHARE (schedulerDb.ts): it waits for a delete already
+    // holding the row and then finds no plan. Read without that lock, the check sees the row the
+    // delete has not yet committed, and the insert's foreign key fails with 23503, an opaque 500
+    // (reviewer K on #2238, OBSERVED with the lock removed).
+    const client = await freshDatabase('w45_plan_delete_race');
+    await seedPlans(client);
+    const deleter = await secondConnection('w45_plan_delete_race');
+    const creator = await secondConnection('w45_plan_delete_race');
+    const creatorPid = (await creator.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+    transactionClients.push(creator);
+
+    await deleter.query('BEGIN');
+    await deleter.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = $2`, [ORG_ID, PLAN_ID]);
+    const outcome = createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID })).catch((caught) => caught);
+    // Commit only once the create is waiting on the delete's row lock, so the order is the race's.
+    for (let tries = 0; ; tries += 1) {
+      const waiting = await client.query(`select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock'`, [creatorPid]);
+      if (waiting.rows.length > 0) break;
+      if (tries > 200) throw new Error('test bug: the create never waited on the delete');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await deleter.query('COMMIT');
+
+    const error = await outcome;
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error).toMatchObject({ status: 400, code: 'CLASS_PLAN_NOT_FOUND' });
+    expect(await stored(client)).toEqual([]);
+  });
+
   test('classes of one create naming different plans are a programming error, and nothing is written', async () => {
     const client = await freshDatabase('w45_plan_mixed');
     await seedPlans(client);

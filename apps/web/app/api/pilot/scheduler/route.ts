@@ -842,9 +842,11 @@ export async function POST(request: NextRequest) {
       // THE PLAN IT RUNS (lane W4-5, SP-3), or none. Whoever may schedule this
       // class may link any plan of the gym: a coach or organization admin already
       // reads every plan of the gym by id (app/api/pilot/session-scripts/route.ts,
-      // the GET), so a link reveals nothing new. A retired or superseded plan may
-      // be linked; the start follows its lineage (W4-5 plan finding 9, built in
-      // SP-4). Another gym's plan or an unknown id is refused by
+      // the GET), so a link reveals nothing new. An older version of a plan may be
+      // linked: SP-4 is to start the newest version of its lineage (W4-5 plan,
+      // finding 9). Whether a RETIRED plan may be linked is not settled by any
+      // source; it is asked of App Overwatch on #2238, and nothing here decides it
+      // yet. Another gym's plan or an unknown id is refused by
       // createSchedulerClasses (CLASS_PLAN_NOT_FOUND).
       const rawScriptId: unknown = body.script_id;
       let scriptId: string | null = null;

@@ -43,9 +43,10 @@
 -- browse list and the start check follow the highest version
 -- (sessionScriptAuthoring.ts header; sessionScriptRuns.ts startSessionScriptRun
 -- refuses a superseded version with SESSION_SCRIPT_SUPERSEDED). The class keeps
--- the id it was scheduled with; the start follows that plan's lineage to its
--- newest version (the W4-5 plan, section 2 finding 9). WHICH plan a caller may
--- link (one of its own gym's) is the module's rule, not this file's.
+-- the id it was scheduled with. Nothing starts a class's plan yet: SP-4 of the
+-- W4-5 plan is to start the newest version of that plan's lineage (section 2
+-- finding 9). WHICH plan a caller may link (one of its own gym's) is the
+-- module's rule, not this file's.
 --
 -- DEPENDS ON pilot.scheduler_classes (scheduler-tables) and
 -- pilot.session_scripts (session-scripts).
@@ -111,7 +112,7 @@ end $$;
 -- (reviewer J on #2238, OBSERVED).
 do $$
 declare
-  wanted constant text := 'The session plan this class runs (lane W4-5), or null for a class with no plan. The start follows the newest version of that plan''s lineage (sessionScriptRuns.ts startSessionScriptRun refuses a superseded version with SESSION_SCRIPT_SUPERSEDED; sessionScriptAuthoring.ts''s header: the browse list and the start check follow the highest version), so the stored id may name an older version of the plan. Which plan a caller may link is the module''s rule (the gym''s own), not this file''s.';
+  wanted constant text := 'The session plan this class runs (lane W4-5), or null for a class with no plan. It may name an older version of the plan: the start check runs only a plan''s newest version (sessionScriptRuns.ts startSessionScriptRun refuses a superseded version with SESSION_SCRIPT_SUPERSEDED), and starting a class''s plan (lane W4-5, SP-4) is to start the newest version of its lineage. Which plan a caller may link is the module''s rule (the gym''s own), not this file''s.';
 begin
   if col_description(
        to_regclass('pilot.scheduler_classes'),
