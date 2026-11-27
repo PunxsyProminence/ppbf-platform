@@ -91,6 +91,22 @@ jest.mock('./db', () => ({
   }),
 }));
 
+// The route test below signs each person in as their session would.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+// The route's own mailer: no route test here may reach a send.
+jest.mock('./emailAlertCode', () => ({
+  emailAlertCodeMailer: jest.fn(() => async () => {
+    throw new Error('test bug: the route reached the code email');
+  }),
+}));
+
+import { NextRequest } from 'next/server';
+
+import * as addressRoute from '@/app/api/pilot/email-alerts/me/address/route';
+
 import type { PilotRole } from './contracts';
 import {
   confirmEmailAlertAddress,
@@ -103,7 +119,7 @@ import {
   type EmailAlertCodeMailer,
 } from './emailAlertSwitches';
 import { MailSendError } from './graphMailer';
-import { jsonError } from './http';
+import { jsonError, requirePrincipal } from './http';
 import { getRateLimitStatus } from './rateLimit';
 import { hashToken } from './security';
 
@@ -1087,6 +1103,69 @@ describe('the adult athlete\'s alert address on a real database', () => {
       await expect(post('adult', 'not an address', mail.send)).rejects.toMatchObject({ status: 400, message: 'Enter a valid email address' });
       await expect(put('adult', '12')).rejects.toMatchObject({ status: 400, message: 'Enter the six-digit code from the email' });
       expect(mail.send).not.toHaveBeenCalled();
+      expect(await switchCount(client)).toBe(0);
+      expect(await auditDetails(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('L1 at the route (Codex on EM-2b-2): a minor, an athlete whose record is deleted, and a session naming no record or another record get the one plain 403 for any query or body; an adult gets the route\'s 400s', async () => {
+    const client = await freshDatabase('emailaddr_route_minor');
+    activeClient = client;
+    try {
+      const url = 'http://localhost/api/pilot/email-alerts/me/address';
+      const call = async (method: 'POST' | 'PUT', sent: unknown, query = '') => {
+        const request = new NextRequest(`${url}${query}`, { method, body: typeof sent === 'string' ? sent : JSON.stringify(sent) });
+        const response = await (method === 'POST' ? addressRoute.POST(request) : addressRoute.PUT(request));
+        return { bodyUsed: request.bodyUsed, status: response.status, headers: [...response.headers.entries()], body: await response.json() };
+      };
+      const shapes = (field: 'address' | 'code', good: string, bad: string): Array<[unknown, string]> => [
+        [{ [field]: good }, ''],
+        [{ [field]: good }, '?account_id=acct-other'],
+        ['', ''],
+        ['{"', ''],
+        [[{ [field]: good }], ''],
+        [{}, ''],
+        [{ [field]: good, account_id: 'acct-other' }, ''],
+        [{ [field]: 12345 }, ''],
+        [{ [field]: bad }, ''],
+      ];
+      const requests: Array<['POST' | 'PUT', unknown, string]> = [
+        ...shapes('address', newAddress('route'), 'not an address').map(([sent, query]) => ['POST', sent, query] as ['POST', unknown, string]),
+        ...shapes('code', '012345', '12').map(([sent, query]) => ['PUT', sent, query] as ['PUT', unknown, string]),
+      ];
+      const people = [
+        { accountId: MINOR_ID, athleteId: MINOR_ATHLETE },
+        { accountId: GONE_ID, athleteId: GONE_ATHLETE },
+        { accountId: ADULT_ID, athleteId: null },
+        { accountId: MINOR_ID, athleteId: ADULT_ATHLETE },
+      ];
+      let plain: Awaited<ReturnType<typeof call>> | null = null;
+      for (const person of people) {
+        (requirePrincipal as jest.Mock).mockResolvedValue({
+          ...person, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+        });
+        for (const [method, sent, query] of requests) {
+          const answer = await call(method, sent, query);
+          plain ??= answer;
+          expect({ person, method, sent, query, answer }).toEqual({ person, method, sent, query, answer: plain });
+        }
+      }
+      expect(plain).toMatchObject({ bodyUsed: false, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
+
+      // An adult: the adult check passes, and the route's own 400s say nothing about email.
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT_ID, athleteId: ADULT_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      for (const [method, sent, query] of requests.filter(([, sent, query]) => query || typeof sent === 'string' || Array.isArray(sent)
+        || Object.keys(sent as object).length !== 1 || typeof Object.values(sent as object)[0] !== 'string')) {
+        const answer = await call(method, sent, query);
+        expect({ method, sent, query, status: answer.status }).toEqual({ method, sent, query, status: 400 });
+        expect(answer.body.error).not.toMatch(/email|address|code|six/i);
+      }
+      await expect(call('POST', { address: 'not an address' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter a valid email address' } });
+      await expect(call('PUT', { code: '12' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter the six-digit code from the email' } });
       expect(await switchCount(client)).toBe(0);
       expect(await auditDetails(client)).toEqual([]);
     } finally {

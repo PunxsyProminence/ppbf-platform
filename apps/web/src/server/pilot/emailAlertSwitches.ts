@@ -563,8 +563,13 @@ export function emailAlertCodeLimitError(): PilotError {
   return new PilotError(429, 'Too many code emails. Wait a few minutes, then ask again.', 'EMAIL_ALERT_CODE_LIMIT');
 }
 
-/** The adult check before anything else: anyone else gets the plain 403 once any leftover is retired. */
-async function refuseUnlessAdultAthlete(subject: EmailAlertSwitchSubject, now: Date): Promise<void> {
+/**
+ * The adult check before anything else: anyone else gets the plain 403 once
+ * any leftover is retired. The address route asks it too, before it reads the
+ * query or the body (L1; Codex on EM-2b-2), so a minor's answer never depends
+ * on what they sent; the store asks it again, and again under its locks.
+ */
+export async function refuseUnlessAdultAthlete(subject: EmailAlertSwitchSubject, now: Date = new Date()): Promise<void> {
   if ((await emailAlertUserTypeFor(subject, now)) === 'adult_athlete') return;
   await retireSwitchIfAny(subject, now);
   throw notOffered();
