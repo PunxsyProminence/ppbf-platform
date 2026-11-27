@@ -21,14 +21,19 @@ function sslConfig() {
 // For each of the three tables, the readiness check asserts: an ordinary
 // logged table with no user trigger, rule, row security or inheritance (any of
 // them could swallow or lose rows without an error); the exact column list,
-// each column's type, nullability, default and identity; exactly the CHECKs
-// below and no others, each compared IN FULL against the text Postgres stores,
-// which says NOT VALID for a CHECK not validated (webPushMigration.pg.test.ts
-// drives this runner against a real database); the primary key and every
-// unique key by name and columns, none deferrable (ON CONFLICT refuses a
-// deferrable key); exactly the foreign keys below, each by name, columns on
-// both sides, target, cascade on delete, the default update rule, validated
-// and not deferrable; and every index on the table by its full definition.
+// each column's type, nullability, default and identity, every column on the
+// database's default collation, an identity sequence that counts up by one
+// from 1 and never cycles, and no NOT NULL left unvalidated; exactly the
+// CHECKs below and no others, each compared IN FULL against the text Postgres
+// stores, which says NOT VALID for a CHECK not validated
+// (webPushMigration.pg.test.ts drives this runner against a real database);
+// the primary key and every unique key by name and columns, none deferrable
+// (ON CONFLICT refuses a deferrable key); exactly the foreign keys below, each
+// by name, columns on both sides, target, cascade on delete, the default
+// update rule, validated, not deferrable, and with none of its triggers
+// switched off; and every index on the table by its full definition, each
+// valid and ready (a failed concurrent build leaves an invalid one that
+// `create index if not exists` never repairs).
 
 const USER_TYPES = "CHECK ((user_type = ANY (ARRAY['staff'::text, 'parent'::text, 'adult_athlete'::text])))";
 const KIND = "CHECK ((event_kind ~ '^[a-z][a-z_]{0,62}$'::text))";
@@ -56,18 +61,19 @@ export const EXPECTED = {
     checks: {
       pilot_push_subscription_user_type_check: USER_TYPES,
       pilot_push_subscription_endpoint_check:
-        "CHECK (((endpoint ~ '^https://[^[:space:]]+$'::text) AND (length(endpoint) <= 2048)))",
+        "CHECK (((endpoint ~ '^https://([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?[.])+[A-Za-z]{2,63}/[!-~]*$'::text)"
+        + " AND (strpos(endpoint, '@'::text) = 0) AND (strpos(endpoint, chr(92)) = 0) AND (length(endpoint) <= 2048)))",
       pilot_push_subscription_p256dh_check: "CHECK ((key_p256dh ~ '^[A-Za-z0-9_-]{87}$'::text))",
       pilot_push_subscription_auth_check: "CHECK ((key_auth ~ '^[A-Za-z0-9_-]{22,128}$'::text))",
       pilot_push_subscription_device_key_check: "CHECK ((device_key_hash ~ '^[0-9a-f]{64}$'::text))",
     },
     primaryKey: ['subscription_id'],
-    uniqueKeys: [['pilot_push_subscription_endpoint_key', ['endpoint']]],
+    uniqueKeys: [['pilot_push_subscription_endpoint_key', ['endpoint', 'organization_id']]],
     foreignKeys: PERSON_KEYS('push_subscriptions', 'pilot_push_subscription'),
     // Every index on the table, ordered by name.
     indexes: [
       'CREATE INDEX idx_push_subscriptions_person ON pilot.push_subscriptions USING btree (organization_id, account_id)',
-      'CREATE UNIQUE INDEX pilot_push_subscription_endpoint_key ON pilot.push_subscriptions USING btree (endpoint)',
+      'CREATE UNIQUE INDEX pilot_push_subscription_endpoint_key ON pilot.push_subscriptions USING btree (endpoint, organization_id)',
       'CREATE UNIQUE INDEX push_subscriptions_pkey ON pilot.push_subscriptions USING btree (subscription_id)',
     ],
   },
@@ -156,7 +162,18 @@ const READINESS_QUERY = `
                       || '|' || a.attidentity::text order by a.attnum)
        from t join pg_attribute a on a.attrelid = t.rel
        left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-      where a.attnum > 0 and not a.attisdropped) = $2::text[] as columns_ready,
+      where a.attnum > 0 and not a.attisdropped) = $2::text[]
+      and not exists (select 1 from pg_attribute a, t
+            where a.attrelid = t.rel and a.attnum > 0 and not a.attisdropped and a.attcollation <> 0
+              and a.attcollation <> (select oid from pg_collation where collname = 'default'
+                                       and collnamespace = 'pg_catalog'::regnamespace)) as columns_ready,
+    coalesce((select bool_and(q.seqstart = 1 and q.seqincrement = 1 and q.seqmin = 1
+                              and q.seqmax = 9223372036854775807 and not q.seqcycle)
+       from pg_depend dep, t join pg_sequence q on true
+      where dep.refobjid = t.rel and dep.classid = 'pg_class'::regclass and dep.deptype = 'i'
+        and q.seqrelid = dep.objid), true) as identity_ready,
+    not exists (select 1 from pg_constraint c, t
+      where c.conrelid = t.rel and c.contype = 'n' and not c.convalidated) as not_null_ready,
     (select count(*) = cardinality($3::text[]) from pg_constraint c, t
        join unnest($3::text[], $4::text[]) as e(conname, condef) on true
       where c.conrelid = t.rel and c.contype = 'c' and c.conname = e.conname
@@ -178,12 +195,18 @@ const READINESS_QUERY = `
         and not c.condeferrable and c.confrelid = to_regclass(e.target)
         and c.confdeltype = 'c' and c.confupdtype = 'a'
         and ${keyColumns('conkey', 'conrelid')} = string_to_array(e.cols, ',')
-        and ${keyColumns('confkey', 'confrelid')} = string_to_array(e.refcols, ','))
+        and ${keyColumns('confkey', 'confrelid')} = string_to_array(e.refcols, ',')
+        and not exists (select 1 from pg_trigger g where g.tgconstraint = c.oid and g.tgenabled = 'D'))
       and (select count(*) = cardinality($8::text[]) from pg_constraint c, t
             where c.conrelid = t.rel and c.contype = 'f') as foreign_keys_ready,
     coalesce((select array_agg(indexdef::text order by indexname collate "C") from pg_indexes
-       where schemaname = 'pilot' and tablename = $1), '{}') = $12::text[] as indexes_ready
+       where schemaname = 'pilot' and tablename = $1), '{}') = $12::text[] as indexes_ready,
+    not exists (select 1 from pg_index i, t
+      where i.indrelid = t.rel and not (i.indisvalid and i.indisready and i.indislive)) as indexes_valid
 `;
+
+/** How many flags each table's readiness row carries. */
+const FLAGS_PER_TABLE = 11;
 
 function readinessParams(table, spec) {
   return [
@@ -215,10 +238,20 @@ export async function readiness(client) {
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
+    // Creating the foreign keys takes a SHARE ROW EXCLUSIVE lock on
+    // pilot.organizations, pilot.accounts and pilot.organization_memberships
+    // (reads go on, writes wait). Rather than queue behind a long transaction
+    // already holding one, and hold every write to those tables up behind it,
+    // give up after 10 seconds and let the operator re-run in a quieter
+    // moment, as the reached-out-marks runner does. Nothing is half-applied.
+    await client.query("set local lock_timeout = '10s'");
     await client.query(sql);
     const flags = await readiness(client);
-    if (Object.keys(flags).length === 0 || Object.values(flags).some((value) => value !== true)) {
-      throw new Error('WEB_PUSH_TABLES_NOT_READY');
+    const expected = Object.keys(EXPECTED).length * FLAGS_PER_TABLE;
+    const missing = Object.entries(flags).filter(([, value]) => value !== true).map(([flag]) => flag);
+    if (Object.keys(flags).length !== expected || missing.length > 0) {
+      // Flag names only: they name tables and checks, never a row.
+      throw new Error(`WEB_PUSH_TABLES_NOT_READY: ${missing.join(', ') || `${Object.keys(flags).length} of ${expected} flags`}`);
     }
     await client.query('COMMIT');
   } catch (error) {

@@ -1,7 +1,7 @@
 // Real PostgreSQL-backed test for the web-push migration (lane W5-WP, WP-1a;
 // OW27-17 B, OW27-18 A; plan, answers and GO on #2228: QC A1, QG A). The
-// runner is driven through its real entrypoint, so its readiness check runs
-// against a real Postgres here. The store that reads and writes the rows is
+// runner's applyMigrationTransaction, the function its run() calls, is driven
+// against a real Postgres here, so its readiness check runs there too. The store that reads and writes the rows is
 // WP-1b, with its own suite.
 //
 // It NEVER connects to production or staging: an embedded server on a free
@@ -217,8 +217,8 @@ describe('web push migration', () => {
 
       await applyMigrationTransaction(client, migrationSql);
       const flags = await readiness(client);
-      // 3 tables x 8 flags; every one true. Named, so a failure says which.
-      expect(Object.keys(flags)).toHaveLength(24);
+      // 3 tables x 11 flags; every one true. Named, so a failure says which.
+      expect(Object.keys(flags)).toHaveLength(33);
       expect(Object.entries(flags).filter(([, value]) => value !== true)).toEqual([]);
 
       await insertSubscription(client);
@@ -238,9 +238,9 @@ describe('web push migration', () => {
   });
 
   test.each([
-    ['push_subscriptions.checks_ready', 'an endpoint CHECK that also takes http',
+    ['push_subscriptions.checks_ready', 'an endpoint CHECK that only asks for https',
       `alter table pilot.push_subscriptions drop constraint pilot_push_subscription_endpoint_check,
-         add constraint pilot_push_subscription_endpoint_check check (endpoint ~ '^https?://[^[:space:]]+$' and length(endpoint) <= 2048)`],
+         add constraint pilot_push_subscription_endpoint_check check (endpoint ~ '^https://' and length(endpoint) <= 2048)`],
     ['push_subscriptions.checks_ready', 'no p256dh length CHECK',
       'alter table pilot.push_subscriptions drop constraint pilot_push_subscription_p256dh_check'],
     ['push_subscriptions.checks_ready', 'the device key CHECK not validated',
@@ -252,7 +252,38 @@ describe('web push migration', () => {
       'alter table pilot.push_subscriptions drop constraint pilot_push_subscription_endpoint_key'],
     ['push_subscriptions.unique_keys_ready', 'a deferrable endpoint key',
       `alter table pilot.push_subscriptions drop constraint pilot_push_subscription_endpoint_key,
-         add constraint pilot_push_subscription_endpoint_key unique (endpoint) deferrable`],
+         add constraint pilot_push_subscription_endpoint_key unique (endpoint, organization_id) deferrable`],
+    ['push_subscriptions.unique_keys_ready', 'one browser per endpoint across every gym',
+      `alter table pilot.push_subscriptions drop constraint pilot_push_subscription_endpoint_key,
+         add constraint pilot_push_subscription_endpoint_key unique (endpoint)`],
+    ['push_subscriptions.primary_key_ready', 'a deferrable primary key',
+      `alter table pilot.push_subscriptions drop constraint push_subscriptions_pkey,
+         add constraint push_subscriptions_pkey primary key (subscription_id) deferrable`],
+    ['push_subscriptions.foreign_keys_ready', 'a gym key not validated',
+      `alter table pilot.push_subscriptions drop constraint push_subscriptions_organization_id_fkey,
+         add constraint push_subscriptions_organization_id_fkey foreign key (organization_id)
+           references pilot.organizations(organization_id) on delete cascade not valid`],
+    ['push_subscriptions.foreign_keys_ready', 'an account key that cascades updates too',
+      `alter table pilot.push_subscriptions drop constraint push_subscriptions_account_id_fkey,
+         add constraint push_subscriptions_account_id_fkey foreign key (account_id)
+           references pilot.accounts(account_id) on delete cascade on update cascade`],
+    ['push_subscriptions.foreign_keys_ready', 'the membership key\'s triggers switched off',
+      'alter table pilot.push_subscriptions disable trigger all'],
+    ['push_subscriptions.columns_ready', 'an endpoint on another collation',
+      'alter table pilot.push_subscriptions alter column endpoint type text collate "C"'],
+    ['push_subscriptions.identity_ready', 'an id that cycles back to 1',
+      'alter table pilot.push_subscriptions alter column subscription_id set maxvalue 2 set cycle'],
+    ['push_subscriptions.not_null_ready', 'a NOT NULL left unvalidated',
+      `alter table pilot.push_subscriptions alter column key_auth drop not null;
+       alter table pilot.push_subscriptions add constraint webpush_test_auth_nn not null key_auth not valid`],
+    ['push_subscriptions.indexes_valid', 'an index left invalid',
+      `update pg_index set indisvalid = false where indexrelid = 'pilot.idx_push_subscriptions_person'::regclass`],
+    ['push_subscriptions.table_plain', 'an unlogged table',
+      'alter table pilot.push_subscriptions set unlogged'],
+    ['push_subscriptions.table_plain', 'a rule that could swallow rows',
+      'create rule webpush_test_rule as on insert to pilot.push_subscriptions do instead nothing'],
+    ['push_subscriptions.table_plain', 'a table inheriting from it',
+      'create table pilot.webpush_test_child () inherits (pilot.push_subscriptions)'],
     ['push_subscriptions.foreign_keys_ready', 'an account key that no longer cascades',
       `alter table pilot.push_subscriptions drop constraint push_subscriptions_account_id_fkey,
          add constraint push_subscriptions_account_id_fkey foreign key (account_id) references pilot.accounts(account_id)`],
@@ -292,6 +323,8 @@ describe('web push migration', () => {
       'drop index pilot.idx_push_alert_sends_queued'],
     ['push_alert_sends.table_plain', 'row security turned on',
       'alter table pilot.push_alert_sends enable row level security'],
+    ['push_alert_checkpoints.columns_ready', 'a checkpoint with no time',
+      'alter table pilot.push_alert_checkpoints alter column swept_to drop not null'],
     ['push_alert_checkpoints.checks_ready', 'no checkpoint key CHECK',
       'alter table pilot.push_alert_checkpoints drop constraint pilot_push_alert_checkpoint_kind_check'],
     ['push_alert_checkpoints.indexes_ready', 'an extra index',
@@ -308,6 +341,27 @@ describe('web push migration', () => {
     }
   });
 
+  test('behind a long transaction holding a lock it needs, the apply gives up after 10 seconds and leaves nothing half-made', async () => {
+    const client = await freshDatabase('webpush_lock', { preMigration: true });
+    const holder = new Client({ connectionString: connectionStringFor('webpush_lock') });
+    await holder.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('lock table pilot.organizations in access exclusive mode');
+      const started = Date.now();
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toMatchObject({ code: '55P03' });
+      const waited = Date.now() - started;
+      expect(waited).toBeGreaterThanOrEqual(9_000);
+      expect(waited).toBeLessThan(60_000);
+      await holder.query('rollback');
+      const after = await client.query(`select to_regclass('pilot.push_subscriptions') as t`);
+      expect(after.rows[0].t).toBeNull();
+    } finally {
+      await holder.end();
+      await client.end();
+    }
+  });
+
   test('the readiness check fails when a table is missing', async () => {
     const client = await freshDatabase('webpush_missing');
     try {
@@ -320,6 +374,37 @@ describe('web push migration', () => {
   });
 
   const longEndpoint = `https://push.example.test/${'a'.repeat(2049 - 'https://push.example.test/'.length)}`;
+  // web-push 3.6.7 posts to whatever host and port url.parse finds in the
+  // endpoint (src/web-push-lib.js), with an empty host falling back to the
+  // local machine. Each of these would send a push somewhere it must not go,
+  // or parse one way in url.parse and another in new URL (reviewer B on #2231).
+  test.each([
+    ['https://:8443/x'],
+    ['https://@/x'],
+    ['https:///'],
+    ['https://user:pw@127.0.0.1:5432/x'],
+    ['https://[::1]:8443/x'],
+    ['https://169.254.169.254/x'],
+    ['https://0x7f000001/x'],
+    ['https://fcm.googleapis.com\\@evil.example/x'],
+    ['https://localhost/x'],
+    ['https://push.example.test:443/x'],
+    ["https://evil.example'.fcm.googleapis.com/x"],
+    ['https://push.example.test/a\u0001b'],
+    ['https://push.example.test'],
+    ['https://-bad.example.test/x'],
+    ['https://push.example.test/x@y'],
+    ['HTTPS://push.example.test/x'],
+  ])('the database refuses the endpoint %j, by its own CHECK', async (endpoint) => {
+    const client = await freshDatabase('webpush_endpoint_check');
+    try {
+      await expect(insertSubscription(client, { endpoint }))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_push_subscription_endpoint_check' });
+    } finally {
+      await client.end();
+    }
+  });
+
   test.each([
     ['a user type off the list', { user_type: 'volunteer' }, 'pilot_push_subscription_user_type_check'],
     ['an http endpoint', { endpoint: 'http://push.example.test/send/abc' }, 'pilot_push_subscription_endpoint_check'],
@@ -348,6 +433,7 @@ describe('web push migration', () => {
       expect(KEYS.p256dh).toHaveLength(87);
       expect(KEYS.auth).toHaveLength(22);
       await insertSubscription(client, { endpoint: longEndpoint.slice(0, 2048) });
+      await insertSubscription(client, { endpoint: 'https://a.b-c.example.test/fcm/send/abc:APA91b-x_y?token=BQ%2bA=' });
       const other = browserKeys();
       await insertSubscription(client, {
         account_id: OTHER_PARENT_ID,
@@ -357,13 +443,13 @@ describe('web push migration', () => {
         device_key_hash: randomBytes(32).toString('hex'),
       });
       const { rows } = await client.query('select count(*)::int as n from pilot.push_subscriptions');
-      expect(rows[0].n).toBe(2);
+      expect(rows[0].n).toBe(3);
     } finally {
       await client.end();
     }
   });
 
-  test('one person per browser: a second row for the same endpoint is refused, whoever it is for', async () => {
+  test('one person per browser per gym: a second row for the same endpoint in a gym is refused; the same person keeps a row in another gym', async () => {
     const client = await freshDatabase('webpush_endpoint_key');
     try {
       await insertSubscription(client);
@@ -371,6 +457,16 @@ describe('web push migration', () => {
         .rejects.toMatchObject({ code: '23505', constraint: 'pilot_push_subscription_endpoint_key' });
       await expect(insertSubscription(client))
         .rejects.toMatchObject({ code: '23505', constraint: 'pilot_push_subscription_endpoint_key' });
+      // A parent in two gyms (reviewer B on #2231): turning push on in the
+      // second gym does not take the browser out of the first.
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ($1, $2, 'parent', true)`,
+        [PARENT_ID, OTHER_ORG_ID],
+      );
+      await insertSubscription(client, { organization_id: OTHER_ORG_ID });
+      const { rows } = await client.query('select organization_id from pilot.push_subscriptions order by organization_id');
+      expect(rows).toEqual([{ organization_id: ORG_ID }, { organization_id: OTHER_ORG_ID }]);
     } finally {
       await client.end();
     }
@@ -409,6 +505,11 @@ describe('web push migration', () => {
          values ($1, $2, 'parent', $3, $4)`,
         [ORG_ID, PARENT_ID, kind, eventId],
       )).rejects.toMatchObject({ code: '23514', constraint });
+      await expect(client.query(
+        `insert into pilot.push_alert_sends (organization_id, account_id, user_type, event_kind, event_id)
+         values ($1, $2, 'volunteer', 'family_note', $3)`,
+        [ORG_ID, PARENT_ID, EVENT_ID],
+      )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_push_alert_send_user_type_check' });
     } finally {
       await client.end();
     }
