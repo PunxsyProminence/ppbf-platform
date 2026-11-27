@@ -43,17 +43,29 @@ function filesUnder(dir: string, keep: (file: string) => boolean): string[] {
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 const source = (file: string) => fs.readFileSync(file, 'utf8');
-const isSource = (file: string) => /\.(ts|tsx|mts|mjs|js)$/.test(file) && !/\.test\.[a-z]+$/.test(file);
+// Every JS and TS source extension: .ts .tsx .js .jsx and their c/m forms (lane W5-FU, F1). A
+// .jsx, .cjs or .cts file was not swept, and reviewer J got a .jsx re-export past the same pattern
+// in #2206's sweep.
+const SOURCE_EXT = /\.[cm]?[jt]sx?$/;
+const isSource = (file: string) => SOURCE_EXT.test(file) && !/\.test\.[a-z]+$/.test(file);
 
 // Every shipped source file: routes, pages, components, server modules.
 const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnder(path.join(WEB_DIR, dir), isSource));
 
-/** What reaches the records: the presence module (either quote style), and each read or writer by name. */
+/** What reaches the records: the presence module (either quote style, with or without a file
+ *  ending, so `export * from './sessionRunAthletes.js'` is seen; F1), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut|onTheFloorForFamily)\b/;
+  /sessionRunAthletes(\.[cm]?[jt]sx?)?['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut|onTheFloorForFamily)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
+
+/** A route handler file, any JS or TS extension (F1). */
+const ROUTE_FILE = /route\.[cm]?[jt]sx?$/;
+/** A file that can hold a page or component, any JSX extension (F1). */
+const CLIENT_FILE = /\.[cm]?[jt]sx$/;
+/** A value import from a server module that reads them, with or without a file ending (F1). */
+const VALUE_IMPORT = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns|sessionRunClass)(\.[cm]?[jt]sx?)?['"];/m;
 
 // The only routes that may. Each is gated to coach, organization_admin and admin.
 const STAFF_ROUTES = [
@@ -170,7 +182,7 @@ const WRITER_MODULES = [
 const HANDLER = /^export\s+(?:async\s+function|function|const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/gm;
 
 describe('who was in a session, and notes on a run, are reached only from staff routes', () => {
-  const routes = filesUnder(API_DIR, (file) => /route\.tsx?$/.test(file));
+  const routes = filesUnder(API_DIR, (file) => ROUTE_FILE.test(file));
 
   it('the sweep reads the files it claims to (it has not gone blind)', () => {
     expect(routes.length).toBeGreaterThan(100);
@@ -179,6 +191,32 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS, ...ON_THE_FLOOR_READERS]) {
       expect(all).toContain(file);
     }
+  });
+
+  it('the sweep sees every JS and TS source extension, and the module named with a file ending (F1)', () => {
+    for (const file of ['a.ts', 'a.tsx', 'a.js', 'a.jsx', 'a.mts', 'a.mjs', 'a.cts', 'a.cjs']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: true });
+    }
+    for (const file of ['a.test.ts', 'a.test.jsx', 'a.test.cjs', 'a.json', 'a.md']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: false });
+    }
+    // Reviewer J's .jsx re-export (#2206), and the same re-export written with a file ending.
+    for (const text of [
+      "export { setRunAthletePresent as mark } from '@/src/server/pilot/sessionRunAthletes';",
+      "export * from '@/src/server/pilot/sessionRunAthletes.js';",
+      "export * from './sessionRunAthletes.ts';",
+      'import * as presence from "../pilot/sessionRunAthletes.mjs";',
+    ]) {
+      expect({ text, reaches: REACHES.test(text) }).toEqual({ text, reaches: true });
+    }
+    expect(REACHES.test("import { x } from './sessionRunAthletesMigration';")).toBe(false);
+    for (const file of ['route.ts', 'route.tsx', 'route.js', 'route.jsx', 'route.mjs', 'route.cjs', 'route.mts', 'route.cts']) {
+      expect({ file, route: ROUTE_FILE.test(`/app/api/x/${file}`) }).toEqual({ file, route: true });
+    }
+    expect(ROUTE_FILE.test('/app/api/x/route.test.ts')).toBe(false);
+    for (const file of ['a.tsx', 'a.jsx']) expect({ file, client: CLIENT_FILE.test(`/app/${file}`) }).toEqual({ file, client: true });
+    expect(VALUE_IMPORT.test("import { listPresentAthletes } from '@/src/server/pilot/sessionRunAthletes.js';")).toBe(true);
+    expect(VALUE_IMPORT.test("import type { RunAthlete } from '@/src/server/pilot/sessionRunAthletes';")).toBe(false);
   });
 
   it('exactly the three staff routes, the defining modules, the session-note read, the stopped-coming read and the on-the-floor read reach them, anywhere in the app', () => {
@@ -464,10 +502,9 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   });
 
   it('no component or page imports a value from a server module that reads them', () => {
-    const client = ALL_SOURCE.filter((file) => /\.tsx$/.test(file) && !/^src\//.test(relative(file)));
+    const client = ALL_SOURCE.filter((file) => CLIENT_FILE.test(file) && !/^src\//.test(relative(file)));
     expect(client.length).toBeGreaterThan(50);
     // A type-only import is erased at build time and carries no data; a value import would not be.
-    const valueImport = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns|sessionRunClass)['"];/m;
-    expect(client.filter((file) => valueImport.test(source(file))).map(relative)).toEqual([]);
+    expect(client.filter((file) => VALUE_IMPORT.test(source(file))).map(relative)).toEqual([]);
   });
 });
