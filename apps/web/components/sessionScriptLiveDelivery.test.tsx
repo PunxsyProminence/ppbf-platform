@@ -107,6 +107,8 @@ interface Handlers {
   readinessBoard?: () => Response | Promise<Response>;
   /** GET /runs/[runId]/athletes: who is marked here, and the gym's athletes (F-067). */
   presence?: () => Response | Promise<Response>;
+  /** POST /runs/[runId]/athletes: a here tap. Unset, a POST gets the presence answer, as before. */
+  presenceTap?: () => Response | Promise<Response>;
   /** GET /api/pilot/drill-library?drill_id=: the drill a block links (audit 2026-10-17 item 1). */
   drill?: (url: string) => Response | Promise<Response>;
   /** GET /api/pilot/gym-tvs: the TVs the status line reads (lane U2-6a). */
@@ -153,6 +155,7 @@ function mockFetch(handlers: Handlers = {}) {
     // Who is here (F-067) has its own route and its own suite (sessionRunPresence.test.tsx); here
     // the default is a healthy read of a gym where nobody is marked yet.
     if (url.endsWith('/athletes')) {
+      if (init?.method === 'POST' && handlers.presenceTap) return handlers.presenceTap();
       return handlers.presence ? handlers.presence() : jsonResponse({ present: [], gym: [] });
     }
     if (url.includes('/api/pilot/session-scripts/runs/')) {
@@ -2436,6 +2439,45 @@ describe('kept saves (W4 item 7, OQ-3): run actions and the intervention log on 
     expect(logPostCalls(fetchMock)).toHaveLength(3);
     expect(keys.size).toBe(1);
     expect(screen.getAllByText('logged')).toHaveLength(1);
+  });
+
+  // #2182: a here tap still waiting is in the box a finish records (Codex P1), while the no-shows offer
+  // reads the class again when the server's marks change, that is when a tap lands, not when it is made
+  // (round 21, reviewer A).
+  it('a here tap still waiting is in the athletes present box; the no-shows offer reads again when the tap lands', async () => {
+    jest.useFakeTimers();
+    const tied = liveRun({ class_id: 'class-youth' });
+    const ada = { athlete_id: 'ath-1', full_name: 'Ada Reyes' };
+    const ben = { athlete_id: 'ath-2', full_name: 'Ben Ortiz' };
+    let present = [ada];
+    let taps = 0;
+    let classReads = 0;
+    await renderKept(tied, {
+      presence: () => jsonResponse({ present: present.map((athlete) => ({ ...athlete, marked_at: 'x' })), gym: [ada, ben] }),
+      presenceTap: () => {
+        taps += 1;
+        if (taps === 1) throw new TypeError('Failed to fetch');
+        present = [ada, ben];
+        return jsonResponse({ outcome: 'marked' });
+      },
+      runsGet: () => {
+        classReads += 1;
+        return jsonResponse({ run: tied, class: { class_id: 'class-youth', title: 'Youth boxing', start_at: 's', end_at: 'e', status: 'open', no_shows: present.length === 1 ? 1 : 0, no_show_ids: present.length === 1 ? ['ath-2'] : [] } });
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End session...' }));
+    await wait(0);
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('1');
+    // Ben tapped here; the send is lost, so it waits, and the box counts it.
+    await tap('Mark here Ben Ortiz');
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('2');
+    const readsWhileWaiting = classReads;
+    // The tap lands: the server's marks change, so the offer reads the class again.
+    await wait(RESEND_MS);
+    await wait(0);
+    expect(taps).toBe(2);
+    expect(classReads).toBeGreaterThan(readsWhileWaiting);
+    expect(screen.getByLabelText('Athletes present')).toHaveValue('2');
   });
 
   it('once this console has settled the run, a kept save refused as no longer live leaves the page\'s words, and the page\'s list names it as not saved', async () => {

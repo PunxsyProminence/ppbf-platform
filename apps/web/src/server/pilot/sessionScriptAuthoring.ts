@@ -12,7 +12,7 @@ import { withTransaction } from './db';
 import { orNotWritten } from '@/src/lib/drillPresentation';
 import { BLOCK_RENDERED_FORMATS, FROM_DRILL, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
-import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
+import { getWorkoutTemplateWithItems, issueOrder, issueParents, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
 
 // A COACH WRITES A SESSION SCRIPT. sessionScripts.ts reads the plan and
 // sessionScriptRuns.ts records a night; until this module the only writer of a
@@ -23,9 +23,11 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 // issues DDL, and nothing here deletes a row: an edit that removes a block is
 // written as a new version (Overwatch Q2 = A on #2191).
 //
-//   createSessionScriptFromTemplate  a workout template's steps, in the
-//     template's order, become timed blocks: minutes from the start, running
-//     on from one step to the next.
+//   createSessionScriptFromTemplate  a workout template's steps, in the order
+//     a workout issued from it runs them (issueOrder), become timed blocks:
+//     minutes from the start, running on from one step to the next, except
+//     that a step an owner placed inside another (a link issueOrder follows)
+//     and gave no minutes runs inside that step's minutes.
 //   editSessionScript  the name, each block's title and minutes, and (lane
 //     W4-5) the blocks themselves: a library drill added, a block removed, the
 //     running order.
@@ -65,7 +67,11 @@ import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } fr
 // trusts its caller to have passed the role gate; organizationId is the
 // session's and scopes every read and write below.
 
-/** What a template step with no minutes of its own starts at. The coach edits it. */
+/**
+ * What a template step with no minutes of its own starts at, unless an owner placed it inside
+ * another step by a link issueOrder follows: it then runs inside that step's minutes
+ * (blocksFromTemplateSteps). The coach edits it.
+ */
 export const DEFAULT_STEP_MINUTES = 5;
 
 const MAX_OFFSET_MIN = 24 * 60;
@@ -122,6 +128,7 @@ function statedLength(stated: number | null, lastEnd: number): number | null {
 
 type TemplateStep = Pick<
   WorkoutTemplateItemWithDrillHead,
+  | 'item_id' | 'ordinal' | 'details'
   | 'block' | 'drill_id' | 'free_text_drill' | 'drill_name' | 'scale_level' | 'duration_minutes'
   | 'rep_count' | 'contact_level' | 'coach_note'
 >;
@@ -151,17 +158,33 @@ export interface TemplateScriptBlock {
 }
 
 /**
- * A template's steps as timed blocks, in the order given. Pure.
+ * A template's steps as timed blocks, in the order a workout issued from the
+ * template runs them (issueOrder). Pure.
+ *
+ * Each block runs on from the one before it, for its step's minutes, or
+ * DEFAULT_STEP_MINUTES when the step states none. A step an owner placed inside
+ * another (details.within_item_id, followed as issueOrder follows it) that
+ * states no minutes adds none: it runs inside its parent's time, so its block
+ * has its parent's minutes and the next block starts where it would without it
+ * (D-PK73-3: "no Long Road minutes change"). One that states its own minutes
+ * keeps them, like any step (lane W4-8, TL-ORD-2; App Overwatch on #2205,
+ * comment 7181958209).
  *
  * what_to_explain carries the step's own facts (its section and rep count),
  * which a block has no columns for; a block must hold some text
  * (pilot_ssb_content), and a step with neither says which template it came from.
  */
 export function blocksFromTemplateSteps(templateName: string, steps: readonly TemplateStep[]): TemplateScriptBlock[] {
+  const parents = issueParents(steps);
+  const windows = new Map<string, { start: number; end: number }>();
   let offset = 0;
-  return steps.map((step, index) => {
-    const start = offset;
-    offset += step.duration_minutes ?? DEFAULT_STEP_MINUTES;
+  return issueOrder(steps).map((step, index) => {
+    const parent = parents.get(step.item_id) ?? null;
+    // A parent is always placed before the steps inside it, so its window is known here.
+    const inside = step.duration_minutes === null && parent !== null ? windows.get(parent) : undefined;
+    const start = inside ? inside.start : offset;
+    const end = inside ? inside.end : (offset += step.duration_minutes ?? DEFAULT_STEP_MINUTES);
+    windows.set(step.item_id, { start, end });
     // In words, and said to be the template's (F-078): "From the template: Warm-up, 3 reps".
     const facts = [step.block.trim() === '' ? '' : templateSectionWords(step.block), step.rep_count === null ? '' : `${step.rep_count} reps`]
       .filter((part) => part !== '');
@@ -173,7 +196,7 @@ export function blocksFromTemplateSteps(templateName: string, steps: readonly Te
     return {
       block_order: index + 1,
       start_offset_min: start,
-      end_offset_min: offset,
+      end_offset_min: end,
       block_label: cutToLength(label),
       what_to_say: step.coach_note?.trim() || null,
       what_to_explain: `${FROM_TEMPLATE}${facts.length > 0 ? facts.join(', ') : templateName}`,
@@ -260,8 +283,11 @@ export async function createSessionScriptFromTemplate(
   }
   const name = cleanText(params.name ?? template.name, 'SESSION_SCRIPT_NAME_INVALID');
   const blocks = blocksFromTemplateSteps(template.name, items);
+  // The latest minute any block reaches: a nested step's block ends with its parent's, which need
+  // not be the last block's end.
+  const lastEnd = blocks.reduce((last, block) => Math.max(last, block.end_offset_min), 0);
   // An edit accepts no minute past this, so a script that started past it could not be saved again.
-  if (blocks[blocks.length - 1].end_offset_min > MAX_OFFSET_MIN) {
+  if (lastEnd > MAX_OFFSET_MIN) {
     throw new SessionScriptAuthoringError('WORKOUT_TEMPLATE_TOO_LONG', 422);
   }
   const scriptId = mintId('scr');
@@ -290,8 +316,9 @@ export async function createSessionScriptFromTemplate(
         params.organizationId,
         scriptId,
         name,
-        statedLength(template.duration_minutes, blocks[blocks.length - 1].end_offset_min),
-        contactStructure(items),
+        statedLength(template.duration_minutes, lastEnd),
+        // In the blocks' running order, which the label's "without, then with contact" reads.
+        contactStructure(blocks),
         `Workout template: ${template.name} v${template.version}`,
         params.actorAccountId,
       ],
