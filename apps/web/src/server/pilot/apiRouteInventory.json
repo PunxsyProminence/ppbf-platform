@@ -8792,6 +8792,62 @@
     }
   },
   {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's choice of which events send the opt-in email alert, per user type (lane W4-1 EM-5; OW27-10 A). Every event on every user type's list (src/shared/emailAlerts.ts) with ticked and whether it is still the starting value (no row = ticked, OW27-39 A). A gym setting; no person data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias) + isOrganizationAdminRole again in setGymEmailAlertEvent",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym admin ticks or unticks one event for one user type, for its own gym (organization from the session). Body is exactly { user_type, event_kind, ticked }; the pair must be on the list. Upsert and audit row (old and new value) in one transaction, not mirrored. Lane W4-1 EM-5.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/email-alerts/me/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/email-alerts/me",
@@ -12540,7 +12596,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "F-067. The delivering coach marks one athlete present in their own LIVE run, or takes the mark back (setRunAthletePresent). The module requires an active staff membership here and assertActorCanAccessAthlete (staffRoleReachingAthlete; one refusal for every reason), then, with the run row locked, that the run is the caller's and in progress: another coach's run answers 404 like a missing one, a settled run 409. A mark taken back keeps its row; each change is an audit event with no shadow mirror. Writes pilot.session_run_athletes only: nothing to pilot.sessions, pilot.athlete_check_ins or any attendance table (CT-13).",
+    "notes": "F-067. The delivering coach marks one athlete present in their own LIVE run, or takes the mark back (setRunAthletePresent). The module requires an active staff membership here and assertActorCanAccessAthlete (staffRoleReachingAthlete; one refusal for every reason), then, with the run row locked, that the run is the caller's (another coach's run answers 404 like a missing one) and, unless the tap carries a request_key already recorded for this run, in progress (a settled run 409). A kept tap sends an optional request_key (W4 item 7): it is looked up on the run's audit events under the run lock, before the in-progress check; a key already recorded for the same athlete and direction answers 200 with the first answer plus replayed and live and writes nothing, even on a settled run; the same key for another athlete or direction answers 409 SESSION_RUN_KEY_REUSED. A new keyed tap records its key, what it asked and its answer as a session_script_run audit event in the same transaction as the mark. A kept tap may also send tapped_ms_ago, which dates the mark to the tap (never before the run began), so on a tied session an Absent or Excused set on the register after it wins, and page_id, the random in-memory id of the page that kept it, stored nowhere with the tap, which lets it win over an untouched Absent that this run's own no-shows tap set from the same page (that tap records its page_id). A mark taken back keeps its row; each change is an audit event with no shadow mirror. Writes pilot.session_run_athletes; a take-back also closes the athlete's open windows on this run in pilot.behaviour_observations_windows (closeRunWindows); on a session tied to a class it also writes that class's register row in pilot.scheduler_attendance (copyTapToRegister and undoTapOnRegister in sessionRunClass.ts). Nothing to pilot.sessions or pilot.athlete_check_ins (CT-13).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12569,7 +12625,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). tie_class answers the athlete ids it copied to the class register. mark_no_shows (W4 item 7, OVERWATCH 7160191377) takes the athlete ids the screen showed, their class id and a request key: sessionRunClass.ts markSessionNoShowsAbsent marks Absent only those still signed up with no register mark and no session mark that day, on the caller's own live run, still tied to that class, of a class they run (or as an admin); records the tap (key, ids sent, ids marked, when) in an audit event on the run; and answers the athlete ids it marked. A resend of a recorded key is answered with the first answer and writes nothing, after the caller's membership and own-run checks and before the live check, so it also answers once the run has ended; it gives that account only what it was answered before. Every action may carry a request key (W4 item 7, OVERWATCH 7170099938): advance/pause/resume/show_on_wall/finish then go through sessionScriptRuns.ts keyedSessionScriptRunAction and tie_class through setSessionRunClass, which lock the caller's own run, look the key up among the run's audit events before the live check, and record it (with the action's target, never coach notes; a tie with its answer) in the same transaction as the write. A resend of a recorded key writes nothing and answers replayed: the run as it is now (null for a live action on a run since ended), or for a tie the class it holds now and whether it is live. The same key for another change is refused 409 SESSION_RUN_KEY_REUSED.",
+    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). tie_class answers the athlete ids it copied to the class register. mark_no_shows (W4 item 7, OVERWATCH 7160191377) takes the athlete ids the screen showed, their class id and a request key: sessionRunClass.ts markSessionNoShowsAbsent marks Absent only those still signed up with no register mark and no session mark that day, on the caller's own live run, still tied to that class, of a class they run (or as an admin); records the tap (key, ids sent, ids marked, when, and the random in-memory id of the page that kept it, page_id, which the register uses to let a later here tap from that same page win over the tap's untouched Absent) in an audit event on the run; and answers the athlete ids it marked. A resend of a recorded key is answered with the first answer and writes nothing, after the caller's membership and own-run checks and before the live check, so it also answers once the run has ended; it gives that account only what it was answered before. Every action may carry a request key (W4 item 7, OVERWATCH 7170099938): advance/pause/resume/show_on_wall/finish then go through sessionScriptRuns.ts keyedSessionScriptRunAction and tie_class through setSessionRunClass, which lock the caller's own run, look the key up among the run's audit events before the live check, and record it (with the action's target, never coach notes; a tie with its answer) in the same transaction as the write. A resend of a recorded key writes nothing and answers replayed: the run as it is now (null for a live action on a run since ended), or for a tie the class it holds now and whether it is live. The same key for another change is refused 409 SESSION_RUN_KEY_REUSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

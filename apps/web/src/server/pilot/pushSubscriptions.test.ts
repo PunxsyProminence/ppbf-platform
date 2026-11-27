@@ -76,16 +76,41 @@ describe('parsePushBrowser takes exactly what PushSubscription.toJSON gives', ()
     expect(() => parseEndpointBody({ endpoint: ENDPOINT, account_id: 'x' })).toThrow('The body takes exactly: endpoint');
     expect(() => parseEndpointBody({})).toThrow('The body takes exactly: endpoint');
   });
+
+  test('a key of a long run of "=" is refused at once, before any padding is stripped (reviewer E on #2236)', () => {
+    const keys = browserKeys();
+    for (const field of ['p256dh', 'auth'] as const) {
+      const started = process.hrtime.bigint();
+      expect(() => parsePushBrowser({ endpoint: ENDPOINT, keys: { ...keys, [field]: `${'='.repeat(50_000)}x` } }))
+        .toThrow(`keys.${field} is not a browser push key`);
+      // Stripped first, the time grows with the square of the length (reviewer E timed 40,000 at about 1.3 s).
+      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(200);
+    }
+    expect(() => parsePushBrowser({ endpoint: ENDPOINT, keys: { ...keys, auth: `${'A'.repeat(128)}===` } })).toThrow();
+  });
 });
 
 describe('pushKeys: no push until all three settings are set as web-push 3.6.7 needs them (fail closed)', () => {
   const ecdh = createECDH('prime256v1');
   ecdh.generateKeys();
+  const other = createECDH('prime256v1');
+  other.generateKeys();
+  // Padded to 32 bytes, as web-push's own generateVAPIDKeys pads it (its src/vapid-helper.js).
+  const privateKeyOf = (curve: typeof ecdh) => Buffer.from(curve.getPrivateKey().toString('hex').padStart(64, '0'), 'hex').toString('base64url');
   const good = {
     PPBF_WEB_PUSH_VAPID_PUBLIC_KEY: ecdh.getPublicKey().toString('base64url'),
-    PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: ecdh.getPrivateKey().toString('base64url'),
+    PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: privateKeyOf(ecdh),
     PPBF_WEB_PUSH_SUBJECT: 'https://www.example.test/contact',
   };
+
+  test.each([
+    ['a public key set with a newline after it', { ...good, PPBF_WEB_PUSH_VAPID_PUBLIC_KEY: `${good.PPBF_WEB_PUSH_VAPID_PUBLIC_KEY}\n` }],
+    ['a private key set with a space before it', { ...good, PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: ` ${good.PPBF_WEB_PUSH_VAPID_PRIVATE_KEY}` }],
+    ['a public key that is not the private key\'s own', { ...good, PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: privateKeyOf(other) }],
+    ['a private key of 32 zero bytes', { ...good, PPBF_WEB_PUSH_VAPID_PRIVATE_KEY: Buffer.alloc(32).toString('base64url') }],
+  ])('%s: not offered, as web-push 3.6.7 would refuse or the push services would (reviewers E and F on #2236)', (_label, env) => {
+    expect(pushKeys(env)).toBeNull();
+  });
 
   test('all three set and shaped: the public key, and only the public key', () => {
     const keys = pushKeys(good);
