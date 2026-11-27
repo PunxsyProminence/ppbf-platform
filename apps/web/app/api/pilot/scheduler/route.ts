@@ -789,6 +789,8 @@ export async function POST(request: NextRequest) {
       repeat_weeks?: number;
       repeat_until?: string;
       request_key?: string;
+      /** create_class: the session plan this class runs (lane W4-5, SP-3), or none. */
+      script_id?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
       entries?: Array<{
@@ -837,6 +839,22 @@ export async function POST(request: NextRequest) {
         throw new ValidationError('The class must end after it starts.');
       }
 
+      // THE PLAN IT RUNS (lane W4-5, SP-3), or none. Whoever may schedule this
+      // class may link any plan of the gym: a coach or organization admin already
+      // reads every plan of the gym by id (app/api/pilot/session-scripts/route.ts,
+      // the GET), so a link reveals nothing new. An older version of a plan may be
+      // linked: SP-4 is to start the newest version of its lineage (W4-5 plan,
+      // finding 9). A RETIRED plan is not (App Overwatch on #2238, 7211257563:
+      // "A, refuse it"). Another gym's plan or an unknown id (CLASS_PLAN_NOT_FOUND)
+      // and a retired plan (CLASS_PLAN_RETIRED) are refused by
+      // createSchedulerClasses.
+      const rawScriptId: unknown = body.script_id;
+      let scriptId: string | null = null;
+      if (rawScriptId !== undefined && rawScriptId !== null) {
+        if (typeof rawScriptId !== 'string') throw new ValidationError('script_id must be text');
+        scriptId = rawScriptId.trim() || null;
+      }
+
       // REPEAT WEEKLY (lane LW): the same weekday and gym time each week, every
       // class ordinary and independent, all created or none.
       const repeating = body.repeat_weeks !== undefined || body.repeat_until !== undefined;
@@ -860,6 +878,8 @@ export async function POST(request: NextRequest) {
         status: 'open',
         created_at: now,
         updated_at: now,
+        // Every class of a repeat runs the same plan.
+        script_id: scriptId,
       }));
 
       const outcome = await createSchedulerClasses(actor.organizationId, classRecords);
