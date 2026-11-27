@@ -75,13 +75,17 @@ const FINAL_REFUSAL = `(r.last_status_code between 400 and 499 and r.last_status
  *   - skipped with a final refusal's status and error (FINAL_REFUSAL): a row
  *     refused on its only try and offered again (below), whose later claims
  *     all ended in a skip, before Graph (Codex on EM-4b). The sender makes a
- *     refusal final, so a row whose try Graph may have taken never carries
- *     one: its codes are that try's (or LEASE_EXPIRED), and a refusal after it
- *     fails the row on a later try, which is not offered again. Any other
- *     status or error cannot be shown undelivered, since a row keeps only its
- *     last: an earlier try may have reached Graph (a 5xx, a 429 or a timeout
- *     after Graph took the mail, or a lease that ran out mid-send). So it is
- *     not offered again;
+ *     refusal final, and lease recovery overwrites both codes
+ *     (recoverExpiredEmailAlertLeases), so a row whose try Graph may have
+ *     taken is never skipped carrying one: its codes are that try's (or
+ *     LEASE_EXPIRED), and a refusal after it fails the row on a later try,
+ *     which is not offered again. Any other status or error cannot be shown
+ *     undelivered, since a row keeps only its last: an earlier try may have
+ *     reached Graph (a 5xx, a 429 or a timeout after Graph took the mail, or a
+ *     lease that ran out mid-send). So it is not offered again, even where its
+ *     try never reached Graph but reads the same: a retried failure before
+ *     Graph (NO_ACCESS_TOKEN, SENDER_NOT_PERMITTED, a token fetch's
+ *     SEND_ERROR) or a claim that stopped at the lease check (LEASE_EXPIRED);
  *   - failed on its first and only try, which a failed row with one try can
  *     only have done by a final refusal (a Graph 4xx other than 429, a
  *     malformed address, an empty message: emailAlertSender.ts). A row failed
@@ -196,7 +200,13 @@ export async function sweepEmailAlertSource(source: EmailAlertSource): Promise<n
   return written;
 }
 
-/** Sends whose lease ran out go back to the queue, or fail if no try is left. */
+/**
+ * Sends whose lease ran out go back to the queue, or fail if no try is left.
+ * Both codes are overwritten (no status, LEASE_EXPIRED): the gym_notice
+ * re-offer (enqueueEmailAlertSends) depends on it, since a claim that ran out
+ * may have reached Graph, and a refusal's codes kept from an earlier try would
+ * offer the notice again.
+ */
 export async function recoverExpiredEmailAlertLeases(): Promise<number> {
   const rows = await query<{ send_id: string }>(
     `update pilot.email_alert_sends

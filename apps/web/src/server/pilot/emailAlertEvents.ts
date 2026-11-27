@@ -271,7 +271,9 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * reached the person (skipped before any try went to Graph, or refused at
  * once on its only try, whether or not a later claim of it was skipped before
  * Graph) is queued again by a restore after it came due; one whose try Graph
- * may have taken is not (emailAlertQueue.ts, enqueueEmailAlertSends). The restore time is the row's
+ * may have taken is not, and neither is one whose last try failed before Graph
+ * in a way the send log cannot tell from that (a token failure, a claim that
+ * stopped at the lease check) (emailAlertQueue.ts, enqueueEmailAlertSends). The restore time is the row's
  * updated_at: setAnnouncementActive is the only write to a notice and stamps
  * it on every call, so a Restore pressed on a notice already live counts the
  * same and reaches only those who have not had it.
