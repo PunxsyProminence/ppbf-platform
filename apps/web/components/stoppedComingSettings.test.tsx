@@ -143,14 +143,17 @@ test('the status line is mounted, empty, before any save', async () => {
 });
 
 test('Save is aria-disabled, and sends nothing, until the choice changes', async () => {
-  respond(loaded(14, true));
+  respond(loaded(21, false));
   await mount();
   expect(ariaDisabled(saveButton())).toBe(true);
+  // aria-disabled only: neither button is natively disabled.
+  expect(saveButton().disabled).toBe(false);
+  expect(defaultButton().disabled).toBe(false);
   await press(saveButton());
   expect(putCalls()).toHaveLength(0);
-  fireEvent.change(select(), { target: { value: '21' } });
+  fireEvent.change(select(), { target: { value: '28' } });
   expect(ariaDisabled(saveButton())).toBe(false);
-  fireEvent.change(select(), { target: { value: '14' } });
+  fireEvent.change(select(), { target: { value: '21' } });
   expect(ariaDisabled(saveButton())).toBe(true);
 });
 
@@ -215,6 +218,9 @@ describe('a read that fails, or is not the setting\'s shape, shows the alert and
     expect(screen.getByRole('alert').textContent).toBe(COULD_NOT_READ);
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByText(SERVER_ERROR)).toBeNull();
+    // A first read that fails leaves focus to the page.
+    expect(screen.getByRole('alert').hasAttribute('tabindex')).toBe(false);
+    expect(document.activeElement).toBe(document.body);
   });
 
   test('a thrown fetch', async () => {
@@ -303,6 +309,8 @@ describe('a PUT whose outcome is not known reads the setting again and shows wha
     expect(screen.getByRole('alert').textContent).toBe(NOT_READ_AGAIN);
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+    // The drawer it replaced had focus, so focus is sent to the alert.
+    expect(document.activeElement).toBe(screen.getByRole('alert'));
   });
 });
 
@@ -317,6 +325,8 @@ test('while a PUT runs, both buttons are aria-disabled and send nothing; only th
   expect(useDefault.textContent).toBe('Use the default');
   expect(ariaDisabled(save)).toBe(true);
   expect(ariaDisabled(useDefault)).toBe(true);
+  expect(save.disabled).toBe(false);
+  expect(useDefault.disabled).toBe(false);
   expect(select().disabled).toBe(true);
   await press(save);
   await press(useDefault);
@@ -328,6 +338,22 @@ test('while a PUT runs, both buttons are aria-disabled and send nothing; only th
   expect(ariaDisabled(useDefault)).toBe(false);
 });
 
+test('while a "Use the default" PUT runs, that button says "Saving…" and Save still says "Save"', async () => {
+  respond(loaded(21, false), 'hold');
+  await mount();
+  const save = saveButton();
+  const useDefault = defaultButton();
+  await press(useDefault);
+  expect(useDefault.textContent).toBe('Saving…');
+  expect(save.textContent).toBe('Save');
+  expect(ariaDisabled(save)).toBe(true);
+  expect(ariaDisabled(useDefault)).toBe(true);
+  await act(async () => {
+    release({ status: 200, body: { ok: true, gap_days: 14, is_default: true } });
+  });
+  expect(screen.getByRole('status').textContent).toBe('The default, 2 weeks, applies again.');
+});
+
 describe('focus after a press', () => {
   test('after a confirmed "Use the default", whose button goes, focus is on the select', async () => {
     respond(loaded(21, false), { status: 200, body: { ok: true, gap_days: 14, is_default: true } });
@@ -337,6 +363,26 @@ describe('focus after a press', () => {
     await press(useDefault);
     expect(useDefault.isConnected).toBe(false);
     expect(document.activeElement).toBe(select());
+  });
+
+  test('focus moved elsewhere while the PUT runs is left there', async () => {
+    respond(loaded(21, false), 'hold');
+    await mount();
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    try {
+      const useDefault = defaultButton();
+      useDefault.focus();
+      await press(useDefault);
+      elsewhere.focus();
+      await act(async () => {
+        release({ status: 200, body: { ok: true, gap_days: 14, is_default: true } });
+      });
+      expect(useDefault.isConnected).toBe(false);
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      elsewhere.remove();
+    }
   });
 
   test('after a Save, focus is still on the Save button', async () => {
@@ -363,6 +409,9 @@ test('a refusal stays on screen an hour later (Law 7: no timer), and the next pr
       jest.advanceTimersByTime(60 * 60 * 1000);
     });
     expect(status.textContent).toBe(REFUSED_403);
+    // Changing the select does not clear it either.
+    fireEvent.change(select(), { target: { value: '28' } });
+    expect(status.textContent).toBe(REFUSED_403);
 
     respond(loaded(14, true), 'hold');
     const save = saveButton();
@@ -370,10 +419,10 @@ test('a refusal stays on screen an hour later (Law 7: no timer), and the next pr
     expect(status.textContent).toBe('');
     expect(save.textContent).toBe('Saving…');
     await act(async () => {
-      release({ status: 200, body: { ok: true, gap_days: 21, is_default: false } });
+      release({ status: 200, body: { ok: true, gap_days: 28, is_default: false } });
     });
     expect(screen.getByRole('status')).toBe(status);
-    expect(status.textContent).toBe('Saved: 3 weeks.');
+    expect(status.textContent).toBe('Saved: 4 weeks.');
   } finally {
     jest.useRealTimers();
   }

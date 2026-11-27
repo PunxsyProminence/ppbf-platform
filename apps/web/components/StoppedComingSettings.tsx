@@ -22,7 +22,9 @@ import { apiBase } from '@/lib/apiBase';
  * Every PUT outcome is said by one status line, worded only from what came
  * back, never with the server's error text. It is always mounted once the
  * setting is read: a live region inserted already filled is often not
- * announced. The next press clears it first; no timer does. A Save is
+ * announced. The next press clears it first; no timer does. The one
+ * exception: when the outcome is not known and the re-read fails, an alert
+ * replaces the drawer, and focus is sent to it. A Save is
  * confirmed only by the number sent coming back as the gym's own setting.
  * When the outcome is not known, the setting is read again, so the old one is
  * not left on screen as fact; a refusal (401, 403, other 4xx) changed nothing
@@ -34,7 +36,8 @@ const COULD_NOT_READ = 'The setting could not be read. Reload to try again.';
 type Load =
   | { readonly state: 'loading' }
   /** A refused or failed read: the alert's words, and no select. */
-  | { readonly state: 'error'; readonly words: string }
+  /** readAgain: the re-read after a PUT failed; focus is sent to the alert then, never on a first read. */
+  | { readonly state: 'error'; readonly words: string; readonly readAgain?: true }
   | {
       readonly state: 'loaded';
       readonly choices: readonly number[];
@@ -89,8 +92,8 @@ export default function StoppedComingSettings() {
   const [line, setLine] = useState('');
   // Set before the first await, so a second click before React re-renders sends nothing.
   const inFlight = useRef(false);
-  const pressed = useRef<HTMLElement | null>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
+  const alertRef = useRef<HTMLParagraphElement>(null);
   // Counts presses that have settled; the focus check below runs on each.
   const [settled, setSettled] = useState(0);
 
@@ -107,20 +110,21 @@ export default function StoppedComingSettings() {
     };
   }, []);
 
-  // After a press, focus goes to the select when the pressed button has gone ("Use the default"
-  // after it worked) or nothing has focus; focus anywhere else is left alone.
+  // After a press, focus is left alone unless nothing or the body has focus. A button that
+  // unmounted while focused ("Use the default" after it worked, or the whole drawer after a failed
+  // re-read) leaves it on the body. Then it goes to the alert that replaced the drawer, if there is
+  // one, else to the select.
   useEffect(() => {
     if (settled === 0) return;
     const active = document.activeElement;
-    if (pressed.current?.isConnected && active !== null && active !== document.body) return;
-    selectRef.current?.focus();
+    if (active !== null && active !== document.body) return;
+    (alertRef.current ?? selectRef.current)?.focus();
   }, [settled]);
 
   /** A number of days for "Save", or null for "Use the default". */
-  const put = async (gapDays: number | null, button: HTMLElement) => {
+  const put = async (gapDays: number | null) => {
     if (load.state !== 'loaded' || inFlight.current) return;
     inFlight.current = true;
-    pressed.current = button;
     setSaving(gapDays === null ? 'default' : 'save');
     setLine('');
     try {
@@ -158,6 +162,7 @@ export default function StoppedComingSettings() {
       if (read.state !== 'loaded') {
         setLoad({
           state: 'error',
+          readAgain: true,
           words: 'It is not known whether the change was saved, and the setting could not be read again. Reload to see it.',
         });
         return;
@@ -173,7 +178,13 @@ export default function StoppedComingSettings() {
   };
 
   if (load.state === 'loading') return <p className="t-muted">Reading the setting…</p>;
-  if (load.state === 'error') return <p role="alert" className="t-body">{load.words}</p>;
+  if (load.state === 'error') {
+    return (
+      <p ref={load.readAgain ? alertRef : undefined} tabIndex={load.readAgain ? -1 : undefined} role="alert" className="t-body">
+        {load.words}
+      </p>
+    );
+  }
 
   // The select's value: what the admin picked, else what is saved.
   const current = choice ?? load.saved;
@@ -202,8 +213,8 @@ export default function StoppedComingSettings() {
           type="button"
           className="btn"
           aria-disabled={saving !== null || nothingToSave}
-          onClick={(event) => {
-            if (saving === null && !nothingToSave) void put(current, event.currentTarget);
+          onClick={() => {
+            if (saving === null && !nothingToSave) void put(current);
           }}
         >
           {saving === 'save' ? 'Saving…' : 'Save'}
@@ -213,8 +224,8 @@ export default function StoppedComingSettings() {
             type="button"
             className="btn btn--ghost"
             aria-disabled={saving !== null}
-            onClick={(event) => {
-              if (saving === null) void put(null, event.currentTarget);
+            onClick={() => {
+              if (saving === null) void put(null);
             }}
           >
             {saving === 'default' ? 'Saving…' : 'Use the default'}
