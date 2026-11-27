@@ -8910,6 +8910,130 @@
     }
   },
   {
+    "id": "app/api/pilot/push/subscription/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/push/subscription",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Whether web push is offered to the caller (lane W5-WP WP-1b; OW27-18 A: the same people as the email alert switch, emailAlertUserTypeFor), with the public key a browser subscribes with. { ok: true, offered: false } for an athlete under 18, with no date of birth or no linked athlete record, and for everyone while the three push settings are unset or malformed (fail closed). WRITES only for a caller no longer offered push: it deletes that caller's own browser rows in this gym, audited (entity push_browser; no endpoint or key). Takes no fields and can only remove the caller's own rows, so it needs no same-origin check (the app has none; as email-alerts/me's GET). A device marked as a gym tablet is never offered push (OW27-17 B): that mark lives in the browser, so the screen keeps the rule (src/lib/pushOffer.ts).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/push/subscription/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/push/subscription",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field + the store refuses a caller not offered push (403)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Read only: whether the browser named by { endpoint } (body only, never the URL) is on for the caller in this gym; { on }. 403 for a caller not offered push, and nothing is removed (GET or a save clears a caller no longer offered).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/push/subscription/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/push/subscription",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field + the store refuses a caller not offered push (403)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Turns web push on for this browser, for the caller, in this gym. Body is exactly { endpoint, keys: { p256dh, auth } } as PushSubscription.toJSON gives it. The endpoint must be an https URL on a plain DNS host with a path (no IP literal, port, userinfo, '@' or backslash; the table's CHECK too), p256dh exactly 65 bytes and auth at least 16 (web-push 3.6.7). Under an advisory lock on the endpoint: removes the browser from any other person in any gym (one person per browser), then saves it for the caller; at most 10 browsers per person per gym, the one saved longest ago dropped. A key over 130 characters is refused before any other work. 403 for a caller not offered push or with the keys unset, and, decided again under the save's own locks (the athlete row, the account, the gym, in the email store's order), when the login is off or deleted, the membership of this gym is off or its role is of another user type, the gym is not active, or an athlete is now under 18; nothing is written then. 409 with nothing written if the save deadlocks with another (two people at the cap swapping browsers). Audited (on, saved again, moved count, dropped count); a browser taken from another person is also audited in the gym that lost it, with no actor and naming only that gym's own member. Never the endpoint or a key.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/push/subscription/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/push/subscription",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Turns web push off for the browser named by { endpoint }, for the caller, in this gym only; always allowed, an opt-out is never refused. Audited when a row was removed; never the endpoint or a key.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/gym-tvs/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/gym-tvs",

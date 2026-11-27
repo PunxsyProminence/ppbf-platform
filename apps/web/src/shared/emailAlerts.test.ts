@@ -57,7 +57,7 @@ describe('the user types', () => {
 describe('the events each user type can be sent (EM-5)', () => {
   it('are Overwatch\'s Q1.9 reading, gym notices only (GO on #2159, condition 1)', () => {
     expect(EMAIL_ALERT_EVENTS).toEqual({
-      staff: ['safety_escalation', 'parent_reply', 'gym_notice'],
+      staff: ['safety_escalation', 'parent_reply', 'guardian_message', 'gym_notice'],
       parent: ['family_note', 'gym_notice'],
       adult_athlete: ['coach_message', 'gym_notice'],
     });
