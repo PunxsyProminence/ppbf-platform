@@ -6,11 +6,12 @@ name: cleanup-audit-test-records
 # text in the pilot schema. Jason ruled "2A", remove them (OD-2026-10-11-009
 # item 2); App Overwatch's GO, QR and QS answers are on #2227.
 #
-# mode dry-run (the default) only reports. mode apply (B6-3) acts only on the
-# plan that was reviewed: it needs kinds, confirm_delete set to the phrase, and
-# expected_fingerprint set to the plan_fingerprint of a dry run of the same
-# scope; the script locks the planned rows, recomputes the fingerprint and
-# refuses on any difference, before its first write. Each apply needs Jason's
+# mode dry-run (the default) only reports; kinds, when given, are bound into
+# its fingerprint. mode apply (B6-3) acts only on the plan that was reviewed: it
+# needs kinds, confirm_delete set to the phrase, and expected_fingerprint set
+# to the plan_fingerprint of a dry run of the same scope and the same kinds; the
+# script locks the planned rows, recomputes the fingerprint and refuses on any
+# difference, before its first write. Each apply needs Jason's
 # word (the brief: production data). A production dispatch runs in the
 # production environment, which holds it for that environment's approval, as
 # RR-1's workflow does.
@@ -56,7 +57,7 @@ on:
           - dry-run
           - apply
       kinds:
-        description: For apply mode, the kinds to act on, comma separated (classes, tvs, test-organizations, hiit-fit)
+        description: The kinds to act on (apply) or to bind into the dry run's fingerprint, comma separated (classes, tvs, test-organizations, hiit-fit)
         required: false
         type: string
       confirm_delete:
@@ -118,14 +119,18 @@ jobs:
             echo "::error::organization, kinds, confirm_delete and expected_fingerprint must be one line, with no control characters."
             exit 1
           fi
+          if [ -n "$KINDS" ] && [[ ! "$KINDS" =~ ^[a-z-]+(,[a-z-]+)*$ ]]; then
+            echo "::error::kinds must be classes, tvs, test-organizations or hiit-fit, comma separated, no spaces."
+            exit 1
+          fi
           if [ "$MODE" = "dry-run" ]; then
-            if [ -n "$KINDS$CONFIRM_DELETE$EXPECTED_FINGERPRINT" ]; then
-              echo "::error::kinds, confirm_delete and expected_fingerprint are for apply mode only."
+            if [ -n "$CONFIRM_DELETE$EXPECTED_FINGERPRINT" ]; then
+              echo "::error::confirm_delete and expected_fingerprint are for apply mode only."
               exit 1
             fi
           elif [ "$MODE" = "apply" ]; then
-            if [[ ! "$KINDS" =~ ^[a-z-]+(,[a-z-]+)*$ ]]; then
-              echo "::error::apply mode needs kinds: classes, tvs, test-organizations or hiit-fit, comma separated."
+            if [ -z "$KINDS" ]; then
+              echo "::error::apply mode needs kinds: exactly the kinds of the dry run you reviewed."
               exit 1
             fi
             if [ "$CONFIRM_DELETE" != "DELETE AUDIT TEST RECORDS" ]; then
@@ -284,11 +289,11 @@ jobs:
               echo 'No result line was captured; read the job log.'
             fi
             echo ''
-            echo 'The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the'
-            echo 'job log. It prints ids, counts and keyed references, never a record'"'"'s text.'
             if [ "$MODE" = "apply" ]; then
-              echo 'Apply mode: the result line above says what was written, or that nothing was.'
+              echo 'Apply mode: the applied, nothing-to-apply or refused line above says what was written, if anything.'
             else
+              echo 'The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the'
+              echo 'job log. It prints ids, counts and keyed references, never a record'"'"'s text.'
               echo 'Dry run: nothing was written.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

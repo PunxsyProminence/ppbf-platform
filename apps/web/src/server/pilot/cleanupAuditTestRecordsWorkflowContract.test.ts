@@ -5,7 +5,8 @@
 // Pinned here, from the real file: the seven inputs; mode apply is the only
 // way PPBF_AUDIT_TEST_CLEANUP_APPLY becomes 'true', and only in the tool
 // step; the guard refuses an apply without kinds, the phrase and a
-// fingerprint, and a dry run that carries any of them; the job runs in the environment named by
+// fingerprint, and a dry run that carries the phrase or a fingerprint (a dry
+// run may name kinds: they are bound into its fingerprint); the job runs in the environment named by
 // `target`; the secrets are repair-research-baseline.yml's plus the reference
 // key App Overwatch approved (QR A, #2227); free text and the key reach the
 // shell only through the environment. The guard, tool and record steps are
@@ -269,6 +270,7 @@ describe(`${FILE}: the guard step, run`, () => {
     expect(guard({ ORGANIZATION: 'ALL_ORGANIZATIONS' }).status).toBe(0);
     expect(guard(APPLY).status).toBe(0);
     expect(guard({ ...APPLY, KINDS: 'test-organizations' }).status).toBe(0);
+    expect(guard({ KINDS: 'classes,tvs' }).status).toBe(0);
   });
 
   test.each([
@@ -280,12 +282,12 @@ describe(`${FILE}: the guard step, run`, () => {
     ['an organization with a carriage return', { ORGANIZATION: 'gym\r' }, 'one line'],
     ['an organization with a tab', { ORGANIZATION: 'gym\tx' }, 'one line'],
     ['a mode that is neither', { MODE: 'delete' }, 'mode must be dry-run or apply'],
-    ['a dry run with kinds', { KINDS: 'classes' }, 'for apply mode only'],
+    ['a dry run with malformed kinds', { KINDS: 'classes, tvs' }, 'kinds must be'],
     ['a dry run with the phrase', { CONFIRM_DELETE: PHRASE }, 'for apply mode only'],
     ['a dry run with a fingerprint', { EXPECTED_FINGERPRINT: FINGERPRINT }, 'for apply mode only'],
     ['an apply with no kinds', { ...APPLY, KINDS: '' }, 'apply mode needs kinds'],
-    ['an apply with a space in kinds', { ...APPLY, KINDS: 'classes, tvs' }, 'apply mode needs kinds'],
-    ['an apply with kinds in capitals', { ...APPLY, KINDS: 'CLASSES' }, 'apply mode needs kinds'],
+    ['an apply with a space in kinds', { ...APPLY, KINDS: 'classes, tvs' }, 'kinds must be'],
+    ['an apply with kinds in capitals', { ...APPLY, KINDS: 'CLASSES' }, 'kinds must be'],
     ['an apply with no phrase', { ...APPLY, CONFIRM_DELETE: '' }, 'apply mode needs confirm_delete'],
     ['an apply with the phrase in lower case', { ...APPLY, CONFIRM_DELETE: PHRASE.toLowerCase() }, 'apply mode needs confirm_delete'],
     ['an apply with no fingerprint', { ...APPLY, EXPECTED_FINGERPRINT: '' }, 'apply mode needs expected_fingerprint'],
@@ -366,9 +368,11 @@ describe(`${FILE}: the record step, run`, () => {
     expect(summaryFor('')).toContain('No result line was captured');
   });
 
-  test('a dry run says nothing was written', () => {
-    expect(summaryFor(`${resultLine}\n`)).toContain('### Audit test record cleanup (dry-run)');
-    expect(summaryFor(`${resultLine}\n`)).toContain('Dry run: nothing was written.');
+  test('a dry run says nothing was written, and where the full plan is', () => {
+    const summary = summaryFor(`${resultLine}\n`);
+    expect(summary).toContain('### Audit test record cleanup (dry-run)');
+    expect(summary).toContain('Dry run: nothing was written.');
+    expect(summary).toContain('The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the');
   });
 
   test('an apply records its applied line, or that there was nothing to apply, with the mode, kinds and fingerprint', () => {
@@ -380,6 +384,8 @@ describe(`${FILE}: the record step, run`, () => {
     expect(summary).toContain('- kinds: `classes`');
     expect(summary).toContain(`- expected fingerprint: \`${FINGERPRINT}\``);
     expect(summary).not.toContain('nothing was written');
+    expect(summary).not.toContain('The full plan');
+    expect(summary).toContain('Apply mode: the applied, nothing-to-apply or refused line above says what was written, if anything.');
     const nothing = '{"event":"audit_test_cleanup.nothing-to-apply","kinds":["tvs"]}';
     expect(summaryFor(`${nothing}\n`, values)).toContain(nothing);
   });

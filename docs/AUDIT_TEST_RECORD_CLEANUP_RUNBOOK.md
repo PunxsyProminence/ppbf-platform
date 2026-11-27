@@ -33,8 +33,23 @@ only as an empty duplicate, its contents shown to him first). App Overwatch's GO
   `tables_skipped_no_organization_column`; run `ALL_ORGANIZATIONS` to sweep those. Also
   `columns_not_swept_by_type` (arrays and json), `truncated_tables` (more than 500 matching rows; STRICT
   rows first) and `tables_failed` (a sweep table that could not be read, by error code).
-- **`plan_fingerprint`**: over everything an apply acts on or refuses on. An apply re-reads the plan with
-  its rows locked and refuses unless the fingerprint is the one App Overwatch and Jason reviewed.
+- **`plan_fingerprint`**: sha256 over the markers and STRICT rule, the scope, the `kinds` when the run names
+  them (sorted), and these raw values:
+  - each STRICT class (id, title, status, start and end, whether it is running now, whether an
+    `activity_log` or `floor_plans_daily` row names it), every registration and attendance row on it (ids,
+    athlete ids, statuses), its tied runs (id, state) and register marks, and any unknown or missing
+    foreign key;
+  - each STRICT TV (id, pairing and revocation times, whether it shows a session or holds a pair code);
+  - each test gym and "hiit fit" in scope (status, whether the name matches) and, for "hiit fit", the
+    names of the tables it holds rows in.
+
+  It leaves out, on purpose: live sessions (they move with every login; the apply revokes whatever is live
+  when it runs, and counts them); how many rows "hiit fit" holds (whether it holds any decides K4's
+  refusal, so the table names are in); members, rows per table and audit history of the test gyms and
+  classes, and a TV's last-seen time (report only; they move routinely and would make a reviewed plan go
+  stale); and the sweep (report only). An apply re-reads the plan with its rows locked and refuses unless
+  the fingerprint, with its kinds, is the one App Overwatch and Jason reviewed. With no kinds the value is
+  B6-1's.
 
 **Never printed:** any record's text (titles, names, notes, TV names) and any raw person id. Person ids
 and keys that are not class, run, TV or organization ids or non-person uuids print as a reference, an
@@ -70,12 +85,14 @@ the report stands.
 
 ## Applying it (App Overwatch, with Jason's word for each run)
 
-1. **Dry run first**, on the exact scope the apply will use (`target` and `organization`). Report it to
-   Jason as above and get his word for this run, naming the kinds.
-2. **Dispatch** with `mode` apply, the same `target` and `organization`, `kinds` (comma separated, no
-   spaces), `confirm_delete` `DELETE AUDIT TEST RECORDS`, and `expected_fingerprint` the dry run's
-   `plan_fingerprint`. Anything changed since the dry run refuses with `PLAN_FINGERPRINT_MISMATCH` and
-   writes nothing: dry-run again and re-review.
+1. **Dry run first**, on the exact scope the apply will use (`target` and `organization`) and naming the
+   kinds it will apply (`kinds`, comma separated, no spaces). The dry run Jason sees must name those kinds:
+   its `plan` and result line print them, and its fingerprint binds them. Get his word for this run.
+2. **Dispatch** with `mode` apply, the same `target`, `organization` and exactly those `kinds`,
+   `confirm_delete` `DELETE AUDIT TEST RECORDS`, and `expected_fingerprint` the dry run's
+   `plan_fingerprint`. Other kinds, or anything changed since the dry run, refuses with
+   `PLAN_FINGERPRINT_MISMATCH` and writes nothing. The refusal prints only the fingerprint it expected:
+   dry-run again, and have the new plan reviewed.
 3. **One kind group per run**, as App Overwatch chooses. What each kind writes, in one transaction:
    - `classes` (Q1 A): deletes every STRICT class in scope with its attendance and registrations. Its tied
      runs and register marks are kept, with the tie cleared (the foreign keys' SET NULL). Refused
@@ -97,11 +114,21 @@ the report stands.
    where classes were deleted, otherwise `update`). `nothing-to-apply` means the kinds asked for had
    nothing planned; nothing was written. Any other refusal (`UNKNOWN_TRIGGER`, `WRITE_COUNT_MISMATCH`,
    `END_STATE_MISMATCH`, ...) rolled everything back.
-5. **Dry-run again** on the same scope: what was applied is gone from the plan.
+5. **Dry-run again** on the same scope and kinds. What changes, per kind:
+   - `classes`: the deleted classes are gone from `classes`, with their sign-ups and attendance.
+   - `tvs`: the TVs stay in `tvs.marked`, now with `revoked_at` set and no session or pair code. A second
+     apply of `tvs` disconnects them again, which changes nothing.
+   - `test-organizations` and `hiit-fit`: the organization stays listed, with status `inactive`.
 
-The apply locks the rows it writes (and a named organization's row and live sessions) for its
-transaction, so dispatch it outside class hours. It refuses if any trigger it does not know exists on a
-table it writes.
+**Locks and windows.** The apply locks the rows it writes for its transaction: the planned classes and the
+rows hanging off them, the STRICT TVs, and a named organization's row (`FOR UPDATE`, which also holds back
+any insert whose foreign key names that organization) and its live sessions. Dispatch it outside class
+hours. For `hiit-fit` it re-counts, after its writes, every table with an `organization_id` (with or
+without a foreign key) and rolls back if any but `organizations` and `audit_events` holds a row for it.
+One window stays open: `activity_log` and `floor_plans_daily` name a class with no foreign key, so
+nothing locks them. A row naming a planned class that lands after the end-state read and before the commit
+is left naming a deleted class. The end state re-reads both just before the commit, so the window is that
+short. The apply refuses if any trigger it does not know exists on a table it writes.
 
 **Target.** The script's target guard is RR-1's (`scripts/lib/postgres-write-target.mjs`): it refuses a
 connection whose host or database is not the declared one. The declared target is the environment's
