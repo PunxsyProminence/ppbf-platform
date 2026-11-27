@@ -22,14 +22,19 @@ import { apiBase } from '@/lib/apiBase';
  * Every PUT outcome is said by one status line, worded only from what came
  * back, never with the server's error text. It is always mounted once the
  * setting is read: a live region inserted already filled is often not
- * announced. The next press clears it first; no timer does.
+ * announced. The next press clears it first; no timer does. A Save is
+ * confirmed only by the number sent coming back as the gym's own setting.
+ * When the outcome is not known, the setting is read again, so the old one is
+ * not left on screen as fact; a refusal (401, 403, other 4xx) changed nothing
+ * and is not read again (reviewers P and Q, round 2).
  */
 
-const NOT_KNOWN = 'It is not known whether the change was saved. Reload to see the setting.';
+const COULD_NOT_READ = 'The setting could not be read. Reload to try again.';
 
 type Load =
   | { readonly state: 'loading' }
-  | { readonly state: 'error' }
+  /** A refused or failed read: the alert's words, and no select. */
+  | { readonly state: 'error'; readonly words: string }
   | {
       readonly state: 'loaded';
       readonly choices: readonly number[];
@@ -58,42 +63,65 @@ function readSetting(body: unknown, choices: readonly number[]): { gapDays: numb
   return { gapDays, isDefault };
 }
 
+/** The GET with its shape check: the setting as loaded, or the alert's words for a refused or failed read. */
+async function readGap(): Promise<Load> {
+  try {
+    const response = await fetch(`${apiBase()}/api/pilot/stopped-coming/gap`, { credentials: 'include', cache: 'no-store' });
+    if (response.status === 401) return { state: 'error', words: 'Your sign-in has expired. Sign in again to read this setting.' };
+    if (response.status === 403) return { state: 'error', words: 'Only the gym admin can read this setting.' };
+    if (!response.ok) throw new Error(String(response.status));
+    const body: unknown = await response.json();
+    const choices = (body as { choices?: unknown } | null)?.choices;
+    if (!isChoices(choices)) throw new Error('shape');
+    const setting = readSetting(body, choices);
+    if (!setting) throw new Error('shape');
+    return { state: 'loaded', choices, saved: setting.gapDays, isDefault: setting.isDefault };
+  } catch {
+    return { state: 'error', words: COULD_NOT_READ };
+  }
+}
+
 export default function StoppedComingSettings() {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [choice, setChoice] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Which button's request is running: only that one says "Saving…".
+  const [saving, setSaving] = useState<'save' | 'default' | null>(null);
   const [line, setLine] = useState('');
   // Set before the first await, so a second click before React re-renders sends nothing.
   const inFlight = useRef(false);
+  const pressed = useRef<HTMLElement | null>(null);
+  const selectRef = useRef<HTMLSelectElement>(null);
+  // Counts presses that have settled; the focus check below runs on each.
+  const [settled, setSettled] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/stopped-coming/gap`, { credentials: 'include', cache: 'no-store' });
-        if (!response.ok) throw new Error(String(response.status));
-        const body: unknown = await response.json();
-        const choices = (body as { choices?: unknown } | null)?.choices;
-        if (!isChoices(choices)) throw new Error('shape');
-        const setting = readSetting(body, choices);
-        if (!setting) throw new Error('shape');
-        if (cancelled) return;
-        setLoad({ state: 'loaded', choices, saved: setting.gapDays, isDefault: setting.isDefault });
-        setChoice(setting.gapDays);
-      } catch {
-        if (!cancelled) setLoad({ state: 'error' });
-      }
+      const read = await readGap();
+      if (cancelled) return;
+      setLoad(read);
+      if (read.state === 'loaded') setChoice(read.saved);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
+  // After a press, focus goes to the select when the pressed button has gone ("Use the default"
+  // after it worked) or nothing has focus; focus anywhere else is left alone.
+  useEffect(() => {
+    if (settled === 0) return;
+    const active = document.activeElement;
+    if (pressed.current?.isConnected && active !== null && active !== document.body) return;
+    selectRef.current?.focus();
+  }, [settled]);
+
   /** A number of days for "Save", or null for "Use the default". */
-  const put = async (gapDays: number | null) => {
+  const put = async (gapDays: number | null, button: HTMLElement) => {
     if (load.state !== 'loaded' || inFlight.current) return;
     inFlight.current = true;
-    setSaving(true);
+    pressed.current = button;
+    setSaving(gapDays === null ? 'default' : 'save');
     setLine('');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/stopped-coming/gap`, {
@@ -101,54 +129,66 @@ export default function StoppedComingSettings() {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gap_days: gapDays }),
-      });
-      if (response.status === 401) {
+      }).catch(() => null);
+      // Refused: nothing was changed, so the setting shown stands and is not read again.
+      if (response?.status === 401) {
         setLine('Not saved: your sign-in has expired. Sign in again, then try again.');
         return;
       }
-      if (response.status === 403) {
+      if (response?.status === 403) {
         setLine('Not saved: only the gym admin can change this.');
         return;
       }
-      if (response.status >= 400 && response.status < 500) {
+      if (response && response.status >= 400 && response.status < 500) {
         setLine('Not saved: the server refused the change, so nothing was changed.');
         return;
       }
       // A 204's empty body, or one that is not JSON, reads as null.
-      const setting = response.ok ? readSetting(await response.json().catch(() => null), load.choices) : null;
-      // A Save is confirmed only as the gym's own setting; "Use the default" only as the default.
-      if (!setting || setting.isDefault !== (gapDays === null)) {
-        setLine(NOT_KNOWN);
+      const setting = response?.ok ? readSetting(await response.json().catch(() => null), load.choices) : null;
+      // A Save is confirmed only as the gym's own setting of the number sent; "Use the default" only as the default.
+      if (setting && (gapDays === null ? setting.isDefault : !setting.isDefault && setting.gapDays === gapDays)) {
+        setLoad({ state: 'loaded', choices: load.choices, saved: setting.gapDays, isDefault: setting.isDefault });
+        setChoice(setting.gapDays);
+        const label = gapLabel(setting.gapDays);
+        setLine(setting.isDefault ? `The default, ${label}, applies again.` : `Saved: ${label}.`);
         return;
       }
-      setLoad({ state: 'loaded', choices: load.choices, saved: setting.gapDays, isDefault: setting.isDefault });
-      setChoice(setting.gapDays);
-      const label = gapLabel(setting.gapDays);
-      setLine(setting.isDefault ? `The default, ${label}, applies again.` : `Saved: ${label}.`);
-    } catch {
-      setLine(NOT_KNOWN);
+      // Not known (a 5xx, no answer, or a 2xx that does not confirm): the old setting is not shown as fact.
+      const read = await readGap();
+      if (read.state !== 'loaded') {
+        setLoad({
+          state: 'error',
+          words: 'It is not known whether the change was saved, and the setting could not be read again. Reload to see it.',
+        });
+        return;
+      }
+      setLoad(read);
+      setChoice(read.saved);
+      setLine('It is not known whether that change was saved. The setting shown has been read again.');
     } finally {
       inFlight.current = false;
-      setSaving(false);
+      setSaving(null);
+      setSettled((count) => count + 1);
     }
   };
 
   if (load.state === 'loading') return <p className="t-muted">Reading the setting…</p>;
-  if (load.state === 'error') {
-    return <p role="alert" className="t-body">The setting could not be read. Reload to try again.</p>;
-  }
+  if (load.state === 'error') return <p role="alert" className="t-body">{load.words}</p>;
 
   // The select's value: what the admin picked, else what is saved.
   const current = choice ?? load.saved;
+  const nothingToSave = current === load.saved;
+  // aria-disabled, not disabled, so focus stays on a pressed button; the handlers do nothing then.
   return (
     <div>
       <label htmlFor="stopped-coming-gap" className="t-label block">Listed after not coming for</label>
       <div className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s3)]">
         <select
+          ref={selectRef}
           id="stopped-coming-gap"
           className="input"
           value={current}
-          disabled={saving}
+          disabled={saving !== null}
           onChange={(event) => {
             const next = Number(event.target.value);
             if (load.choices.includes(next)) setChoice(next);
@@ -158,12 +198,26 @@ export default function StoppedComingSettings() {
             <option key={days} value={days}>{gapLabel(days)}</option>
           ))}
         </select>
-        <button type="button" className="btn" disabled={saving || current === load.saved} onClick={() => void put(current)}>
-          {saving ? 'Saving…' : 'Save'}
+        <button
+          type="button"
+          className="btn"
+          aria-disabled={saving !== null || nothingToSave}
+          onClick={(event) => {
+            if (saving === null && !nothingToSave) void put(current, event.currentTarget);
+          }}
+        >
+          {saving === 'save' ? 'Saving…' : 'Save'}
         </button>
         {load.isDefault ? null : (
-          <button type="button" className="btn btn--ghost" disabled={saving} onClick={() => void put(null)}>
-            Use the default
+          <button
+            type="button"
+            className="btn btn--ghost"
+            aria-disabled={saving !== null}
+            onClick={(event) => {
+              if (saving === null) void put(null, event.currentTarget);
+            }}
+          >
+            {saving === 'default' ? 'Saving…' : 'Use the default'}
           </button>
         )}
       </div>

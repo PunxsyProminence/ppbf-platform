@@ -18,7 +18,10 @@ import BackHome from '@/components/BackHome';
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
  * and sounds, on one page in the office.
  *
- * One desk, five drawers:
+ * One desk, six drawers:
+ *
+ *   0. THE GYM PROFILE. The stored profile every page reads, edited here
+ *      (lane L31 P3).
  *
  *   1. PHOTOGRAPHS. The six wall frames from src/shared/gymPhotos.ts. Each
  *      holds a commissioned placeholder illustration today; a photograph
@@ -401,8 +404,8 @@ export default function AdminCustomizePage() {
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
           The Stopped Coming page lists athletes on the roster who have come before but have not come for this
           long or more, leaving out athletes marked as left the gym and athletes whose program memberships have
-          all lapsed or ended. Coaches and the gym admin read that list. A change shows the next time that page
-          is opened.
+          all lapsed or ended. Coaches and the gym admin read that list. A change applies at once; a Stopped
+          Coming page already open shows it the next time it reads the list.
         </p>
         <div className="mt-[var(--s4)]">
           <StoppedComingSettings />

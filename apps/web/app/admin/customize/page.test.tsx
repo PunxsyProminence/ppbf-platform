@@ -161,11 +161,17 @@ test('a gym admin gets the Stopped coming section, and a platform owner does not
   ).toBe(true);
   cleanup();
 
+  (global.fetch as unknown as jest.Mock).mockClear();
   mockUsePilotSession.mockReturnValue(session('platform_owner'));
   createPersistentRoleSession('platform_owner');
   render(<CustomizePage />);
   await screen.findByText(/ADMINS ONLY/);
   expect(screen.queryByRole('heading', { name: 'Stopped coming' })).toBeNull();
+  // The drawer is not mounted: it asks nothing and shows none of its alerts.
+  expect(
+    (global.fetch as unknown as jest.Mock).mock.calls.some(([url]) => String(url).endsWith('/api/pilot/stopped-coming/gap')),
+  ).toBe(false);
+  expect(screen.queryAllByRole('alert').filter((alert) => /setting/.test(alert.textContent ?? ''))).toEqual([]);
   clearRoleSession();
 });
 
