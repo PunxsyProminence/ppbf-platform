@@ -591,9 +591,31 @@ const ORGANIZATION_NAME_MATCH = {
   'hiit-fit': ['organization_id = $3 and lower(organization_name) = $2', HIIT_FIT.name],
 };
 
+// Organization tables a new row could join with no lock on the organization row: no foreign key
+// on organization_id whose columns are all NOT NULL, is not deferrable, and references a pilot
+// table's organization_id (pilot.organizations itself, or a table that in turn needs a row of this
+// organization). A row there takes no FOR KEY SHARE on the organization (MATCH SIMPLE skips a key
+// with a null column), so for "hiit fit" these tables are held whole, read on, writes wait.
+const ORGANIZATION_TABLES_NO_KEY_HOLDS = `select c.relname as t from pg_catalog.pg_class c
+   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+   join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attname = 'organization_id' and not a.attisdropped
+  where n.nspname = 'pilot' and c.relkind = 'r' and c.relname <> 'organizations' and c.relname <> all($1::text[])
+    and not exists (select 1 from pg_catalog.pg_constraint k
+      join pg_catalog.pg_class rc on rc.oid = k.confrelid join pg_catalog.pg_namespace rn on rn.oid = rc.relnamespace
+     where k.contype = 'f' and k.conrelid = c.oid and rn.nspname = 'pilot' and not k.condeferrable
+       and exists (select 1 from unnest(k.conkey, k.confkey) as u(col, refcol) join pg_catalog.pg_attribute ra
+                     on ra.attrelid = k.confrelid and ra.attnum = u.refcol where u.col = a.attnum and ra.attname = 'organization_id')
+       and not exists (select 1 from unnest(k.conkey) as u(col) join pg_catalog.pg_attribute fa
+                         on fa.attrelid = c.oid and fa.attnum = u.col where not fa.attnotnull))
+  order by 1`;
+
 /** Locks what the kinds write, before the plan is read. Returns the live session count of a named organization. */
 async function lockPlanned(client, kinds, organizationId) {
   if (kinds.includes('classes')) {
+    // activity_log and floor_plans_daily name a class with no foreign key, so no row lock holds
+    // them back: held whole (reads go on, writes wait) until the commit, so none can come to name
+    // a planned class between the plan and the commit.
+    await client.query('lock table pilot.activity_log, pilot.floor_plans_daily in share mode');
     await client.query(`${PLANNED_CLASSES} for update`, [organizationId]);
     for (const [table, column] of CLASS_CHILDREN) {
       await client.query(`select 1 from pilot.${table} t where (t.organization_id, t.${column}) in (${PLANNED_CLASSES}) for update of t`,
@@ -606,9 +628,14 @@ async function lockPlanned(client, kinds, organizationId) {
   }
   if (!kinds.some((kind) => ORGANIZATION_KINDS.includes(kind))) return 0;
   // FOR UPDATE, not FOR NO KEY UPDATE: it also holds back every insert whose
-  // foreign key names this organization (those take FOR KEY SHARE on it), so
-  // "hiit fit" cannot gain a row between the plan and the commit.
+  // foreign key on organization_id names this organization (those take FOR KEY
+  // SHARE on it). Not a row whose key has a null column or no key at all:
+  // for "hiit fit", the tables such rows go in are held whole below.
   await client.query('select 1 from pilot.organizations where organization_id = $1 for update', [organizationId]);
+  if (kinds.includes('hiit-fit')) {
+    const unheld = (await client.query(ORGANIZATION_TABLES_NO_KEY_HOLDS, [EMPTY_EXCEPT])).rows.map((row) => row.t);
+    if (unheld.length > 0) await client.query(`lock table ${unheld.map((t) => `pilot.${ident(t)}`).join(', ')} in share mode`);
+  }
   return (await client.query('select 1 from pilot.session_tokens where organization_id = $1 and revoked_at is null for update',
     [organizationId])).rowCount ?? 0;
 }
@@ -617,9 +644,9 @@ async function lockPlanned(client, kinds, organizationId) {
  * Counts, after the writes, of what must now be gone or changed. Every value
  * must be 0. Not the class children: their foreign keys (checked by the plan,
  * KNOWN_FOREIGN_KEY_MISSING) cascade or set null, so none can still name a
- * deleted class. activity_log and floor_plans_daily name a class with no
- * foreign key, so nothing locks them: a row that lands after this read and
- * before the commit is a known window (the runbook says so).
+ * deleted class. activity_log and floor_plans_daily are held whole by
+ * lockPlanned, and so are the "hiit fit" tables no key holds back; these
+ * re-reads are the check that the locks held.
  */
 async function endState(client, planned, m, tvKeys, organizationId, { hiitFit, tables }) {
   const classKeys = JSON.stringify(m.classes.map(([o, c]) => ({ o, c })));
@@ -719,19 +746,28 @@ export async function applyAuditTestRecords(client, options, { log = defaultLog,
       if (organizationId !== HIIT_FIT.organization_id || !hiit.found_id) return await refuseInside('HIIT_FIT_NOT_NAMED');
       if (hiit.apply_would_refuse.length > 0) return await refuseInside('HIIT_FIT_APPLY_REFUSED', { reasons: hiit.apply_would_refuse });
     }
+    // A STRICT TV already disconnected (revoked, no session, no pair code) is left as it is: the
+    // Disconnect would change nothing. It is reported apart and does not make its gym "affected".
+    const connected = ([, , , , revoked, showing, pending]) => revoked === null || showing === true || pending === true;
+    const markedTvs = kinds.includes('tvs') ? plan.tvs.material : [];
+    const tvsToDisconnect = markedTvs.filter(connected);
+    const tvsAlready = markedTvs.filter((row) => !connected(row)).map(([o, v]) => ({ organization_id: o, tv_id: v }));
     const planned = {
       classes: kinds.includes('classes') ? m.classes.length : 0,
-      tvs: kinds.includes('tvs') ? plan.tvs.material.length : 0,
+      tvs: tvsToDisconnect.length,
       organization: organizationKind !== undefined,
     };
     if (planned.classes === 0 && planned.tvs === 0 && !planned.organization) {
       open = false;
       await client.query('rollback');
-      log('nothing-to-apply', { scope, kinds, plan_fingerprint: plan.fingerprint });
-      return { status: 'nothing-to-apply', scope, kinds, plan_fingerprint: plan.fingerprint };
+      log('nothing-to-apply', { scope, kinds, plan_fingerprint: plan.fingerprint, tvs_already_disconnected: tvsAlready });
+      return { status: 'nothing-to-apply', scope, kinds, plan_fingerprint: plan.fingerprint, tvs_already_disconnected: tvsAlready };
     }
 
-    const done = { classes: 0, registrations: 0, attendance: 0, tied_runs_untied: 0, register_marks_untied: 0, tvs: 0, sessions_revoked: 0 };
+    const done = {
+      classes: 0, registrations: 0, attendance: 0, tied_runs_untied: 0, register_marks_untied: 0, tvs: 0,
+      tvs_already_disconnected: tvsAlready.length, sessions_revoked: 0,
+    };
     const mismatch = (table, plannedCount, written) => refuseInside('WRITE_COUNT_MISMATCH', { table, planned: plannedCount, written });
     if (planned.classes > 0) {
       const values = [JSON.stringify(m.classes.map(([o, c]) => ({ o, c }))), organizationId];
@@ -760,14 +796,15 @@ export async function applyAuditTestRecords(client, options, { log = defaultLog,
         return await mismatch('session_run_athletes', m.register_marks.length, done.register_marks_untied);
       }
     }
-    const tvKeys = JSON.stringify(plan.tvs.material.map(([o, v]) => ({ o, v })));
+    const tvKeys = JSON.stringify(tvsToDisconnect.map(([o, v]) => ({ o, v })));
     if (planned.tvs > 0) {
       // The app's own Disconnect (gymTvs.ts disconnectGymTv), on STRICT TVs only.
       done.tvs = (await client.query(
         `update pilot.gym_tvs t set revoked_at = coalesce(t.revoked_at, now()), current_run_id = null,
                 current_run_set_by_account_id = null, pair_code_hash = null, pair_code_expires_at = null
            from jsonb_to_recordset($1::jsonb) as k(o text, v text)
-          where t.organization_id = k.o and t.tv_id = k.v and ${strictSql('t.tv_name')} and ($2::text is null or t.organization_id = $2)`,
+          where t.organization_id = k.o and t.tv_id = k.v and ${strictSql('t.tv_name')} and ($2::text is null or t.organization_id = $2)
+            and (t.revoked_at is null or t.current_run_id is not null or t.pair_code_hash is not null)`,
         [tvKeys, organizationId],
       )).rowCount ?? 0;
       if (done.tvs !== planned.tvs) return await mismatch('gym_tvs', planned.tvs, done.tvs);
@@ -788,7 +825,7 @@ export async function applyAuditTestRecords(client, options, { log = defaultLog,
     if (mismatches.length > 0) return await refuseInside('END_STATE_MISMATCH', { mismatches });
 
     const classIds = planned.classes > 0 ? m.classes : [];
-    const tvIds = planned.tvs > 0 ? plan.tvs.material : [];
+    const tvIds = tvsToDisconnect;
     const affected = [...new Set([...classIds.map(([o]) => o), ...tvIds.map(([o]) => o),
       ...(planned.organization ? [organizationId] : [])])].sort();
     for (const org of affected) {
@@ -818,7 +855,7 @@ export async function applyAuditTestRecords(client, options, { log = defaultLog,
     const result = {
       status: 'applied', scope, kinds, plan_fingerprint: plan.fingerprint, counts: done, audit_rows: affected.length,
       class_ids: classIds.map(([o, c]) => ({ organization_id: o, class_id: c })),
-      tv_ids: tvIds.map(([o, v]) => ({ organization_id: o, tv_id: v })),
+      tv_ids: tvIds.map(([o, v]) => ({ organization_id: o, tv_id: v })), tvs_already_disconnected: tvsAlready,
       organization_set_inactive: planned.organization ? organizationId : null,
     };
     log('applied', result);

@@ -1145,6 +1145,41 @@ describe('the apply, by kind', () => {
     }
   });
 
+  test('tvs: a STRICT TV already disconnected is left as it is and reported apart; only the connected one counts', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query("update pilot.gym_tvs set revoked_at = now() - interval '1 day' where tv_id = 'tv-strict'");
+      await insertTv(client, GYM, 'tv-strict-2', 'ZZ-AUDIT TV two');
+      const already = await rowsText(client, 'gym_tvs', "tv_id = 'tv-strict'");
+      const fp = await fingerprintOf(client, { organizationId: GYM }, ['tvs']);
+      const result = await apply(client, applyOptions({ organizationId: GYM }, ['tvs'], fp), { log: () => {} });
+      expect(result).toMatchObject({
+        status: 'applied', counts: { tvs: 1, tvs_already_disconnected: 1 },
+        tv_ids: [{ organization_id: GYM, tv_id: 'tv-strict-2' }], tvs_already_disconnected: [{ organization_id: GYM, tv_id: 'tv-strict' }],
+      });
+      expect(await rowsText(client, 'gym_tvs', "tv_id = 'tv-strict'")).toEqual(already);
+      expect(await auditRows(client)).toEqual([expect.objectContaining({
+        organization_id: GYM, details: expect.objectContaining({ tv_ids: ['tv-strict-2'], counts: expect.objectContaining({ tvs_disconnected: 1 }) }),
+      })]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('tvs: only already-disconnected STRICT TVs: nothing to apply, no audit row, nothing written', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query("update pilot.gym_tvs set revoked_at = now() - interval '1 day' where tv_id = 'tv-strict'");
+      const fp = await fingerprintOf(client, { organizationId: GYM }, ['tvs']);
+      const before = await snapshot(client);
+      expect(await apply(client, applyOptions({ organizationId: GYM }, ['tvs'], fp), { log: () => {} }))
+        .toMatchObject({ status: 'nothing-to-apply', tvs_already_disconnected: [{ organization_id: GYM, tv_id: 'tv-strict' }] });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('test-organizations: the named test gym set inactive with its live sessions revoked; never deleted, nobody else touched', async () => {
     const { client } = await freshDatabase();
     try {
@@ -1492,15 +1527,33 @@ describe('the apply\'s checks, each proved by a fault', () => {
   });
 });
 
+test('the Disconnect restates "still connected": an already-disconnected TV slipped into its keys is not counted', async () => {
+  const { client } = await freshDatabase();
+  try {
+    await client.query("update pilot.gym_tvs set revoked_at = now() - interval '1 day' where tv_id = 'tv-strict'");
+    await insertTv(client, GYM, 'tv-strict-2', 'ZZ-AUDIT TV two');
+    const fp = await fingerprintOf(client, { organizationId: GYM }, ['tvs']);
+    const hooks = [{ match: /^update pilot\.gym_tvs/, values: addKey({ o: GYM, v: 'tv-strict' }) }];
+    expect(await apply(faulty(client, hooks), applyOptions({ organizationId: GYM }, ['tvs'], fp), { log: () => {} }))
+      .toMatchObject({ status: 'applied', counts: { tvs: 1, tvs_already_disconnected: 1 } });
+  } finally {
+    await client.end();
+  }
+});
+
 describe('the apply\'s locks', () => {
   test('timeouts first, then a FOR UPDATE on every row it will write, all before the first write', async () => {
     for (const [scope, kinds, locks] of [
-      [{ organizationId: GYM }, ['classes', 'tvs'], [/from pilot\.scheduler_classes c\s+where [\s\S]* for update$/,
+      [{ organizationId: GYM }, ['classes', 'tvs'], [/^lock table pilot\.activity_log, pilot\.floor_plans_daily in share mode$/,
+        /from pilot\.scheduler_classes c\s+where [\s\S]* for update$/,
         ...['scheduler_registrations', 'scheduler_attendance', 'session_script_runs', 'session_run_athletes']
           .map((t) => new RegExp(`^select 1 from pilot\\.${t} t where [\\s\\S]* for update of t$`)),
         /^select 1 from pilot\.gym_tvs t where [\s\S]*for update$/]],
       [{ organizationId: TEST_GYM_2 }, ['test-organizations'], [/^select 1 from pilot\.organizations where organization_id = \$1 for update$/,
         /^select 1 from pilot\.session_tokens where organization_id = \$1 and revoked_at is null for update$/]],
+      // OBSERVED on the full schema: the organization tables no foreign key on organization_id holds back.
+      [{ organizationId: HIIT_FIT_ID }, ['hiit-fit'], [/^select 1 from pilot\.organizations where organization_id = \$1 for update$/,
+        /^lock table pilot\."recording_sessions", pilot\."shadow_evidence_claims", pilot\."shadow_evidence_items", pilot\."shadow_message_citations", pilot\."video_sessions" in share mode$/]],
     ] as Array<[Options, string[], RegExp[]]>) {
       const { client } = await freshDatabase();
       try {
@@ -1560,20 +1613,72 @@ describe('the apply\'s locks', () => {
     }
   });
 
-  test('"hiit fit" gaining a row no lock can hold back (a table with no foreign key) is caught at the end: rolled back', async () => {
+  // The reviewer's race: a row arrives from another session after the end-state re-count, just
+  // before the audit insert. The tables no key holds back are held whole, so it waits and fails.
+  test.each([
+    ['recording_sessions', `insert into pilot.recording_sessions (recording_session_id, organization_id, created_by_account_id,
+       training_context, join_code) values ('rs-b6', $1, $2, 'mitts', 'B6JOIN')`],
+    ['video_sessions (both composite-key partners null)', `insert into pilot.video_sessions (video_session_id, organization_id,
+       uploaded_by_account_id, title, blob_path, file_name, file_size_bytes, mime_type)
+       values ('vs-b6', $1, $2, 'clip', 'blob/vs-b6', 'vs-b6.mp4', 1, 'video/mp4')`],
+  ])('"hiit fit" cannot gain a %s row before the commit: it waits and fails, and "hiit fit" is closed empty', async (table, insert) => {
     const { client, name } = await freshDatabase();
     const other = await otherSession(name);
     try {
       const fp = await fingerprintOf(client, { organizationId: HIIT_FIT_ID }, ['hiit-fit']);
-      const hooks = [{ match: /^update pilot\.organizations/, before: () => other.query(
+      let code: string | undefined;
+      const hooks = [{ match: /^insert into pilot\.audit_events/, before: () => other.query(insert, [HIIT_FIT_ID, COACH])
+        .catch((error: { code?: string }) => { code = error.code; }) }];
+      expect((await apply(faulty(client, hooks), applyOptions({ organizationId: HIIT_FIT_ID }, ['hiit-fit'], fp), { log: () => {} })).status)
+        .toBe('applied');
+      expect(code).toBe('55P03');
+      const base = table.split(' ')[0];
+      expect((await client.query(`select 1 from pilot.${base} where organization_id = $1`, [HIIT_FIT_ID])).rowCount).toBe(0);
+    } finally {
+      await other.end();
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['activity_log', `insert into pilot.activity_log (organization_id, activity_id, person_account_id, activity_domain, activity_type,
+       occurred_on, duration_minutes, capture_method, recorded_by_role, recorded_by_account_id, class_id)
+       values ($1, 'act-b6-race', $2, 'boxing_training', 'technical_session', '2026-10-07', 60, 'coach_override', 'coach', $2, 'c-strict-1')`],
+    ['floor_plans_daily', `insert into pilot.floor_plans_daily (organization_id, plan_id, plan_on, class_id, created_by_account_id)
+       values ($1, 'fp-b6-race', '2026-10-05', 'c-strict-1', $2)`],
+  ])('no %s row can come to name a planned class before the commit: it waits and fails', async (table, insert) => {
+    const { client, name } = await freshDatabase();
+    const other = await otherSession(name);
+    try {
+      await clearBlockers(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM }, ['classes']);
+      let code: string | undefined;
+      const hooks = [{ match: /^insert into pilot\.audit_events/, before: () => other.query(insert, [GYM, COACH])
+        .catch((error: { code?: string }) => { code = error.code; }) }];
+      expect((await apply(faulty(client, hooks), applyOptions({ organizationId: GYM }, ['classes'], fp), { log: () => {} })).status)
+        .toBe('applied');
+      expect(code).toBe('55P03');
+      expect((await client.query(`select 1 from pilot.${table} where class_id = 'c-strict-1'`)).rowCount).toBe(0);
+    } finally {
+      await other.end();
+      await client.end();
+    }
+  });
+
+  test('the end-state re-count of "hiit fit" is a check of its own: a row it finds rolls everything back', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const fp = await fingerprintOf(client, { organizationId: HIIT_FIT_ID }, ['hiit-fit']);
+      const before = await snapshot(client);
+      // Fault injection, in the apply's own transaction (no lock holds it back): a row just before the re-count.
+      const hooks = [{ match: /^select t, n from \(/, before: () => client.query(
         "insert into pilot.recording_sessions (recording_session_id, organization_id, created_by_account_id, training_context, join_code) values ('rs-b6', $1, $2, 'mitts', 'B6JOIN')",
         [HIIT_FIT_ID, COACH]) }];
       expect(await apply(faulty(client, hooks), applyOptions({ organizationId: HIIT_FIT_ID }, ['hiit-fit'], fp), { log: () => {} }))
         .toEqual({ status: 'refused', reason: 'END_STATE_MISMATCH', mismatches: ['hiit_fit_rows:recording_sessions=1'] });
       expect(await statusOf(client, HIIT_FIT_ID)).toBe('active');
-      expect(await auditRows(client)).toEqual([]);
+      expect(await snapshot(client)).toEqual(before);
     } finally {
-      await other.end();
       await client.end();
     }
   });

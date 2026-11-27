@@ -98,8 +98,10 @@ the report stands.
      runs and register marks are kept, with the tie cleared (the foreign keys' SET NULL). Refused
      (`CLASS_APPLY_REFUSED`, naming each class and why) while any planned class has an
      `apply_would_refuse`.
-   - `tvs` (Q5 A): the app's own Disconnect on every STRICT TV in scope. The row stays; it leaves the
-     coaches' list 7 days later.
+   - `tvs` (Q5 A): the app's own Disconnect on every STRICT TV in scope that is still connected (not
+     revoked, or showing a session, or holding a pair code). The row stays; it leaves the coaches' list 7
+     days later. A STRICT TV already disconnected is left as it is and listed in
+     `tvs_already_disconnected`; it alone does not count its gym as affected.
    - `test-organizations` (Q3 B): only with `organization` an Audit Test Gym's id. Sets it inactive and
      revokes its live sessions (the app's `setOrganizationStatus`). Never a delete. Setting every Audit
      Test Gym inactive leaves none for a future write-audit; it can be set active again from the platform
@@ -109,7 +111,8 @@ the report stands.
    - The sweep (K5) and every NEAR record are never written, in any mode.
 4. **Read the result.** `audit_test_cleanup.applied` gives the kinds, the fingerprint, the counts written
    (`classes`, `registrations`, `attendance`, `tied_runs_untied`, `register_marks_untied`, `tvs`,
-   `sessions_revoked`), the class and TV ids, and the organization set inactive. Each affected
+   `tvs_already_disconnected`, `sessions_revoked`), the class and TV ids, and the organization set
+   inactive. Each affected
    organization gets one `audit_events` row (`entity_type` `audit_test_record_cleanup`; `data_purged`
    where classes were deleted, otherwise `update`). `nothing-to-apply` means the kinds asked for had
    nothing planned; nothing was written. Any other refusal (`UNKNOWN_TRIGGER`, `WRITE_COUNT_MISMATCH`,
@@ -117,18 +120,26 @@ the report stands.
 5. **Dry-run again** on the same scope and kinds. What changes, per kind:
    - `classes`: the deleted classes are gone from `classes`, with their sign-ups and attendance.
    - `tvs`: the TVs stay in `tvs.marked`, now with `revoked_at` set and no session or pair code. A second
-     apply of `tvs` disconnects them again, which changes nothing.
+     apply of `tvs` leaves them alone (`nothing-to-apply`, with them in `tvs_already_disconnected`).
    - `test-organizations` and `hiit-fit`: the organization stays listed, with status `inactive`.
 
-**Locks and windows.** The apply locks the rows it writes for its transaction: the planned classes and the
-rows hanging off them, the STRICT TVs, and a named organization's row (`FOR UPDATE`, which also holds back
-any insert whose foreign key names that organization) and its live sessions. Dispatch it outside class
-hours. For `hiit-fit` it re-counts, after its writes, every table with an `organization_id` (with or
-without a foreign key) and rolls back if any but `organizations` and `audit_events` holds a row for it.
-One window stays open: `activity_log` and `floor_plans_daily` name a class with no foreign key, so
-nothing locks them. A row naming a planned class that lands after the end-state read and before the commit
-is left naming a deleted class. The end state re-reads both just before the commit, so the window is that
-short. The apply refuses if any trigger it does not know exists on a table it writes.
+**Locks.** The apply locks, for its transaction and before it reads the plan:
+- the planned classes and the rows hanging off them, the STRICT TVs, and a named organization's row
+  (`FOR UPDATE`, which also holds back any insert whose foreign key on `organization_id` names that
+  organization) and its live sessions;
+- with `classes`: the whole of `activity_log` and `floor_plans_daily` (`SHARE`: reads go on, writes
+  wait), since they name a class with no foreign key;
+- with `hiit-fit`: the whole of every organization table no such key holds back (no foreign key on
+  `organization_id` whose columns are all `NOT NULL`, not deferrable, to a `pilot` table's
+  `organization_id`). The list is read from the catalog at run time; on the full schema today it is
+  `recording_sessions`, `shadow_evidence_claims`, `shadow_evidence_items`, `shadow_message_citations` and
+  `video_sessions`. A row there could otherwise join "hiit fit" with no lock on its organization row.
+
+So no row can come to name a planned class or join "hiit fit" between the plan and the commit; writes to
+those tables wait for the seconds the apply lasts.
+Dispatch it outside class hours. After its writes it re-reads the end state (for `hiit-fit`, every table
+with an `organization_id`) and rolls back on any difference. It refuses if any trigger it does not know
+exists on a table it writes.
 
 **Target.** The script's target guard is RR-1's (`scripts/lib/postgres-write-target.mjs`): it refuses a
 connection whose host or database is not the declared one. The declared target is the environment's
