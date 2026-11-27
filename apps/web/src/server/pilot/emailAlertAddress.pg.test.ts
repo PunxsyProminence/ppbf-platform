@@ -1296,6 +1296,37 @@ describe('the adult athlete\'s alert address on a real database', () => {
       }
     });
 
+    // Codex on EM-2b-2: a PUT that starts before the 15 minutes are up but
+    // gets its locks after them is judged when it holds the locks. No clock is
+    // injected here, as the route injects none: the code is set to expire 700
+    // ms after the office takes its rows, and the office holds them 1.5 s more.
+    test.each([
+      ['the account row and the switch row', [
+        ['update pilot.accounts set updated_at = now() where account_id = $1', [ADULT_ID]],
+      ] as Array<[string, unknown[]]>],
+      ['only the switch row', [] as Array<[string, unknown[]]>],
+    ])('a PUT with the right code that waits on %s past the expiry is refused as expired, and the address cleared', async (_label, held) => {
+      const client = await freshDatabase('emailaddr_put_wait_expiry');
+      activeClient = client;
+      activePool = new Pool({ connectionString: connectionStringFor('emailaddr_put_wait_expiry'), max: 4 });
+      try {
+        const mail = mailbox();
+        await post('adult', newAddress('wait'), mail.send);
+        const [result] = await whileHeld(client,
+          [...held, [`update pilot.email_alert_switches set pending_code_expires_at = clock_timestamp() + interval '700 milliseconds'
+                       where organization_id = $1 and account_id = $2`, [ORG_ID, ADULT_ID]]],
+          [() => confirmEmailAlertAddress({ ...subject('adult'), code: mail.sent[0].code })],
+          { after: [['select pg_sleep(1.5)', []]] });
+        expect(result).toMatchObject({ status: 'rejected', reason: { status: 409, code: 'EMAIL_ALERT_CODE_EXPIRED' } });
+        expect(await addressRow(client)).toMatchObject({
+          pending_address: null, pending_code_hash: null, confirmed_address: null, has_confirmed_at: false,
+        });
+        expect((await auditDetails(client)).map((row) => row.address_action)).toEqual(['code_sent', 'expired_cleared']);
+      } finally {
+        await client.end();
+      }
+    });
+
     test('a PUT with the right code while the login is switched off: 403, nothing confirmed, the typed address kept (paused, T-3 A)', async () => {
       const client = await freshDatabase('emailaddr_put_login');
       activeClient = client;

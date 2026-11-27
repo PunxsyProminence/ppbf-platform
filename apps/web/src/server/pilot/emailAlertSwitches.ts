@@ -778,22 +778,30 @@ const CONFIRM_REFUSALS: Record<ConfirmRefusal, () => ConflictError> = {
  * Default 10: confirming never switches the alert on (OD-2026-11-19-019); On
  * stays its own press (setEmailAlertSwitch). A wrong code costs one of the
  * row's tries; an expired one is cleared (default 11).
+ *
+ * The expiry is judged at a time read once the locks are held (Codex on
+ * EM-2b-2): a PUT that began inside the 15 minutes but waited on the account
+ * or switch row past them is refused as expired. `now` is a fixed clock for
+ * tests; the route passes none, so every request reads the clock again there.
  */
 export async function confirmEmailAlertAddress(
   subject: EmailAlertSwitchSubject & { readonly code: unknown },
-  now: Date = new Date(),
+  now?: Date,
 ): Promise<EmailAlertSwitchState> {
-  await refuseUnlessAdultAthlete(subject, now);
+  const startedAt = now ?? new Date();
+  await refuseUnlessAdultAthlete(subject, startedAt);
   // After the adult check (L1): a minor's answer never depends on what they typed.
   const code = typeof subject.code === 'string' ? subject.code.trim() : '';
   if (!/^\d{6}$/.test(code)) throw new ValidationError('Enter the six-digit code from the email');
 
   const outcome = await withTransaction(async (client): Promise<'refused' | ConfirmRefusal | OfferedState> => {
-    const person = await lockAdultAthlete(client, subject, now);
+    const person = await lockAdultAthlete(client, subject, startedAt);
     if (!person) return 'refused';
+    // Read after the locks are held: the time the code is judged at.
+    const lockedAt = now ?? new Date();
     const { row } = person;
     if (!row?.pending_code_hash || !row.pending_address || !row.code_expires_at) return 'expired';
-    if (codeExpired(row, now)) {
+    if (codeExpired(row, lockedAt)) {
       await clearPendingCode(client, subject, { address_action: 'expired_cleared' });
       return 'expired';
     }
@@ -823,7 +831,7 @@ export async function confirmEmailAlertAddress(
     return { offered: true, user_type: 'adult_athlete', switched_on: row.switched_on, address_confirmed: true, code_pending: false };
   });
   if (outcome === 'refused') {
-    await retireSwitchIfAny(subject, now);
+    await retireSwitchIfAny(subject, startedAt);
     throw notOffered();
   }
   if (typeof outcome === 'string') throw CONFIRM_REFUSALS[outcome]();
