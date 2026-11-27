@@ -18,7 +18,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import PlatformConsole from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -743,6 +743,37 @@ describe('the on-the-floor tile', () => {
 
   // A re-read of the same gym (away to "Select a gym..." and back) that is still running, or that
   // fails, must not leave the first read's number on screen as current.
+  test('a read cancelled by a newer one never lands over it', async () => {
+    let reads = 0;
+    let releaseFirst: (value: Response) => void = () => {};
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) {
+        reads += 1;
+        // The first read ignores its cancel and answers late; the second is still running.
+        if (reads === 1) return new Promise<Response>((resolve) => { releaseFirst = resolve; });
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await screen.findByRole('option', { name: /Punxsy Prominence/i });
+    const select = screen.getByLabelText(/choose a gym/i);
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    fireEvent.change(select, { target: { value: '' } });
+    fireEvent.change(select, { target: { value: 'org-punxsy' } });
+    expect(reads).toBe(2);
+    await act(async () => {
+      releaseFirst(jsonResponse({ ...baseSummary, on_the_floor: { status: 'available', count: 9 } }));
+    });
+    expect(screen.getByText(/Loading summary/i)).toBeInTheDocument();
+    expect(screen.queryByText('On the floor now')).toBeNull();
+    expect(screen.queryByText('9')).toBeNull();
+  });
+
   // A failed count fails the whole summary on the server (route.test.ts), so the page shows no tile.
   test.each([
     ['still running', 'pending'],

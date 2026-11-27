@@ -295,7 +295,9 @@ export default function PlatformConsole() {
           { credentials: 'include', signal: controller.signal },
         );
         if (response.ok) {
-          setSummary((await response.json()) as GymSummary);
+          const read = (await response.json()) as GymSummary;
+          // A read cancelled by a newer one never lands over it.
+          if (!controller.signal.aborted) setSummary(read);
         } else {
           setSummary(null);
         }

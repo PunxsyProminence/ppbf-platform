@@ -181,7 +181,12 @@ describe('only the on-the-floor reads use the floor count (App Overwatch, 720621
   it('the platform gym summary takes only the total and the floor from it, and no platform file names the classes read', () => {
     const summary = 'app/api/pilot/platform/gym-summary/route.ts';
     expect(read(summary)).toContain("import { floored, registerTotalToday } from '@/src/server/pilot/floorCount';");
-    expect(read(summary).match(/@\/src\/server\/pilot\/floorCount'/g)).toHaveLength(1);
+    // Exactly one import leads to the module, by any spelling ("@/src", "@/server", relative, either
+    // quote), and it is not a namespace import.
+    const leadsToCount = Array.from(read(summary).matchAll(SPECIFIER), (m) => resolveSpecifier(path.join(WEB_DIR, summary), m[1]))
+      .filter((file) => file === path.join(WEB_DIR, FLOOR_COUNT));
+    expect(leadsToCount).toHaveLength(1);
+    expect(read(summary)).not.toMatch(/import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]*floorCount['"]/);
     expect(PLATFORM_FILES.filter((file) => /classesRunningNow|ClassRunningNow/.test(read(file)))).toEqual([]);
   });
 
