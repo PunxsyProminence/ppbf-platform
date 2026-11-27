@@ -17,6 +17,7 @@ import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
 import StepNotes from './IssuedWorkoutStepNotes';
 import WorkAxis from './WorkAxis';
+import OnTheFloorFamilyLine from './OnTheFloorFamilyLine';
 import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
@@ -3273,6 +3274,11 @@ export default function AthleteWorkspace() {
         {activeGroup === 'today' && (
           <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
         )}
+
+        {/* WHO IS ON THE FLOOR NOW (lane W4-3, FN-2; Jason Q3.4 A): the athlete's own status, beside I'm
+            here on Today. Mounted on every tab and drawn on Today only, so a tab change does not read it
+            again; not mounted without the athlete's own record (FN-0 check 8). */}
+        {backendAthleteId ? <OnTheFloorFamilyLine reader="athlete" visible={activeGroup === 'today'} /> : null}
 
         {/* The athlete's own fight card. Self-contained: it fetches its own
             data and renders nothing until it has some, so this is the single

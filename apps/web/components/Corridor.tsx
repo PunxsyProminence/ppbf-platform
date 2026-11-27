@@ -7,6 +7,7 @@ import { openSearchAt, searchGroupLabel } from './CardCatalog';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import { doorForPath } from './buildingMap';
 import { searchGroupOf } from './roomPlaces';
+import { useRoomNames } from '@/src/client/roomNames';
 
 /**
  * THE CORRIDOR: WHERE YOU ARE STANDING.
@@ -31,12 +32,16 @@ export default function Corridor() {
 
   const here = useMemo(() => doorForPath(pathname), [pathname]);
   const group = here ? searchGroupOf(here.href, role) : null;
+  // The room in the gym's own words, as Search names it (lane W4-9, RN-2).
+  const roomNames = useRoomNames();
 
   // Signed out there is no Search to open, so there is no plate.
   if (!role) return null;
 
-  const room = group ? searchGroupLabel(group) : 'All pages';
-  const where = here ? `${room}, ${here.label}` : room;
+  const room = group ? searchGroupLabel(group, roomNames.place) : 'All pages';
+  // The page's name as the menus show it (a card name reads the gym's word, RN-3).
+  const hereLabel = here ? roomNames.door(here) : null;
+  const where = here ? `${room}, ${hereLabel}` : room;
 
   return (
     <div className="corridor-root">
@@ -52,7 +57,7 @@ export default function Corridor() {
         {/* The page's name steps off the phone: the page's own title says it,
             and keeping it made the room name beside it the part that was cut
             ("FRONT OF…"). */}
-        {here && <span className="corridor-trigger-here hidden sm:inline">{here.label}</span>}
+        {here && <span className="corridor-trigger-here hidden sm:inline">{hereLabel}</span>}
       </button>
     </div>
   );

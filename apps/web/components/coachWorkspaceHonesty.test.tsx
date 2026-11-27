@@ -109,6 +109,17 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
         ? routes.attendanceToday()
         : jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1', 'ath_2'], marks: [] });
     }
+    if (url.includes('/api/pilot/on-the-floor/classes')) {
+      // The classes and rounds above the line's names (lane W4-3, FN-4b): HEALTHY, as below.
+      return jsonResponse({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] });
+    }
+    if (url.includes('/api/pilot/on-the-floor')) {
+      // The "on the floor now" line (lane W4-3, FN-3). Default is a HEALTHY read
+      // with nobody counted, for the same reason as the reads above: a "could
+      // not be checked" rendering in these tests must come from the read a test
+      // breaks on purpose, not from an unstubbed fetch.
+      return jsonResponse({ ok: true, day: '2026-08-28', athletes: [] });
+    }
     if (url.includes('/api/pilot/coach/development')) {
       return routes.development
         ? routes.development()
