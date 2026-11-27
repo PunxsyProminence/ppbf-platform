@@ -292,8 +292,12 @@ async function addOnce(
     return await write();
   } catch (error) {
     // Two sends of one key at once: both missed the other's row, and the index refused the second.
+    // Or a send of this key was still being written when this one looked the key up, and the mark was
+    // taken back after it committed: this one is refused as not present, though the note was written.
+    // Looked up again now, after the refusal, the first send's note is seen and answered as landed
+    // (#2182 round 13, both reviewers; condition 2: a save that went through never reads as failed).
     const { code, constraint } = error as { code?: unknown; constraint?: unknown };
-    if (code === '23505' && constraint === REQUEST_KEY_INDEX) {
+    if ((code === '23505' && constraint === REQUEST_KEY_INDEX) || code === 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT') {
       const landed = await noteOfRequestKey(actor, subject, athleteId, requestKey, text);
       if (landed) return landed;
     }

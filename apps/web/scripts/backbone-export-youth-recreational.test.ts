@@ -541,16 +541,30 @@ describe('the committed youth + recreational rows', () => {
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
     wtp_9fbf7f8edf5016: [1, 2, 3, 4, 6, 7, 8], // Wednesday Gold Standard Coach Script (TL-3b)
     wtp_456e418b1741b8: [6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
+    wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min (TL-5a)
+    wtp_c2c4bec001a56b: [1, 4, 5, 6, 7], // Phase 1 boxing skill session, 90 minutes (TL-5a)
   };
-  // Of those, the steps that also took their own stated time (details.block_time, or minutes in the block_title) as
-  // duration_minutes (Codex P1 and App Overwatch on #2177): the export would blank that cell too.
+  // Of those, the steps that also took their own stated time (details.block_time, minutes in the block_title, or a
+  // whole-minutes details.time) as duration_minutes (Codex P1 and App Overwatch on #2177; #2162): the export would
+  // blank that cell too.
   const LANE_W48_DURATIONS: Record<string, number[]> = {
     wtp_900c0a3fd4422a: [1, 2, 8, 9, 10, 11, 12, 13, 14, 15], // Scripted 60-Minute Class (TL-2)
     wtp_1ad3c846b03ecc: [1], // Friday Sparring Coach Sheet (TL-3a)
     wtp_3557c34e022c31: [1, 6, 7, 8, 9, 10], // Wednesday Coach Sheet Defense Day (TL-3a)
     wtp_9fbf7f8edf5016: [1, 2, 3, 4], // Wednesday Gold Standard Coach Script (TL-3b)
     wtp_456e418b1741b8: [21], // Iso + Plyo 60-Minute Boxing Session (TL-4)
+    wtp_01de3f48606d4c: [1, 3], // Conditioning session A — SIT, 45 min (TL-5a)
   };
+  // Of those, the steps whose contact_level the lane changed by a ruling: Phase 1 step 1 names 'one pre-activation cue
+  // drill', which D-OQ94 rates light_technical (App Overwatch on #2201, comment 7176799736); the frozen Backbone has none.
+  const LANE_W48_CONTACT: Record<string, number[]> = {
+    wtp_c2c4bec001a56b: [1], // Phase 1 boxing skill session, 90 minutes (TL-5a)
+  };
+  it("names duration and contact cells only on lane W4-8's linked steps (the frozen case below ignores any other)", () => {
+    for (const changed of [LANE_W48_DURATIONS, LANE_W48_CONTACT]) {
+      for (const [id, steps] of Object.entries(changed)) expect({ id, outside: steps.filter((step) => !(LANE_W48_STEPS[id] ?? []).includes(step)) }).toEqual({ id, outside: [] });
+    }
+  });
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -572,8 +586,10 @@ describe('the committed youth + recreational rows', () => {
     const laneSteps = rows(ITEMS).filter((row) => (LANE_W48_STEPS[row.template_id] ?? []).includes(Number(row.ordinal)));
     expect(laneSteps).toHaveLength(Object.values(LANE_W48_STEPS).flat().length);
     const timed = (row: Record<string, string>) => (LANE_W48_DURATIONS[row.template_id] ?? []).includes(Number(row.ordinal));
-    expect(named.filter(([file]) => file === ITEMS))
-      .toEqual(laneSteps.map((row) => [ITEMS, row.template_id, timed(row) ? 'drill_id, duration_minutes' : 'drill_id']));
+    const rated = (row: Record<string, string>) => (LANE_W48_CONTACT[row.template_id] ?? []).includes(Number(row.ordinal));
+    // The changed cells in the items header's order: drill_id, duration_minutes, contact_level.
+    const cells = (row: Record<string, string>) => ['drill_id', ...(timed(row) ? ['duration_minutes'] : []), ...(rated(row) ? ['contact_level'] : [])].join(', ');
+    expect(named.filter(([file]) => file === ITEMS)).toEqual(laneSteps.map((row) => [ITEMS, row.template_id, cells(row)]));
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort())
       .toEqual([...new Set([...draftedIds, ...Object.keys(LANE_W48_STEPS)])].sort());
     // A lane template changes in field_labels and, if lane YR drafted it, in exactly its drafted cells (header order).

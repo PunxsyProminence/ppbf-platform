@@ -66,6 +66,11 @@ export default function FamilyThreadsForStaff({
   const [attempt, setAttempt] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Record<string, boolean>>({});
+  // The threads with a reply in flight, held synchronously: two submits in the same tick (a double
+  // press) both run before the `sending` state disables the button, and the post is append-only, so
+  // the second would reach the guardian twice (Overwatch 7183603899 on #2210; as the parent panel's
+  // sendingKeys and the hub's replySendingRef).
+  const sendingThreads = useRef<Set<string>>(new Set());
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   // A reply that failed for another athlete than the one on screen: told here until the coach goes back.
   const [elsewhere, setElsewhere] = useState<{ athleteId: string; text: string } | null>(null);
@@ -192,6 +197,8 @@ export default function FamilyThreadsForStaff({
       setReplyErrors((held) => ({ ...held, [threadId]: 'Write a reply before sending.' }));
       return;
     }
+    if (sendingThreads.current.has(threadId)) return;
+    sendingThreads.current.add(threadId);
     setSending((held) => ({ ...held, [threadId]: true }));
     setReplyErrors((held) => ({ ...held, [threadId]: '' }));
     try {
@@ -213,6 +220,7 @@ export default function FamilyThreadsForStaff({
     } catch {
       failed('Your reply was not sent; it is still in the box. Check the connection and send again.');
     } finally {
+      sendingThreads.current.delete(threadId);
       setSending((held) => ({ ...held, [threadId]: false }));
     }
   }

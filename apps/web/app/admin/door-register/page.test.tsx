@@ -16,6 +16,7 @@ import {
   getRoleSessionSnapshot,
 } from '@/components/roleSession';
 import type { ClubRole } from '@/components/roleRoutes';
+import { resetRoomNamesForTests } from '@/src/client/roomNames';
 
 /**
  * THE DOOR REGISTER.
@@ -31,9 +32,16 @@ import type { ClubRole } from '@/components/roleRoutes';
  * of that choice is that the page cannot quietly become an impersonation later.
  * So the boundary is pinned from three directions at once:
  *
- *   RENDERED   -- `fetch` is replaced with a spy that THROWS. Every role in the
- *                 picker is clicked. One request of any kind, to any URL, fails
- *                 the test by name.
+ *   RENDERED   -- `fetch` is replaced with a spy that THROWS for every URL but
+ *                 one. Every role in the picker is clicked. Any request but the
+ *                 one below fails the test by name. THE ONE NAMED EXCEPTION
+ *                 (Overwatch's Q-H A on #2212, lane W4-9 RN-2): a single
+ *                 GET /api/pilot/room-names, with no query and no body, made
+ *                 once for the READER's own session and never again for a
+ *                 previewed role. It reads the reader's own gym's names for
+ *                 the 7 rooms (OW27-40 A), so it neither fetches as nor about
+ *                 the previewed role, and the fetch lives in
+ *                 src/client/roomNames.ts, not in this page.
  *   SESSION    -- the reader's own role session is compared BY REFERENCE across
  *                 previewing every role. roleSession.ts memoizes its snapshot on
  *                 the cached session's reference, so a new reference means
@@ -122,29 +130,72 @@ async function pick(label: string): Promise<void> {
 
 afterEach(() => {
   clearRoleSession();
+  // Each test starts as a fresh page load would: no room names read yet.
+  resetRoomNamesForTests();
   jest.restoreAllMocks();
 });
 
 /* ------------------------------------------------------- the safety line -- */
 
 describe('the register previews a role WITHOUT becoming that role', () => {
-  it('issues no request of any kind, for any previewed role', async () => {
-    // Not "no /api/pilot/* request" -- NO REQUEST. The register is a pure
-    // function of a module constant, so there is nothing this page could
-    // legitimately ask a server for, and the strictest form of the assertion is
-    // also the truest one. A fetch on a previewed role's behalf is the exact
-    // thing this feature was scoped never to do.
-    const forbidden = jest.fn((input: unknown) => {
-      throw new Error(`the door register performed a fetch: ${String(input)}`);
+  it("issues exactly one request, the reader's own room names, and none for any previewed role", async () => {
+    // Not "no /api/pilot/* request" -- NO REQUEST but one, named. The register
+    // is a pure function of a module constant, so there is nothing this page
+    // could legitimately ask a server for on a previewed role's behalf; a fetch
+    // as or about the previewed role is the exact thing this feature was
+    // scoped never to do. The one exception (Q-H A on #2212) is the gym's room
+    // names, read once with the reader's own session: the same single call
+    // whichever role is previewed, and never repeated by previewing.
+    const calls: Array<[string, unknown]> = [];
+    const guarded = jest.fn((input: unknown, init?: unknown) => {
+      const url = String(input);
+      calls.push([url, init]);
+      if (!/^[^?#]*\/api\/pilot\/room-names$/.test(url)) {
+        throw new Error(`the door register performed a fetch: ${url}`);
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, names: {} }) } as unknown as Response);
     });
-    global.fetch = forbidden as unknown as typeof fetch;
+    global.fetch = guarded as unknown as typeof fetch;
 
     signInAs('admin');
     await renderPage();
+    expect(calls).toHaveLength(1);
 
-    for (const label of EVERY_SUBJECT) await pick(label);
+    for (const label of EVERY_SUBJECT) {
+      await pick(label);
+      // Previewing a role adds nothing: still the one call, unchanged.
+      expect(calls).toHaveLength(1);
+    }
 
-    expect(forbidden).not.toHaveBeenCalled();
+    const [[url, init]] = calls;
+    expect(url).toMatch(/\/api\/pilot\/room-names$/);
+    expect(url).not.toContain('?');
+    // A GET with no body: no method, no body, the reader's own cookie.
+    expect(init).toEqual({ credentials: 'include', cache: 'no-store' });
+  });
+
+  it('says truthfully what it reads: only the reader’s own gym’s room names (Codex P1 on #2215)', () => {
+    expect(PAGE_SOURCE).not.toContain('Nothing is looked up until you do');
+    expect(PAGE_SOURCE).toContain('Nothing is looked up for the role you pick');
+  });
+
+  it("shows the 7 rooms in the gym's own words", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, names: { 'room:office': { name: 'Qqqq Office', is_default: false } } }),
+    } as unknown as Response)) as unknown as typeof fetch;
+    signInAs('admin');
+    await renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The admin's own register holds office doors; their room reads the gym's word.
+    expect(visibleDoors('admin').some((door) => door.room === 'office')).toBe(true);
+    await pick('Admin');
+    expect(screen.getAllByText(/Qqqq Office/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(new RegExp(`^${ROOM_LABEL.office}$`))).toEqual([]);
   });
 
   it('leaves the reader’s own session untouched by previewing every role', async () => {
