@@ -17,9 +17,12 @@ name: cleanup-audit-test-records
 # PPBF_AUDIT_TEST_CLEANUP_REF_KEY (an environment secret; with none set, a
 # random key for that run alone). The key is never printed.
 #
-# Do not dispatch while a migration of the same target runs: with a test gym
-# in scope the first read holds read locks on every organization table for the
-# seconds it lasts. This workflow has a concurrency group of its own.
+# Do not dispatch while a migration of the same target runs. The first read
+# holds read locks, for the seconds it lasts, on the tables it reads directly
+# and, with a test gym or "hiit fit" in scope, on every table with an
+# organization_id. A migration that needs one of them waits; a lock held
+# elsewhere for more than 10 seconds fails the run (code 55P03). This workflow
+# has a concurrency group of its own, outside the release lock.
 #
 # Run order and how to read the report: docs/AUDIT_TEST_RECORD_CLEANUP_RUNBOOK.md.
 
@@ -66,6 +69,7 @@ jobs:
       # bash parses the line, so a value with a quote and a semicolon becomes
       # commands.
       - name: Confirm Explicit Target
+        id: guard
         env:
           TARGET: ${{ inputs.target }}
           CONFIRM_TARGET: ${{ inputs.confirm_target }}
@@ -78,6 +82,13 @@ jobs:
           fi
           if [ -z "$ORGANIZATION" ] || [[ "$ORGANIZATION" == -* ]]; then
             echo "::error::organization must be an organization_id or ALL_ORGANIZATIONS."
+            exit 1
+          fi
+          # A line break would let the rest of the value start a line of the
+          # public log (npm echoes its arguments), where GitHub reads it as a
+          # workflow command.
+          if [[ "$ORGANIZATION" =~ [[:cntrl:]] ]]; then
+            echo "::error::organization must be one line, with no control characters."
             exit 1
           fi
 
@@ -148,17 +159,22 @@ jobs:
       - name: Check The Database Is Reachable From This Runner
         uses: ./.github/actions/db-preflight
 
-      # The script opens only read-only transactions and rolls each back; it
-      # checks the target itself too. The organization reaches the command as a
-      # quoted variable, never by interpolation. The reference key reaches the
-      # script through the environment only; no run block names it.
+      # The script opens only read-only transactions and rolls each back. Its
+      # target guard compares the connection with PPBF_EXPECTED_POSTGRES_*: the
+      # environment's vars when they are set, otherwise the host and database
+      # of the same connection string, so then the target is fixed only by
+      # CONTAINER_APP_NAME and RESOURCE_GROUP above, as in RR-1's workflow.
+      # The organization reaches the command as a quoted variable, never by
+      # interpolation. The reference key reaches the script through the
+      # environment only; no run block names it.
       - name: Report Audit Test Records
         working-directory: apps/web
         env:
           ORGANIZATION: ${{ inputs.organization }}
           PPBF_AUDIT_TEST_CLEANUP_REF_KEY: ${{ secrets.PPBF_AUDIT_TEST_CLEANUP_REF_KEY }}
         # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
-        # and `tee` would discard a refused run's exit code.
+        # and `tee` would discard a refused run's exit code (actions/runner,
+        # ScriptHandlerHelpers.cs: bash is `--noprofile --norc -e -o pipefail`).
         shell: bash
         run: |
           if [ "$ORGANIZATION" = "ALL_ORGANIZATIONS" ]; then
@@ -170,9 +186,10 @@ jobs:
 
       # The summary carries the run's settings and the tool's one-line result
       # (fingerprint, key kind, counts), never the plan itself: the plan is in
-      # the log above.
+      # the log above. It runs only once the guard has passed, so a value the
+      # guard refused never reaches the summary.
       - name: Record The Report
-        if: always()
+        if: always() && steps.guard.outcome == 'success'
         env:
           TARGET: ${{ inputs.target }}
           ORGANIZATION: ${{ inputs.organization }}

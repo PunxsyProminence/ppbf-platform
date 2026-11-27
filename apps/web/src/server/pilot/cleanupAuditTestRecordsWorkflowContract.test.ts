@@ -7,8 +7,11 @@
 // `target`; the secrets are repair-research-baseline.yml's plus the reference
 // key App Overwatch approved (QR A, #2227); free text and the key reach the
 // shell only through the environment. The guard, tool and record steps are
-// extracted and RUN by bash (npm replaced by a function that prints its
-// arguments), the method of cleanupIntakeResearchRequirementsWorkflowContract.
+// extracted and RUN by bash (npm replaced by a function), the method of
+// cleanupIntakeResearchRequirementsWorkflowContract. The tool step runs with
+// the flags GitHub gives a `shell: bash` step (actions/runner,
+// src/Runner.Worker/Handlers/ScriptHandlerHelpers.cs: "--noprofile --norc -e
+// -o pipefail {0}"); a step with no `shell:` gets `bash -e {0}`.
 //
 // WHAT THIS CANNOT SHOW. Nothing here evaluates a GitHub expression, talks to
 // Azure or checks the production environment's approval rule. The tool's own
@@ -55,22 +58,45 @@ function runScript(step: string): string {
   return body.join('\n').replace(/\$\{\{[^}]*\}\}/g, 'GITHUB_EXPRESSION');
 }
 
-/** Every line of every `run:` body in the file. */
+/**
+ * Every line of every `run:` value in the text, in any form: `run: x`,
+ * `- run: x`, and `|` or `>` blocks (with chomping), to the first line indented
+ * no deeper than the key.
+ */
 function runBodies(text: string): string[] {
-  return text.split('\n').reduce<{ inRun: boolean; lines: string[] }>((acc, line) => {
-    if (/^ {8}run: \|/.test(line)) return { inRun: true, lines: acc.lines };
-    if (acc.inRun && line.trim() !== '' && !line.startsWith('          ')) return { inRun: false, lines: acc.lines };
-    if (acc.inRun) acc.lines.push(line);
-    return acc;
-  }, { inRun: false, lines: [] }).lines;
+  const lines = text.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^( *)(- +)?run:(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    const value = m[3].trim();
+    if (!/^[|>][+-]?[0-9]?$/.test(value)) {
+      out.push(value);
+      continue;
+    }
+    const keyIndent = m[1].length + (m[2] ?? '').length;
+    while (i + 1 < lines.length && (lines[i + 1].trim() === '' || lines[i + 1].search(/\S/) > keyIndent)) {
+      i += 1;
+      out.push(lines[i]);
+    }
+  }
+  return out;
 }
 
 const BASH = process.platform === 'win32' && fs.existsSync('C:/Program Files/Git/bin/bash.exe')
   ? 'C:/Program Files/Git/bin/bash.exe'
   : 'bash';
 
-function bash(script: string, values: Record<string, string>): { status: number | null; stdout: string[]; output: string } {
-  const result = spawnSync(BASH, ['--noprofile', '--norc', '-e', '-s'], {
+// What GitHub runs a step with: `shell: bash`, or no `shell:` at all.
+const SHELL_BASH = ['--noprofile', '--norc', '-e', '-o', 'pipefail'];
+const SHELL_DEFAULT = ['-e'];
+
+function bash(
+  script: string,
+  values: Record<string, string>,
+  flags: string[] = SHELL_DEFAULT,
+): { status: number | null; stdout: string[]; output: string } {
+  const result = spawnSync(BASH, [...flags, '-s'], {
     input: script,
     // Deliberately NOT process.env: only what this call sets is present.
     env: { PATH: process.env.PATH ?? '', ...values } as unknown as NodeJS.ProcessEnv,
@@ -88,17 +114,23 @@ function guard(values: Record<string, string>) {
   return bash(runScript(GUARD_STEP), { TARGET: 'production', CONFIRM_TARGET: 'production', ORGANIZATION: 'punxsy_prominence', ...values });
 }
 
-/** The arguments the tool step hands npm. */
-function toolArgs(organization: string): string[] {
+/** Runs the tool step as a `shell: bash` step, `npm` replaced by `npmBody`. */
+function toolStep(organization: string, npmBody: string): { status: number | null; stdout: string[]; captured: string } {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'b6-workflow-'));
   try {
-    const stub = 'npm() { printf \'NPM_ARG:%s\\n\' "$@"; }\n';
-    const run = bash(`set -o pipefail\n${stub}${runScript(TOOL_STEP)}`, { ORGANIZATION: organization, RUNNER_TEMP: temp });
-    if (run.status !== 0) throw new Error(run.output);
-    return run.stdout.filter((line) => line.startsWith('NPM_ARG:')).map((line) => line.slice('NPM_ARG:'.length));
+    const run = bash(`npm() { ${npmBody}; }\n${runScript(TOOL_STEP)}`, { ORGANIZATION: organization, RUNNER_TEMP: temp }, SHELL_BASH);
+    const file = path.join(temp, 'tool-output.txt');
+    return { status: run.status, stdout: run.stdout, captured: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '' };
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
+}
+
+/** The arguments the tool step hands npm. */
+function toolArgs(organization: string): string[] {
+  const run = toolStep(organization, 'printf \'NPM_ARG:%s\\n\' "$@"');
+  if (run.status !== 0) throw new Error(run.stdout.join('\n'));
+  return run.stdout.filter((line) => line.startsWith('NPM_ARG:')).map((line) => line.slice('NPM_ARG:'.length));
 }
 
 /** Runs the record step over `toolOutput` and returns the step summary it wrote. */
@@ -123,7 +155,14 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
   test('dispatch only, with exactly three inputs: this version has no mode and no apply', () => {
     expect(text).toMatch(/^on:\n {2}workflow_dispatch:\n {4}inputs:\n/m);
     expect(text).not.toMatch(/^\s+(schedule|push|pull_request|workflow_run):/m);
-    const inputs = [...text.matchAll(/^ {6}([a-z_]+):\n {8}description:/gm)].map((m) => m[1]);
+    // Every key directly under `inputs:`, however the input is written.
+    const inputs: string[] = [];
+    for (const line of text.slice(text.indexOf('\n    inputs:\n') + '\n    inputs:\n'.length).split('\n')) {
+      if (line.trim() === '' || line.trim().startsWith('#')) continue;
+      if (!line.startsWith('      ')) break;
+      const key = /^ {6}([^ :#][^:]*):/.exec(line);
+      if (key) inputs.push(key[1]);
+    }
     expect(inputs).toEqual(['target', 'confirm_target', 'organization']);
     expect(text).toContain('      target:\n        description: Database environment\n        required: true\n        type: choice\n        options:\n          - staging\n          - production\n');
     expect(text).toContain('      organization:\n        description: An organization_id, or ALL_ORGANIZATIONS for every organization\n        required: true\n        type: string\n');
@@ -138,8 +177,18 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
   });
 
   test('the secrets are repair-research-baseline.yml\'s, plus the reference key and nothing else', () => {
-    const secrets = (file: string) => [...new Set([...readWorkflow(file).matchAll(/secrets\.([A-Z_]+)/g)].map((m) => m[1]))].sort();
+    const secrets = (file: string) => [...new Set([...readWorkflow(file).matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort();
     expect(secrets(FILE)).toEqual([...secrets('repair-research-baseline.yml'), REF_KEY].sort());
+  });
+
+  test('every secret is named one by one: no step reads the whole secrets context', () => {
+    // `toJSON(secrets)`, `secrets[...]` or a bare `secrets` would hand a step
+    // every secret, the reference key included, past the list above.
+    const whole = text.split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .filter((line) => /\bsecrets\b(?!\.[A-Z0-9_]+\b)/.test(line));
+    expect(whole).toEqual([]);
+    expect(text).not.toMatch(/\bsecrets: inherit\b/);
   });
 
   test('the reference key reaches only the tool step, through its environment; no run block names it', () => {
@@ -151,15 +200,38 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
     expect(fs.readFileSync(TOOL, 'utf8')).toContain(`env.${REF_KEY}`);
   });
 
+  test('the run-block reader sees every way of writing run', () => {
+    const forms = [
+      'steps:',
+      '  - run: echo "${{ inputs.a }}"',
+      '  - run: |',
+      '      echo ok',
+      '      echo "${{ inputs.b }}"',
+      '  - name: Folded',
+      '    run: >-',
+      '      echo "${{ inputs.c }}"',
+      '    env:',
+      '      NOT_RUN: ${{ inputs.d }}',
+    ].join('\n');
+    expect(runBodies(forms).filter((line) => line.includes('${{'))).toEqual([
+      'echo "${{ inputs.a }}"',
+      '      echo "${{ inputs.b }}"',
+      '      echo "${{ inputs.c }}"',
+    ]);
+  });
+
   test('no input is interpolated into a run block', () => {
     expect(runBodies(text).length).toBeGreaterThan(20);
     expect(runBodies(text).filter((line) => line.includes('${{'))).toEqual([]);
-    expect(text.split('\n').filter((line) => /^\s+run: (?!\|).*\$\{\{/.test(line))).toEqual([]);
   });
 
-  test('the tool step runs under bash with pipefail, so a refused run fails the job through tee', () => {
+  test('the tool step runs under `shell: bash`, which brings pipefail', () => {
     expect(stepText(TOOL_STEP)).toContain('        shell: bash\n');
-    expect(stepText(TOOL_STEP)).toMatch(/\| tee -a "\$RUNNER_TEMP\/tool-output\.txt"$/m);
+  });
+
+  test('the record step runs only after the guard passed, and on every outcome after that', () => {
+    expect(stepText(GUARD_STEP)).toContain('        id: guard\n');
+    expect(stepText(RECORD_STEP)).toContain("        if: always() && steps.guard.outcome == 'success'\n");
   });
 });
 
@@ -173,6 +245,10 @@ describe(`${FILE}: the guard step, run`, () => {
     ['a retyped target that differs', { CONFIRM_TARGET: 'staging' }, 'confirm_target does not match'],
     ['an empty organization', { ORGANIZATION: '' }, 'organization must be'],
     ['an organization that reads as a flag', { ORGANIZATION: '--all-organizations' }, 'organization must be'],
+    ['an organization that starts with one dash', { ORGANIZATION: '-x' }, 'organization must be'],
+    ['an organization with a line break', { ORGANIZATION: 'gym\n::warning::injected' }, 'one line'],
+    ['an organization with a carriage return', { ORGANIZATION: 'gym\r' }, 'one line'],
+    ['an organization with a tab', { ORGANIZATION: 'gym\tx' }, 'one line'],
   ])('refuses %s', (_label, values, message) => {
     const run = guard(values as Record<string, string>);
     expect(run.status).toBe(1);
@@ -188,6 +264,21 @@ describe(`${FILE}: the tool step, run`, () => {
   test('an organization id is passed as one argument, never parsed by the shell', () => {
     expect(toolArgs('punxsy_prominence')).toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--organization', 'punxsy_prominence']);
     expect(toolArgs('a b; echo PWNED')).toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--organization', 'a b; echo PWNED']);
+  });
+
+  test('a refusal on stderr fails the step and is captured for the summary', () => {
+    const refused = '{"event":"audit_test_cleanup.refused","reason":"ORGANIZATION_NOT_FOUND"}';
+    const run = toolStep('punxsy_prominence', `printf '%s\\n' '${refused}' >&2; return 1`);
+    expect(run.status).toBe(1);
+    expect(run.captured).toContain(refused);
+    expect(summaryFor(run.captured)).toContain(refused);
+  });
+
+  test('a dry run passes the step and its result line is captured', () => {
+    const result = '{"event":"audit_test_cleanup.dry-run","plan_fingerprint":"sha256:abc"}';
+    const run = toolStep('ALL_ORGANIZATIONS', `printf '%s\\n' '${result}'; return 0`);
+    expect(run.status).toBe(0);
+    expect(run.captured).toContain(result);
   });
 
   test('the npm script it runs exists and points at the tool', () => {
