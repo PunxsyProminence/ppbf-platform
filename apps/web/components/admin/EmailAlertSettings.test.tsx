@@ -13,6 +13,11 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import EmailAlertSettings from './EmailAlertSettings';
+import { ANNOUNCEMENT_PLACEMENTS, PLACEMENT_LABELS } from '@/components/AnnouncementBanner';
+import { NOTICE_PLACEMENTS_EMAILED } from '@/src/server/pilot/emailAlertEvents';
+
+// emailAlertEvents.ts is read here only for its placement table; nothing reaches the database.
+jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
 
 const BASE = 'https://backend.test';
 const URL = `${BASE}/api/pilot/email-alerts/gym`;
@@ -20,6 +25,8 @@ const URL = `${BASE}/api/pilot/email-alerts/gym`;
 const SIGNED_OUT = 'You are signed out. Sign in again to see or change these choices.';
 const ADMIN_ONLY = 'Only the gym admin can see or change these choices.';
 const COULD_NOT_READ = 'The email alert choices could not be read. Reload to try again.';
+const NOT_SHOWN_AS_SAVED =
+  'That change does not show as saved: read again just now, “A new safety escalation” is still ticked for coaches and admins.';
 
 interface Event {
   readonly user_type: string;
@@ -42,6 +49,9 @@ const EVENTS: readonly Event[] = [
   ev('adult_athlete', 'coach_message', true),
   ev('adult_athlete', 'gym_notice', true),
 ];
+
+const without = (userType: string, eventKind?: string): Event[] =>
+  EVENTS.filter((event) => event.user_type !== userType || (eventKind !== undefined && event.event_kind !== eventKind));
 
 /** The same list with one event changed. */
 const withEvent = (changed: Event): Event[] =>
@@ -105,6 +115,9 @@ const group = (name: string) => screen.getByRole('group', { name });
 const box = (groupName: string, label: string) =>
   within(group(groupName)).getByRole('checkbox', { name: label }) as HTMLInputElement;
 const escalation = () => box('Coaches and admins', 'A new safety escalation');
+const hintOf = (input: HTMLElement) => document.getElementById(input.getAttribute('aria-describedby') ?? '')?.textContent ?? '';
+/** The wrapper that goes aria-busy while saving: around the boxes only. */
+const busyWrapper = () => group('Coaches and admins').closest('[aria-busy]') as HTMLElement;
 const statusLine = () => screen.getByRole('status');
 
 async function press(element: HTMLElement) {
@@ -139,8 +152,10 @@ describe('the read', () => {
     ]);
     expect(shown).toEqual([
       ['Coaches and admins', [
-        ['A new safety escalation', true, 'SHADOW safety alerts and pain-note alerts included.'],
-        ['A guardian’s reply to a family note', false, 'A reply under a note a coach or admin posted to the family.'],
+        ['A new safety escalation', true,
+          'SHADOW safety alerts and pain-note alerts included. To the gym’s admins; to a coach only about athletes they coach or cover now.'],
+        ['A guardian’s reply to a family note', false,
+          'A reply under a note a coach or admin posted to the family. To every coach and admin at the gym, not only the one who posted it.'],
         ['A guardian’s new message to the coach', true,
           'Only to the child’s coach, a coach covering the child now and the gym’s admins, and not once they have seen it.'],
         ['A notice going live', true, 'On the Coach Workspace, Athlete Workspace, Parent Hub or Everywhere.'],
@@ -150,13 +165,21 @@ describe('the read', () => {
         ['A notice going live', false, 'On the Parent Hub or Everywhere.'],
       ]],
       ['Athletes 18 or over', [
-        ['A coach’s or admin’s message to the athlete', true, 'Only to the athlete it is written to.'],
+        ['A coach’s or admin’s message to the athlete', true,
+          'Only to the athlete it is written to. A message to an athlete under 18 emails nobody, not even their guardians.'],
         ['A notice going live', true, 'On the Athlete Workspace or Everywhere.'],
       ]],
     ]);
-    expect(within(group('Athletes 18 or over')).getByText(
+    // The groups in the list's order, and the athletes' note is their group's description.
+    expect(Array.from(document.querySelectorAll('fieldset > legend')).map((legend) => legend.textContent))
+      .toEqual(['Coaches and admins', 'Parents', 'Athletes 18 or over']);
+    const athletes = group('Athletes 18 or over');
+    expect(document.getElementById(athletes.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
       'Sent only to the address the athlete has confirmed. An athlete with no date of birth on record counts as under 18 and is sent nothing.',
-    )).toBeTruthy();
+    );
+    expect(within(athletes).getByText(/^Sent only to the address/)).toBeTruthy();
+    expect(group('Coaches and admins').hasAttribute('aria-describedby')).toBe(false);
+    expect(group('Parents').hasAttribute('aria-describedby')).toBe(false);
     expect(screen.getAllByRole('checkbox')).toHaveLength(8);
     expect(statusLine().textContent).toBe('');
     expect(screen.queryByRole('alert')).toBeNull();
@@ -186,6 +209,9 @@ describe('the read', () => {
     ['ticked missing', loaded(withEvent({ ...ev('parent', 'family_note', true), ticked: undefined })), COULD_NOT_READ],
     ['is_default missing', loaded(withEvent({ ...ev('parent', 'family_note', true), is_default: undefined })), COULD_NOT_READ],
     ['one event twice', loaded([...EVENTS, ev('parent', 'family_note', false)]), COULD_NOT_READ],
+    ['one event twice and another missing', loaded([...without('parent', 'gym_notice'), ev('parent', 'family_note', false)]), COULD_NOT_READ],
+    ['one event missing', loaded(without('parent', 'gym_notice')), COULD_NOT_READ],
+    ['a whole user type missing', loaded(without('adult_athlete')), COULD_NOT_READ],
   ] as const)('%s: one line with the ▲ glyph and no box', async (_name, answer, words) => {
     respond(answer);
     await mount();
@@ -201,6 +227,18 @@ describe('the read', () => {
     await mount();
     expect(screen.getByRole('alert').textContent).toBe(`▲ ${COULD_NOT_READ}`);
     expect(screen.queryAllByRole('checkbox')).toEqual([]);
+  });
+
+  // The notice hints are tied to the sender's own table, not copied from it by hand.
+  test('each "A notice going live" hint names exactly the placements the sender emails that user type', async () => {
+    respond(loaded());
+    await mount();
+    const groups = { staff: 'Coaches and admins', parent: 'Parents', adult_athlete: 'Athletes 18 or over' } as const;
+    for (const [userType, name] of Object.entries(groups) as [keyof typeof groups, string][]) {
+      const hint = hintOf(box(name, 'A notice going live'));
+      const named = ANNOUNCEMENT_PLACEMENTS.filter((placement) => hint.includes(PLACEMENT_LABELS[placement]));
+      expect([userType, [...named].sort()]).toEqual([userType, [...NOTICE_PLACEMENTS_EMAILED[userType]].sort()]);
+    }
   });
 });
 
@@ -249,8 +287,17 @@ describe('a save', () => {
     await press(escalation());
     expect(escalation().checked).toBe(true);
     expect(statusLine().textContent).toBe('Saving…');
-    expect(statusLine().closest('[aria-busy]')?.getAttribute('aria-busy')).toBe('true');
-    for (const input of screen.getAllByRole('checkbox')) expect(input.getAttribute('aria-disabled')).toBe('true');
+    expect(busyWrapper().getAttribute('aria-busy')).toBe('true');
+    // The live line is outside the busy subtree, so it is announced while saving.
+    expect(statusLine().closest('[aria-busy]')).toBeNull();
+    expect(busyWrapper().contains(statusLine())).toBe(false);
+    for (const input of screen.getAllByRole('checkbox')) {
+      expect(input.getAttribute('aria-disabled')).toBe('true');
+      // Seen, not only announced: the box dimmed and the pointer says no.
+      expect(input.classList.contains('opacity-60')).toBe(true);
+      expect((input.closest('label') as HTMLElement).classList.contains('cursor-not-allowed')).toBe(true);
+      expect((input.closest('label') as HTMLElement).classList.contains('cursor-pointer')).toBe(false);
+    }
 
     await press(box('Parents', 'A notice going live'));
     expect(putCalls()).toHaveLength(1);
@@ -260,8 +307,13 @@ describe('a save', () => {
       release({ status: 200, body: { ok: true, event: ev('staff', 'safety_escalation', false, false) } });
     });
     expect(escalation().checked).toBe(false);
-    expect(statusLine().closest('[aria-busy]')?.getAttribute('aria-busy')).toBe('false');
-    for (const input of screen.getAllByRole('checkbox')) expect(input.getAttribute('aria-disabled')).toBe('false');
+    expect(busyWrapper().getAttribute('aria-busy')).toBe('false');
+    for (const input of screen.getAllByRole('checkbox')) {
+      expect(input.getAttribute('aria-disabled')).toBe('false');
+      expect(input.classList.contains('opacity-60')).toBe(false);
+      expect((input.closest('label') as HTMLElement).classList.contains('cursor-pointer')).toBe(true);
+      expect((input.closest('label') as HTMLElement).classList.contains('cursor-not-allowed')).toBe(false);
+    }
   });
 
   test.each([
@@ -286,7 +338,9 @@ describe('a save', () => {
     ['a 200 that is not JSON', { status: 200 } as Answer],
     ['a 200 for another event', { status: 200, body: { ok: true, event: ev('staff', 'gym_notice', false, false) } } as Answer],
     ['a 200 that does not say what was asked', { status: 200, body: { ok: true, event: ev('staff', 'safety_escalation', true, false) } } as Answer],
-  ])('%s, and the box is not as asked when read again: "not saved", and the box shows the server', async (_name, answer) => {
+    ['a 500 whose body reads like a confirmation', { status: 500, body: { ok: true, event: ev('staff', 'safety_escalation', false, false) } } as Answer],
+    ['a 200 without ok: true', { status: 200, body: { event: ev('staff', 'safety_escalation', false, false) } } as Answer],
+  ])('%s, and the box is not as asked when read again: it does not show as saved, and the box shows the server', async (_name, answer) => {
     respond([loaded(), loaded()], answer);
     await mount();
 
@@ -295,12 +349,59 @@ describe('a save', () => {
     expect(getCalls()).toHaveLength(2);
     expect(getCalls()[1]).toEqual([URL, { credentials: 'include', cache: 'no-store' }]);
     expect(escalation().checked).toBe(true);
-    expect(screen.getByRole('alert').textContent)
-      .toBe('▲ That change was not saved: “A new safety escalation” is still ticked for coaches and admins.');
+    expect(screen.getByRole('alert').textContent).toBe(`▲ ${NOT_SHOWN_AS_SAVED}`);
     expect(statusLine().textContent).toBe('');
   });
 
-  test('a 500, and the box is as asked when read again: no "not saved", the box and the other choices as read', async () => {
+  // K3: the read again is what is shown, other admins' changes included, beside the line.
+  test('a 502 whose read again carries another change: that change is shown beside the line', async () => {
+    respond([loaded(), loaded(withEvent(ev('parent', 'gym_notice', true)))], { status: 502 });
+    await mount();
+    expect(box('Parents', 'A notice going live').checked).toBe(false);
+
+    await press(escalation());
+
+    expect(escalation().checked).toBe(true);
+    expect(box('Parents', 'A notice going live').checked).toBe(true);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toBe(`▲ ${NOT_SHOWN_AS_SAVED}`);
+    expect(alert.closest('[aria-busy]')).toBeNull();
+  });
+
+  // K2: a confirmed answer moves its own box only, not the same event under another user type.
+  test('unticking the coaches’ notice moves that box only', async () => {
+    respond(loaded(), { status: 200, body: { ok: true, event: ev('staff', 'gym_notice', false, false) } });
+    await mount();
+
+    await press(box('Coaches and admins', 'A notice going live'));
+
+    expect(box('Coaches and admins', 'A notice going live').checked).toBe(false);
+    expect(box('Parents', 'A notice going live').checked).toBe(false);
+    expect(box('Athletes 18 or over', 'A notice going live').checked).toBe(true);
+    expect(statusLine().textContent).toBe('Saved: “A notice going live” is now unticked for coaches and admins.');
+  });
+
+  // K4: focus is moved to the alert only when nothing else has it.
+  test('focus that moved elsewhere during the save stays there when the alert replaces the boxes', async () => {
+    respond([loaded(), { status: 500 }], 'hold');
+    await act(async () => {
+      render(<><button type="button">elsewhere</button><EmailAlertSettings /></>);
+    });
+    await press(escalation());
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' });
+    elsewhere.focus();
+
+    await act(async () => {
+      release({ status: 502 });
+    });
+
+    expect(screen.getByRole('alert').textContent)
+      .toBe('▲ It is not known whether that change was saved, and the choices could not be read again. Reload to see them.');
+    expect(screen.queryAllByRole('checkbox')).toEqual([]);
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  test('a 500, and the box is as asked when read again: no "does not show as saved" line, the box and the other choices as read', async () => {
     respond(
       [loaded(), loaded(withEvent(ev('staff', 'safety_escalation', false, false)).map((event) => (
         event.user_type === 'parent' && event.event_kind === 'gym_notice' ? ev('parent', 'gym_notice', true) : event)))],

@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import {
+  EMAIL_ALERT_EVENTS,
   EMAIL_ALERT_USER_TYPES,
   isEmailAlertEventFor,
-  type EMAIL_ALERT_EVENTS,
   type EmailAlertUserType,
 } from '@/src/shared/emailAlerts';
 
@@ -23,10 +23,14 @@ import {
  * as the photo route that opens this desk. The PUT body is exactly
  * { user_type, event_kind, ticked }.
  *
- * A tick box shows only what the server said: it moves when a save comes back
- * confirmed, never on the press. A save that is not confirmed (no answer, a
- * 5xx, another 4xx, a 2xx that does not say the box sent) reads the choices
- * again and says "not saved" only if the box is not as asked. A 401 or 403, on
+ * A read is used only when it holds every event on EMAIL_ALERT_EVENTS exactly
+ * once. A tick box shows only what the server said: it moves when a save comes
+ * back confirmed, never on the press. A save that is not confirmed (no answer,
+ * a 5xx, another 4xx, a 2xx that does not confirm the box as sent) reads the
+ * choices again and, only if the box is not as asked, says the change does not
+ * show as saved: a server that has not answered may still be saving it (the
+ * write waits on a lock, emailAlertGymEvents.ts), so it never says the change
+ * failed. A 401 or 403, on
  * the read or a save, takes every box away. An unknown choice is never shown
  * as a box: when a save's outcome is not known and the read after it fails, an
  * alert replaces the boxes (StoppedComingSettings' rule), and focus goes to it
@@ -62,8 +66,14 @@ const WHO: Readonly<Record<EmailAlertUserType, { readonly heading: string; reado
 // refuses this object if an event is added to EMAIL_ALERT_EVENTS without words.
 const EVENT_WORDS: { readonly [U in EmailAlertUserType]: Readonly<Record<(typeof EMAIL_ALERT_EVENTS)[U][number], Words>> } = {
   staff: {
-    safety_escalation: { label: 'A new safety escalation', hint: 'SHADOW safety alerts and pain-note alerts included.' },
-    parent_reply: { label: 'A guardian’s reply to a family note', hint: 'A reply under a note a coach or admin posted to the family.' },
+    safety_escalation: {
+      label: 'A new safety escalation',
+      hint: 'SHADOW safety alerts and pain-note alerts included. To the gym’s admins; to a coach only about athletes they coach or cover now.',
+    },
+    parent_reply: {
+      label: 'A guardian’s reply to a family note',
+      hint: 'A reply under a note a coach or admin posted to the family. To every coach and admin at the gym, not only the one who posted it.',
+    },
     guardian_message: {
       label: 'A guardian’s new message to the coach',
       hint: 'Only to the child’s coach, a coach covering the child now and the gym’s admins, and not once they have seen it.',
@@ -75,7 +85,10 @@ const EVENT_WORDS: { readonly [U in EmailAlertUserType]: Readonly<Record<(typeof
     gym_notice: { label: 'A notice going live', hint: 'On the Parent Hub or Everywhere.' },
   },
   adult_athlete: {
-    coach_message: { label: 'A coach’s or admin’s message to the athlete', hint: 'Only to the athlete it is written to.' },
+    coach_message: {
+      label: 'A coach’s or admin’s message to the athlete',
+      hint: 'Only to the athlete it is written to. A message to an athlete under 18 emails nobody, not even their guardians.',
+    },
     gym_notice: { label: 'A notice going live', hint: 'On the Athlete Workspace or Everywhere.' },
   },
 };
@@ -100,6 +113,12 @@ function wordsFor(choice: Choice): Words {
 
 const sameBox = (a: Choice, b: Choice) => a.userType === b.userType && a.eventKind === b.eventKind;
 
+const keyOf = (userType: string, eventKind: string) => `${userType}:${eventKind}`;
+
+/** Every (user type, event) pair on the shared list. */
+const LISTED: readonly string[] = EMAIL_ALERT_USER_TYPES.flatMap((userType) => (
+  EMAIL_ALERT_EVENTS[userType].map((eventKind) => keyOf(userType, eventKind))));
+
 /** One event as the route answers it ({ user_type, event_kind, ticked, is_default }), on the list, or null. */
 function readChoice(value: unknown): Choice | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -108,7 +127,12 @@ function readChoice(value: unknown): Choice | null {
   return { userType: userType as EmailAlertUserType, eventKind: eventKind as string, ticked };
 }
 
-/** The GET with its shape check: { ok: true, events: [...] }, every event on the list, none twice. */
+/**
+ * The GET with its shape check: { ok: true, events: [...] } holding exactly the
+ * pairs on EMAIL_ALERT_EVENTS. Each event is on its user type's list
+ * (readChoice), none is there twice and none is missing, so the count is the
+ * list's too; anything else is a failed read and no box is drawn.
+ */
 async function readChoices(): Promise<Read> {
   try {
     const response = await fetch(`${apiBase()}${ROUTE}`, { credentials: 'include', cache: 'no-store' });
@@ -116,11 +140,13 @@ async function readChoices(): Promise<Read> {
     if (response.status === 403) return 'refused';
     if (!response.ok) return 'failed';
     const body = (await response.json()) as { ok?: unknown; events?: unknown } | null;
-    if (body?.ok !== true || !Array.isArray(body.events) || body.events.length === 0) return 'failed';
+    if (body?.ok !== true || !Array.isArray(body.events)) return 'failed';
     const choices = body.events.map(readChoice);
     if (choices.some((choice) => choice === null)) return 'failed';
     const read = choices as Choice[];
-    if (new Set(read.map((choice) => `${choice.userType}:${choice.eventKind}`)).size !== read.length) return 'failed';
+    const keys = new Set(read.map((choice) => keyOf(choice.userType, choice.eventKind)));
+    if (keys.size !== read.length) return 'failed';
+    if (!LISTED.every((key) => keys.has(key))) return 'failed';
     return { choices: read };
   } catch {
     return 'failed';
@@ -201,14 +227,13 @@ export default function EmailAlertSettings() {
         return;
       }
       setView({ state: 'loaded', choices: read.choices });
-      const now = read.choices.find((choice) => sameBox(choice, box));
-      if (!now) {
-        setLine('It is not known whether that change was saved. The choices shown have been read again.');
-      } else if (now.ticked === asked) {
+      // A complete read (readChoices) holds this box.
+      const nowTicked = read.choices.some((choice) => sameBox(choice, box) && choice.ticked);
+      if (nowTicked === asked) {
         setLine(`“${label}” is now ${asked ? 'ticked' : 'unticked'} for ${who}. The choices shown have been read again.`);
       } else {
         setLine('');
-        setNotSaved(`That change was not saved: “${label}” is still ${now.ticked ? 'ticked' : 'unticked'} for ${who}.`);
+        setNotSaved(`That change does not show as saved: read again just now, “${label}” is still ${nowTicked ? 'ticked' : 'unticked'} for ${who}.`);
       }
     } finally {
       inFlight.current = false;
@@ -227,44 +252,49 @@ export default function EmailAlertSettings() {
     );
   }
 
+  // aria-busy covers the boxes only: the status and alert lines below stay outside it (as EmailAlertSwitch).
   return (
-    <div aria-busy={saving}>
-      {EMAIL_ALERT_USER_TYPES.map((userType) => {
-        const boxes = view.choices.filter((choice) => choice.userType === userType);
-        if (boxes.length === 0) return null;
-        const who = WHO[userType];
-        return (
-          <fieldset key={userType} className="mt-[var(--s4)] first:mt-0">
-            <legend className="t-label">{who.heading}</legend>
-            {who.note ? <p className="t-muted mt-[var(--s1)] max-w-[68ch]">{who.note}</p> : null}
-            <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-              {boxes.map((box) => {
-                const id = `email-alert-${box.userType}-${box.eventKind}`;
-                const words = wordsFor(box);
-                return (
-                  <li key={id}>
-                    <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
-                      {/* aria-disabled, not disabled, so focus stays on the box pressed; the handler does nothing then. */}
-                      <input
-                        type="checkbox"
-                        className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
-                        checked={box.ticked}
-                        aria-disabled={saving}
-                        aria-describedby={`${id}-hint`}
-                        onChange={() => {
-                          if (!saving) void press(box);
-                        }}
-                      />
-                      <span className="t-body">{words.label}</span>
-                    </label>
-                    <p id={`${id}-hint`} className="t-muted">{words.hint}</p>
-                  </li>
-                );
-              })}
-            </ul>
-          </fieldset>
-        );
-      })}
+    <div>
+      <div aria-busy={saving}>
+        {EMAIL_ALERT_USER_TYPES.map((userType) => {
+          const who = WHO[userType];
+          const noteId = `email-alert-${userType}-note`;
+          return (
+            <fieldset key={userType} className="mt-[var(--s4)] first:mt-0" aria-describedby={who.note ? noteId : undefined}>
+              <legend className="t-label">{who.heading}</legend>
+              {who.note ? <p id={noteId} className="t-muted mt-[var(--s1)] max-w-[68ch]">{who.note}</p> : null}
+              <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+                {view.choices.filter((choice) => choice.userType === userType).map((box) => {
+                  const id = `email-alert-${box.userType}-${box.eventKind}`;
+                  const words = wordsFor(box);
+                  // While saving, the box is dimmed and the pointer says no; the words keep their contrast.
+                  return (
+                    <li key={id}>
+                      <label
+                        className={`inline-flex min-h-[var(--tap)] items-center gap-[var(--s2)] ${saving ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        {/* aria-disabled, not disabled, so focus stays on the box pressed; the handler does nothing then. */}
+                        <input
+                          type="checkbox"
+                          className={`h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]${saving ? ' opacity-60' : ''}`}
+                          checked={box.ticked}
+                          aria-disabled={saving}
+                          aria-describedby={`${id}-hint`}
+                          onChange={() => {
+                            if (!saving) void press(box);
+                          }}
+                        />
+                        <span className="t-body">{words.label}</span>
+                      </label>
+                      <p id={`${id}-hint`} className="t-muted">{words.hint}</p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </fieldset>
+          );
+        })}
+      </div>
       <p role="status" className="t-body mt-[var(--s3)]">{line}</p>
       {notSaved ? (
         <p role="alert" className="t-body mt-[var(--s2)]">

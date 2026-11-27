@@ -50,8 +50,9 @@ import BackHome from '@/components/BackHome';
  *      their lifecycle, and the boards' own desk page.
  *
  * The server is the real gate on every drawer: photo writes require an admin
- * role, board writes require a Microsoft-authenticated staff principal, and
- * this page can widen neither.
+ * role, board writes require a Microsoft-authenticated staff principal, the
+ * email alert choices require the organization admin ('admin' by alias;
+ * app/api/pilot/email-alerts/gym), and this page can widen none of them.
  */
 
 type SlotBusy = 'idle' | 'uploading' | 'removing';
