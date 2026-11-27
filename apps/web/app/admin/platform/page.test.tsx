@@ -696,6 +696,61 @@ describe('a suppressed figure on the gym summary', () => {
   });
 });
 
+// Lane W4-3, FN-4c (GO on #2192, 7206014991): the platform owner's on-the-floor tile reads a count from
+// 5 up or "Suppressed" (FN-0 flag 3), and anything else as "Could not be checked", never a number.
+describe('the on-the-floor tile', () => {
+  const baseSummary = {
+    organization_id: 'org-punxsy',
+    board: {
+      activeAthletes: { status: 'available', count: 12 },
+      trainingSessions30Days: { status: 'available', count: 40, completedCount: 30, completionRate: 0.75 },
+      goalStatusBuckets: {
+        active: { status: 'unavailable', count: null },
+        completed: { status: 'unavailable', count: null },
+        other: { status: 'unavailable', count: null },
+      },
+      coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
+    },
+    growth: { totalInteractions: 7, avgSatisfaction: null, recommendationsMade: 0, researchRequirementsCreated: 0, researchRequirementsClosed: 0 },
+    capabilityAccess: {},
+    trackAssignments: {},
+  };
+
+  async function tileFor(onTheFloor: unknown, present = true): Promise<HTMLElement> {
+    const summary = present ? { ...baseSummary, on_the_floor: onTheFloor } : baseSummary;
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) return jsonResponse(summary);
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+    return screen.getByText('On the floor now').parentElement as HTMLElement;
+  }
+
+  test('a count from 5 up reads its number', async () => {
+    expect(within(await tileFor({ status: 'available', count: 9 })).getByText('9')).toBeInTheDocument();
+  });
+
+  test('a suppressed count reads "Suppressed"', async () => {
+    expect(within(await tileFor({ status: 'insufficient_data', count: null })).getByText('Suppressed')).toBeInTheDocument();
+  });
+
+  test.each([
+    ['a missing field', undefined, false],
+    ['a count under the floor', { status: 'available', count: 3 }, true],
+    ['a zero marked available', { status: 'available', count: 0 }, true],
+    ['an unknown status', { status: 'unavailable', count: null }, true],
+    ['a count that is not a number', { status: 'available', count: '9' }, true],
+    ['not an object', 12, true],
+  ])('%s reads "Could not be checked", never a number', async (_label, value, present) => {
+    const tile = await tileFor(value, present as boolean);
+    expect(within(tile).getByText('Could not be checked')).toBeInTheDocument();
+    expect(within(tile).queryByText(/\d/)).toBeNull();
+  });
+});
+
 // AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the link to the new-gym wizard
 // reads that page's title.
 describe('the link to the new-gym wizard', () => {

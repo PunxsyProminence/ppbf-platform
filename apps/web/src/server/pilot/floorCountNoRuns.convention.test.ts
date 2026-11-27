@@ -160,10 +160,11 @@ describe('only the classes line reads the floor count (App Overwatch, 7206212516
   // No attendance figure, report or export may use floorCount.ts: every non-test source file that names
   // it at all, by any import form or none, is pinned, and a new one fails here until App Overwatch
   // approves it by name. scripts/ (the app's and the repository's) holds this repo's exports.
-  const ALLOWED_NAMERS = [CLASSES_ROUTE];
+  // FN-4c adds the platform owner's gym summary, named in the GO's approved list (7206014991).
+  const ALLOWED_NAMERS = [CLASSES_ROUTE, 'app/api/pilot/platform/gym-summary/route.ts'].sort();
   const REPO_SCRIPTS = path.resolve(WEB_DIR, '..', '..', 'scripts');
 
-  it('is named by the classes line route and no other source file', () => {
+  it('is named by the classes line route and the platform gym summary, and no other source file', () => {
     const roots = ['app', 'components', 'lib', 'src', 'scripts'].map((dir) => path.join(WEB_DIR, dir)).concat(REPO_SCRIPTS);
     const namers = roots
       .filter((dir) => fs.existsSync(dir))

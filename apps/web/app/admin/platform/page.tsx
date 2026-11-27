@@ -44,6 +44,8 @@ interface GymSummary {
   growth: GrowthMetrics;
   capabilityAccess: Record<string, boolean>;
   trackAssignments: Record<string, string[]>;
+  /** How many are here now, floored (lane W4-3, FN-4c): a count from 5 up, otherwise suppressed. */
+  on_the_floor?: unknown;
 }
 
 const INVITABLE_ROLES = [
@@ -183,6 +185,19 @@ function metricLabel(metric: CountMetric): string {
     return 'Suppressed';
   }
   return 'No data yet';
+}
+
+// The on-the-floor tile (lane W4-3, FN-4c). The route floors the count; this reads only a count from 5
+// up or "Suppressed" (FN-0 flag 3), and anything else -- a missing field, a malformed one, or a count
+// under the floor -- as "Could not be checked", never as a number or a zero.
+function onTheFloorLabel(value: unknown): string {
+  if (!value || typeof value !== 'object') return 'Could not be checked';
+  const metric = value as Record<string, unknown>;
+  if (metric.status === 'insufficient_data' && metric.count === null) return 'Suppressed';
+  if (metric.status === 'available' && Number.isInteger(metric.count) && (metric.count as number) >= 5) {
+    return String(metric.count);
+  }
+  return 'Could not be checked';
 }
 
 export default function PlatformConsole() {
@@ -711,7 +726,7 @@ export default function PlatformConsole() {
           {loadingSummary && <p className="t-muted mt-[var(--s4)]">Loading summary...</p>}
 
           {summary && summary.organization_id === selectedOrgId && (
-            <div className="mt-[var(--s5)] grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-4">
+            <div className="mt-[var(--s5)] grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-5">
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">Active Athletes</p>
                 <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{metricLabel(summary.board.activeAthletes)}</p>
@@ -727,6 +742,10 @@ export default function PlatformConsole() {
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">SHADOW Uses (30d)</p>
                 <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{summary.growth.totalInteractions}</p>
+              </div>
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">On the floor now</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{onTheFloorLabel(summary.on_the_floor)}</p>
               </div>
             </div>
           )}
