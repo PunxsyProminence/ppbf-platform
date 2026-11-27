@@ -5,8 +5,8 @@
 -- indexed the two tables EM-4a's sources read. EM-4b's and EM-4c's sources
 -- read two more tables the same way, for the rows created since the source's
 -- checkpoint less the sweep's ten-minute overlap: `created_at > <from> and
--- created_at <= <to>` (emailAlertEvents.ts and emailAlertQueue.ts on the
--- EM-4b and EM-4c branches, stacked on #2169, not yet on main):
+-- created_at <= <to>` (emailAlertEvents.ts and emailAlertQueue.ts, on main
+-- since EM-4b, #2193, and EM-4c, #2217):
 --   - EM-4b's coach_message source (a coach's message to an athlete) and its
 --     family_note source (a coach's message to a family) read
 --     pilot.coach_observations;
