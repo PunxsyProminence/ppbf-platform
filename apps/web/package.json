@@ -336,6 +336,7 @@
     "test:migrations:stopped-coming": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/stoppedComing.pg.test.ts --testTimeout=300000",
     "test:migrations:athlete-reached-out-marks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/reachedOutMarksMigration.pg.test.ts --testTimeout=300000",
     "test:migrations:on-the-floor": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/onTheFloor.pg.test.ts --testTimeout=300000",
+    "test:migrations:floor-count": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/floorCount.pg.test.ts --testTimeout=300000",
     "test:migrations:reached-out-marks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/reachedOutMarks.pg.test.ts --testTimeout=300000",
     "test:migrations:drill-exit-correction-fields": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillExitCorrectionFields.pg.test.ts --testTimeout=300000",
     "test:migrations:ft1-content": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/ft1ContentPackage.pg.test.ts --testTimeout=300000",
