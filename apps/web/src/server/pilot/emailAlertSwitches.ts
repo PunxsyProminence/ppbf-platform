@@ -381,15 +381,16 @@ export async function setEmailAlertSwitch(
   subject: EmailAlertSwitchSubject & { readonly switchedOn: unknown },
   now: Date = new Date(),
 ): Promise<EmailAlertSwitchState> {
-  if (typeof subject.switchedOn !== 'boolean') {
-    throw new ValidationError('switched_on must be true or false');
-  }
-  const switchedOn = subject.switchedOn;
   const userType = await emailAlertUserTypeFor(subject, now);
   if (!userType) {
     await retireSwitchIfAny(subject, now);
     throw notOffered();
   }
+  // After the offered check (L1): a minor's answer never depends on what they sent.
+  if (typeof subject.switchedOn !== 'boolean') {
+    throw new ValidationError('switched_on must be true or false');
+  }
+  const switchedOn = subject.switchedOn;
 
   let retiredFirst = false;
   const saved = await withTransaction(async (client) => {
@@ -431,6 +432,17 @@ export async function setEmailAlertSwitch(
   // gone or under 18, or a user type changed to the one this request is made
   // under, retires the row; sign-in switched off, a role with no switch, or a
   // request still under the old type leaves it as it was (T-1 A to T-3 A).
+  await retireSwitchIfAny(subject, now);
+  throw notOffered();
+}
+
+/**
+ * Whether a switch is offered, asked before anything a request sent is judged
+ * (L1; me/route.ts asks it first): anyone offered none gets the plain 403 once
+ * any leftover row is retired, as setEmailAlertSwitch answers them.
+ */
+export async function refuseUnlessOffered(subject: EmailAlertSwitchSubject, now: Date = new Date()): Promise<void> {
+  if ((await emailAlertUserTypeFor(subject, now)) !== null) return;
   await retireSwitchIfAny(subject, now);
   throw notOffered();
 }

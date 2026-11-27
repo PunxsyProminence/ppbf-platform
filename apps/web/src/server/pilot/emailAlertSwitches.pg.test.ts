@@ -62,8 +62,19 @@ jest.mock('./db', () => ({
   }),
 }));
 
+// The /me route test below signs each person in as their session would.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+
+import { NextRequest } from 'next/server';
+
+import * as meRoute from '@/app/api/pilot/email-alerts/me/route';
+
 import type { PilotRole } from './contracts';
 import { readEmailAlertSwitch, setEmailAlertSwitch } from './emailAlertSwitches';
+import { requirePrincipal } from './http';
 
 jest.setTimeout(180_000);
 
@@ -521,7 +532,88 @@ describe('emailAlertSwitches.ts on a real database', () => {
     }
   });
 
-  test('a non-boolean is refused before anything is read or written', async () => {
+  test('L1 at /me (a reviewer on EM-2b-2): a person offered no switch gets the same answer whatever the query or body; a coach gets the 400s as before', async () => {
+    const client = await freshDatabase('emailsw_route_minor');
+    activeClient = client;
+    try {
+      const url = 'http://localhost/api/pilot/email-alerts/me';
+      const get = async (query: string) => {
+        const response = await meRoute.GET(new NextRequest(`${url}${query}`));
+        return { status: response.status, headers: [...response.headers.entries()], body: await response.json() };
+      };
+      const put = async (sent: unknown, query = '') => {
+        const request = new NextRequest(`${url}${query}`, { method: 'PUT', body: typeof sent === 'string' ? sent : JSON.stringify(sent) });
+        const response = await meRoute.PUT(request);
+        return { status: response.status, headers: [...response.headers.entries()], body: await response.json() };
+      };
+      const signIn = (who: { accountId: string; role: PilotRole; athleteId: string | null }) => (requirePrincipal as jest.Mock)
+        .mockResolvedValue({ ...who, organizationId: ORG_ID, sessionToken: 'session', authProvider: 'magic_link' });
+      const shapes: Array<[unknown, string]> = [
+        [{ switched_on: true }, ''], [{ switched_on: false }, ''], [{ switched_on: true }, '?account_id=acct-other'], ['', ''], ['{"', ''],
+        [[true], ''], [{ on: true }, ''], [{ switched_on: true, account_id: 'acct-other' }, ''], [{ switched_on: 'yes' }, ''], [{ switched_on: null }, ''],
+      ];
+      // A parent account linked to a record under 18 is offered nothing either (A5).
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, 'ath-emailsw-kid', 'Email Athlete', '2013-02-02', '100', 'active', 'contact', true, $2, now(), now())`,
+        [ORG_ID, COACH_ID],
+      );
+      await client.query(`update pilot.accounts set athlete_id = 'ath-emailsw-kid' where account_id = $1`, [PARENT_ID]);
+      const people = [SUBJECTS.minor, SUBJECTS.gone, { ...SUBJECTS.adult, athleteId: null }, SUBJECTS.parent];
+      let offeredNone: Awaited<ReturnType<typeof get>> | null = null;
+      let refused: Awaited<ReturnType<typeof put>> | null = null;
+      for (const person of people) {
+        signIn(person);
+        for (const query of ['', '?account_id=acct-other', '?x=']) {
+          const answer = await get(query);
+          offeredNone ??= answer;
+          expect({ person, query, answer }).toEqual({ person, query, answer: offeredNone });
+        }
+        for (const [sent, query] of shapes) {
+          const answer = await put(sent, query);
+          refused ??= answer;
+          expect({ person, sent, query, answer }).toEqual({ person, sent, query, answer: refused });
+        }
+      }
+      expect(offeredNone).toMatchObject({ status: 200, body: { ok: true, offered: false } });
+      expect(refused).toMatchObject({ status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
+      expect(await switchRows(client)).toEqual([]);
+      expect(await auditRows(client)).toEqual([]);
+
+      // A coach: the same 400s as before, worded as before.
+      signIn(SUBJECTS.coach);
+      expect(await get('?x=')).toMatchObject({ status: 400, body: { error: 'Unsupported query: this read takes no fields' } });
+      expect(await put({ switched_on: true }, '?x=')).toMatchObject({ status: 400, body: { error: 'Unsupported query: send switched_on in the body only' } });
+      for (const sent of ['', '{"', [true]]) {
+        expect(await put(sent)).toMatchObject({ status: 400, body: { error: 'Request body must be a JSON object with switched_on' } });
+      }
+      for (const sent of [{ on: true }, { switched_on: true, account_id: 'acct-other' }]) {
+        expect(await put(sent)).toMatchObject({ status: 400, body: { error: 'Unsupported fields: send switched_on only' } });
+      }
+      expect(await put({ switched_on: 'yes' })).toMatchObject({ status: 400, body: { error: 'switched_on must be true or false' } });
+      expect(await switchRows(client)).toEqual([]);
+
+      // An adult switched on with a confirmed address, then corrected to under
+      // 18: a malformed PUT gets the plain 403, and the row is switched off and
+      // cleared, audited once (the store's leftover retire).
+      await client.query(
+        `insert into pilot.email_alert_switches
+           (organization_id, account_id, user_type, switched_on, switched_on_at, confirmed_address, confirmed_at, set_at)
+         values ($1, $2, 'adult_athlete', true, now(), 'left.over@example.test', now(), now())`,
+        [ORG_ID, ADULT_ID],
+      );
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+      signIn(SUBJECTS.adult);
+      expect(await put('{"')).toEqual(refused);
+      expect(await switchRows(client)).toMatchObject([{ account_id: ADULT_ID, switched_on: false, confirmed_address: null, pending_address: null }]);
+      expect((await auditRows(client)).map((row) => row.details.reason)).toEqual(['no_longer_offered']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a non-boolean is refused before anything is written', async () => {
     const client = await freshDatabase('emailsw_bad');
     activeClient = client;
     try {
