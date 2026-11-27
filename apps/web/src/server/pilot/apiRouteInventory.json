@@ -8792,6 +8792,124 @@
     }
   },
   {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym's choice of which events send the opt-in email alert, per user type (lane W4-1 EM-5; OW27-10 A). Every event on every user type's list (src/shared/emailAlerts.ts) with ticked and whether it is still the starting value (no row = ticked, OW27-39 A). A gym setting; no person data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/gym/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/email-alerts/gym",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias) + isOrganizationAdminRole again in setGymEmailAlertEvent",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym admin ticks or unticks one event for one user type, for its own gym (organization from the session). Body is exactly { user_type, event_kind, ticked }; the pair must be on the list. Upsert and audit row (old and new value) in one transaction, not mirrored. Lane W4-1 EM-5.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/me/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/email-alerts/me",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The caller's own email alert switch (lane W4-1 EM-1b; OD-2026-11-19-019, OW27-10 A). Returns { ok: true, offered: false } for an athlete under 18, with no date of birth, with a deleted athlete record or with no athlete record linked to the account (OW27-02 C; OD-2026-10-04-010). WRITES only for such a caller, or one whose user type has changed since their row was saved (T-1 A on #2169): it switches off the row left from before and clears its address, under the same locks as a save, with its audit row in the same transaction (retireSwitchIfAny). That write needs no same-origin or CSRF check (the app has no general one; the two OAuth callbacks check a signed state for their own flow): it takes no fields, touches only the caller's own row, can only switch off a switch the caller is not offered under their user type now, and changes nothing when repeated. Otherwise the user type, on/off and, for an adult athlete, whether an address is confirmed. Returns no address.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/email-alerts/me/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/email-alerts/me",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store refuses an athlete under 18 or with no date of birth (403); self-scoped",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin",
+      "parent",
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Switches the caller's own email alert on or off (lane W4-1 EM-1b). Body is exactly { switched_on: boolean }. An adult athlete cannot switch on before an address is confirmed (409; table CHECK too). A caller no longer offered a switch gets 403 after any leftover row is switched off and its address cleared. Each write and its audit row (user type, before and after; no address) commit together, not mirrored.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/gym-tvs/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/gym-tvs",
@@ -8901,6 +9019,57 @@
     }
   },
   {
+    "id": "app/api/pilot/room-names/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/room-names",
+    "gate": "requirePrincipal; organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Returns the gym's name for each renamable room and card heading (the closed list in src/shared/roomNames.ts; no row = the default) and whether each is the default. The gym's words for its rooms, no person data; every member's screens show them (RN-2, RN-3). Lane W4-9 RN-1b, OW27-11, OW27-40 A; permission lines approved by Overwatch on #2212.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/room-names/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/room-names",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias) + isOrganizationAdminRole again in setRoomName",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym admin sets one name for its own gym (organization from the session), or null or blank for the default (the row is deleted). Body is exactly { name_key, display_name }: a key on the closed list; a name trimmed, 1 to 40 characters, no line breaks or control characters (Q-C A); not the name another key in the same list shows (Q-B A, 409). Write and audit row (old and new name) in one transaction, not mirrored. Lane W4-9 RN-1b, OW27-11, OW27-40 A; permission lines approved by Overwatch on #2212.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/stopped-coming/gap/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/stopped-coming/gap",
@@ -8972,7 +9141,36 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Who has stopped coming: the gym's live, not-left athletes, with at least one active program membership where the gym records any for them (App Overwatch on #2172; no membership recorded is decided by not-left alone), who came at least once (a register present day, or a standing here mark the register does not hold: an untied open-gym run, a tap that created no register mark, or a cancelled class; OW27-32 A on this page only, App Overwatch on #2172) and have not come for the gym's number of days. Returns the gym's gap_days, is_default and today, and per athlete id, name, last day they came and days since; no date of birth, membership, run or mark. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1.",
+    "notes": "Who has stopped coming: the gym's live, not-left athletes, with at least one active program membership where the gym records any for them (App Overwatch on #2172; no membership recorded is decided by not-left alone), who came at least once (a register present day, or a standing here mark the register does not hold: an untied open-gym run, a tap that created no register mark, or a cancelled class; OW27-32 A on this page only, App Overwatch on #2172) and have not come for the gym's number of days. Returns the gym's gap_days, is_default and today, and per athlete id, name, last day they came, days since, and reached_out: who marked it (their staff name at this gym, or null when they cannot be named) and the gym day, only while that mark is newer than the last day they came, else null (SC-3a-2; OW27-33 B, Overwatch W4-6 Q4 A); no date of birth, membership, run, here mark or account id. A coach's reach is the whole gym, so a coach and the gym admin see the same list. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Lane W4-6 SC-1, SC-3a-2.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/stopped-coming/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/stopped-coming",
+    "gate": "requirePrincipal + requireRole(STOPPED_COMING_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in setStoppedComingReachedOut; 403 without), checked again under lock in the transaction (lockStaffMembership); the athlete must be a live athlete of this gym (organizationActionableRoster, then lockLiveAthlete under lock; 404 otherwise); organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The \"reached out\" mark on the stopped-coming page (SC-3a-2; OW27-33 B; Overwatch W4-6 Q4 A: who and when only, no free text, one current mark per athlete). Body is exactly { athlete_id, reached_out: true | false }. true marks the athlete as reached out by the caller, only for an athlete on the list now, by the list's own rules (not marked as left, an active program membership where any is recorded, came at least once, and not for the gym's number of days; all but the gym's number of days read inside the mark's transaction); any other is refused with 409 and nothing is written. A take-back needs no list check. a current mark newer than the athlete's last day they came stands (already_marked), a stale one is ended as 'replaced' by the caller and the new mark inserted in the same transaction (Overwatch on #2176). false takes back a newer current mark ('taken_back', the row kept); a stale mark or none is not_marked. The last day they came is read from both sources (register and the staff-only presence record) inside the mark's transaction (Overwatch on #2163, answer A: through this module and route, no separate reached-out route). Every write and its audit row (create, or update with action clear and cleared_kind) commit together, not mirrored. Answers { ok, outcome } only; no account id. Lane W4-6 SC-3a-2.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8989,11 +9187,13 @@
     "id": "app/api/pilot/on-the-floor/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/on-the-floor",
-    "gate": "requirePrincipal + requireRole(ON_THE_FLOOR_READ_ROLES: coach, organization_admin, admin) + an active staff membership in this gym (staffNoteRoleInOrganization in listOnTheFloorForStaff; 403 without); organization from the session; refuses any query field",
+    "gate": "requirePrincipal + requireRole(ON_THE_FLOOR_READ_ROLES: coach, organization_admin, admin, parent, athlete); staff: an active staff membership in this gym (staffNoteRoleInOrganization in listOnTheFloorForStaff; 403 without); parent: own children by guardianAthleteIds only; athlete: a linked athlete record (onTheFloorForFamily; 403 without); organization from the session; refuses any query field; a family failure is one fixed text",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
-      "admin"
+      "admin",
+      "parent",
+      "athlete"
     ],
     "athleteData": true,
     "writes": true,
@@ -9001,7 +9201,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Who is on the floor now, for the coach and admin line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; FN-0 signed off on #2160; GO on #2192). Counts a standing here mark on a live run of this gym (less one a later Absent or Excused on the tied class's register took off, FN0-Q6 A) or a present register mark on a class whose gym day is today (a family's own mark from the class's start, a staff mark from when written, FN0-Q2 A); cancelled classes stay on this staff line (FN0-Q1 A). Returns the gym day and each counted live athlete's id and name, in name order; no run, class, mark time, marker or source. writes: before reading it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). Not attendance; no figure reads it. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). Parents and athletes are refused until FN-2.",
+    "notes": "Who is on the floor now, for the coach and admin line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; FN-0 signed off on #2160; GO on #2192). Counts a standing here mark on a live run of this gym (less one a later Absent or Excused on the tied class's register took off, FN0-Q6 A) or a present register mark on a class whose gym day is today (a family's own mark from the class's start, a staff mark from when written, FN0-Q2 A); cancelled classes stay on this staff line (FN0-Q1 A). Returns the gym day and each counted live athlete's id and name, in name order; no run, class, mark time, marker or source. writes: before reading it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). Not attendance; no figure reads it. A pinned reader of the staff-only presence record (sessionRunPresenceStaffOnly.convention.test.ts). FN-2 (Q3.2 A, Q3.4 A; FN-0 F1): a parent is answered with on_the_floor, the ids of their own minor children who count (guardianAthleteIds, never the request), and an athlete with on_the_floor true or false about themselves; a cancelled class and a run tied to one are left off a family's line (FN0-Q1 A, flag 9); a family is given nothing else, and its failure body is one fixed text whatever the cause (F15).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -9010,7 +9210,39 @@
         "requireRole"
       ],
       "roleLiterals": [
-        "admin,coach,organization_admin"
+        "admin,athlete,coach,organization_admin,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/on-the-floor/classes/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/on-the-floor/classes",
+    "gate": "requirePrincipal + requireRole(CLASSES_LINE_READ_ROLES: board, staff, volunteer, coach, organization_admin, admin); organization from the session; refuses any query field; platform_owner, parent and athlete 403",
+    "rolesAdmitted": [
+      "board",
+      "staff",
+      "volunteer",
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "What is running on the floor now and how many are here, for the board's, the staff-role and volunteer, and the coach and admin homes (lane W4-3, FN-4a; Q12 A as App Overwatch applied it; GO on #2192, 7206014991). Returns the classes running now (title, times, room), the round of each session the gym's TVs show (TV name, phase, round, rounds total, paused; QE A), and read_at. The board also gets one total held to the board's floor (0 to 4 suppressed, flag 3) and no count per class; staff-role and volunteer accounts get each class's exact count, which can be 1 (flag 2, accepted at FN-0's sign-off), and no total; coaches and gym admins get neither. Counts are register-only (floorCount.ts, the line's own rule, QD A; flag 12); no name, initials or id of anyone, no run, script or coach field. writes: before reading the rounds it settles this gym's runs idle past 3 hours (closeIdleSessionRuns, which throws, so a failed close fails the read; no audit row). The platform owner is refused (OD-2026-10-07-011 ruling 2); its floored total comes through its own route. Not attendance; no figure reads it.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,board,coach,organization_admin,staff,volunteer"
       ]
     }
   },
@@ -10577,7 +10809,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:41-42. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth).",
+    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:48-49. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth). FN-4c (lane W4-3; GO on #2192, 7206014991): on_the_floor, one total of how many are here now for the named gym, from present register marks only (floorCount.ts), floored at 5 (0 to 4 insufficient_data); no class, round or run table; private, no-store.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12240,7 +12472,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "F-067. The delivering coach marks one athlete present in their own LIVE run, or takes the mark back (setRunAthletePresent). The module requires an active staff membership here and assertActorCanAccessAthlete (staffRoleReachingAthlete; one refusal for every reason), then, with the run row locked, that the run is the caller's and in progress: another coach's run answers 404 like a missing one, a settled run 409. A mark taken back keeps its row; each change is an audit event with no shadow mirror. Writes pilot.session_run_athletes only: nothing to pilot.sessions, pilot.athlete_check_ins or any attendance table (CT-13).",
+    "notes": "F-067. The delivering coach marks one athlete present in their own LIVE run, or takes the mark back (setRunAthletePresent). The module requires an active staff membership here and assertActorCanAccessAthlete (staffRoleReachingAthlete; one refusal for every reason), then, with the run row locked, that the run is the caller's (another coach's run answers 404 like a missing one) and, unless the tap carries a request_key already recorded for this run, in progress (a settled run 409). A kept tap sends an optional request_key (W4 item 7): it is looked up on the run's audit events under the run lock, before the in-progress check; a key already recorded for the same athlete and direction answers 200 with the first answer plus replayed and live and writes nothing, even on a settled run; the same key for another athlete or direction answers 409 SESSION_RUN_KEY_REUSED. A new keyed tap records its key, what it asked and its answer as a session_script_run audit event in the same transaction as the mark. A kept tap may also send tapped_ms_ago, which dates the mark to the tap (never before the run began), so on a tied session an Absent or Excused set on the register after it wins, and page_id, the random in-memory id of the page that kept it, stored nowhere with the tap, which lets it win over an untouched Absent that this run's own no-shows tap set from the same page (that tap records its page_id). A mark taken back keeps its row; each change is an audit event with no shadow mirror. Writes pilot.session_run_athletes; a take-back also closes the athlete's open windows on this run in pilot.behaviour_observations_windows (closeRunWindows); on a session tied to a class it also writes that class's register row in pilot.scheduler_attendance (copyTapToRegister and undoTapOnRegister in sessionRunClass.ts). Nothing to pilot.sessions or pilot.athlete_check_ins (CT-13).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12263,13 +12495,13 @@
       "organization_admin",
       "admin"
     ],
-    "athleteData": false,
+    "athleteData": true,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3).",
+    "notes": "Advance/pause/resume/finish a live session-script run. sessionScriptRuns.ts requireOwnLiveRun (~line 123-138) requires delivered_by_account_id === caller, so only the starting account can change it. Run record holds counts and coach notes, no athlete id. platform_owner refused (OD-2026-10-08-003 R2/PLAN-3). tie_class answers the athlete ids it copied to the class register. mark_no_shows (W4 item 7, OVERWATCH 7160191377) takes the athlete ids the screen showed, their class id and a request key: sessionRunClass.ts markSessionNoShowsAbsent marks Absent only those still signed up with no register mark and no session mark that day, on the caller's own live run, still tied to that class, of a class they run (or as an admin); records the tap (key, ids sent, ids marked, when, and the random in-memory id of the page that kept it, page_id, which the register uses to let a later here tap from that same page win over the tap's untouched Absent) in an audit event on the run; and answers the athlete ids it marked. A resend of a recorded key is answered with the first answer and writes nothing, after the caller's membership and own-run checks and before the live check, so it also answers once the run has ended; it gives that account only what it was answered before. Every action may carry a request key (W4 item 7, OVERWATCH 7170099938): advance/pause/resume/show_on_wall/finish then go through sessionScriptRuns.ts keyedSessionScriptRunAction and tie_class through setSessionRunClass, which lock the caller's own run, look the key up among the run's audit events before the live check, and record it (with the action's target, never coach notes; a tie with its answer) in the same transaction as the write. A resend of a recorded key writes nothing and answers replayed: the run as it is now (null for a live action on a run since ended), or for a tie the class it holds now and whether it is live. The same key for another change is refused 409 SESSION_RUN_KEY_REUSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12356,7 +12588,7 @@
     "missingGate": false,
     "looksWrong": "With script_id, any admitted role reads every coach's settled runs for that script (deviation notes, what_worked) gym-wide, not just their own.",
     "confidence": "medium",
-    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names.",
+    "notes": "Without script_id returns the caller's own live run (getLiveRunForCoach); with script_id returns up to 50 settled runs gym-wide (listSettledRunsForScript, sessionScriptRuns.ts:470). Run rows carry athletes_present counts and coach free text, no athlete identifier. platform_owner refused on both shapes (OD-2026-10-08-003 R2/PLAN-3). With ?finished=true (F-067) it lists the gym's settled runs, plain and scripted, with end notes, the delivering coach's display name and the athletes marked present, those filtered in SQL to the live athletes of the caller's own organization (listSettledRunsForOrganization, listPresentAthletes); so this read now carries athlete names. Without script_id, the caller's own live run, when tied to a class, also carries that class's no-show athlete ids (sessionRunClass.ts describeRunClass, ids only), empty unless the caller runs the class or is an admin and it has started and is not cancelled (W4 item 7, OVERWATCH 7160191377).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
