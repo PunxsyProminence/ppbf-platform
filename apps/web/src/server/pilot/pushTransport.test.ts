@@ -80,6 +80,7 @@ describe('isPublicAddress', () => {
   test.each([
     '0.0.0.0', '10.1.1.1', '100.64.0.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '172.31.255.255', '192.0.0.8',
     '192.0.2.1', '192.88.99.1', '192.168.1.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '255.255.255.255',
+    '168.63.129.16', '::ffff:0:a00:1', '2001:2::1', '2001:10::1', '2001:20::1', '3fff::1', '5f00::1',
     '::', '::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:169.254.169.254', '::10.0.0.1', '64:ff9b::a00:1',
     '64:ff9b:1::1', '100::1', '2001::1', '2001:db8::1', '2002:a00:1::', 'fc00::1', 'fd12::1', 'fe80::1', 'febf::1', 'fec0::1',
     'ff02::1', 'push.example.test', '',
@@ -255,6 +256,46 @@ describe('postPushRequest', () => {
         .rejects.toMatchObject({ code: 'PUSH_BAD_STATUS' });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test.each([
+    'https://127.0.0.1/send/x', 'https://[::1]/send/x', 'https://8.8.8.8/send/x', 'https://[2606:4700::1111]/send/x',
+  ])('an address given as the host (%s) is refused before any connection, public or not', async (endpoint) => {
+    const request = jest.fn();
+    await expect(postPushRequest(details(endpoint), { ...PUSH_POST_DEFAULTS, request, timeoutMs: 5_000 }))
+      .rejects.toMatchObject({ code: 'PUSH_HOST_NOT_PUBLIC' });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test('the request is made with no shared agent and with the lookup, so no pool or proxy can skip the check', async () => {
+    const seen: Array<{ agent: unknown; lookup: unknown }> = [];
+    const spy: typeof http.request = ((options: http.RequestOptions, onResponse: (response: http.IncomingMessage) => void) => {
+      seen.push({ agent: options.agent, lookup: options.lookup });
+      return http.request(options, onResponse);
+    }) as typeof http.request;
+    await withServer((_request, response) => { response.statusCode = 201; response.end(); }, async (port) => {
+      const options = { ...PUSH_POST_DEFAULTS, request: spy, lookup: toLocalServer, timeoutMs: 5_000 };
+      expect(await postPushRequest(details(`http://push.example.test:${port}/send/x`), options)).toBe(201);
+    });
+    expect(seen).toEqual([{ agent: false, lookup: toLocalServer }]);
+  });
+
+  test('an upgrade answer (101 with an Upgrade header) is refused at once, not left hanging', async () => {
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n'));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address !== 'object') throw new Error('test bug: no port');
+    try {
+      const options = { ...PUSH_POST_DEFAULTS, request: http.request, lookup: toLocalServer, timeoutMs: 30_000 };
+      const started = Date.now();
+      await expect(postPushRequest(details(`http://push.example.test:${address.port}/send/x`), options))
+        .rejects.toMatchObject({ code: 'PUSH_BAD_STATUS' });
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      server.close();
     }
   });
 });

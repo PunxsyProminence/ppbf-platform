@@ -16,8 +16,16 @@
  *     (net.BlockList does so; pushTransport.test.ts pins it). The endpoint's
  *     own shape (pilot.push_subscriptions' CHECK, parsePushEndpoint) already
  *     refuses an IP literal, a port and userinfo.
- *   - THE WHOLE REQUEST, lookup included, is cut off at the caller's time
- *     limit (PUSH_TIMEOUT) until the answer's status line arrives.
+ *   - AN ADDRESS GIVEN AS THE HOST is refused outright: the connection never
+ *     looks one up, so the check above could not see it.
+ *   - NO SHARED AGENT (agent: false): a pooled socket or an environment proxy
+ *     would connect without this lookup.
+ *   - IT ALWAYS SETTLES. The whole request, lookup included, is cut off at the
+ *     caller's time limit (PUSH_TIMEOUT) until the answer's status line
+ *     arrives; an upgrade answer (101 with an Upgrade header, which never
+ *     reaches the response callback) is refused (PUSH_BAD_STATUS); and a
+ *     request that closes with nothing said is PUSH_NO_ANSWER. A post that
+ *     never settled would hold up the whole worker tick (reviewer I on WP-2b-2a).
  *   - NONE OF AN ANSWER'S BODY IS READ: the status is all that is used, and the
  *     connection is closed with it. A status outside 100-599 (an HTTP client
  *     takes any three digits) is refused as PUSH_BAD_STATUS, so the send log's
@@ -33,14 +41,16 @@ import type { PushRequestDetails } from 'web-push';
 
 const NOT_PUBLIC = new net.BlockList();
 for (const [prefix, bits] of [
-  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['168.63.129.16', 32], ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
   ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
 ] as const) NOT_PUBLIC.addSubnet(prefix, bits, 'ipv4');
 // No ::ffff:0:0/96 rule: net.BlockList reads it as every IPv4 address too.
 for (const [prefix, bits] of [
-  ['::', 96], ['::1', 128], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64], ['2001::', 32],
-  ['2001:db8::', 32], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
+  ['::', 96], ['::1', 128], ['::ffff:0:0:0', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
+  ['2001::', 32], ['2001:2::', 48], ['2001:10::', 28], ['2001:20::', 28], ['2001:db8::', 32], ['2002::', 16],
+  ['3fff::', 20], ['5f00::', 16], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
 ] as const) NOT_PUBLIC.addSubnet(prefix, bits, 'ipv6');
 
 /** Whether an address is one a push may be sent to. Anything that is not an IP address is not. */
@@ -93,13 +103,21 @@ export const PUSH_POST_DEFAULTS: Omit<PushPostOptions, 'timeoutMs'> = {
 /**
  * Posts the request; resolves to the push service's status code as soon as it
  * arrives, or rejects: a PushPostError (PUSH_HOST_NOT_PUBLIC, PUSH_TIMEOUT,
- * PUSH_BAD_STATUS), or the network's own error. The first outcome settles it.
+ * PUSH_BAD_STATUS, PUSH_NO_ANSWER), or the network's own error. The first
+ * outcome settles it, and one always does.
  */
 export function postPushRequest(details: PushRequestDetails, options: PushPostOptions): Promise<number> {
   const url = new URL(details.endpoint);
+  if (net.isIP(url.hostname.replace(/^\[|\]$/g, '')) !== 0) return Promise.reject(new PushPostError('PUSH_HOST_NOT_PUBLIC'));
   const signal = AbortSignal.timeout(options.timeoutMs);
   return new Promise((resolve, reject) => {
-    const fail = (error: unknown) => reject(signal.aborted ? new PushPostError('PUSH_TIMEOUT') : error);
+    let settled = false;
+    const settle = (outcome: () => void) => {
+      if (settled) return;
+      settled = true;
+      outcome();
+    };
+    const fail = (error: unknown) => settle(() => reject(signal.aborted ? new PushPostError('PUSH_TIMEOUT') : error));
     const request = options.request(
       {
         hostname: url.hostname,
@@ -114,11 +132,19 @@ export function postPushRequest(details: PushRequestDetails, options: PushPostOp
       (response) => {
         const status = response.statusCode ?? 0;
         response.destroy();
-        if (status < 100 || status > 599) reject(new PushPostError('PUSH_BAD_STATUS'));
-        else resolve(status);
+        settle(() => (status < 100 || status > 599 ? reject(new PushPostError('PUSH_BAD_STATUS')) : resolve(status)));
       },
     );
+    request.on('upgrade', (_response, socket) => {
+      socket.destroy();
+      settle(() => reject(new PushPostError('PUSH_BAD_STATUS')));
+    });
     request.on('error', fail);
+    request.on('close', () => fail(new PushPostError('PUSH_NO_ANSWER')));
+    signal.addEventListener('abort', () => {
+      request.destroy();
+      settle(() => reject(new PushPostError('PUSH_TIMEOUT')));
+    }, { once: true });
     request.end(details.body ?? undefined);
   });
 }
