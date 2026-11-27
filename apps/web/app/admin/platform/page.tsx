@@ -44,6 +44,8 @@ interface GymSummary {
   growth: GrowthMetrics;
   capabilityAccess: Record<string, boolean>;
   trackAssignments: Record<string, string[]>;
+  /** How many are here now, floored (lane W4-3, FN-4c): a count from 5 up, otherwise suppressed. */
+  on_the_floor?: unknown;
 }
 
 const INVITABLE_ROLES = [
@@ -185,6 +187,19 @@ function metricLabel(metric: CountMetric): string {
   return 'No data yet';
 }
 
+// The on-the-floor tile (lane W4-3, FN-4c). The route floors the count; this reads only a count from 5
+// up or "Suppressed" (FN-0 flag 3), and anything else -- a missing field, a malformed one, or a count
+// under the floor -- as "Could not be checked", never as a number or a zero.
+function onTheFloorLabel(value: unknown): string {
+  if (!value || typeof value !== 'object') return 'Could not be checked';
+  const metric = value as Record<string, unknown>;
+  if (metric.status === 'insufficient_data' && metric.count === null) return 'Suppressed';
+  if (metric.status === 'available' && Number.isInteger(metric.count) && (metric.count as number) >= 5) {
+    return String(metric.count);
+  }
+  return 'Could not be checked';
+}
+
 export default function PlatformConsole() {
   const session = usePilotSession();
   const isMicrosoftSession = session.authProvider === 'microsoft';
@@ -269,6 +284,9 @@ export default function PlatformConsole() {
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingSummary(true);
+    // The last read leaves the screen when a new one starts, so a read still running, or one that
+    // fails, never leaves an earlier "on the floor now" number standing as current (lane W4-3, FN-4c).
+    setSummary(null);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -277,7 +295,9 @@ export default function PlatformConsole() {
           { credentials: 'include', signal: controller.signal },
         );
         if (response.ok) {
-          setSummary((await response.json()) as GymSummary);
+          const read = (await response.json()) as GymSummary;
+          // A read cancelled by a newer one never lands over it.
+          if (!controller.signal.aborted) setSummary(read);
         } else {
           setSummary(null);
         }
@@ -727,6 +747,10 @@ export default function PlatformConsole() {
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">SHADOW Uses (30d)</p>
                 <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{summary.growth.totalInteractions}</p>
+              </div>
+              <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
+                <p className="t-eyebrow">On the floor now</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{onTheFloorLabel(summary.on_the_floor)}</p>
               </div>
             </div>
           )}
