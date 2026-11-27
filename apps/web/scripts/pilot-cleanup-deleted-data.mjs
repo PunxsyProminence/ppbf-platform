@@ -1539,6 +1539,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
   let filesDeleted = 0;
   let filesMissing = 0;
   let correctionsDeleted = 0;
+  let alertSwitchesDeleted = 0;
   let askerQuestionsDeleted = 0;
   let subjectRequirementsDeleted = 0;
   let subjectSubmissionsDeleted = 0;
@@ -1666,6 +1667,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let unlinkedHere = 0;
       let retiredHere = 0;
       let correctionsHere = 0;
+      let alertSwitchesHere = 0;
       const shadowHere = emptyShadowCounts();
       shadowHere.behaviourObservations = behaviourHere;
       shadowHere.behaviourObservationsWindows = windowsHere;
@@ -1717,6 +1719,20 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
                 [login.account_id],
               );
               correctionsHere += corrections.rowCount ?? 0;
+            }
+            /* ITS EMAIL ALERT SWITCHES GO TOO (Purge A: Overwatch's answer A
+               on #2168, EM-2b-1), for the same reason: the account and
+               membership keys' cascades never fire for a retired login, and
+               an athlete 18 or over's row holds the address they typed and
+               the one they confirmed. Every gym's row, as the corrections
+               above: the login itself is retired, so it signs in nowhere
+               (deletedAccountSignIn.ts), and no row means the switch is off. */
+            if (tables.alertSwitches) {
+              const switches = await client.query(
+                'delete from pilot.email_alert_switches where account_id = $1',
+                [login.account_id],
+              );
+              alertSwitchesHere += switches.rowCount ?? 0;
             }
           }
         }
@@ -2005,6 +2021,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       loginsUnlinked += unlinkedHere;
       loginsRetired += retiredHere;
       correctionsDeleted += correctionsHere;
+      alertSwitchesDeleted += alertSwitchesHere;
       askerQuestionsDeleted += askerQuestionsHere;
       subjectRequirementsDeleted += subjectRequirementsHere;
       subjectSubmissionsDeleted += subjectSubmissionsHere;
@@ -2196,7 +2213,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
 
   return {
     athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, videosDeleted, filesDeleted, filesMissing,
-    correctionsDeleted, askerQuestionsDeleted, subjectRequirementsDeleted, subjectSubmissionsDeleted, library,
+    correctionsDeleted, alertSwitchesDeleted, askerQuestionsDeleted, subjectRequirementsDeleted, subjectSubmissionsDeleted, library,
     shadow, blocked, guardianLinkLock,
   };
 }
@@ -2325,6 +2342,7 @@ async function main() {
               to_regclass('pilot.compliance_violations') is not null as violations,
               to_regclass('pilot.account_profiles') is not null as profiles,
               to_regclass('pilot.shadow_chat_memory_corrections') is not null as corrections,
+              to_regclass('pilot.email_alert_switches') is not null as "alertSwitches",
               to_regclass('pilot.shadow_user_profiles') is not null as "shadowProfiles",
               to_regclass('pilot.shadow_jobs') is not null as "shadowJobs",
               to_regclass('pilot.shadow_rate_limit_buckets') is not null as "shadowBuckets",
@@ -2428,7 +2446,7 @@ async function main() {
     const outcome = families === 0 || applyInquiries
       ? {
         athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0,
-        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, askerQuestionsDeleted: 0,
+        videosDeleted: 0, filesDeleted: 0, filesMissing: 0, correctionsDeleted: 0, alertSwitchesDeleted: 0, askerQuestionsDeleted: 0,
         subjectRequirementsDeleted: 0, subjectSubmissionsDeleted: 0,
         library: { documentsDeleted: 0, chunksDeleted: 0, documentsHeld: 0, chunksHeld: 0, documentsWithFilePath: 0 },
         shadow: emptyShadowCounts(),
@@ -2501,6 +2519,7 @@ async function main() {
         would_unlink_athlete_logins: outcome.loginsUnlinked,
         would_retire_live_athlete_logins: outcome.loginsRetired,
         would_delete_shadow_memory_corrections: outcome.correctionsDeleted,
+        would_delete_email_alert_switches: outcome.alertSwitchesDeleted,
         would_delete_asker_research_questions: outcome.askerQuestionsDeleted,
         would_delete_subject_research_requirements: outcome.subjectRequirementsDeleted,
         would_delete_subject_research_submissions: outcome.subjectSubmissionsDeleted,
@@ -2563,6 +2582,7 @@ async function main() {
           files_deleted: outcome.filesDeleted,
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
+          email_alert_switches_deleted: outcome.alertSwitchesDeleted,
           asker_research_questions_deleted: outcome.askerQuestionsDeleted,
           subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
           subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
@@ -2596,6 +2616,7 @@ async function main() {
       files_deleted: outcome.filesDeleted,
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,
+      email_alert_switches_deleted: outcome.alertSwitchesDeleted,
       asker_research_questions_deleted: outcome.askerQuestionsDeleted,
       subject_research_requirements_deleted: outcome.subjectRequirementsDeleted,
       subject_research_submissions_deleted: outcome.subjectSubmissionsDeleted,
