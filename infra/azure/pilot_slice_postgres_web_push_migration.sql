@@ -14,7 +14,7 @@
 -- pilot.push_subscriptions: one row per browser a person turned push on in,
 -- per gym, as the browser's PushSubscription gives it: the push service's
 -- endpoint, the browser's public key (p256dh) and its auth secret (auth, a
--- secret: never logged, audited or shown). web-push 3.6.7 (QD A on #2228)
+-- secret: the store, WP-1b, is never to log, audit or show it). web-push 3.6.7 (QD A on #2228)
 -- needs p256dh to decode to exactly 65 bytes and auth to at least 16 (its
 -- src/encryption-helper.js). It does NOT limit where it sends: it parses the
 -- endpoint with url.parse and posts to whatever host and port that gives
@@ -24,9 +24,10 @@
 -- of printable characters with no '@' or backslash. That is a backstop, not
 -- the guard: the store (WP-1b, not built yet) is to check the same, and the
 -- sender (WP-2, not built yet) is to refuse a host that resolves to a private,
--- loopback or link-local address. One person per browser per gym: a browser
--- turned on in a gym by someone else is to move to them (WP-1b), and a person
--- in two gyms keeps a row in each. No user agent, device name or IP.
+-- loopback or link-local address, checking the address it actually connects
+-- to. One person per browser: a browser turned on by someone else, in any gym,
+-- is to move to them, under a lock on the endpoint (WP-1b); one person in two
+-- gyms keeps a row in each, which the key allows. No user agent, device name or IP.
 -- device_key_hash is to hold the SHA-256 (hex) of a random key the browser
 -- holds in an HttpOnly cookie, written only if Jason answers QB B on #2228
 -- (Logout on that device ends its push); under QB A it stays null. So either
@@ -37,13 +38,14 @@
 -- pilot.push_alert_sends and pilot.push_alert_checkpoints: the shape of the
 -- email send log (pilot.email_alert_sends, lane W4-1 EM-3a), for push (QC A1
 -- on #2228). One row per gym, person, event kind and event row, so the sweep
--- queues one send per person per event; a send goes to every browser the
--- person has in that gym at send time, so a send row names no browser and
--- keeps one outcome for all of them. A person can still see an event twice,
+-- (WP-2, not built yet) is to queue one send per person per event; a send is
+-- to go to every browser the person has in that gym at send time, so a send
+-- row names no browser and keeps one outcome for all of them. A person can still see an event twice,
 -- as with the email: a send cut off after a push service took it but before
 -- its row says sent is tried again when its lease runs out; a retry after one
 -- browser took it and another failed goes to both again. The pop-up's one tag
--- (public/sw.js, WP-1c) makes a repeat replace the first on a device. No
+-- (public/sw.js, WP-1c #2234, not merged) is to make a repeat replace the first
+-- on a device while the first is still showing. No
 -- content, no endpoint. 'switched_off' is a skip reason only if Jason answers
 -- QA B (the email switch also gates push). The event id is not a foreign key
 -- (events live in several tables). pilot.push_alert_checkpoints holds no
