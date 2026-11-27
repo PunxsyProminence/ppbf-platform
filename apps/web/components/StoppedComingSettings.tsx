@@ -24,7 +24,7 @@ import { apiBase } from '@/lib/apiBase';
  * setting is read: a live region inserted already filled is often not
  * announced. The next press clears it first; no timer does. The one
  * exception: when the outcome is not known and the re-read fails, an alert
- * replaces the drawer, and focus is sent to it. A Save is
+ * replaces the drawer, and focus is sent to it unless focus is elsewhere. A Save is
  * confirmed only by the number sent coming back as the gym's own setting.
  * When the outcome is not known, the setting is read again, so the old one is
  * not left on screen as fact; a refusal (401, 403, other 4xx) changed nothing
@@ -36,7 +36,7 @@ const COULD_NOT_READ = 'The setting could not be read. Reload to try again.';
 type Load =
   | { readonly state: 'loading' }
   /** A refused or failed read: the alert's words, and no select. */
-  /** readAgain: the re-read after a PUT failed; focus is sent to the alert then, never on a first read. */
+  /** readAgain: the re-read after a PUT failed; focus is sent to the alert then unless focus is elsewhere, never on a first read. */
   | { readonly state: 'error'; readonly words: string; readonly readAgain?: true }
   | {
       readonly state: 'loaded';
