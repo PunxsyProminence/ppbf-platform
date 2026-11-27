@@ -447,21 +447,23 @@ describe('readCurrentReachedOut on a real database', () => {
     const lastCame = new Map<string, string | null>([['ada', day(-20)], ['ben', day(-20)], ['cy', null], ['dee', day(-20)]]);
     const shown = await readCurrentReachedOut(gym.organizationId, lastCame);
     expect(Object.fromEntries(shown)).toEqual({
-      ada: { by_name: 'Jordan', on_day: TODAY },
-      cy: { by_name: 'Pat', on_day: TODAY },
+      ada: { by_name: 'Jordan', by_role: 'coach', on_day: TODAY },
+      cy: { by_name: 'Pat', by_role: 'office', on_day: TODAY },
     });
     const text = JSON.stringify(Object.fromEntries(shown));
     for (const actor of [gym.coach, gym.coach2, gym.admin]) expect(text).not.toContain(actor.accountId);
 
     // The other gym reads its own mark only.
     expect(Object.fromEntries(await readCurrentReachedOut(other.organizationId, new Map([['ada', day(-20)], ['ben', null]]))))
-      .toEqual({ ada: { by_name: 'Jordan', on_day: TODAY } });
+      .toEqual({ ada: { by_name: 'Jordan', by_role: 'coach', on_day: TODAY } });
     // Nothing asked, nothing read.
     expect((await readCurrentReachedOut(gym.organizationId, new Map())).size).toBe(0);
   });
 
-  // Reviewer K: a marker who cannot be named is null, never a stand-in that reads as a name.
-  test('by_name is null when the marker cannot be named: account deleted (row gone, or marked deleted), membership here ended while homed elsewhere, no name on record', async () => {
+  // Reviewer K: a marker who cannot be named is null, never a stand-in that reads as a name. The role
+  // the mark was made in still comes back, from the mark's own row (lane W5-FU, F2; App Overwatch's
+  // answer A on #2248: "Test both roles and a deleted account").
+  test('by_name is null when the marker cannot be named: account deleted (row gone, or marked deleted), membership here ended while homed elsewhere, no name on record; by_role stays the role the mark was made in', async () => {
     const gym = await newGym('unnamed');
     const elsewhere = await newGym('unnamed-home');
     const n = gymCount;
@@ -474,33 +476,49 @@ describe('readCurrentReachedOut on a real database', () => {
     await staffMember(gym.organizationId, `acct-visitor-${n}`, 'organization_admin', 'Lee', { home: elsewhere.organizationId });
     // dee: a coach with no typed name and a generic login (a role word names nobody).
     await staffMember(gym.organizationId, `acct-generic-${n}`, 'coach', null, { login: 'coach@example.org' });
+    // eve: the legacy admin name, no typed name and a generic login; its row is then deleted.
+    await staffMember(gym.organizationId, `acct-legacy-${n}`, 'admin', null, { login: 'admin@example.org' });
+    await client.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag,
+          coach_id, created_at, updated_at)
+       values ($1, 'eve', 'eve', '2012-01-01', '100', 'active', 'contact', true, $2, now(), now())`,
+      [gym.organizationId, `acct-generic-${n}`],
+    );
     await set(marker(`acct-gone-${n}`, 'coach'), 'ada', day(-20), true);
     await set(marker(`acct-deleted-${n}`, 'coach'), 'ben', day(-20), true);
     await set(marker(`acct-visitor-${n}`, 'organization_admin'), 'cy', day(-20), true);
     await set(marker(`acct-generic-${n}`, 'coach'), 'dee', day(-20), true);
-    const lastCame = new Map<string, string | null>([['ada', day(-20)], ['ben', day(-20)], ['cy', day(-20)], ['dee', day(-20)]]);
+    await set(marker(`acct-legacy-${n}`, 'admin'), 'eve', day(-20), true);
+    const lastCame = new Map<string, string | null>([
+      ['ada', day(-20)], ['ben', day(-20)], ['cy', day(-20)], ['dee', day(-20)], ['eve', day(-20)],
+    ]);
 
     // Before: the three with a name on record are named, the generic login is not.
     expect(Object.fromEntries(await readCurrentReachedOut(gym.organizationId, lastCame))).toEqual({
-      ada: { by_name: 'Robin', on_day: TODAY },
-      ben: { by_name: 'Kim', on_day: TODAY },
-      cy: { by_name: 'Lee', on_day: TODAY },
-      dee: { by_name: null, on_day: TODAY },
+      ada: { by_name: 'Robin', by_role: 'coach', on_day: TODAY },
+      ben: { by_name: 'Kim', by_role: 'coach', on_day: TODAY },
+      cy: { by_name: 'Lee', by_role: 'office', on_day: TODAY },
+      dee: { by_name: null, by_role: 'coach', on_day: TODAY },
+      eve: { by_name: null, by_role: 'office', on_day: TODAY },
     });
 
     await client.query('delete from pilot.accounts where account_id = $1', [`acct-gone-${n}`]);
+    await client.query('delete from pilot.accounts where account_id = $1', [`acct-legacy-${n}`]);
     await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [`acct-deleted-${n}`]);
     await client.query(
       'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
       [`acct-visitor-${n}`, gym.organizationId],
     );
     expect(await marks(gym, 'ada')).toEqual([expect.objectContaining({ marked_by_account_id: null, ended: false })]);
+    expect(await marks(gym, 'eve')).toEqual([expect.objectContaining({ marked_by_account_id: null, ended: false })]);
     const shown = await readCurrentReachedOut(gym.organizationId, lastCame);
     expect(Object.fromEntries(shown)).toEqual({
-      ada: { by_name: null, on_day: TODAY },
-      ben: { by_name: null, on_day: TODAY },
-      cy: { by_name: null, on_day: TODAY },
-      dee: { by_name: null, on_day: TODAY },
+      ada: { by_name: null, by_role: 'coach', on_day: TODAY },
+      ben: { by_name: null, by_role: 'coach', on_day: TODAY },
+      cy: { by_name: null, by_role: 'office', on_day: TODAY },
+      dee: { by_name: null, by_role: 'coach', on_day: TODAY },
+      eve: { by_name: null, by_role: 'office', on_day: TODAY },
     });
     expect(JSON.stringify(Object.fromEntries(shown))).not.toMatch(/acct-|Coach|Gym office|Your coach/);
   });

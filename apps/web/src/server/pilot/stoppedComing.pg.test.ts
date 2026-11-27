@@ -537,7 +537,7 @@ describe('listStoppedComing on a real database', () => {
     await expect(setStoppedComingReachedOut(gym.coach, 'ada', true, today)).resolves.toBe('marked');
     await expect(row('ada')).resolves.toEqual({
       athlete_id: 'ada', full_name: 'Ada Reyes', last_came_day: day(-40), days_since_came: 40,
-      reached_out: { by_name: 'Jordan', on_day: today },
+      reached_out: { by_name: 'Jordan', by_role: 'coach', on_day: today },
     });
     await expect(setStoppedComingReachedOut(gym.coach2, 'ada', true, today)).resolves.toBe('already_marked');
 
@@ -663,7 +663,7 @@ describe('listStoppedComing on a real database', () => {
     await expect(setStoppedComingReachedOut(gym.admin, 'fay', true, today)).resolves.toBe('marked');
     await expect(setStoppedComingReachedOut(gym.coach, 'fay', true, today)).resolves.toBe('already_marked');
     await expect(listStoppedComing(gym.coach, today)).resolves.toMatchObject({
-      athletes: [{ athlete_id: 'fay', reached_out: { by_name: null, on_day: today } }],
+      athletes: [{ athlete_id: 'fay', reached_out: { by_name: null, by_role: 'office', on_day: today } }],
     });
 
     // Fay is then marked as left: a new mark is refused, but her mark can still be taken back.
