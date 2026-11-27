@@ -26,8 +26,8 @@ import { computeSessionExpiry } from './sessionPolicy';
  * readable without the rules tangled through it.
  */
 
-// The one mailbox this platform sends from: sign-in links, and the email
-// alert (OW27-05 A: the same sender), which imports it from here.
+// The one mailbox this platform sends from: sign-in links, the email alert
+// (OW27-05 A: the same sender) and its address code, which import it from here.
 export const SENDER = 'Admin@punxsyprominence.org';
 
 function appOrigin(): string {

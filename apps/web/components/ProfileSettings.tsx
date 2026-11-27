@@ -373,7 +373,7 @@ export default function ProfileSettings() {
       </section>
 
       {/* -------------------------------------------------- EMAIL ALERTS -- */}
-      {/* Staff and parents only; it renders nothing for anyone else (EM-2). */}
+      {/* Staff, parents and adult athletes; it renders nothing for anyone else (EM-2, EM-2b-3). */}
       <EmailAlertSwitch styles={EMAIL_ALERT_STYLES} />
 
       {/* -------------------------------------------------------- SIGN-IN -- */}
