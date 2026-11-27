@@ -552,6 +552,96 @@ describe('email alert sender', () => {
     }
   });
 
+  // A reviewer on EM-3b-2: the second recheck comes before the lease check,
+  // so the time it takes counts against the lease too.
+  test('the lease runs short while the second recheck runs: nothing is sent, nothing recorded', async () => {
+    const client = await freshDatabase('emailsender_recheck_lease');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { sent, dependencies } = recorder();
+      let reads = 0;
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => {
+          reads += 1;
+          // By the end of the second recheck only three minutes of the lease are left.
+          if (reads === 2) await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() + interval '3 minutes'`);
+          return true;
+        },
+      };
+      const [claimed] = await claimDueEmailAlertSends(1);
+      expect(await deliverEmailAlertSend(claimed, slow)).toBe('lost');
+      expect(reads).toBe(2);
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sending', finished: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a person the first recheck refuses costs no token: the preparation is never started', async () => {
+    const client = await freshDatabase('emailsender_no_token');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      await client.query(`update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`);
+      const { sent, dependencies } = recorder();
+      let tokens = 0;
+      let names = 0;
+      const counting: EmailAlertSenderDependencies = {
+        ...dependencies,
+        gymName: async (organizationId) => {
+          names += 1;
+          return dependencies.gymName(organizationId);
+        },
+        prepareSend: async () => {
+          tokens += 1;
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(counting, [])).toMatchObject({ sent: 0, skipped: 1 });
+      expect({ tokens, names }).toEqual({ tokens: 0, names: 0 });
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'skipped', skip_reason: 'switched_off' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a second recheck that throws records nothing: the row stays claimed until its lease runs out, then is put back as LEASE_EXPIRED', async () => {
+    const client = await freshDatabase('emailsender_recheck_throws');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { sent, dependencies } = recorder();
+      let reads = 0;
+      const failing: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => {
+          reads += 1;
+          if (reads === 2) throw new Error('the read failed');
+          return true;
+        },
+      };
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        expect(await runEmailAlertSweep(failing, [])).toMatchObject({ sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0 });
+        expect(errors).toHaveBeenCalledWith('Email alert send failed', { errorClass: 'Error' });
+      } finally {
+        errors.mockRestore();
+      }
+      expect(reads).toBe(2);
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sending', tries: 1, last_status_code: null, last_error_code: null }]);
+      await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() - interval '1 second'`);
+      expect(await recoverExpiredEmailAlertLeases()).toBe(1);
+      expect(await sendRows(client)).toMatchObject([{ status: 'queued', tries: 1, last_status_code: null, last_error_code: 'LEASE_EXPIRED' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test.each([
     ['3 minutes 50 seconds', 'lost', 0],
     ['4 minutes 10 seconds', 'sent', 1],
