@@ -277,11 +277,10 @@ export async function setStoppedComingReachedOut(
       await client.query('select 1 from pilot.organizations where organization_id = $1 for share', [organizationId]);
       policy = await readStoppedComingPolicy(organizationId, client);
     }
-    // The staff member: the account row first, on its own, then the membership. Every writer of
-    // these two rows takes the account first (auth.ts: "LOCK ORDER: THE ACCOUNT ROW FIRST");
-    // lockStaffMembership's one join took the membership first, and reviewer J saw it deadlock with
-    // an account being turned off. The role is the membership's, as sessionRunAthletes.ts marks a session.
-    await client.query('select 1 from pilot.accounts where account_id = $1 for share', [actor.accountId]);
+    // The staff member: lockStaffMembership takes the account row first, on its own, then the
+    // membership, the order every writer of these two rows takes (auth.ts: "LOCK ORDER: THE ACCOUNT
+    // ROW FIRST"; reviewer J's deadlock on #2206). The role is the membership's, as
+    // sessionRunAthletes.ts marks a session.
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new ForbiddenError(NOT_STAFF_TO_MARK);
     // The athlete row FOR UPDATE, not FOR SHARE: a soft delete or a "left" flag waits, and so does

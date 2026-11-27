@@ -39,7 +39,8 @@ import { lockStaffMembership, type StaffNoteRole } from './sessionStaffNotes';
 // An UNTIED (open gym) session writes no register: its marks stay session detail (OD-2026-10-13-016).
 // Session auto-close finishes runs and never comes here, so it never writes the register.
 //
-// LOCK ORDER, one way only: staff membership, run, athlete, session mark, class, register row.
+// LOCK ORDER, one way only: staff account and membership (lockStaffMembership, the account first),
+// run, athlete, session mark, class, register row.
 // (Tying mid-session locks a run's marks and their athletes in one statement; the run row, locked
 // first by every writer of marks, is what keeps that from deadlocking with a tap.)
 

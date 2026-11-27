@@ -65,8 +65,8 @@ let marksRows: Array<{ athlete_id: string; last_day: string }> = [];
 let athleteRow: { deleted_at: string | null; active_flag: boolean } | null = null;
 /** Overwatch on #2206: the gym row, held before the gym's number of days is read. */
 const GYM_LOCK = 'select 1 from pilot.organizations where organization_id = $1 for share';
-/** Reviewer J: the staff account row on its own, before the membership, the order its writers take. */
-const ACCOUNT_LOCK = 'select 1 from pilot.accounts where account_id = $1 for share';
+/** Reviewer J's account-first order is lockStaffMembership's own now (lane W5-FU, F3); this module takes no account lock. */
+const ACCOUNT_LOCK = 'from pilot.accounts';
 /** The athlete row FOR UPDATE: deleted, left, and every new row naming the athlete wait on it. */
 const ATHLETE_LOCK = 'select deleted_at, active_flag from pilot.athletes where organization_id = $1 and athlete_id = $2 for update';
 /** The mark's hold on the athlete's membership rows (Codex on #2206). */
@@ -75,7 +75,6 @@ const MEMBERSHIP_LOCK = 'select 1 from pilot.program_memberships where organizat
 const txClient = {
   query: jest.fn<Promise<{ rows: unknown[] }>, [string, unknown[]]>(async (sql) => {
     if (String(sql) === GYM_LOCK) return { rows: [{}] };
-    if (String(sql) === ACCOUNT_LOCK) return { rows: [{}] };
     if (String(sql) === ATHLETE_LOCK) return { rows: athleteRow ? [athleteRow] : [] };
     if (String(sql) === MEMBERSHIP_LOCK) return { rows: [] };
     if (String(sql).includes(MEMBERSHIPS)) return { rows: membershipRows };
@@ -325,7 +324,6 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       await expect(setStoppedComingReachedOut(coach, 'a-1', true, TODAY)).resolves.toBe('marked');
 
       const [gymLock] = onTx(GYM_LOCK);
-      const [accountLock] = onTx(ACCOUNT_LOCK);
       const [athleteLock] = onTx(ATHLETE_LOCK);
       const [membershipLock] = onTx(MEMBERSHIP_LOCK);
       const [membership] = onTx(MEMBERSHIPS);
@@ -333,7 +331,9 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       expect(gymLock.call[1]).toEqual(['org-1']);
       // The gym's number of days is read on the transaction, after its row is held; never on the pool.
       expect(mockPolicy.mock.calls).toEqual([['org-1', txClient]]);
-      expect(accountLock.call[1]).toEqual(['acct-coach']);
+      // The staff member is held by lockStaffMembership alone, on this transaction (account first, inside it).
+      expect(onTx(ACCOUNT_LOCK)).toEqual([]);
+      expect(mockLockMembership.mock.calls).toEqual([[txClient, coach]]);
       expect(athleteLock.call[1]).toEqual(['org-1', 'a-1']);
       // Codex on #2206: the athlete's membership rows are held FOR SHARE, on the transaction, before they are read.
       expect(membershipLock.call[1]).toEqual(['org-1', ['a-1']]);
@@ -341,7 +341,6 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       const order = [
         gymLock.order,
         mockPolicy.mock.invocationCallOrder[0],
-        accountLock.order,
         mockLockMembership.mock.invocationCallOrder[0],
         athleteLock.order,
         membershipLock.order,
@@ -402,9 +401,10 @@ describe('setStoppedComingReachedOut (SC-3a-2)', () => {
       expect(mockPolicy).not.toHaveBeenCalled();
       expect(mockQuery).not.toHaveBeenCalled();
       expect([...onTx(GYM_LOCK), ...onTx(MEMBERSHIPS)]).toEqual([]);
-      // The take-back rests on the staff member and the last day they came: the account, then the
-      // membership, then the athlete row (FOR UPDATE), each before the day is read.
-      expect(onTx(ACCOUNT_LOCK)[0].order).toBeLessThan(mockLockMembership.mock.invocationCallOrder[0]);
+      // The take-back rests on the staff member and the last day they came: the staff member
+      // (lockStaffMembership: account, then membership), then the athlete row (FOR UPDATE), each before the day is read.
+      expect(onTx(ACCOUNT_LOCK)).toEqual([]);
+      expect(mockLockMembership.mock.invocationCallOrder[0]).toBeLessThan(onTx(ATHLETE_LOCK)[0].order);
       expect(onTx(ATHLETE_LOCK)[0].order).toBeLessThan(onTx(MARKS)[0].order);
       expect(mockSetMark).toHaveBeenCalledWith(txClient, expect.objectContaining({ lastCameDay: TODAY, reachedOut: false }));
     });
