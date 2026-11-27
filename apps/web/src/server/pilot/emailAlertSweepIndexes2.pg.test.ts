@@ -8,7 +8,8 @@
 // exactly one b-tree on (created_at) to each and a re-apply is a no-op; the
 // SQL names a missing table, either one; the runner's readiness check refuses
 // a database where either index is absent or is not the index promised, and
-// accepts one where both are; behind a long write on the family thread posts
+// accepts one where both are; the runner refuses a database the operator did
+// not name; behind a long write on the family thread posts
 // it gives up at its lock timeout while coach notes go on being written; and
 // the planner can serve the sweep's window read (`created_at > $1 and
 // created_at <= $2`) from each index, returning the same rows as a plain scan.
@@ -74,6 +75,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
+let runMigration: () => Promise<void>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -275,6 +277,7 @@ beforeAll(async () => {
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
+  runMigration = runnerModule.run as () => Promise<void>;
   const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   const applyFullSchema = fullSchema.applyFullSchema as (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
@@ -451,6 +454,25 @@ describe('email alert sweep indexes 2 migration', () => {
     }
   });
 
+  test('the real runner refuses a database the operator did not name, and builds nothing there', async () => {
+    // The target check: the operator states the host and database they believe
+    // they are pointing at, and a mismatch refuses before any DDL. Plaintext is
+    // allowed here, so without the check the runner would reach this database.
+    const client = await freshDatabase('sweep2_index_target');
+    const saved = { ...process.env };
+    try {
+      process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+      process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor('sweep2_index_target');
+      process.env.PPBF_EXPECTED_POSTGRES_HOSTNAME = 'localhost';
+      process.env.PPBF_EXPECTED_POSTGRES_DATABASE = 'some_other_database';
+      await expect(runMigration()).rejects.toThrow('POSTGRES_TARGET_MISMATCH');
+      for (const { index } of TABLES) expect(await indexColumns(client, index)).toBeNull();
+    } finally {
+      process.env = saved;
+      await client.end();
+    }
+  });
+
   test.each([
     ['only the family thread posts index', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at)`],
     ['only the coach notes index', `create index ${NOTES_INDEX} on pilot.coach_observations (created_at)`],
@@ -466,6 +488,8 @@ describe('email alert sweep indexes 2 migration', () => {
 
   test.each([
     ['on the wrong columns', `create index ${POSTS_INDEX} on pilot.family_thread_posts (organization_id, created_at)`],
+    // One key column, so indnatts = 1 passes it: only the created_at name check can refuse it.
+    ['on one other column', `create index ${POSTS_INDEX} on pilot.family_thread_posts (organization_id)`],
     ['partial', `create index ${POSTS_INDEX} on pilot.family_thread_posts (created_at) where author_role = 'parent'`],
     ['unique', `create unique index ${POSTS_INDEX} on pilot.family_thread_posts (created_at)`],
     ['not a b-tree', `create index ${POSTS_INDEX} on pilot.family_thread_posts using hash (created_at)`],
