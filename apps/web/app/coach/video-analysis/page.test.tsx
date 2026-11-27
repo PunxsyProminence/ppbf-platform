@@ -426,7 +426,30 @@ describe('coach video release control', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Release' }));
 
     await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
-    expect(confirmSpy.mock.calls[0][0]).toContain('the athlete and their guardians');
+    // AS-13 CS-12a (Jason, 2026-11-26, Q-AS13-2 A): the box says who can watch
+    // each kind of clip.
+    const asked = String(confirmSpy.mock.calls[0][0]);
+    expect(asked).toContain('A clip of one athlete with no tags becomes playable for that athlete and their guardians.');
+    expect(asked).toContain('A team clip, or a sparring or bout clip with tagged athletes, can be watched by staff only.');
+  });
+
+  test('the held line says who can watch each kind of clip once it is released', async () => {
+    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText(/the athlete and their guardians for a one-athlete clip with no tags, staff only for a team clip or a tagged sparring or bout clip/);
+  });
+
+  test('no Planned Features panel; the intro says scoring is parked and not scheduled (Q-AS13-3 A)', async () => {
+    global.fetch = mockFetch({ videos: () => [video()] }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByRole('button', { name: 'Release' });
+    expect(screen.queryByText(/Planned Features/)).toBeNull();
+    expect(screen.queryByText(/Not Yet Implemented/i)).toBeNull();
+    expect(document.body.textContent).toContain('is parked and not scheduled.');
   });
 });
 

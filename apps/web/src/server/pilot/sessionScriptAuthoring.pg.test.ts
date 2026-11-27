@@ -99,6 +99,7 @@ import { query } from './db';
 import {
   SessionScriptAuthoringError,
   createSessionScriptFromTemplate,
+  cutToLength,
   editSessionScript,
   markSessionScriptReviewed,
   renderingFromBlocks,
@@ -2075,5 +2076,52 @@ describe('adding text blocks and copies (lane W4-5, SP-1b)', () => {
     } finally {
       await holder.end();
     }
+  });
+});
+
+describe('a title cut at 200 never splits an emoji (lane W4-5 follow-up, App Overwatch on #2191)', () => {
+  // 199 letters, then an emoji (two UTF-16 units, the 200th and 201st), then more: a plain 200 cut ends
+  // in half the emoji, which the database stores as U+FFFD.
+  const long = (letter: string) => `${letter.repeat(199)}\u{1F94A}tail`;
+
+  test('a template-made block, a library drill block and a copy each store the 199 letters, and no U+FFFD', async () => {
+    const gym = await newGym('cut');
+    await insertTemplate(gym);
+    await client.query(`update pilot.drill_library set name = $2 where organization_id = $1 and drill_id = 'ref-jab'`, [
+      gym.organizationId, long('J'),
+    ]);
+    await insertReference(gym, 'ref-long', long('D'));
+
+    // The template-made block takes the step's drill name.
+    const created = await create(gym);
+    const made = await getSessionScriptWithDetail(gym.organizationId, created.script_id);
+    expect(made!.blocks[0].block_label).toBe('J'.repeat(199));
+
+    // A library drill block with no block_label takes the drill's name; a copy with none takes its source's title.
+    const mirror = made!.blocks[1].block_id;
+    await client.query(`update pilot.session_script_blocks set block_label = $3 where organization_id = $1 and block_id = $2`, [
+      gym.organizationId, mirror, long('M'),
+    ]);
+    await edit(gym, created.script_id, {
+      add: [
+        { ref: 'd', kind: 'drill', drill_id: 'ref-long', start_offset_min: 16, end_offset_min: 20 },
+        { ref: 'c', kind: 'copy', block_id: mirror, start_offset_min: 20, end_offset_min: 24 },
+      ],
+    });
+
+    const stored = await query<{ block_label: string }>(
+      `select block_label from pilot.session_script_blocks where organization_id = $1 and script_id = $2 order by block_order`,
+      [gym.organizationId, created.script_id],
+    );
+    const labels = stored.map((row) => row.block_label);
+    expect(labels.slice(-2)).toEqual(['D'.repeat(199), 'M'.repeat(199)]);
+    expect(labels[0]).toBe('J'.repeat(199));
+    expect(labels.filter((label) => label.includes('\uFFFD'))).toEqual([]);
+  });
+
+  test('cutToLength keeps an emoji that ends exactly at 200, and anything at or under 200 as it is', () => {
+    expect(cutToLength(`${'x'.repeat(198)}\u{1F94A}tail`)).toBe(`${'x'.repeat(198)}\u{1F94A}`);
+    expect(cutToLength('Jab Drill')).toBe('Jab Drill');
+    expect(cutToLength('y'.repeat(200))).toBe('y'.repeat(200));
   });
 });
