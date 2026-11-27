@@ -101,12 +101,13 @@ export default function SessionNoShows({
     return {
       label,
       // With the class they were shown for: a session tied to another class since marks nobody.
-      send: ({ signal, requestKey }) =>
+      send: ({ signal, requestKey, pageId }) =>
         fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, class_id: classId, request_key: requestKey }),
+          // And this page's id, recorded with the tap: a here tap kept on this same page wins over it.
+          body: JSON.stringify({ action: 'mark_no_shows', athlete_ids: named, class_id: classId, request_key: requestKey, page_id: pageId }),
           signal,
         }),
       answerOf: async (response) => {
