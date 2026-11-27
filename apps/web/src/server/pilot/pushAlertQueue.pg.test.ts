@@ -286,7 +286,6 @@ describe('web push queue', () => {
       const candidates = [
         candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1), // two browsers: one row
         candidate(ADMIN_ID, 'staff', 'safety_escalation', EVENT_1),
-        candidate(SWITCH_OFF_ID, 'staff', 'safety_escalation', EVENT_1), // browser on, email switch off: not until QA
         candidate(NO_BROWSER_ID, 'staff', 'safety_escalation', EVENT_1), // no browser
         candidate(ELSEWHERE_ID, 'staff', 'safety_escalation', EVENT_1), // a browser only in another gym
         candidate(COACH_ID, 'staff', 'gym_notice', EVENT_2), // gym unticked it for staff
@@ -313,6 +312,33 @@ describe('web push queue', () => {
       ]);
       // Push writes nothing to the email send log.
       expect((await client.query('select 1 from pilot.email_alert_sends')).rowCount).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // QA PENDING (QK A on #2228, 7225179535: "fail closed until Jason answers
+  // QA ... Pin the join with a test labelled 'QA pending' so the change is one
+  // visible step"). Until Jason answers QA (does the email switch also decide
+  // push?), a browser on is not enough: the email switch must be on too. If he
+  // picks QA A, the switch join leaves pushAlertQueue.ts and this test changes
+  // to expect the switched-off coach queued.
+  test('QA pending: a browser on with the email switch off gets nothing; the same person switched on is queued', async () => {
+    const client = await freshDatabase('pushqueue_qa_pending');
+    activeClient = client;
+    try {
+      const pushFor = [candidate(SWITCH_OFF_ID, 'staff', 'safety_escalation', EVENT_1)];
+      expect(await enqueuePushAlertSends(pushFor)).toBe(0);
+      expect(await sendRows(client)).toEqual([]);
+      // CONTROL: the switch on, nothing else changed, and the same push is queued.
+      await client.query(
+        `update pilot.email_alert_switches set switched_on = true, switched_on_at = now(), switched_off_at = null
+          where organization_id = $1 and account_id = $2`,
+        [ORG_ID, SWITCH_OFF_ID],
+      );
+      expect(await enqueuePushAlertSends(pushFor)).toBe(1);
+      expect((await sendRows(client)).map((row) => [row.account_id, row.event_kind, row.status]))
+        .toEqual([[SWITCH_OFF_ID, 'safety_escalation', 'queued']]);
     } finally {
       await client.end();
     }

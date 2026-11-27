@@ -46,9 +46,10 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  *     is written down": a gate on who may receive something with no recorded
  *     decision is not to be invented). So this takes only the people both
  *     answers would push to: a browser on (QA A, the tap is the opt-in) and
- *     the switch on (what QA B adds). If Jason picks A, the switch join goes
- *     before WP-3 merges; WP-3, the only screen that saves a browser, waits
- *     for his answer.
+ *     the switch on (what QA B adds). App Overwatch's QK A (7225179535): "fail
+ *     closed until Jason answers QA". If Jason picks A, the switch join goes in
+ *     a PR named then, before WP-3 merges (the test "QA pending" pins it); WP-3,
+ *     the only screen that saves a browser, waits for his answer.
  *   - UNDER THAT USER TYPE, as the email queue asks the switch's: a browser
  *     saved as a parent's does not get a staff event. The sender asks the
  *     person's user type again before each send.
