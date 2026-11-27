@@ -69,6 +69,7 @@ const PARENT_ID = 'acct-pushqueue-parent';
 const ADULT_ID = 'acct-pushqueue-adult';
 const NO_BROWSER_ID = 'acct-pushqueue-no-browser';
 const SWITCH_OFF_ID = 'acct-pushqueue-switch-off';
+const ROLE_CHANGED_ID = 'acct-pushqueue-role-changed';
 const ELSEWHERE_ID = 'acct-pushqueue-elsewhere';
 const ADULT_ATHLETE = 'ath-pushqueue-adult';
 // The shapes pilot.push_subscriptions takes (WP-1a).
@@ -119,9 +120,11 @@ async function addBrowser(client: Client, organizationId: string, accountId: str
  * under their user type: an organization admin (a staff browser), a coach (two
  * staff browsers), a parent (a parent browser), an adult athlete (an adult
  * athlete browser, a confirmed address) and a coach with no browser. A second
- * coach has a staff browser on and the email switch off. In the other gym a
- * coach whose only browser is there, who is also a member here, switched on
- * here.
+ * coach has a staff browser on and the email switch off. A third coach, a
+ * parent until lately, is switched on as staff but has a browser saved as a
+ * parent's (a browser keeps the user type it was saved under until it is
+ * saved again: pushSubscriptions.ts). In the other gym a coach whose only
+ * browser is there, who is also a member here, switched on here.
  */
 async function freshDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
@@ -145,6 +148,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [PARENT_ID, 'parent', ORG_ID],
     [NO_BROWSER_ID, 'coach', ORG_ID],
     [SWITCH_OFF_ID, 'coach', ORG_ID],
+    [ROLE_CHANGED_ID, 'coach', ORG_ID],
     [ELSEWHERE_ID, 'coach', OTHER_ORG_ID],
   ];
   for (const [accountId, role, organizationId] of people) {
@@ -187,13 +191,15 @@ async function freshDatabase(name: string): Promise<Client> {
             ($1, $5, 'adult_athlete', true, now(), null, 'adult@example.test', now()),
             ($1, $6, 'staff', true, now(), null, null, null),
             ($1, $7, 'staff', false, null, now(), null, null),
-            ($1, $8, 'staff', true, now(), null, null, null)`,
-    [ORG_ID, ADMIN_ID, COACH_ID, PARENT_ID, ADULT_ID, NO_BROWSER_ID, SWITCH_OFF_ID, ELSEWHERE_ID],
+            ($1, $8, 'staff', true, now(), null, null, null),
+            ($1, $9, 'staff', true, now(), null, null, null)`,
+    [ORG_ID, ADMIN_ID, COACH_ID, PARENT_ID, ADULT_ID, NO_BROWSER_ID, SWITCH_OFF_ID, ELSEWHERE_ID, ROLE_CHANGED_ID],
   );
   await addBrowser(client, ORG_ID, ADMIN_ID, 'staff');
   await addBrowser(client, ORG_ID, COACH_ID, 'staff');
   await addBrowser(client, ORG_ID, COACH_ID, 'staff');
   await addBrowser(client, ORG_ID, SWITCH_OFF_ID, 'staff');
+  await addBrowser(client, ORG_ID, ROLE_CHANGED_ID, 'parent');
   await addBrowser(client, ORG_ID, PARENT_ID, 'parent');
   await addBrowser(client, ORG_ID, ADULT_ID, 'adult_athlete');
   await addBrowser(client, OTHER_ORG_ID, ELSEWHERE_ID, 'staff');
@@ -287,7 +293,8 @@ describe('web push queue', () => {
         candidate(PARENT_ID, 'parent', 'gym_notice', EVENT_2), // still ticked for parents
         candidate(PARENT_ID, 'parent', 'family_note', EVENT_3),
         candidate(PARENT_ID, 'parent', 'safety_escalation', EVENT_1), // not on the parent list
-        candidate(PARENT_ID, 'staff', 'parent_reply', EVENT_2), // browser saved under another user type
+        candidate(PARENT_ID, 'staff', 'parent_reply', EVENT_2), // browser and switch under another user type
+        candidate(ROLE_CHANGED_ID, 'staff', 'safety_escalation', EVENT_1), // switch on as staff, browser saved as a parent's
         candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_2),
         candidate(COACH_ID, 'staff', 'parent_reply', 'not-a-uuid'),
       ];
