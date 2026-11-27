@@ -95,7 +95,7 @@ role parameter; build `board/[member]` and the rest are routing.
 | Route | Ground | Notes |
 |---|---|---|
 | `admin/attendance` | ink | Rolls up `pilot.scheduler_attendance` (capability #122); a never-marked athlete renders `Unavailable`, never a fabricated 0% |
-| `admin/escalations` | ink | Reads `pilot.safety_escalations` (capability #194); the only pull surface for a near miss / pain report / safety-gate flag severe enough to auto-escalate — this platform sends no notification of any kind |
+| `admin/escalations` | ink | Reads `pilot.safety_escalations` (capability #194); the only pull surface for a near miss / pain report / safety-gate flag severe enough to auto-escalate — no email says what happened; staff who switch email alerts on get only "open the app" (lane W4-1) |
 | `board/[member]` | ink | **Build first.** The nine named board routes are this page |
 | `board` | ink | |
 | `board/president` | ink | |
