@@ -66,9 +66,10 @@ type ClassReport = {
   registrations: Array<{ registration_id: string; athlete_ref: string; status: string }>;
   attendance: Array<{ attendance_id: string; athlete_ref: string; status: string }>;
   tied_runs: Array<{ run_id: string; run_state: string }>;
-  register_marks_pointing_here: number;
+  register_marks: Array<{ run_id: string; athlete_ref: string }>;
+  distinct_athletes: number;
   untracked_references: { activity_log: number; floor_plans_daily: number };
-  audit_rows_naming_it: number;
+  audit_rows_about_it: number;
   apply_would_refuse: string[];
 };
 type Hit = { table: string; column: string; key: Record<string, string>; organization_id: string | null; marker?: string };
@@ -82,7 +83,11 @@ type Result = {
   tvs?: { marked: Array<Record<string, unknown>>; others: Array<Record<string, unknown>> };
   test_organizations?: Array<{ organization_id: string; status: string; members_by_role: Record<string, number>; rows_by_table: Record<string, number> }>;
   hiit_fit?: Record<string, unknown>;
-  sweep?: { tables_scanned: number; columns_scanned: number; tables_skipped_no_organization_column: string[]; truncated_tables: string[]; strict: Hit[]; near: Hit[] };
+  sweep?: {
+    tables_scanned: number; columns_scanned: number; columns_not_swept_by_type: Record<string, number>;
+    tables_skipped_no_organization_column: string[]; truncated_tables: string[]; strict: Hit[]; near: Hit[];
+  };
+  missing?: string[];
 };
 type Options = Record<string, unknown>;
 type Deps = { log?: (event: string, payload: Record<string, unknown>) => void; createClient?: (cs: string) => unknown };
@@ -95,6 +100,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let report: ReportFn;
 let runTool: RunFn;
 let parseOptions: ParseFn;
+let printableKey: (column: string, type: string, value: unknown) => string | null;
 let databaseCounter = 0;
 
 /** Computed here, not by the tool, so a broken personRef cannot agree with itself. */
@@ -164,6 +170,12 @@ async function insertNote(target: Client, noteId: string, athleteId: string, tex
   );
 }
 
+// The app writes registration and attendance ids as uuids (scheduler route).
+const REG_TEST = 'aaaaaaaa-0000-4000-8000-000000000001';
+const REG_REAL = 'aaaaaaaa-0000-4000-8000-000000000002';
+const ATT_TEST = 'aaaaaaaa-0000-4000-8000-000000000003';
+// An email inside a key with no person-like name (app/api/pilot/auth/password/login/route.ts).
+const BUCKET_KEY = 'password_login_email:parent+zz-audit@example.org';
 const NOTE_STRICT = '11111111-1111-4111-8111-111111111111';
 const NOTE_NEAR = '22222222-2222-4222-8222-222222222222';
 const NOTE_REAL = '33333333-3333-4333-8333-333333333333';
@@ -200,22 +212,25 @@ async function buildTemplate(target: Client): Promise<void> {
   await insertClass(target, GYM, 'c-near-space', ' ZZ-AUDIT with a leading space');
   await insertClass(target, GYM, 'c-near-lower', 'zz-audit lower case');
   await insertClass(target, GYM, 'c-near-audit-test', 'Audit test in title case');
+  await insertClass(target, GYM, 'c-near-tab', '\tAUDIT TEST after a tab');
+  await insertClass(target, GYM, 'c-near-nbsp', '\u00a0AUDIT TEST after a no-break space');
+  await insertClass(target, GYM, 'c-near-emspace', '\u2003AUDIT TEST after an em space');
   await insertClass(target, GYM, 'c-real', 'Tuesday boxing, not an AUDIT TEST', { start: iso(DAY), end: iso(DAY + 60 * 60 * 1000) });
   await insertClass(target, OTHER, 'c-other-strict', 'ZZ-AUDIT in another gym');
 
   await target.query(
     `insert into pilot.scheduler_registrations
        (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
-     values ($1, 'reg-test', 'c-strict-3', $2, 'coach', $4, 'registered'),
-            ($1, 'reg-real', 'c-real', $3, 'coach', $4, 'registered')`,
-    [GYM, TEST_ATHLETE, REAL_ATHLETE, COACH],
+     values ($1, $5, 'c-strict-3', $2, 'coach', $4, 'registered'),
+            ($1, $6, 'c-real', $3, 'coach', $4, 'registered')`,
+    [GYM, TEST_ATHLETE, REAL_ATHLETE, COACH, REG_TEST, REG_REAL],
   );
   await target.query(
     `insert into pilot.scheduler_attendance
        (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role,
         checked_in_by_account_id, note, checked_in_at)
-     values ($1, 'att-test', 'c-strict-3', $2, 'present', 'coach_override', 'coach', $3, $4, '2026-10-19T22:05:00Z')`,
-    [GYM, TEST_ATHLETE, COACH, `ZZ-AUDIT LA2 ${TEXT_SENTINEL}`],
+     values ($1, $5, 'c-strict-3', $2, 'present', 'coach_override', 'coach', $3, $4, '2026-10-19T22:05:00Z')`,
+    [GYM, TEST_ATHLETE, COACH, `ZZ-AUDIT LA2 ${TEXT_SENTINEL}`, ATT_TEST],
   );
   await target.query(
     `insert into pilot.session_script_runs
@@ -239,8 +254,14 @@ async function buildTemplate(target: Client): Promise<void> {
   );
   await target.query(
     `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
-     values ('update', $1, 'scheduler_class', 'c-strict-3', '{}'::jsonb)`,
-    [GYM],
+     values ('update', $1, 'scheduler_class', 'c-strict-3', '{}'::jsonb),
+            ('update', $1, 'scheduler_attendance', $2, '{}'::jsonb),
+            ('update', $1, 'something_else', 'c-strict-3', '{}'::jsonb)`,
+    [GYM, `c-strict-3:${TEST_ATHLETE}`],
+  );
+  await target.query(
+    "insert into pilot.auth_rate_limit_buckets (bucket_key, attempt_count, blocked_until) values ($1, 1, now())",
+    [BUCKET_KEY],
   );
 
   await insertTv(target, GYM, 'tv-strict', 'ZZ-AUDIT TV');
@@ -293,7 +314,7 @@ function envFor(database: string, overrides: Record<string, string> = {}): Recor
 
 /** No raw person id and no record text, anywhere in `text`. */
 function expectNothingRaw(text: string) {
-  for (const raw of [TEST_ATHLETE, NAMED_ATHLETE, REAL_ATHLETE, TEXT_SENTINEL, 'SENTINEL']) expect(text).not.toContain(raw);
+  for (const raw of [TEST_ATHLETE, NAMED_ATHLETE, REAL_ATHLETE, TEXT_SENTINEL, 'SENTINEL', 'example.org']) expect(text).not.toContain(raw);
 }
 
 beforeAll(async () => {
@@ -326,6 +347,7 @@ beforeAll(async () => {
   report = tool.reportAuditTestRecords as ReportFn;
   runTool = tool.run as RunFn;
   parseOptions = tool.parseOptions as ParseFn;
+  printableKey = tool.printableKey as (column: string, type: string, value: unknown) => string | null;
 
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
@@ -376,11 +398,13 @@ describe('K1 classes, one gym', () => {
         ['c-strict-live', 'ZZ-AUDIT'], ['c-strict-untracked', 'AUDIT TEST'],
       ]);
       const la2 = classes.find((c) => c.class_id === 'c-strict-3')!;
-      expect(la2.registrations).toEqual([{ registration_id: 'reg-test', athlete_ref: ref(TEST_ATHLETE), status: 'registered' }]);
-      expect(la2.attendance).toEqual([{ attendance_id: 'att-test', athlete_ref: ref(TEST_ATHLETE), status: 'present' }]);
+      expect(la2.registrations).toEqual([{ registration_id: REG_TEST, athlete_ref: ref(TEST_ATHLETE), status: 'registered' }]);
+      expect(la2.attendance).toEqual([{ attendance_id: ATT_TEST, athlete_ref: ref(TEST_ATHLETE), status: 'present' }]);
       expect(la2.tied_runs).toEqual([{ run_id: 'run-done', run_state: 'completed' }]);
-      expect(la2.register_marks_pointing_here).toBe(1);
-      expect(la2.audit_rows_naming_it).toBe(1);
+      expect(la2.register_marks).toEqual([{ run_id: 'run-done', athlete_ref: ref(TEST_ATHLETE) }]);
+      expect(la2.distinct_athletes).toBe(1);
+      // Its own scheduler_class row and the "<class>:<athlete>" row; not the unrelated one.
+      expect(la2.audit_rows_about_it).toBe(2);
       expect(la2.apply_would_refuse).toEqual([]);
       expect(classes.find((c) => c.class_id === 'c-strict-2')!.status).toBe('cancelled');
       expect(classes.find((c) => c.class_id === 'c-strict-live')!.apply_would_refuse).toEqual(['TIED_RUN_LIVE', 'CLASS_RUNNING_NOW']);
@@ -410,16 +434,27 @@ describe('K1 classes, one gym', () => {
     }
   });
 
-  test('a foreign key into the class tables the tool does not know refuses every class', async () => {
+  test.each([
+    ['a new table', `create table pilot.zz_b6_probe (organization_id text, class_id text,
+       foreign key (organization_id, class_id) references pilot.scheduler_classes(organization_id, class_id))`,
+    'pilot.zz_b6_probe(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) a()'],
+    ['a second key between known tables', `alter table pilot.scheduler_registrations add constraint zz_b6_second
+       foreign key (organization_id, class_id) references pilot.scheduler_classes(organization_id, class_id) on delete restrict`,
+    'pilot.scheduler_registrations(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) r()'],
+    ['the run tie changed to cascade', `alter table pilot.session_script_runs drop constraint pilot_ssrun_class_fk;
+       alter table pilot.session_script_runs add constraint pilot_ssrun_class_fk foreign key (organization_id, class_id)
+         references pilot.scheduler_classes(organization_id, class_id) on delete cascade`,
+    'pilot.session_script_runs(organization_id,class_id)->pilot.scheduler_classes(organization_id,class_id) c()'],
+  ])('a foreign key into the class tables the tool does not know (%s) refuses every class', async (_label, ddl, named) => {
     const { client } = await freshDatabase();
     try {
-      await client.query(
-        `create table pilot.zz_b6_probe (organization_id text, class_id text,
-           foreign key (organization_id, class_id) references pilot.scheduler_classes(organization_id, class_id))`,
-      );
+      const before = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(before.unknown_foreign_keys).toEqual([]);
+      await client.query(ddl);
       const result = await report(client, { organizationId: GYM }, { log: () => {} });
-      expect(result.unknown_foreign_keys).toEqual(['zz_b6_probe->scheduler_classes']);
+      expect(result.unknown_foreign_keys).toEqual([named]);
       for (const c of result.classes!) expect(c.apply_would_refuse).toContain('UNKNOWN_FOREIGN_KEY');
+      expect(result.plan_fingerprint).not.toBe(before.plan_fingerprint);
     } finally {
       await client.end();
     }
@@ -427,25 +462,52 @@ describe('K1 classes, one gym', () => {
 });
 
 describe('the fingerprint', () => {
-  test('is stable, changes with a planned row, and ignores NEAR rows and sweep-only (K5) rows', async () => {
+  const print = async (client: Client, options: Options) => (await report(client, options, { log: () => {} })).plan_fingerprint;
+
+  test('is stable, and does not move with NEAR rows, sweep-only rows, audit history, members or other gyms\' data', async () => {
     const { client } = await freshDatabase();
     try {
-      const first = (await report(client, { organizationId: GYM }, { log: () => {} })).plan_fingerprint;
-      expect((await report(client, { organizationId: GYM }, { log: () => {} })).plan_fingerprint).toBe(first);
-      expect((await report(client, { allOrganizations: true }, { log: () => {} })).plan_fingerprint).not.toBe(first);
+      const gym = await print(client, { organizationId: GYM });
+      const all = await print(client, { allOrganizations: true });
+      expect(await print(client, { organizationId: GYM })).toBe(gym);
+      expect(all).not.toBe(gym);
 
       await insertClass(client, GYM, 'c-near-new', 'zz-audit another near miss');
       await insertTv(client, GYM, 'tv-near-new', 'Audit test spare');
       await insertNote(client, '44444444-4444-4444-8444-444444444444', REAL_ATHLETE, 'ZZ-AUDIT new note');
-      expect((await report(client, { organizationId: GYM }, { log: () => {} })).plan_fingerprint).toBe(first);
-
       await client.query(
-        `insert into pilot.scheduler_registrations
-           (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
-         values ($1, 'reg-new', 'c-strict-1', $2, 'coach', $3, 'registered')`,
-        [GYM, REAL_ATHLETE, COACH],
+        `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
+         values ('login', $1, 'account', 'acct-x', '{}'::jsonb), ('login', $2, 'account', 'acct-y', '{}'::jsonb)`,
+        [TEST_GYM_2, HIIT_FIT_ID],
       );
-      expect((await report(client, { organizationId: GYM }, { log: () => {} })).plan_fingerprint).not.toBe(first);
+      await client.query("update pilot.organization_memberships set role = 'organization_admin' where organization_id = $1", [TEST_GYM_2]);
+      expect(await print(client, { organizationId: GYM })).toBe(gym);
+      expect(await print(client, { allOrganizations: true })).toBe(all);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['a registration on a planned class', `insert into pilot.scheduler_registrations
+       (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+     values ('${GYM}', 'aaaaaaaa-0000-4000-8000-0000000000f1', 'c-strict-1', '${REAL_ATHLETE}', 'coach', '${COACH}', 'registered')`],
+    ['a planned class\'s end time', "update pilot.scheduler_classes set end_at = end_at + interval '5 minutes' where class_id = 'c-strict-1'"],
+    ['a planned class\'s title, same marker', "update pilot.scheduler_classes set title = 'ZZ-AUDIT renamed' where class_id = 'c-strict-1'"],
+    ['a register mark let go', "update pilot.session_run_athletes set register_class_id = null where run_id = 'run-done'"],
+    ['a floor plan naming a planned class', `insert into pilot.floor_plans_daily (organization_id, plan_id, plan_on, created_by_account_id, class_id)
+       values ('${GYM}', 'plan-b6', '2026-10-05', '${COACH}', 'c-strict-1')`],
+    ['a STRICT TV paired', "update pilot.gym_tvs set device_key_hash = 'k', paired_at = now() where tv_id = 'tv-strict'"],
+    ['a test gym\'s status', `update pilot.organizations set status = 'active' where organization_id = '${TEST_GYM_1}'`],
+    ['"hiit fit" holding a row', `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ('acct-b6-hiit', 'coach', '${HIIT_FIT_ID}', 'microsoft')`],
+  ])('moves when %s changes', async (_label, sql) => {
+    const { client } = await freshDatabase();
+    try {
+      const options = { allOrganizations: true };
+      const before = await print(client, options);
+      await client.query(sql);
+      expect(await print(client, options)).not.toBe(before);
     } finally {
       await client.end();
     }
@@ -525,7 +587,7 @@ describe('K5 the sweep', () => {
         `athletes.full_name:${JSON.stringify({ organization_id: GYM, athlete_id: ref(NAMED_ATHLETE) })}`,
         `coach_observations.note_text:${JSON.stringify({ organization_id: GYM, note_id: NOTE_STRICT })}`,
         `gym_tvs.tv_name:${JSON.stringify({ organization_id: GYM, tv_id: 'tv-strict' })}`,
-        `scheduler_attendance.note:${JSON.stringify({ organization_id: GYM, attendance_id: 'att-test' })}`,
+        `scheduler_attendance.note:${JSON.stringify({ organization_id: GYM, attendance_id: ATT_TEST })}`,
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-strict-1' })}`,
       ]));
       expect(where(sweep.near)).toEqual(expect.arrayContaining([
@@ -533,7 +595,12 @@ describe('K5 the sweep', () => {
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-audit-test' })}`,
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-lower' })}`,
         `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-space' })}`,
+        `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-tab' })}`,
+        `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-nbsp' })}`,
+        `scheduler_classes.title:${JSON.stringify({ organization_id: GYM, class_id: 'c-near-emspace' })}`,
       ]));
+      expect(result.classes!.map((c) => c.class_id)).not.toEqual(expect.arrayContaining(['c-near-tab']));
+      expect(sweep.columns_not_swept_by_type).toMatchObject({ jsonb: expect.any(Number), _text: expect.any(Number) });
       const everywhere = JSON.stringify([...sweep.strict, ...sweep.near]);
       expect(everywhere).not.toContain(NOTE_REAL);
       expect(everywhere).not.toContain('c-real');
@@ -542,8 +609,57 @@ describe('K5 the sweep', () => {
       expect(sweep.tables_skipped_no_organization_column.length).toBeGreaterThan(0);
       expect(sweep.tables_scanned).toBeGreaterThan(100);
       expectNothingRaw(out.text());
-      const all = await report(client, { allOrganizations: true }, { log: () => {} });
+      expect(everywhere).not.toContain('auth_rate_limit_buckets');
+      const allOut = recorder();
+      const all = await report(client, { allOrganizations: true }, { log: allOut.log });
       expect(all.sweep!.tables_skipped_no_organization_column).toEqual([]);
+      // A key with no person-like name that holds an email: hashed, never raw.
+      expect(all.sweep!.near).toContainEqual({
+        table: 'auth_rate_limit_buckets', column: 'bucket_key', key: { bucket_key: ref(BUCKET_KEY) }, organization_id: null,
+      });
+      expectNothingRaw(allOut.text());
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('keys and limits', () => {
+  test('printableKey: raw only for class, run, TV and organization ids and non-person uuid or integer keys', () => {
+    const uuid = 'aaaaaaaa-0000-4000-8000-0000000000aa';
+    expect(printableKey('class_id', 'text', 'Any text at all')).toBe('Any text at all');
+    expect(printableKey('note_id', 'uuid', uuid)).toBe(uuid);
+    expect(printableKey('registration_id', 'text', uuid)).toBe(uuid);
+    expect(printableKey('audit_id', 'int8', '42')).toBe('42');
+    expect(printableKey('athlete_id', 'text', uuid)).toBe(ref(uuid));
+    expect(printableKey('capture_participant_id', 'uuid', uuid)).toBe(ref(uuid));
+    expect(printableKey('bucket_key', 'text', BUCKET_KEY)).toBe(ref(BUCKET_KEY));
+    expect(printableKey('code', 'text', '1234567')).toBe(ref('1234567'));
+    expect(printableKey('registration_id', 'text', 'reg-test')).toBe(ref('reg-test'));
+  });
+
+  test('the sweep limit counts hits only: 600 notes with "audit test" mid-text do not hide a STRICT one', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        `insert into pilot.coach_observations (organization_id, note_id, athlete_id, coach_account_id, note_type, note_text)
+         select $1, gen_random_uuid(), $2, $3, 'observation', 'Round ' || g || ', not an audit test' from generate_series(1, 600) g`,
+        [GYM, REAL_ATHLETE, COACH],
+      );
+      const result = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(result.sweep!.truncated_tables).toEqual([]);
+      expect(result.sweep!.strict.filter((h) => h.table === 'coach_observations').map((h) => h.key.note_id)).toEqual([NOTE_STRICT]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a column the report reads directly is missing: refused, naming it', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query('alter table pilot.floor_plans_daily drop column class_id');
+      expect(await report(client, { organizationId: GYM }, { log: () => {} }))
+        .toEqual({ status: 'refused', reason: 'SCHEMA_MISSING', missing: ['floor_plans_daily.class_id'] });
     } finally {
       await client.end();
     }
@@ -551,15 +667,19 @@ describe('K5 the sweep', () => {
 });
 
 describe('read-only and refusals', () => {
-  test('one read-only transaction, rolled back, with no write statement', async () => {
+  test('one repeatable-read snapshot, then one short transaction per sweep table: all read-only, all rolled back, no write', async () => {
     const { client } = await freshDatabase();
     try {
       const statements: string[] = [];
       const spy = { query: (text: string, values?: unknown[]) => { statements.push(text.trim()); return client.query(text, values); } };
-      const result = await report(spy, { organizationId: GYM }, { log: () => {} });
+      const result = await report(spy, { allOrganizations: true }, { log: () => {} });
       expect(result.status).toBe('dry-run');
-      expect(statements[0]).toBe('begin transaction read only');
+      expect(statements[0]).toBe('begin transaction isolation level repeatable read read only');
       expect(statements[statements.length - 1]).toBe('rollback');
+      const begins = statements.filter((s) => /^begin\b/i.test(s));
+      expect(begins.length).toBe(1 + result.sweep!.tables_scanned);
+      expect(begins.every((s) => s.endsWith('read only'))).toBe(true);
+      expect(statements.filter((s) => s === 'rollback').length).toBe(begins.length);
       expect(statements.filter((s) => /^(insert|update|delete|truncate|alter|create|drop|grant|copy)\b/i.test(s))).toEqual([]);
     } finally {
       await client.end();
@@ -619,7 +739,7 @@ describe('the command line, end to end', () => {
   test('the script\'s own stdout and stderr carry a person id only as its hash', async () => {
     const { client, name } = await freshDatabase();
     await client.end();
-    const child = spawnSync(process.execPath, [TOOL_PATH, '--organization', GYM], {
+    const child = spawnSync(process.execPath, [TOOL_PATH, '--all-organizations'], {
       cwd: WEB_DIR, env: { ...process.env, ...envFor(name) }, encoding: 'utf8', timeout: 300_000,
     });
     expect(child.status).toBe(0);
@@ -628,6 +748,7 @@ describe('the command line, end to end', () => {
     expect(printed).toContain('"event":"audit_test_cleanup.dry-run"');
     expect(printed).toContain(ref(TEST_ATHLETE));
     expect(printed).toContain(ref(NAMED_ATHLETE));
+    expect(printed).toContain(ref(BUCKET_KEY));
     expectNothingRaw(printed);
   });
 
