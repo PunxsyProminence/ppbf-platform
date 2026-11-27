@@ -214,10 +214,10 @@ function WorkspaceContent() {
               does not open". */}
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Your Sign-In Does Not Open</h2>
           <p className="t-body mt-[var(--s3)] max-w-[64ch]">
-            {/* Reworded for the line above (lane W4-3, FN-4b; QH, GO on #2192, 7206014991). */}
+            {/* Reworded for the line above (lane W4-3, FN-4b; QH, GO on #2192, 7206014991; QK B, 7210837384). */}
             Athlete records, the class schedule and attendance records, video, intake review, and the admin
             and board consoles are not part of staff or volunteer access. The line above shows only the
-            classes running now and how many are here. If your work needs one of them,
+            classes running now, how many are here, and the round on each TV. If your work needs one of them,
             ask an organization admin to change your role rather than opening a page that will refuse
             you.
           </p>

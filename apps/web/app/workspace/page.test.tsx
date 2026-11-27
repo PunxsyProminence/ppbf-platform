@@ -218,7 +218,7 @@ describe('what is running on the floor now (lane W4-3, FN-4b)', () => {
     expect(reads).toHaveLength(1);
   });
 
-  it('says what the line above shows, in QH\'s words, and no longer that attendance is out of reach', async () => {
+  it('says what the line above shows, in QH\'s words as QK B amended them, and no longer that attendance is out of reach', async () => {
     global.fetch = fetchMock() as unknown as typeof fetch;
     render(<WorkspacePage />);
     await sessionRead();
@@ -226,8 +226,9 @@ describe('what is running on the floor now (lane W4-3, FN-4b)', () => {
     const text = (heading.nextElementSibling?.textContent ?? '').replace(/\s+/g, ' ').trim();
     expect(text).toBe(
       'Athlete records, the class schedule and attendance records, video, intake review, and the admin and board '
-      + 'consoles are not part of staff or volunteer access. The line above shows only the classes running now and '
-      + 'how many are here. If your work needs one of them, ask an organization admin to change your role rather '
+      + 'consoles are not part of staff or volunteer access. The line above shows only the classes running now, '
+      + 'how many are here, and the round on each TV. If your work needs one of them, ask an organization admin to '
+      + 'change your role rather '
       + 'than opening a page that will refuse you.',
     );
   });
