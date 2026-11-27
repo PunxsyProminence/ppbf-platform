@@ -10809,7 +10809,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:41-42. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth).",
+    "notes": "Platform view of one gym's board summary, growth metrics and capability access by organization_id; gate gym-summary/route.ts:48-49. The gym's track assignments (a map keyed by athlete id) are no longer returned (OD-2026-09-28-005; OD-2026-10-08-003 R2). Aggregates per the board summary and metrics helpers (not opened in depth). FN-4c (lane W4-3; GO on #2192, 7206014991): on_the_floor, one total of how many are here now for the named gym, from present register marks only (floorCount.ts), floored at 5 (0 to 4 insufficient_data); no class, round or run table; private, no-store.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
