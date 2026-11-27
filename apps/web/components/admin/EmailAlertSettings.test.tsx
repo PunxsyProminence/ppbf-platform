@@ -450,3 +450,25 @@ describe('a save', () => {
     expect(statusLine().textContent).toBe('Saving…');
   });
 });
+
+describe('an unconfirmed save on a box other than the coaches’ escalation', () => {
+  const parentsNotice = () => box('Parents', 'A notice going live');
+
+  test('ticking the parents’ notice, a 500, and the read again still unticked (the coaches’ notice ticked): says still unticked for parents', async () => {
+    respond([loaded(), loaded()], { status: 500 });
+    await mount();
+    await press(parentsNotice());
+    expect(parentsNotice().checked).toBe(false);
+    expect(screen.getByRole('alert').textContent).toBe(
+      '▲ That change does not show as saved: read again just now, “A notice going live” is still unticked for parents.');
+  });
+
+  test('ticking the parents’ notice, a 500, and the read again ticked: says now ticked, with no alert', async () => {
+    respond([loaded(), loaded(withEvent(ev('parent', 'gym_notice', true, false)))], { status: 500 });
+    await mount();
+    await press(parentsNotice());
+    expect(parentsNotice().checked).toBe(true);
+    expect(statusLine().textContent).toBe('“A notice going live” is now ticked for parents. The choices shown have been read again.');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
