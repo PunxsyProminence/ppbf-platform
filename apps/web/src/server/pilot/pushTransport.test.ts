@@ -1,14 +1,14 @@
 /**
  * The push transport (lane W5-WP, WP-2b-2a): a push is posted only to a public
- * address, checked by the connection's own lookup; the whole request is cut
- * off at its time limit; and only so much of an answer is read. The posts here
- * go to a local plain-HTTP server (http.request in place of https.request), or
- * are refused before any connection.
+ * address, checked by the connection's own lookup; the request is cut off at
+ * its time limit; only the answer's status is used, and only one in 100-599.
+ * The posts here go to a local plain-HTTP server (http.request in place of
+ * https.request) or a raw socket, or are refused before any connection.
  */
 
 import dns from 'node:dns';
 import http from 'node:http';
-import type { LookupFunction } from 'node:net';
+import net, { type LookupFunction } from 'node:net';
 
 import crypto from 'node:crypto';
 
@@ -79,9 +79,9 @@ describe('isPublicAddress', () => {
 
   test.each([
     '0.0.0.0', '10.1.1.1', '100.64.0.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '172.31.255.255', '192.0.0.8',
-    '192.0.2.1', '192.168.1.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '255.255.255.255',
+    '192.0.2.1', '192.88.99.1', '192.168.1.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '255.255.255.255',
     '::', '::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:169.254.169.254', '::10.0.0.1', '64:ff9b::a00:1',
-    '64:ff9b:1::1', '100::1', '2001::1', '2001:db8::1', '2002:a00:1::', 'fc00::1', 'fd12::1', 'fe80::1', 'febf::1',
+    '64:ff9b:1::1', '100::1', '2001::1', '2001:db8::1', '2002:a00:1::', 'fc00::1', 'fd12::1', 'fe80::1', 'febf::1', 'fec0::1',
     'ff02::1', 'push.example.test', '',
   ])('%s is not', (address) => {
     expect(isPublicAddress(address)).toBe(false);
@@ -206,23 +206,33 @@ describe('postPushRequest', () => {
     expect(Number(seen.length)).toBe(seen.body?.length);
   });
 
-  test('an answer longer than the limit is cut off and refused', async () => {
+  test('only the status is read: a long answer comes back at once with its status, its body unread', async () => {
+    let closedEarly = false;
     await withServer((_request, response) => {
-      response.statusCode = 201;
-      response.end(Buffer.alloc(PUSH_POST_DEFAULTS.maxBytes + 1024, 120));
+      response.writeHead(410);
+      // Ten megabytes, a chunk every 50 ms: reading it would take well over the test's time.
+      let left = 640;
+      const drip = setInterval(() => {
+        if (left-- === 0) return response.end();
+        response.write(Buffer.alloc(16 * 1024, 120));
+      }, 50);
+      response.on('close', () => {
+        clearInterval(drip);
+        if (left > 0) closedEarly = true;
+      });
     }, async (port) => {
       const options = { ...PUSH_POST_DEFAULTS, request: http.request, lookup: toLocalServer, timeoutMs: 5_000 };
-      await expect(postPushRequest(details(`http://push.example.test:${port}/send/x`), options))
-        .rejects.toMatchObject({ code: 'PUSH_ANSWER_TOO_LONG' });
+      const started = Date.now();
+      expect(await postPushRequest(details(`http://push.example.test:${port}/send/x`), options)).toBe(410);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
+    expect(closedEarly).toBe(true);
   });
 
-  test('a server that answers too slowly is cut off at the time limit, even while it trickles', async () => {
-    await withServer((_request, response) => {
-      // A byte every 100 ms: an idle timeout alone would never fire.
-      response.writeHead(201);
-      const drip = setInterval(() => response.write('x'), 100);
-      response.on('close', () => clearInterval(drip));
+  test('a server that never answers is cut off at the time limit', async () => {
+    await withServer(() => {
+      // Never answers.
     }, async (port) => {
       const options = { ...PUSH_POST_DEFAULTS, request: http.request, lookup: toLocalServer, timeoutMs: 500 };
       const started = Date.now();
@@ -230,5 +240,21 @@ describe('postPushRequest', () => {
         .rejects.toMatchObject({ code: 'PUSH_TIMEOUT' });
       expect(Date.now() - started).toBeLessThan(3_000);
     });
+  });
+
+  test.each(['099', '600', '999'])('a status line of %s is refused, never handed on', async (code) => {
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end(`HTTP/1.1 ${code} Odd\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address !== 'object') throw new Error('test bug: no port');
+    try {
+      const options = { ...PUSH_POST_DEFAULTS, request: http.request, lookup: toLocalServer, timeoutMs: 5_000 };
+      await expect(postPushRequest(details(`http://push.example.test:${address.port}/send/x`), options))
+        .rejects.toMatchObject({ code: 'PUSH_BAD_STATUS' });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
