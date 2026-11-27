@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import GymTvPanel from '@/components/GymTvPanel';
 import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
 import PainReportsPanel from '@/components/PainReportsPanel';
+import SaveQueueNotice from '@/components/SaveQueueNotice';
 import SessionScriptLiveDelivery, { RUN_GONE } from '@/components/SessionScriptLiveDelivery';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
@@ -199,6 +200,10 @@ function ClassScreen() {
             {notice}
           </p>
         )}
+
+        {/* The live-floor saves this page keeps (W4 item 7): on the page, not in the console, so
+            their words stay when a session ends while one still waits. */}
+        <SaveQueueNotice />
 
         {liveRun && (
           <LiveSessionPainRead>

@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
+import { unknownOffPage, unknownOutcomeWords } from '@/components/SessionRunClass';
+import { keepSave, saveQueueAccountConfirmed, saveQueueGeneration, subscribeSaveQueue, type KeptSave } from '@/src/lib/saveQueue';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
@@ -121,6 +123,8 @@ function isAthlete(value: unknown): value is Athlete {
 export interface RegisterAnswer {
   effect: string;
   previous_status?: string;
+  /** register_newer: what the register holds, set there after the tap. */
+  status?: string;
   reason?: string;
 }
 
@@ -133,6 +137,7 @@ export function holdAnswer(value: unknown): HoldAnswer {
 }
 
 const WAS: Record<string, string> = { absent: 'marked Absent', excused: 'marked Excused' };
+const STAYS: Record<string, string> = { absent: 'Absent', excused: 'Excused' };
 const NOT_ADDED: Record<string, string> = { class_cancelled: 'the class was cancelled', not_your_class: 'you no longer run this class' };
 
 /** The line a tap leaves for the coach: what the class register now shows, and a hold if one stands. */
@@ -145,10 +150,17 @@ export function registerNote(name: string, register: RegisterAnswer | undefined,
     created: `${name} is Present on the class register.`,
     already_present: `${name} was already Present on the class register.`,
     flipped: `${name} was ${WAS[register.previous_status ?? ''] ?? 'not marked Present'} on the class register; now Present.`,
-    skipped: `${name} is marked here but not on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
+    // The server skips the register before reading it, so whether the athlete is on it already (their own
+    // check-in, another coach's mark) is not said (#2182 round 14, reviewer B).
+    skipped: `${name} was marked here; this tap did not put ${name} on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
     removed: `${name} is off the class register too.`,
-    kept: `The class register was changed after your tap, so ${name}'s mark there was left as it is.`,
+    // The register mark the earlier tap wrote was changed since (any change, any time): the take-back
+    // left it (#2182 round 14, reviewer B).
+    kept: `The class register was changed after your tap marked ${name} here, so this take-back did not change it there.`,
     unchanged: 'Only the mark here was taken back; the class register was not changed.',
+    // A tap sent late, after the register was changed (OD-2026-10-21-004 ruling 1: the later change wins).
+    // Said as what happened when the tap landed: the register may be changed again since (round 12, A).
+    register_newer: `${name} was marked here, but the class register had been changed after your tap, so ${name} stayed ${STAYS[register.status ?? ''] ?? 'as marked'} there. Change it on the register if ${name} is here.`,
   };
   return `${words[register.effect] ?? ''}${holdWords}`.trim();
 }
@@ -160,6 +172,24 @@ function refusalText(code: unknown): string {
   return 'The server refused, so nothing was saved.';
 }
 
+const NO_REFUSALS: ReadonlyMap<string, string> = new Map();
+const NO_ATHLETES: ReadonlySet<string> = new Set();
+
+/** The key of an athlete's register line in the list's alert, beside their refusal (keyed by id). */
+// The kind and the id are joined by NUL, which no athlete id holds (the routes refuse it and
+// PostgreSQL text cannot store it), so no athlete's id can be another athlete's key (round 13, A).
+const KEY_JOIN = String.fromCharCode(0);
+function registerAlertKey(athleteId: string): string {
+  return `register${KEY_JOIN}${athleteId}`;
+}
+/** The key of an athlete's Training Hold line from a kept tap, in the same alert. */
+function holdAlertKey(athleteId: string): string {
+  return `hold${KEY_JOIN}${athleteId}`;
+}
+
+/** One kept here tap not yet answered: whom it marks, and how. */
+type AskedTap = { save: object; athleteId: string; present: boolean };
+
 // Brass and bone: an ordinary message, not the medical stop colour.
 const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
@@ -168,7 +198,9 @@ export default function SessionRunPresence({
   tied = false,
   classId = null,
   onPresentCount,
+  onCountForFinish,
   onRunNotLive,
+  isFinishWaiting,
 }: {
   runId: string;
   /** The session is tied to a class (D4): marks here also go on its register. */
@@ -177,8 +209,17 @@ export default function SessionRunPresence({
   classId?: string | null;
   /** The number of athletes marked here, each time the server says so; null while it is not known. */
   onPresentCount?: (count: number | null) => void;
+  /**
+   * The count a finish tapped now should record: the marks as read, with the taps still waiting on this
+   * page applied (Codex P1 on #2182). Kept apart from onPresentCount, which changes only when the
+   * server's marks do, so a reader that reads again on that change still does when a tap lands
+   * (round 21, reviewer A: the no-shows offer).
+   */
+  onCountForFinish?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
   onRunNotLive?: () => void;
+  /** Whether a finish is kept and waiting now: once it lands this list goes, so a refusal is said in the page's list. */
+  isFinishWaiting?: () => boolean;
 }) {
   const [readingState, setReading] = useState<Reading | null>(null);
   const [filter, setFilter] = useState('');
@@ -186,8 +227,14 @@ export default function SessionRunPresence({
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   // What the last tap did to the class register (a tied session), or a hold on the athlete.
-  const [note, setNote] = useState<{ athleteId: string; text: string } | null>(null);
+  // kept: from a kept tap, so shown only while this page's account is confirmed (a shared tablet).
+  const [note, setNote] = useState<{ athleteId: string; text: string; kept?: boolean } | null>(null);
   const latestRead = useRef(0);
+  // The ticket of the newest list read still on its way, if any (#2182 round 14, reviewers A and B).
+  // A mark painted while it is out reads again, so that older answer cannot paint over the mark; and a
+  // newest read whose answer a tap made stale is asked again, so what it would have shown (a replay's
+  // correction) is not lost.
+  const pendingRead = useRef<number | null>(null);
   const headingId = useId();
   // The tied class's register, read beside the run's own marks; untied, nothing is read.
   const registerClassId = tied && classId ? classId : null;
@@ -203,38 +250,47 @@ export default function SessionRunPresence({
   );
 
   const read = useCallback(async () => {
-    const ticket = latestRead.current + 1;
-    latestRead.current = ticket;
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const payload = (await response.json().catch(() => null)) as { present?: unknown; gym?: unknown } | null;
-      if (
-        !response.ok
-        || !payload
-        || !Array.isArray(payload.present)
-        || !Array.isArray(payload.gym)
-        || !payload.present.every(isAthlete)
-        || !payload.gym.every(isAthlete)
-      ) {
-        throw new Error('unreadable');
+    const attempt = async (): Promise<void> => {
+      const ticket = latestRead.current + 1;
+      latestRead.current = ticket;
+      pendingRead.current = ticket;
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => null)) as { present?: unknown; gym?: unknown } | null;
+        if (
+          !response.ok
+          || !payload
+          || !Array.isArray(payload.present)
+          || !Array.isArray(payload.gym)
+          || !payload.present.every(isAthlete)
+          || !payload.gym.every(isAthlete)
+        ) {
+          throw new Error('unreadable');
+        }
+        if (latestRead.current !== ticket) return;
+        setReading({
+          runId,
+          state: 'loaded',
+          gym: payload.gym as Athlete[],
+          present: new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id)),
+        });
+      } catch {
+        if (latestRead.current === ticket) setReading({ runId, state: 'unavailable' });
+      } finally {
+        if (pendingRead.current === ticket) {
+          pendingRead.current = null;
+          // The newest read, answered after a tap made it stale: its answer was dropped, so ask again.
+          if (latestRead.current !== ticket) void attempt();
+        }
       }
-      if (latestRead.current !== ticket) return;
-      setReading({
-        runId,
-        state: 'loaded',
-        gym: payload.gym as Athlete[],
-        present: new Set((payload.present as Athlete[]).map((athlete) => athlete.athlete_id)),
-      });
-    } catch {
-      if (latestRead.current === ticket) setReading({ runId, state: 'unavailable' });
-    }
+    };
+    return attempt();
   }, [runId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void read();
   }, [read]);
 
@@ -268,10 +324,284 @@ export default function SessionRunPresence({
     void readRegister();
   }, [readRegister]);
 
+  // HERE TAPS KEPT ON THE OPEN PAGE (W4 item 7, OQ-4; OW27-34 A, OW27-35 A). A tap whose answer is
+  // lost is kept and sent again until it goes through, with the milliseconds since the tap, so a late
+  // one never undoes an Absent or Excused set after it (Overwatch condition 1, OQ-1's server half).
+  // What each kept tap asked, in the order tapped: added once its save is kept, gone with that save's
+  // own answer (a later tap of the same athlete wins), and all cleared at a drop of the queue (a
+  // sign-out drop answers none of them).
+  // While this list is on the page, and no kept finish will take it away; otherwise a refusal gives
+  // its words to the page's list.
+  const onPage = useRef(true);
+  useEffect(() => {
+    onPage.current = true;
+    return () => {
+      onPage.current = false;
+    };
+  }, []);
+
+  const [askedTaps, setAskedTaps] = useState<readonly AskedTap[]>([]);
+  // Kept taps' refusals, one per athlete and named, as they can come back long after the tap and
+  // several at once when the connection returns: each stays until that athlete's next tap is saved or
+  // the coach taps OK, never cleared by an unrelated tap.
+  const [keptRefusals, setKeptRefusals] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
+  // Refused new notes' words, by athlete, out of sight until that athlete's notes are opened.
+  const [noteWords, setNoteWords] = useState<ReadonlyMap<string, string>>(NO_REFUSALS);
+  // Athletes this list has held a refused note's words for: their notes panel stays on their row even
+  // when their mark no longer stands (taken back here or on another device), so the alert's "its words
+  // are back in the box when this athlete's notes are next opened" stays true (Codex P2 on #2182). Only
+  // for the confirmed account, and gone at any drop of the queue, as the words are.
+  const [wordsHeldFor, setWordsHeldFor] = useState<ReadonlySet<string>>(NO_ATHLETES);
+  const noteRefusals = useRef(0);
+  // They name athletes and hold one person's note text, and come only from kept saves: any drop of the
+  // queue (a sign-out, another account, a 401) takes them off the screen at once (a shared floor tablet).
+  useEffect(() => {
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      setKeptRefusals(NO_REFUSALS);
+      setNoteWords(NO_REFUSALS);
+      setWordsHeldFor(NO_ATHLETES);
+      // The row's note holds the last tap's answer (a name, the register, a hold): it goes too.
+      setNote(null);
+    });
+  }, []);
+  // While the page checks again who is signed in (a sign-in elsewhere writes no device mark), they are
+  // only counted, and no words go back into a box: the person at the screen may be the next one.
+  const accountConfirmed = useSyncExternalStore(subscribeSaveQueue, saveQueueAccountConfirmed, () => false);
+  // A kept tap's note is one person's answer: hidden while the page checks who is signed in.
+  const shownNote = note && (!note.kept || accountConfirmed) ? note : null;
+  // A kept note refused while its panel was closed: its own line in the alert (two are two), and its
+  // words kept for the box.
+  const noteRefused = useCallback((athlete: Athlete, words: string, noteText: string): boolean => {
+    // This list gone too: the panel says it in the page's list instead.
+    if (!onPage.current) return false;
+    noteRefusals.current += 1;
+    const key = `note${KEY_JOIN}${athlete.athlete_id}${KEY_JOIN}${noteRefusals.current}`;
+    setKeptRefusals((current) => new Map(current).set(key, `${athlete.full_name}: ${words}`));
+    if (!noteText) return true;
+    setWordsHeldFor((current) => (current.has(athlete.athlete_id) ? current : new Set(current).add(athlete.athlete_id)));
+    setNoteWords((current) => {
+      const earlier = current.get(athlete.athlete_id);
+      return new Map(current).set(athlete.athlete_id, earlier ? `${earlier}\n\n${noteText}` : noteText);
+    });
+    return true;
+  }, []);
+  const wordsReturned = useCallback((athleteId: string) => {
+    setNoteWords((current) => {
+      if (!current.has(athleteId)) return current;
+      const next = new Map(current);
+      next.delete(athleteId);
+      return next;
+    });
+  }, []);
+  // An athlete's saved tap takes away their kept refusal and their register line (registerAlertKey below).
+  const forgetRefusal = useCallback((athleteId: string) => {
+    setKeptRefusals((current) => {
+      const keys = [athleteId, registerAlertKey(athleteId), holdAlertKey(athleteId)];
+      if (!keys.some((key) => current.has(key))) return current;
+      const next = new Map(current);
+      for (const key of keys) next.delete(key);
+      return next;
+    });
+  }, []);
+  const asked = useMemo(() => new Map(askedTaps.map((tap) => [tap.athleteId, tap.present])), [askedTaps]);
+  // Each waiting tap goes with its own answer (release, in keptTap). A drop of the queue (a sign-out,
+  // another account, a 401) answers none of them, so they all go then. Not merely when the queue is
+  // empty: it empties before a saved tap's answer is read, and the count would dip until it is painted
+  // (round 21, reviewer A).
+  useEffect(() => {
+    let seen = saveQueueGeneration();
+    return subscribeSaveQueue(() => {
+      if (saveQueueGeneration() === seen) return;
+      seen = saveQueueGeneration();
+      setAskedTaps((taps) => (taps.length === 0 ? taps : []));
+    });
+  }, []);
+  const keptTap = useCallback(
+    (athlete: Athlete, present: boolean, resolved: { done: boolean }): KeptSave => {
+      let refusalCode: unknown;
+      const label = present ? 'Mark an athlete here' : 'Unmark an athlete here';
+      // What this tap asked goes with its own answer, saved or refused.
+      const release = () => {
+        resolved.done = true;
+        setAskedTaps((taps) => taps.filter((tap) => tap.save !== resolved));
+      };
+      // What this tap did, painted at once. A list read on its way was asked before this tap was written,
+      // so its answer could paint over this mark: the list is read again (`reread`, or whenever one is on
+      // its way), and that newer read replaces the older one's answer (#2182 round 14, reviewer B).
+      const showMark = (reread: boolean): Promise<void> | undefined => {
+        setReading((current) => {
+          if (!current || current.runId !== runId || current.state !== 'loaded') return current;
+          const next = new Set(current.present);
+          if (present) next.add(athlete.athlete_id);
+          else next.delete(athlete.athlete_id);
+          return { ...current, present: next };
+        });
+        void readRegister();
+        return reread || pendingRead.current !== null ? read() : undefined;
+      };
+      return {
+        // No name: the line can outlive this list on a shared floor screen. The row names the athlete.
+        label,
+        // With this page's id: the run's own no-shows tap from this page came before it in tap order
+        // (the queue's order), so the register lets it win over that tap's untouched Absent; one from
+        // the coach's other tab or device does not (condition 1; round 12, reviewer A).
+        // With the tap's own request key, the same on every resend: the server records it with the tap.
+        send: ({ signal, msSinceMade, pageId, requestKey }) =>
+          fetch(`${apiBase()}/api/pilot/session-scripts/runs/${encodeURIComponent(runId)}/athletes`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ athlete_id: athlete.athlete_id, present, tapped_ms_ago: msSinceMade, page_id: pageId, request_key: requestKey }),
+            signal,
+          }),
+        // A yes is a yes, whatever its body (as today); the route's own refusals are a no; anything else proves nothing.
+        answerOf: async (response) => {
+          if (response.ok) return 'saved';
+          if (!REFUSAL_STATUSES.has(response.status)) return 'unknown';
+          const payload = (await response.clone().json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
+          refusalCode = payload?.code ?? payload?.error;
+          return 'refused';
+        },
+        // A refused resend, decided by this tap's own key alone (OVERWATCH 7170099938 on #2178): never by
+        // the mark matching what was tapped, which another tab or device tapping the same athlete would
+        // also give. Refused as no longer live, which the server says only after finding the key
+        // unrecorded: not landed. Anything else: not known.
+        checkLanded: async () => (refusalCode === 'SESSION_RUN_NOT_LIVE' ? false : null),
+        onSaved: async (response) => {
+          const seen = saveQueueGeneration();
+          const answer = response
+            ? ((await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown; replayed?: unknown; live?: unknown } | null)
+            : null;
+          // Released with the mark below, in one render: no flicker back while the answer was read.
+          release();
+          // A drop while the answer was read (a sign-out, another account): nothing of it is shown.
+          if (saveQueueGeneration() !== seen) return undefined;
+          // A resend of this tap, which landed earlier, is answered with the first answer. The mark is
+          // painted as that answer had it (true when it landed: the row never reverts to unmarked, #2182
+          // round 14, reviewer B), and the list is read again, because another tab or device may have
+          // changed it since (round 13, reviewer B: the list is the server's). That read is awaited, so the
+          // queue sends the next tap only after it lands.
+          const replayed = answer?.replayed === true;
+          // A resend of this tap, which landed earlier, on a session that has ended since: the console
+          // resyncs, and this list goes with it, so the list is not read again (round 14, reviewer B).
+          const runGone = replayed && answer?.live === false;
+          if (runGone) onRunNotLive?.();
+          if (onPage.current) {
+            const reading = showMark(replayed && !runGone);
+            if (replayed && !runGone) await reading;
+            forgetRefusal(athlete.athlete_id);
+          }
+          // A drop while the list was read again: nothing of this answer is shown.
+          if (saveQueueGeneration() !== seen) return undefined;
+          const effect = answer?.register?.effect;
+          // The register differs from what the coach tapped: it kept a change made after a late mark
+          // (register_newer), kept the mark a take-back would have removed (kept), or was not written
+          // (skipped). Said where a burst or a finish cannot lose it (round 13, A).
+          const registerDiffers = effect === 'register_newer' || effect === 'kept' || effect === 'skipped';
+          // On a tied session a tap that came back with no register answer (it changed nothing: the mark
+          // already stood, from another tab or device): what the register holds is not known.
+          const registerUnknown = tied && !answer?.register;
+          // The hold is read with the register's answer: a mark here whose answer was lost cannot say
+          // whether the athlete is on a Training Hold, so it says that, in the existing words: an unknown
+          // value never looks complete or zero (AGENT_KERNEL.md, floor law 1; #2182 round 13, reviewer B).
+          // It asserts no hold and blocks nothing, so it is no new warning (Jason's L1 rule).
+          const hold = holdAnswer(answer?.hold_warning) ?? (registerUnknown && present ? 'unknown' : null);
+          // This list gone, or going with a kept finish: what the coach must still check goes to the
+          // page's list, under "Saved, with something to check" (round 12, A and B), naming the athlete
+          // (OVERWATCH 7170005958: the page's list has the named alert's protection, and unnamed lines
+          // could not tell staff who is on a Training Hold). Waiting and refusal lines stay unnamed.
+          // The run gone (this tap landed, and the session ended since): this list goes too.
+          if (!onPage.current || isFinishWaiting?.() || runGone) {
+            const skippedWhy = NOT_ADDED[answer?.register?.reason ?? ''] ?? 'it could not be added';
+            const who = athlete.full_name;
+            const checks = [
+              effect === 'register_newer' ? `the class register kept a mark set there after the tap; change it on the register if ${who} is here` : '',
+              effect === 'kept' ? `the class register mark had been changed since ${who} was marked here, so the take-back left it as it is; check the class register` : '',
+              effect === 'skipped' ? `this tap did not put ${who} on the class register, as ${skippedWhy}` : '',
+              registerUnknown && present ? `whether the class register has ${who} Present is not known; check the class register` : '',
+              registerUnknown && !present ? `whether the class register still has ${who} Present is not known; check the class register` : '',
+              hold === 'held' ? `${who} has an active Training Hold; the mark was NOT blocked` : '',
+              hold === 'unknown' ? `whether ${who} is on a Training Hold could not be read` : '',
+            ].filter((words) => words !== '');
+            return checks.length > 0 ? `saved for ${who}, but ${checks.join('. And ')}.` : undefined;
+          }
+          // What the coach must still check stays named in the list's alert, one line each, so a burst of
+          // landing taps never overwrites it (R11-S1; round 12, A and B): until OK, this athlete's next
+          // saved tap, or a drop. The row's note says only what the tap did to the register.
+          const name = athlete.full_name;
+          const registerWords = registerDiffers
+            ? registerNote(name, answer?.register, null)
+            : !registerUnknown ? ''
+              : present
+                ? `${name} was marked here. Whether the class register has ${name} Present is not known: check the class register.`
+                : `${name} was unmarked here. Whether the class register still has ${name} Present is not known: check the class register.`;
+          const holdWords = registerNote(name, undefined, hold);
+          if (registerWords || holdWords) {
+            setKeptRefusals((current) => {
+              const next = new Map(current);
+              if (registerWords) next.set(registerAlertKey(athlete.athlete_id), registerWords);
+              if (holdWords) next.set(holdAlertKey(athlete.athlete_id), holdWords);
+              return next;
+            });
+          }
+          // No present-tense row note for a replay: the register may have changed since the first answer.
+          setNote({ athleteId: athlete.athlete_id, text: registerWords || replayed ? '' : registerNote(name, answer?.register, null), kept: true });
+          return undefined;
+        },
+        // Refused: said in this list, where the coach tapped.
+        onRefused: (_response, landed) => {
+          release();
+          // The run gone: the console and this list go with it, so the words go to the page's list, as
+          // the no-shows tap's and the tie's do (round 14, reviewer A).
+          const runGone = refusalCode === 'SESSION_RUN_NOT_LIVE' || refusalCode === 'SESSION_RUN_NOT_FOUND';
+          if (runGone) onRunNotLive?.();
+          if (!onPage.current || isFinishWaiting?.() || runGone) {
+            if (landed !== null) return refusalText(refusalCode);
+            // An untied session writes no class register (round 15, reviewer B).
+            return unknownOffPage(!runGone
+              ? 'Check who is marked here on the class screen.'
+              : tied ? 'Check the class register, and who was marked here under Finished sessions.' : 'Check who was marked here under Finished sessions.');
+          }
+          // Named, as it can come back long after the tap. Not known: said, with the list as last read (a
+          // read again that fails would hide the words).
+          setKeptRefusals((current) => new Map(current).set(
+            athlete.athlete_id,
+            landed === null
+              ? unknownOutcomeWords(`${present ? 'Mark' : 'Unmark'} ${athlete.full_name} here`)
+              : `${athlete.full_name}: ${refusalText(refusalCode)}`,
+          ));
+          return undefined;
+        },
+      };
+    },
+    [forgetRefusal, isFinishWaiting, onRunNotLive, read, readRegister, runId, tied],
+  );
+
+  // The marks as read: what onPresentCount reports, and what the "marked here" line shows.
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
   useEffect(() => {
     onPresentCount?.(presentCount);
   }, [onPresentCount, presentCount]);
+  // What the finish's "Athletes present" is filled in from: the marks as last read, with the taps still
+  // waiting on this page applied in tap order, each athlete's latest last. The queue sends them before
+  // a finish tapped after them, so this is the count that stands when that finish lands (Codex P1 on
+  // #2182). The waiting taps have their own line beside the "marked here" one.
+  const countForFinish = useMemo(() => {
+    if (reading.state !== 'loaded') return null;
+    if (askedTaps.length === 0) return reading.present.size;
+    const marks = new Set(reading.present);
+    for (const tap of askedTaps) {
+      if (tap.present) marks.add(tap.athleteId);
+      else marks.delete(tap.athleteId);
+    }
+    return marks.size;
+  }, [askedTaps, reading]);
+  useEffect(() => {
+    onCountForFinish?.(countForFinish);
+  }, [onCountForFinish, countForFinish]);
 
   const mark = useCallback(
     async (athlete: Athlete, present: boolean) => {
@@ -280,8 +610,16 @@ export default function SessionRunPresence({
       setMessage('');
       setNote(null);
       // A read already on its way was asked before this tap: its answer must not paint over this one.
+      // That read is asked again once it comes back (read), so the list still ends up the server's.
       latestRead.current += 1;
       try {
+        // Kept on the open page (W4 item 7). Not kept (the page does not know who is signed in): sent
+        // once, as before. What it asks shows once kept, unless it was answered first.
+        const resolved = { done: false };
+        if ((await keepSave(keptTap(athlete, present, resolved))) === 'kept') {
+          if (!resolved.done) setAskedTaps((taps) => [...taps, { save: resolved, athleteId: athlete.athlete_id, present }]);
+          return;
+        }
         let response: Response;
         try {
           response = await fetch(
@@ -303,6 +641,8 @@ export default function SessionRunPresence({
           // On a tied session the body also says what the tap did to the class register.
           const answer = (await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null;
           setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, holdAnswer(answer?.hold_warning)) });
+          // A kept tap's refusal for this athlete is past: this tap went through.
+          forgetRefusal(athlete.athlete_id);
           setReading((current) => {
             if (!current || current.runId !== runId || current.state !== 'loaded') return current;
             const next = new Set(current.present);
@@ -310,6 +650,8 @@ export default function SessionRunPresence({
             else next.delete(athlete.athlete_id);
             return { ...current, present: next };
           });
+          // A list read on its way was asked before this tap was written: read again (pendingRead).
+          if (pendingRead.current !== null) void read();
           // A tap on a tied session writes the class register too: what it now has is read again.
           void readRegister();
           return;
@@ -327,7 +669,7 @@ export default function SessionRunPresence({
         setBusy(null);
       }
     },
-    [busy, onRunNotLive, read, readRegister, runId],
+    [busy, forgetRefusal, keptTap, onRunNotLive, read, readRegister, runId],
   );
 
   const needle = filter.trim().toLowerCase();
@@ -350,13 +692,26 @@ export default function SessionRunPresence({
   const shown = useMemo(() => {
     if (reading.state !== 'loaded') return [];
     const matching = reading.gym.filter((athlete) => needle === '' || athlete.full_name.toLowerCase().includes(needle));
-    const marked = matching.filter((athlete) => reading.present.has(athlete.athlete_id));
-    const fromRegister = matching.filter((athlete) => registerOnly.named.has(athlete.athlete_id));
+    // Marked here, or asked to be and not saved yet: a waiting tap stays in view in a large gym's list.
+    const isMarked = (athleteId: string) => reading.present.has(athleteId) || asked.get(athleteId) === true;
+    const marked = matching.filter((athlete) => isMarked(athlete.athlete_id));
+    const fromRegister = matching.filter((athlete) => !isMarked(athlete.athlete_id) && registerOnly.named.has(athlete.athlete_id));
     // Here first, then those the class register has Present, then everyone else (unless the gym is
     // too big to list), each in the server's name order.
-    const rest = matching.filter((athlete) => !reading.present.has(athlete.athlete_id) && !registerOnly.named.has(athlete.athlete_id));
-    return collapsed ? [...marked, ...fromRegister] : [...marked, ...fromRegister, ...rest];
-  }, [collapsed, needle, reading, registerOnly]);
+    const rest = matching.filter((athlete) => !isMarked(athlete.athlete_id) && !registerOnly.named.has(athlete.athlete_id));
+    // A large gym's list also keeps in view an athlete whose refused note's words it holds, so the
+    // alert's "back in the box when this athlete's notes are next opened" can be done there (round 21,
+    // reviewer B). For the confirmed account only, as the panel itself is.
+    const holdsWords = (athleteId: string) => accountConfirmed && wordsHeldFor.has(athleteId);
+    return collapsed
+      ? [...marked, ...fromRegister, ...rest.filter((athlete) => holdsWords(athlete.athlete_id))]
+      : [...marked, ...fromRegister, ...rest];
+  }, [accountConfirmed, asked, collapsed, needle, reading, registerOnly, wordsHeldFor]);
+  // How many athletes' taps are asked and not saved yet, for the list's own status line.
+  // With no list read, every asked tap is counted as waiting.
+  const waitingCount = reading.state === 'loaded'
+    ? [...asked].filter(([athleteId, present]) => present !== reading.present.has(athleteId)).length
+    : asked.size;
 
   return (
     <section className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]" aria-labelledby={headingId}>
@@ -374,6 +729,39 @@ export default function SessionRunPresence({
           </button>
         </div>
       ) : null}
+
+      {/* Kept taps' refusals stay through a list that could not be read; OK clears them. While the page
+          checks again who is signed in: a count, not announced, and OK stays where it is (focus too) but
+          clears nothing, so the next person cannot dismiss what they may not read. */}
+      {keptRefusals.size > 0 ? (
+        <div className={ALERT}>
+          {accountConfirmed ? (
+            <div role="alert">
+              {[...keptRefusals].map(([athleteId, text]) => <p key={athleteId}>{text}</p>)}
+            </div>
+          ) : (
+            <p>
+              {keptRefusals.size === 1
+                ? '1 message about a save on this list shows again once the page has checked who is signed in.'
+                : `${keptRefusals.size} messages about saves on this list show again once the page has checked who is signed in.`}
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn--kiosk mt-[var(--s2)]"
+            aria-disabled={accountConfirmed ? undefined : true}
+            onClick={() => {
+              if (accountConfirmed) setKeptRefusals(NO_REFUSALS);
+            }}
+          >
+            OK
+          </button>
+        </div>
+      ) : null}
+      {/* Mounted always, so a screen reader announces it when it fills; each row says whose tap waits. */}
+      <p role="status" className="sr-only">
+        {waitingCount === 0 ? '' : waitingCount === 1 ? 'One here tap is not saved yet.' : `${waitingCount} here taps are not saved yet.`}
+      </p>
 
       {reading.state === 'loaded' ? (
         <>
@@ -420,7 +808,7 @@ export default function SessionRunPresence({
 
           {message ? <p role="alert" className={ALERT}>{message}</p> : null}
           {/* Read out here; shown under the athlete's own row, where the coach just tapped. */}
-          <p role="status" className="sr-only">{note?.text ?? ''}</p>
+          <p role="status" className="sr-only">{shownNote?.text ?? ''}</p>
 
           {reading.gym.length === 0 ? (
             <p className="t-body mt-[var(--s3)]">There are no athletes in this gym to mark.</p>
@@ -453,7 +841,10 @@ export default function SessionRunPresence({
               ) : (
                 <ul className="mt-[var(--s3)] space-y-[var(--s3)]" aria-label="Athletes of this gym">
                   {shown.map((athlete) => {
-                    const here = reading.present.has(athlete.athlete_id);
+                    const askedNow = asked.get(athlete.athlete_id);
+                    // The button follows what was asked; the words under it say it is not saved yet.
+                    const here = askedNow ?? reading.present.has(athlete.athlete_id);
+                    const waiting = askedNow !== undefined && askedNow !== reading.present.has(athlete.athlete_id);
                     const fromRegister = registerOnly.named.has(athlete.athlete_id);
                     const registerSource = fromRegister ? onRegister?.get(athlete.athlete_id) ?? null : null;
                     return (
@@ -464,6 +855,7 @@ export default function SessionRunPresence({
                             type="button"
                             className={here ? 'btn' : 'btn btn--ghost'}
                             aria-pressed={here}
+                            aria-describedby={waiting ? `${headingId}-waiting-${athlete.athlete_id}` : undefined}
                             disabled={busy !== null}
                             aria-busy={busy === athlete.athlete_id}
                             onClick={() => void mark(athlete, !here)}
@@ -472,23 +864,36 @@ export default function SessionRunPresence({
                             <span className="sr-only">{athlete.full_name}</span>
                           </button>
                         </div>
+                        {waiting ? (
+                          <p id={`${headingId}-waiting-${athlete.athlete_id}`} className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">
+                            {`${here ? 'Marked here' : 'Unmarked here'}: not saved yet. This page keeps sending it while it stays open.`}
+                          </p>
+                        ) : null}
                         {fromRegister ? (
                           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]">
                             {`Present on the class register${registerSource ? `, via ${registerSource}` : ''}. Not marked here yet.`}
                           </p>
                         ) : null}
-                        {note && note.athleteId === athlete.athlete_id && note.text ? (
-                          <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
+                        {shownNote && shownNote.athleteId === athlete.athlete_id && shownNote.text ? (
+                          <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{shownNote.text}</p>
                         ) : null}
-                        {here ? (
-                          <>
-                            <SessionStaffNotesPanel
-                              runId={runId}
-                              athleteId={athlete.athlete_id}
-                              buttonLabel={`Staff notes on ${athlete.full_name}`}
-                            />
-                            <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
-                          </>
+                        {/* The server's mark, as today: a note is taken only for an athlete marked here. An
+                            athlete whose refused note's words this list holds keeps the panel, to get them
+                            back (the server refuses a new note for them until they are marked again). */}
+                        {reading.present.has(athlete.athlete_id) || (accountConfirmed && wordsHeldFor.has(athlete.athlete_id)) ? (
+                          <SessionStaffNotesPanel
+                            runId={runId}
+                            athleteId={athlete.athlete_id}
+                            buttonLabel={`Staff notes on ${athlete.full_name}`}
+                            keptOnThisPage
+                            isFinishWaiting={isFinishWaiting}
+                            onKeptRefused={(words, noteText) => noteRefused(athlete, words, noteText)}
+                            returnedWords={accountConfirmed ? noteWords.get(athlete.athlete_id) : undefined}
+                            onWordsReturned={() => wordsReturned(athlete.athlete_id)}
+                          />
+                        ) : null}
+                        {reading.present.has(athlete.athlete_id) ? (
+                          <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
                         ) : null}
                       </li>
                     );
