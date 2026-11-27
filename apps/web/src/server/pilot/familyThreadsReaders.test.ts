@@ -21,8 +21,8 @@ const repoRoot = path.resolve(__dirname, '../../../../..');
 
 /** Every non-test file naming either table, as of this PR. */
 const TABLE_FILES: readonly string[] = [
-  // EM-IX-2 (lane W4-1, OVERWATCH 7188512792 on #2217): an index on created_at and its runner's
-  // readiness check, which reads the catalog only; they read no row.
+  // EM-IX-2 (lane W4-1, OVERWATCH 7188512792 on #2217): an index on created_at, whose build reads each
+  // post's created_at and returns none of it; its runner's readiness check reads the catalog only.
   'apps/web/scripts/pilot-apply-email-alert-sweep-indexes-2-migration.mjs',
   'apps/web/scripts/pilot-apply-family-threads-migration.mjs',
   // EM-4c (lane W4-1, OVERWATCH 7188512792 on #2217): the guardian_message email source reads a
