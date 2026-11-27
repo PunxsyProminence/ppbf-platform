@@ -68,6 +68,7 @@ const COACH_ID = 'acct-pushqueue-coach';
 const PARENT_ID = 'acct-pushqueue-parent';
 const ADULT_ID = 'acct-pushqueue-adult';
 const NO_BROWSER_ID = 'acct-pushqueue-no-browser';
+const SWITCH_OFF_ID = 'acct-pushqueue-switch-off';
 const ELSEWHERE_ID = 'acct-pushqueue-elsewhere';
 const ADULT_ATHLETE = 'ath-pushqueue-adult';
 // The shapes pilot.push_subscriptions takes (WP-1a).
@@ -114,11 +115,13 @@ async function addBrowser(client: Client, organizationId: string, accountId: str
 }
 
 /**
- * The full schema and two gyms. In this gym: an organization admin (a staff
- * browser on, the email switch off), a coach (a staff browser), a parent (a
- * parent browser), an adult athlete (an adult athlete browser) and a coach
- * with no browser. In the other gym a coach whose only browser is there, who
- * is also a member here.
+ * The full schema and two gyms. In this gym, each with the email switch on
+ * under their user type: an organization admin (a staff browser), a coach (two
+ * staff browsers), a parent (a parent browser), an adult athlete (an adult
+ * athlete browser, a confirmed address) and a coach with no browser. A second
+ * coach has a staff browser on and the email switch off. In the other gym a
+ * coach whose only browser is there, who is also a member here, switched on
+ * here.
  */
 async function freshDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
@@ -141,6 +144,7 @@ async function freshDatabase(name: string): Promise<Client> {
     [COACH_ID, 'coach', ORG_ID],
     [PARENT_ID, 'parent', ORG_ID],
     [NO_BROWSER_ID, 'coach', ORG_ID],
+    [SWITCH_OFF_ID, 'coach', ORG_ID],
     [ELSEWHERE_ID, 'coach', OTHER_ORG_ID],
   ];
   for (const [accountId, role, organizationId] of people) {
@@ -172,15 +176,24 @@ async function freshDatabase(name: string): Promise<Client> {
      values ($1, $2, 'coach', true)`,
     [ELSEWHERE_ID, ORG_ID],
   );
-  // The admin's email switch is off: push does not read it (QA A, the plan's
-  // build until Jason answers QA). Everyone else's is on.
+  // Until Jason answers QA the queue also needs the email switch on: the
+  // switched-off coach has a browser on and gets nothing.
   await client.query(
-    `insert into pilot.email_alert_switches (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at)
-     values ($1, $2, 'staff', false, null, now()), ($1, $3, 'staff', true, now(), null), ($1, $4, 'parent', true, now(), null)`,
-    [ORG_ID, ADMIN_ID, COACH_ID, PARENT_ID],
+    `insert into pilot.email_alert_switches
+       (organization_id, account_id, user_type, switched_on, switched_on_at, switched_off_at, confirmed_address, confirmed_at)
+     values ($1, $2, 'staff', true, now(), null, null, null),
+            ($1, $3, 'staff', true, now(), null, null, null),
+            ($1, $4, 'parent', true, now(), null, null, null),
+            ($1, $5, 'adult_athlete', true, now(), null, 'adult@example.test', now()),
+            ($1, $6, 'staff', true, now(), null, null, null),
+            ($1, $7, 'staff', false, null, now(), null, null),
+            ($1, $8, 'staff', true, now(), null, null, null)`,
+    [ORG_ID, ADMIN_ID, COACH_ID, PARENT_ID, ADULT_ID, NO_BROWSER_ID, SWITCH_OFF_ID, ELSEWHERE_ID],
   );
   await addBrowser(client, ORG_ID, ADMIN_ID, 'staff');
   await addBrowser(client, ORG_ID, COACH_ID, 'staff');
+  await addBrowser(client, ORG_ID, COACH_ID, 'staff');
+  await addBrowser(client, ORG_ID, SWITCH_OFF_ID, 'staff');
   await addBrowser(client, ORG_ID, PARENT_ID, 'parent');
   await addBrowser(client, ORG_ID, ADULT_ID, 'adult_athlete');
   await addBrowser(client, OTHER_ORG_ID, ELSEWHERE_ID, 'staff');
@@ -255,7 +268,7 @@ afterAll(async () => {
 });
 
 describe('web push queue', () => {
-  test('queues only people with a browser on in that gym under that user type whose gym has the event ticked; a second pass adds nothing', async () => {
+  test('queues only people with a browser on in that gym under that user type, switched on, whose gym has the event ticked for their user type; a second pass adds nothing', async () => {
     const client = await freshDatabase('pushqueue_enqueue');
     activeClient = client;
     try {
@@ -265,18 +278,20 @@ describe('web push queue', () => {
         [ORG_ID],
       );
       const candidates = [
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
-        candidate(ADMIN_ID, 'staff', 'safety_escalation', EVENT_1), // email switch off, browser on: queued (QA A)
+        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1), // two browsers: one row
+        candidate(ADMIN_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(SWITCH_OFF_ID, 'staff', 'safety_escalation', EVENT_1), // browser on, email switch off: not until QA
         candidate(NO_BROWSER_ID, 'staff', 'safety_escalation', EVENT_1), // no browser
         candidate(ELSEWHERE_ID, 'staff', 'safety_escalation', EVENT_1), // a browser only in another gym
         candidate(COACH_ID, 'staff', 'gym_notice', EVENT_2), // gym unticked it for staff
+        candidate(PARENT_ID, 'parent', 'gym_notice', EVENT_2), // still ticked for parents
         candidate(PARENT_ID, 'parent', 'family_note', EVENT_3),
         candidate(PARENT_ID, 'parent', 'safety_escalation', EVENT_1), // not on the parent list
         candidate(PARENT_ID, 'staff', 'parent_reply', EVENT_2), // browser saved under another user type
         candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_2),
         candidate(COACH_ID, 'staff', 'parent_reply', 'not-a-uuid'),
       ];
-      expect(await enqueuePushAlertSends(candidates)).toBe(4);
+      expect(await enqueuePushAlertSends(candidates)).toBe(5);
       expect(await enqueuePushAlertSends(candidates)).toBe(0);
       // `select distinct` gives no order, so the rows are compared sorted.
       const written = (await sendRows(client))
@@ -287,6 +302,7 @@ describe('web push queue', () => {
         `${ADULT_ID} coach_message queued 0`,
         `${COACH_ID} safety_escalation queued 0`,
         `${PARENT_ID} family_note queued 0`,
+        `${PARENT_ID} gym_notice queued 0`,
       ]);
       // Push writes nothing to the email send log.
       expect((await client.query('select 1 from pilot.email_alert_sends')).rowCount).toBe(0);
@@ -354,6 +370,7 @@ describe('web push queue', () => {
       };
       // Restored a minute ago; each send became due ten minutes ago.
       const restored = await notice(true, 1);
+      const restoredAfterSending = await notice(true, 1);
       // Restored before the sends became due: nothing new since.
       const unchanged = await notice(true, 30);
       // Retired again.
@@ -377,11 +394,11 @@ describe('web push queue', () => {
       // a failure after retries, a sent row, an unchanged and a retired notice.
       await row(PARENT_ID, restored, 'skipped', { userType: 'parent', statusCode: 503 });
       await row(ADULT_ID, restored, 'failed', { userType: 'adult_athlete', tries: 2, statusCode: 503 });
-      await row(NO_BROWSER_ID, restored, 'sent');
+      await row(COACH_ID, restoredAfterSending, 'sent');
       await row(COACH_ID, unchanged, 'skipped');
       await row(COACH_ID, retired, 'skipped');
-      // Not a notice: never offered again.
-      await row(COACH_ID, EVENT_1, 'skipped', { kind: 'safety_escalation' });
+      // Not a notice, though its id is a restored notice's: never offered again.
+      await row(COACH_ID, restored, 'skipped', { kind: 'safety_escalation' });
       const before = await sendRows(client);
 
       const named = [
@@ -389,9 +406,10 @@ describe('web push queue', () => {
         candidate(ADMIN_ID, 'staff', 'gym_notice', restored),
         candidate(PARENT_ID, 'parent', 'gym_notice', restored),
         candidate(ADULT_ID, 'adult_athlete', 'gym_notice', restored),
+        candidate(COACH_ID, 'staff', 'gym_notice', restoredAfterSending),
         candidate(COACH_ID, 'staff', 'gym_notice', unchanged),
         candidate(COACH_ID, 'staff', 'gym_notice', retired),
-        candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+        candidate(COACH_ID, 'staff', 'safety_escalation', restored),
       ];
       expect(await enqueuePushAlertSends(named)).toBe(2);
       const after = await sendRows(client);

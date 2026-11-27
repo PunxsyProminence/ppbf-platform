@@ -10,9 +10,10 @@
  *      email event picks, OW27-18 A) past push's own checkpoint for it, with
  *      the email sweep's 10-minute overlap, and enqueuePushAlertSends queues
  *      one send per person who can read the event, has a browser on in that
- *      gym under that user type, and whose gym has the event ticked. Nobody
- *      else gets a row. A source's first push sweep only sets push's
- *      checkpoint, so nothing from more than ten minutes before it is pushed;
+ *      gym under that user type (and, until Jason answers QA, the email switch
+ *      on), and whose gym has the event ticked. Nobody else gets a row. A
+ *      source's first push sweep only sets push's checkpoint, so nothing from
+ *      more than ten minutes before it is pushed;
  *   2. recoverExpiredPushAlertLeases puts back sends whose lease ran out, or
  *      fails them if no try is left;
  *   3. claimDuePushAlertSends claims due sends (FOR UPDATE SKIP LOCKED, under
@@ -35,22 +36,25 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 /**
  * Queues one push per candidate who has a browser on in that gym saved under
- * that user type, and whose gym has the event ticked (the email's own picks,
+ * that user type, has the email alert switch on under that user type too, and
+ * whose gym has the event ticked (the email's own picks,
  * pilot.organization_email_alert_events, no row meaning ticked: OW27-18 A).
  * Nobody else gets a row.
- *   - THE BROWSER IS THE OPT-IN. The plan builds to QA A on #2228 (recommended;
- *     Jason has not answered QA): the tap on a device turns push on, whatever
- *     the email switch says. Under QA B this join gains the email switch,
- *     before WP-3: no screen calls the save route (PUT
- *     /api/pilot/push/subscription) until WP-3, which waits for Jason's
- *     answer, and the route refuses everyone until the push keys are set
- *     (pushKeys, pushSubscriptions.ts).
+ *   - THE BROWSER AND, UNTIL JASON ANSWERS QA, THE EMAIL SWITCH. QA on #2228
+ *     (does a person's email switch also decide push?) is open, and no
+ *     decision on it is recorded (AGENT_KERNEL.md, "A decision already made
+ *     is written down": a gate on who may receive something with no recorded
+ *     decision is not to be invented). So this takes only the people both
+ *     answers would push to: a browser on (QA A, the tap is the opt-in) and
+ *     the switch on (what QA B adds). If Jason picks A, the switch join goes
+ *     before WP-3 merges; WP-3, the only screen that saves a browser, waits
+ *     for his answer.
  *   - UNDER THAT USER TYPE, as the email queue asks the switch's: a browser
  *     saved as a parent's does not get a staff event. The sender asks the
  *     person's user type again before each send.
  * A candidate already queued for that event is left as it is (insert ... on
- * conflict do nothing, which also takes a candidate named twice), with one
- * exception, the email queue's.
+ * conflict do nothing, which also takes a candidate named twice or with two
+ * browsers), with one exception, the email queue's.
  *
  * A RESTORED GYM NOTICE IS OFFERED AGAIN to whoever has certainly not had it
  * (Overwatch on #2193, comment 7165858842; the plan applies it to push,
@@ -58,9 +62,14 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * (see there):
  *   - skipped, with no status code or error from any earlier try: every claim
  *     of it ended in a skip before any push service was asked;
- *   - failed on its first and only try. The sender (WP-2b-2) is to fail a push
- *     on its first try only when no browser can have taken it (every browser
- *     refused it finally); one browser's acceptance makes it sent.
+ *   - failed on its first and only try.
+ * That holds only if the push sender (WP-2b-2) keeps three rules, as the email
+ * sender does (emailAlertSender.ts): every try that may have reached a push
+ * service leaves a status code or an error code on the row; a skip never
+ * clears them; and a push fails on its first try only when no browser can have
+ * taken it (every browser refused it finally). A push one browser took is never
+ * failed on its first try: it is sent, or retried to every browser, as the
+ * web-push migration's header says.
  * It is offered again only while the notice is active and was changed after
  * the row became due (updated_at after next_try_at). A failed row keeps its
  * tries; a skipped row starts again from 0. The sender asks every check
@@ -76,6 +85,9 @@ export async function enqueuePushAlertSends(candidates: readonly EmailAlertCandi
        select distinct c.organization_id, c.account_id, c.user_type, c.event_kind, c.event_id
          from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
                 as c(organization_id, account_id, user_type, event_kind, event_id)
+         join pilot.email_alert_switches s
+           on s.organization_id = c.organization_id and s.account_id = c.account_id
+          and s.switched_on and s.user_type = c.user_type
          left join pilot.organization_email_alert_events g
            on g.organization_id = c.organization_id and g.user_type = c.user_type and g.event_kind = c.event_kind
         where coalesce(g.ticked, true)
