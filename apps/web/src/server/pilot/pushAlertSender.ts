@@ -118,7 +118,7 @@ type Browser = {
   readonly endpoint: string;
   readonly key_p256dh: string;
   readonly key_auth: string;
-  /** Every row of this browser the person held, in any gym, when the re-check read it: its id and when it was last saved (exact, as text). */
+  /** Every row of this browser the person held, in any gym, when the re-check read it: its id and when it was last saved (exact, ISO 8601). */
   readonly versions: ReadonlyArray<{ readonly id: string; readonly saved_at: string }>;
 };
 type Decision = { readonly send: true; readonly browsers: readonly Browser[] } | { readonly send: false; readonly reason: SkipReason };
@@ -182,10 +182,13 @@ async function recheck(row: ClaimedPushAlertSend, dependencies: PushAlertSenderD
   }
   // Each browser with every row of it this person holds, in any gym, read in
   // the same statement: a gone browser deletes only those rows, as they were
-  // (Codex on #2253).
+  // (Codex on #2253). A save again moves saved_at (pushSubscriptions.ts's
+  // upsert, pinned there), so it is never one of them. The time goes into the
+  // JSON as JSON writes it, ISO 8601 whatever the session's DateStyle
+  // (reviewer N).
   const browsers = await query<Browser>(
     `select s.subscription_id::text, s.endpoint, s.key_p256dh, s.key_auth,
-            (select coalesce(json_agg(json_build_object('id', o.subscription_id::text, 'saved_at', o.saved_at::text)), '[]'::json)
+            (select coalesce(json_agg(json_build_object('id', o.subscription_id::text, 'saved_at', o.saved_at)), '[]'::json)
                from pilot.push_subscriptions o
               where o.account_id = s.account_id and o.endpoint = s.endpoint) as versions
        from pilot.push_subscriptions s
