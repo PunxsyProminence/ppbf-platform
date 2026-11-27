@@ -9,10 +9,10 @@
  *   1. sweeps each event source into push's queue (pushAlertQueue.ts);
  *   2. puts back pushes whose lease ran out;
  *   3. claims due pushes one at a time, re-checks the person, and posts the
- *      push to each of their browsers in that gym, only while the claim's
- *      lease has four of its five minutes left. A browser's post is cut off at
- *      10 seconds and a person has at most 10 browsers in a gym, so a send ends
- *      well inside that. It stops claiming after 20 seconds or 20 pushes.
+ *      push to all their browsers in that gym at once (at most 10), only while
+ *      the claim's lease has four of its five minutes left. Each post is cut
+ *      off at 10 seconds, so a send ends well inside that. It stops claiming
+ *      after 20 seconds or 20 pushes.
  *
  * RE-CHECKED BEFORE EVERY SEND, as the email sender does: the email switch is
  * on under the row's user type (QK A on #2228, until Jason answers QA); sign-in
@@ -32,10 +32,13 @@
  *
  * OUTCOMES, one per row for all the person's browsers in that gym:
  *   - a browser answering 2xx took it, and the push is sent;
- *   - 404 or 410: that browser is gone, and its row is deleted;
+ *   - 404 or 410: that browser is gone. Its row is deleted in every gym where
+ *     that browser is still this person's (the endpoint key is endpoint-first
+ *     for this), with an audit row in each, as the store's removals have;
  *   - 429, any 5xx, or no answer (a time-out or a network error): worth another try;
  *   - any other answer, a host that is not public, or a request that cannot be
- *     built: final for that browser.
+ *     built: final for that browser. (A status outside 100-599 never comes
+ *     back: pushTransport.ts refuses it as PUSH_BAD_STATUS, worth another try.)
  * Any browser took it: sent. Else, one worth another try with tries left: back
  * to the queue after the email's waits (1, 5, 15 and 60 minutes; at most 5
  * tries), with the last status and error. Else: failed, with them. So, as
@@ -72,7 +75,7 @@ export const PUSH_TOPIC = 'open-the-app';
 /** web-push 3.6.7's own default TTL (four weeks), passed as such. */
 export const PUSH_TTL_SECONDS = 2_419_200;
 export const PUSH_POST_TIMEOUT_MS = 10_000;
-/** A push is posted only with this much of its claim's lease left (10 browsers x 10 s fit well inside). */
+/** A push is posted only with this much of its claim's lease left (all browsers at once, 10 s each, fit well inside). */
 export const PUSH_LEASE_LEFT_TO_SEND_SECONDS = PUSH_ALERT_LEASE_SECONDS - 60;
 
 type VapidDetails = { readonly subject: string; readonly publicKey: string; readonly privateKey: string };
@@ -251,26 +254,37 @@ export async function deliverPushAlertSend(
     [row.send_id, row.lease_token, PUSH_LEASE_LEFT_TO_SEND_SECONDS],
   );
   if (!live) return 'lost';
+  // All the person's browsers at once: a send takes one post's time, not ten.
+  const answers = await Promise.all(decision.browsers.map((browser) => postToBrowser(browser, vapid, dependencies)));
   let took = false;
   let worthAgain: Extract<Answer, { took: false }> | null = null;
   let last: Extract<Answer, { took: false }> | null = null;
   const gone: string[] = [];
-  for (const browser of decision.browsers) {
-    const answer = await postToBrowser(browser, vapid, dependencies);
+  for (const [index, answer] of answers.entries()) {
     if (answer.took) {
       took = true;
       continue;
     }
     last = answer;
     if (answer.again) worthAgain = answer;
-    if (answer.gone) gone.push(browser.subscription_id);
+    if (answer.gone) gone.push(decision.browsers[index].endpoint);
   }
   if (gone.length > 0) {
-    // Only while the row is still this person's: a browser moved to someone else since is theirs.
+    // Every gym's row of a gone browser that is still this person's (a
+    // browser moved to someone else since is theirs), audited in each gym
+    // with no actor and never the endpoint, in one statement.
     await query(
-      `delete from pilot.push_subscriptions
-        where subscription_id = any($1::bigint[]) and organization_id = $2 and account_id = $3`,
-      [gone, row.organization_id, row.account_id],
+      `with gone as (
+         delete from pilot.push_subscriptions
+          where endpoint = any($1::text[]) and account_id = $2
+          returning organization_id, account_id
+       )
+       insert into pilot.audit_events
+         (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
+       select 'update', null, null, organization_id, 'push_browser', account_id,
+              jsonb_build_object('push_browser', 'off', 'reason', 'gone', 'count', count(*))
+         from gone group by organization_id, account_id`,
+      [gone, row.account_id],
     );
   }
   if (took) {

@@ -72,6 +72,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 ) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-pushsender';
+const OTHER_ORG_ID = 'org-pushsender-two';
 const COACH_ID = 'acct-pushsender-coach';
 const PARENT_ID = 'acct-pushsender-parent';
 const ADULT_ID = 'acct-pushsender-adult';
@@ -443,14 +444,36 @@ describe('web push sender', () => {
     }
   });
 
-  test('every browser gone: they are deleted and the push fails on its first try, with the code', async () => {
+  test('every browser gone: they are deleted, in every gym they are this person\'s, audited in each; the push fails on its first try, with the code', async () => {
     const client = await freshDatabase('pushsender_gone_all');
     activeClient = client;
     try {
+      const [endpoint] = await browsersOf(client, COACH_ID);
+      // The same browser is the coach's in a second gym too.
+      await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [OTHER_ORG_ID]);
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+        [COACH_ID, OTHER_ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+         select $1, account_id, user_type, endpoint, key_p256dh, key_auth from pilot.push_subscriptions where endpoint = $2`,
+        [OTHER_ORG_ID, endpoint],
+      );
       await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
       const { dependencies } = recorder({}, 410);
       expect((await runPushAlertSweep(dependencies, [])).failed).toBe(1);
       expect(await browsersOf(client, COACH_ID)).toEqual([]);
+      const audit = await client.query(
+        `select organization_id, actor_account_id, entity_id, details from pilot.audit_events
+          where entity_type = 'push_browser' order by organization_id`,
+      );
+      expect(audit.rows).toEqual([
+        { organization_id: ORG_ID, actor_account_id: null, entity_id: COACH_ID, details: { push_browser: 'off', reason: 'gone', count: 1 } },
+        { organization_id: OTHER_ORG_ID, actor_account_id: null, entity_id: COACH_ID, details: { push_browser: 'off', reason: 'gone', count: 1 } },
+      ]);
+      // No audit row names the endpoint.
+      expect(JSON.stringify(audit.rows)).not.toContain('push.example.test');
       expect(await sendRows(client)).toMatchObject([
         { status: 'failed', tries: 1, last_status_code: 410, last_error_code: 'PUSH_GONE', finished: true },
       ]);
@@ -477,6 +500,56 @@ describe('web push sender', () => {
       });
       expect((await runPushAlertSweep(dependencies, [])).failed).toBe(1);
       expect(await browsersOf(client, PARENT_ID)).toContain(endpoint);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a browser the person has in another gym is not posted to', async () => {
+    const client = await freshDatabase('pushsender_other_gym');
+    activeClient = client;
+    try {
+      await client.query(`insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`, [OTHER_ORG_ID]);
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+        [COACH_ID, OTHER_ORG_ID],
+      );
+      await client.query(
+        `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+         select $1, account_id, user_type, 'https://push.example.test/send/other-gym', key_p256dh, key_auth
+           from pilot.push_subscriptions where account_id = $2`,
+        [OTHER_ORG_ID, COACH_ID],
+      );
+      const [here] = await browsersOf(client, COACH_ID);
+      await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { posted, dependencies } = recorder();
+      expect((await runPushAlertSweep(dependencies, [])).sent).toBe(1);
+      expect(posted.map((details) => details.endpoint)).toEqual([here]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('at most 10 browsers are posted to, all at once', async () => {
+    const client = await freshDatabase('pushsender_ten');
+    activeClient = client;
+    try {
+      // Past the store's cap of 10, written straight to the table.
+      for (let count = 0; count < 11; count += 1) await addBrowser(client, COACH_ID, 'staff');
+      await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      let started = 0;
+      const { posted, dependencies } = recorder({}, async () => {
+        started += 1;
+        // Answers only once every post has started: one after another, none ever would.
+        const deadline = Date.now() + 5_000;
+        while (started < 10) {
+          if (Date.now() > deadline) throw new Error('posted one after another');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return 201;
+      });
+      expect((await runPushAlertSweep(dependencies, [])).sent).toBe(1);
+      expect(posted).toHaveLength(10);
     } finally {
       await client.end();
     }
@@ -519,7 +592,7 @@ describe('web push sender', () => {
     ['a time-out is tried again', new PushPostError('PUSH_TIMEOUT'), 'queued', null, 'PUSH_TIMEOUT'],
     ['a network error is tried again', new Error('socket hang up'), 'queued', null, 'PUSH_NETWORK_ERROR'],
     ['a host that is not public is final at once', new PushPostError('PUSH_HOST_NOT_PUBLIC'), 'failed', null, 'PUSH_HOST_NOT_PUBLIC'],
-    ['an answer too long to read is tried again', new PushPostError('PUSH_ANSWER_TOO_LONG'), 'queued', null, 'PUSH_ANSWER_TOO_LONG'],
+    ['a status outside 100-599 is tried again', new PushPostError('PUSH_BAD_STATUS'), 'queued', null, 'PUSH_BAD_STATUS'],
   ] as const)('%s', async (_label, answer, status, code, error) => {
     const client = await freshDatabase('pushsender_answer');
     activeClient = client;
