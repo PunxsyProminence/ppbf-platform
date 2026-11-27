@@ -779,16 +779,16 @@ const CONFIRM_REFUSALS: Record<ConfirmRefusal, () => ConflictError> = {
  * stays its own press (setEmailAlertSwitch). A wrong code costs one of the
  * row's tries; an expired one is cleared (default 11).
  *
- * The expiry is judged at a time read once the locks are held (Codex on
- * EM-2b-2): a PUT that began inside the 15 minutes but waited on the account
- * or switch row past them is refused as expired. `now` is a fixed clock for
- * tests; the route passes none, so every request reads the clock again there.
+ * The expiry is judged at a time read from `clock` once the locks are held
+ * (Codex on EM-2b-2): a PUT that began inside the 15 minutes but waited on the
+ * account or switch row past them is refused as expired. A clock, not a time,
+ * so no caller can hand in a time read before the wait; tests pass a fixed one.
  */
 export async function confirmEmailAlertAddress(
   subject: EmailAlertSwitchSubject & { readonly code: unknown },
-  now?: Date,
+  clock: () => Date = () => new Date(),
 ): Promise<EmailAlertSwitchState> {
-  const startedAt = now ?? new Date();
+  const startedAt = clock();
   await refuseUnlessAdultAthlete(subject, startedAt);
   // After the adult check (L1): a minor's answer never depends on what they typed.
   const code = typeof subject.code === 'string' ? subject.code.trim() : '';
@@ -798,7 +798,7 @@ export async function confirmEmailAlertAddress(
     const person = await lockAdultAthlete(client, subject, startedAt);
     if (!person) return 'refused';
     // Read after the locks are held: the time the code is judged at.
-    const lockedAt = now ?? new Date();
+    const lockedAt = clock();
     const { row } = person;
     if (!row?.pending_code_hash || !row.pending_address || !row.code_expires_at) return 'expired';
     if (codeExpired(row, lockedAt)) {

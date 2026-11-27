@@ -295,7 +295,7 @@ function post(key: keyof typeof SUBJECTS, address: string, send: EmailAlertCodeM
 }
 
 function put(key: keyof typeof SUBJECTS, code: string, now: Date = NOW) {
-  return confirmEmailAlertAddress({ ...subject(key), code }, now);
+  return confirmEmailAlertAddress({ ...subject(key), code }, () => now);
 }
 
 function wrong(code: string): string {
