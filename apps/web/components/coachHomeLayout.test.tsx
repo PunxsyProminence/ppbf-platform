@@ -69,6 +69,9 @@ function installFetch(routes: Routes = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/barrier-reports')) return jsonResponse({ ok: true, barrierReports: [], truncated: false });
     if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: [] });
+    // The classes and rounds above the names (lane W4-3, FN-4b): a healthy read with no class running.
+    if (url.includes('/api/pilot/on-the-floor/classes')) return jsonResponse({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] });
+    if (url.includes('/api/pilot/on-the-floor')) return jsonResponse({ ok: true, day: '2026-08-28', athletes: [] });
     // The per-athlete panels a roster tap opens read their own routes; an
     // empty healthy answer is enough here, where only the link is asserted.
     if (url.includes('/api/pilot/')) return jsonResponse({ ok: true, items: [] });
@@ -204,6 +207,35 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
     expect(before(screen.getByRole('region', { name: 'The floor' }), pain)).toBe(true);
     expect(before(pain, screen.getByRole('heading', { name: 'Safety Escalations' }))).toBe(true);
     expect(before(pain, screen.getByRole('heading', { name: 'Family Barrier Reports' }))).toBe(true);
+  });
+});
+
+describe('who is on the floor now (lane W4-3, FN-3; Jason Q3.3 A)', () => {
+  const SESSION_STATUS = 'No session in progress. Session Plans is where a live delivery starts.';
+  const floorReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/pilot/on-the-floor')).length;
+
+  test('the line sits below every safety list, on the home and on another tab, and a tab change does not read it again', async () => {
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<CoachWorkspace />);
+    });
+
+    const line = () => screen.getByRole('region', { name: 'Who is on the floor' });
+    const belowTheSafetyLists = () => {
+      expect(before(screen.getByRole('heading', { name: 'Athlete Pain Reports' }), line())).toBe(true);
+      expect(before(screen.getByRole('heading', { name: 'Safety Escalations' }), line())).toBe(true);
+      expect(before(screen.getByRole('heading', { name: 'Family Barrier Reports' }), line())).toBe(true);
+    };
+
+    expect(within(line()).getByText('Nobody is counted on the floor right now.')).toBeTruthy();
+    belowTheSafetyLists();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Your Growth' }));
+    belowTheSafetyLists();
+    // Beside the session-status line, which the role summary panel carries off the Dashboard.
+    expect(before(line(), screen.getByText(SESSION_STATUS))).toBe(true);
+    expect(floorReads(fetchMock)).toBe(1);
   });
 });
 

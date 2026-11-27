@@ -123,3 +123,43 @@ describe('the hub links the board\'s reads directly under its header (lane AS-12
     }
   });
 });
+
+// Lane W4-3, FN-4b (GO on #2192, 7206014991): what is running on the floor now sits beside the hub's
+// aggregate, for a board reader only. The platform owner on /board does not get it, and nothing is read.
+describe('what is running on the floor now, on the hub (lane W4-3, FN-4b)', () => {
+  const CLASSES = { ok: true, read_at: '2026-11-25T23:12:00.000Z', classes: [], rounds: [], total: { status: 'insufficient_data', count: null } };
+
+  async function renderHubAs(session: ReturnType<typeof useBoardSession>) {
+    mockUseBoardSession.mockReturnValue(session);
+    const fetchMock = jest.fn(async (url: string) => ({
+      ok: true,
+      json: async () => (String(url).includes('/api/pilot/on-the-floor/classes') ? CLASSES : { success: true, summary }),
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await act(async () => {
+      render(<BoardHubPage />);
+    });
+    return fetchMock;
+  }
+  const classesReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/on-the-floor/classes')).length;
+
+  test('a board reader gets the line directly after the hub aggregate, read once', async () => {
+    const fetchMock = await renderHubAs({ role: 'board', seats: [] });
+    const line = screen.getByRole('region', { name: 'What is running on the floor' });
+    expect(within(line).getByText('No class is running now.')).toBeTruthy();
+    expect(within(line).getByText('On the floor now: Suppressed')).toBeTruthy();
+    // Directly after the hub's aggregate panel.
+    expect(line.previousElementSibling?.contains(screen.getByText('Board Hub Aggregate'))).toBe(true);
+    expect(classesReads(fetchMock)).toBe(1);
+  });
+
+  test.each([
+    ['the platform owner', { role: 'platform_owner' as const, seats: [] }],
+    ['no board session', null],
+  ])('%s gets no line, and nothing is read for it', async (_label, session) => {
+    const fetchMock = await renderHubAs(session);
+    expect(screen.queryByRole('region', { name: 'What is running on the floor' })).toBeNull();
+    expect(classesReads(fetchMock)).toBe(0);
+  });
+});

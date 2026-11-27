@@ -128,6 +128,19 @@ function fetchMock(options: MockOptions = {}) {
       } as Response;
     }
 
+    if (url.includes('/api/pilot/on-the-floor/classes')) {
+      // The classes and rounds above the names (lane W4-3, FN-4b): no class running.
+      return { ok: true, status: 200, json: async () => ({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] }) } as Response;
+    }
+
+    if (url.includes('/api/pilot/on-the-floor')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, day: '2026-11-25', athletes: [{ athlete_id: 'ath-2', full_name: 'Sam Rivera' }] }),
+      } as Response;
+    }
+
     return { ok: true, status: 200, json: async () => ({}) } as Response;
   });
 }
@@ -179,6 +192,22 @@ describe("the console's header names the gym, never its id (F-008)", () => {
     });
     expect(screen.queryByText('org-1')).toBeNull();
     expect(screen.queryByText(/Gym:/)).toBeNull();
+  });
+});
+
+describe('who is on the floor now, on the admin home (lane W4-3, FN-3; Jason Q3.3 A)', () => {
+  test('the line names who is counted, directly under the morning safety check, read once', async () => {
+    global.fetch = fetchMock({ roster: ROSTER }) as never;
+
+    render(<PeopleConsolePage />);
+
+    const line = await screen.findByText('On the floor now: Sam Rivera');
+    const strip = screen.getByRole('heading', { name: 'Morning check' }).closest('section');
+    expect(strip).not.toBeNull();
+    expect(line.closest('section')?.previousElementSibling).toBe(strip);
+    const floorReads = (route: string) => (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).endsWith(route));
+    expect(floorReads('/api/pilot/on-the-floor')).toHaveLength(1);
+    expect(floorReads('/api/pilot/on-the-floor/classes')).toHaveLength(1);
   });
 });
 
