@@ -5,7 +5,7 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import SaveQueueNotice, { FAILED_WORDS, WAITING_WORDS, checkingWords, notSentWords } from './SaveQueueNotice';
+import SaveQueueNotice, { FAILED_WORDS, UNKNOWN_WORDS, WAITING_WORDS, checkingWords, notSentWords } from './SaveQueueNotice';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import { RESEND_MS, keepSave, prepareSaveQueue, resetSaveQueueForTests, type KeptSave } from '@/src/lib/saveQueue';
 
@@ -83,6 +83,36 @@ test('a waiting save is named in a status line; a refused one in an alert with t
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
+test('a refused RESEND that could not be checked is listed apart, under "not known", never under "Not saved" (condition 2)', async () => {
+  render(<SaveQueueNotice />);
+  const unchecked: KeptSave = {
+    label: 'Pause session',
+    send: jest.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }),
+    checkLanded: async () => null,
+    onRefused: (_response, landed) => (landed === null ? 'the check could not be made.' : 'refused.'),
+  };
+  let sends = 0;
+  unchecked.send = jest.fn(async () => {
+    sends += 1;
+    if (sends === 1) throw new TypeError('Failed to fetch');
+    return answer(409);
+  });
+  await act(async () => {
+    await keepSave(unchecked);
+    await keepSave(save('Ada Reyes: here', [answer(409)]));
+    await jest.advanceTimersByTimeAsync(RESEND_MS);
+  });
+  const alert = screen.getByRole('alert');
+  const [refusedList, unknownList] = Array.from(alert.querySelectorAll('ul'));
+  expect(alert).toHaveTextContent(FAILED_WORDS);
+  expect(alert).toHaveTextContent(UNKNOWN_WORDS);
+  expect(refusedList).toHaveTextContent('Ada Reyes: here: This athlete is not marked present in this session.');
+  expect(refusedList).not.toHaveTextContent('Pause session');
+  expect(unknownList).toHaveTextContent('Pause session: the check could not be made.');
+});
+
 test('signing out takes every word of the last person\'s saves off the screen at once', async () => {
   const { container } = render(<SaveQueueNotice />);
   await act(async () => {
@@ -137,4 +167,8 @@ test('while the page checks again who is signed in, only a count shows, with no 
   expect(container).not.toHaveTextContent('Ada Reyes');
   expect(container).not.toHaveTextContent('Ben Ortiz');
   expect(screen.queryByRole('alert')).toBeNull();
+  // The count may hold a save whose outcome is not known: never said as not saved (condition 2).
+  expect(container).not.toHaveTextContent('Not saved');
+  expect(checkingWords(1)).toBe('1 save on this page shows again once the page has checked who is signed in.');
+  expect(checkingWords(2)).toBe('2 saves on this page show again once the page has checked who is signed in.');
 });
