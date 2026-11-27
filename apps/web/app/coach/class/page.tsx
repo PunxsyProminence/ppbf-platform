@@ -104,7 +104,19 @@ function ClassScreen() {
   const [classNote, setClassNote] = useState('');
   // ?class=<id>: applied once, to the first list the picker reads; after that the coach's picks rule.
   const preselect = useRef<'pending' | 'applied' | 'done'>(wantedClass ? 'pending' : 'done');
+  // After a superseded refusal the coach chooses again (App Overwatch 7215533652 on #2189, accepting
+  // "Today's classes are read again, the coach chooses again, and one more press starts"): the
+  // re-read list's clock default does not choose for them, as it could be another class than the
+  // one they chose (reviewers N and O on #2241). Until their own pick, nothing is chosen, and the
+  // picker says "Choose the class, or No class, to start."
+  const choosesAgain = useRef(false);
   const onClassChoice = useCallback((choice: ClassChoice, info: ClassChoiceInfo) => {
+    if (!info.picked && choosesAgain.current) {
+      keepPick(info);
+      setClassChoice(undefined);
+      return;
+    }
+    if (info.picked) choosesAgain.current = false;
     if (!info.picked && preselect.current === 'pending') {
       const named = info.classes.find((item) => item.class_id === wantedClass && !item.held_by_other_session);
       if (named) {
@@ -126,6 +138,7 @@ function ClassScreen() {
   }, [wantedClass, keepPick]);
   const resetClassChoice = useCallback(() => {
     preselect.current = 'done';
+    choosesAgain.current = false;
     keepPick({ picked: false, classes: [] });
     setClassChoice(undefined);
     setClassNote('');
@@ -187,6 +200,7 @@ function ClassScreen() {
       // (App Overwatch 7215533652 on #2189).
       if (outcome.kind === 'refused' && outcome.code === 'SESSION_SCRIPT_SUPERSEDED') {
         resetClassChoice();
+        choosesAgain.current = true;
         setClassReads((count) => count + 1);
       }
     } finally {
@@ -284,7 +298,11 @@ function ClassScreen() {
         {!liveRun && liveRunCheck !== 'loading' && (
           <section aria-label="Start a session" className="mt-[var(--s6)]">
             <SessionClassPicker key={classReads} value={classChoice} onChange={onClassChoice} />
-            {planLine && <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{planLine}</p>}
+            {/* A status region that stays while the line comes and goes, so the line is announced
+                when it appears, not only when it changes (reviewer O on #2241). */}
+            <div role="status">
+              {planLine && <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{planLine}</p>}
+            </div>
             {classNote && <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{classNote}</p>}
             <button
               type="button"

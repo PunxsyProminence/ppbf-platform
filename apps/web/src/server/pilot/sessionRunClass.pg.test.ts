@@ -1009,6 +1009,23 @@ describe('today\'s classes carry their plan, as its newest version', () => {
     expect(await planOf(later.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
   });
 
+  test('two gyms holding the same plan id: each class reads its own gym\'s plan, name, state and blocks (reviewer N on #2241)', async () => {
+    // Content import names a plan by its lineage key (contentImport/lineage.ts), so two gyms can
+    // hold the same script_id; each read must stay inside the class's own gym.
+    const gym = await newGym('plan-same-id');
+    const other = await newGym('plan-same-id-other');
+    await addPlan(gym, 'scr-same', 1, 'Footwork night', 0);
+    await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2);
+    await client.query(
+      `update pilot.session_scripts set authoring_state = 'retired' where organization_id = $1 and script_id = 'scr-same'`,
+      [other.organizationId],
+    );
+    await linkPlan(gym, 'scr-same');
+    await linkPlan(other, 'scr-same');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+    expect(await planOf(other.coach)).toEqual({ script_id: 'scr-same', name: 'Another gym\'s plan', retired: true, has_blocks: true });
+  });
+
   test('a plan row deleted clears the class\'s link (on delete set null), and the class carries no plan', async () => {
     const gym = await newGym('plan-deleted');
     await addPlan(gym, 'scr-v1', 1, 'Footwork night', 1);
