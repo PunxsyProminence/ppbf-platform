@@ -1,9 +1,11 @@
 // The dispatch contract of .github/workflows/cleanup-audit-test-records.yml, the
 // only way the audit test record report (pilot blocker B6; lane W5-B6, B6-2)
-// reaches a real database.
+// reaches a real database (B6-2; the apply inputs, B6-3).
 //
-// Pinned here, from the real file: the three inputs and no mode or apply
-// (this version only reports); the job runs in the environment named by
+// Pinned here, from the real file: the seven inputs; mode apply is the only
+// way PPBF_AUDIT_TEST_CLEANUP_APPLY becomes 'true', and only in the tool
+// step; the guard refuses an apply without kinds, the phrase and a
+// fingerprint, and a dry run that carries any of them; the job runs in the environment named by
 // `target`; the secrets are repair-research-baseline.yml's plus the reference
 // key App Overwatch approved (QR A, #2227); free text and the key reach the
 // shell only through the environment. The guard, tool and record steps are
@@ -27,9 +29,12 @@ const WORKFLOW_DIR = path.join(REPO_ROOT, '.github/workflows');
 const FILE = 'cleanup-audit-test-records.yml';
 const TOOL = path.join(REPO_ROOT, 'apps/web/scripts/pilot-cleanup-audit-test-records.mjs');
 const GUARD_STEP = 'Confirm Explicit Target';
-const TOOL_STEP = 'Report Audit Test Records';
+const TOOL_STEP = 'Run The Audit Test Record Cleanup';
 const RECORD_STEP = 'Record The Report';
 const REF_KEY = 'PPBF_AUDIT_TEST_CLEANUP_REF_KEY';
+const APPLY_VAR = 'PPBF_AUDIT_TEST_CLEANUP_APPLY';
+const PHRASE = 'DELETE AUDIT TEST RECORDS';
+const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 
 function readWorkflow(file: string): string {
   return fs.readFileSync(path.join(WORKFLOW_DIR, file), 'utf8').replace(/\r\n/g, '\n');
@@ -111,14 +116,19 @@ function bash(
 }
 
 function guard(values: Record<string, string>) {
-  return bash(runScript(GUARD_STEP), { TARGET: 'production', CONFIRM_TARGET: 'production', ORGANIZATION: 'punxsy_prominence', ...values });
+  return bash(runScript(GUARD_STEP), {
+    TARGET: 'production', CONFIRM_TARGET: 'production', ORGANIZATION: 'punxsy_prominence',
+    MODE: 'dry-run', KINDS: '', CONFIRM_DELETE: '', EXPECTED_FINGERPRINT: '', ...values,
+  });
 }
 
+const APPLY = { MODE: 'apply', KINDS: 'classes,tvs', CONFIRM_DELETE: PHRASE, EXPECTED_FINGERPRINT: FINGERPRINT };
+
 /** Runs the tool step as a `shell: bash` step, `npm` replaced by `npmBody`. */
-function toolStep(organization: string, npmBody: string): { status: number | null; stdout: string[]; captured: string } {
+function toolStep(organization: string, npmBody: string, kinds = ''): { status: number | null; stdout: string[]; captured: string } {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'b6-workflow-'));
   try {
-    const run = bash(`npm() { ${npmBody}; }\n${runScript(TOOL_STEP)}`, { ORGANIZATION: organization, RUNNER_TEMP: temp }, SHELL_BASH);
+    const run = bash(`npm() { ${npmBody}; }\n${runScript(TOOL_STEP)}`, { ORGANIZATION: organization, KINDS: kinds, RUNNER_TEMP: temp }, SHELL_BASH);
     const file = path.join(temp, 'tool-output.txt');
     return { status: run.status, stdout: run.stdout, captured: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '' };
   } finally {
@@ -127,20 +137,21 @@ function toolStep(organization: string, npmBody: string): { status: number | nul
 }
 
 /** The arguments the tool step hands npm. */
-function toolArgs(organization: string): string[] {
-  const run = toolStep(organization, 'printf \'NPM_ARG:%s\\n\' "$@"');
+function toolArgs(organization: string, kinds = ''): string[] {
+  const run = toolStep(organization, 'printf \'NPM_ARG:%s\\n\' "$@"', kinds);
   if (run.status !== 0) throw new Error(run.stdout.join('\n'));
   return run.stdout.filter((line) => line.startsWith('NPM_ARG:')).map((line) => line.slice('NPM_ARG:'.length));
 }
 
 /** Runs the record step over `toolOutput` and returns the step summary it wrote. */
-function summaryFor(toolOutput: string): string {
+function summaryFor(toolOutput: string, values: Record<string, string> = {}): string {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'b6-workflow-'));
   try {
     fs.writeFileSync(path.join(temp, 'tool-output.txt'), toolOutput);
     const summary = path.join(temp, 'summary.md');
     const run = bash(runScript(RECORD_STEP), {
       RUNNER_TEMP: temp, GITHUB_STEP_SUMMARY: summary, TARGET: 'production', ORGANIZATION: 'ALL_ORGANIZATIONS', JOB_STATUS: 'success',
+      MODE: 'dry-run', KINDS: '', EXPECTED_FINGERPRINT: '', ...values,
     });
     if (run.status !== 0) throw new Error(run.output);
     return fs.readFileSync(summary, 'utf8');
@@ -152,7 +163,7 @@ function summaryFor(toolOutput: string): string {
 describe(`${FILE}: what a dispatch can ask for`, () => {
   const text = readWorkflow(FILE);
 
-  test('dispatch only, with exactly three inputs: this version has no mode and no apply', () => {
+  test('dispatch only, with exactly seven inputs; mode defaults to dry-run', () => {
     expect(text).toMatch(/^on:\n {2}workflow_dispatch:\n {4}inputs:\n/m);
     expect(text).not.toMatch(/^\s+(schedule|push|pull_request|workflow_run):/m);
     // Every key directly under `inputs:`, however the input is written.
@@ -163,11 +174,28 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
       const key = /^ {6}([^ :#][^:]*):/.exec(line);
       if (key) inputs.push(key[1]);
     }
-    expect(inputs).toEqual(['target', 'confirm_target', 'organization']);
+    expect(inputs).toEqual(['target', 'confirm_target', 'organization', 'mode', 'kinds', 'confirm_delete', 'expected_fingerprint']);
     expect(text).toContain('      target:\n        description: Database environment\n        required: true\n        type: choice\n        options:\n          - staging\n          - production\n');
     expect(text).toContain('      organization:\n        description: An organization_id, or ALL_ORGANIZATIONS for every organization\n        required: true\n        type: string\n');
-    expect(text).not.toContain('PPBF_AUDIT_TEST_CLEANUP_APPLY');
-    expect(text).not.toMatch(/inputs\.(mode|kinds|confirm_delete|expected_fingerprint)/);
+    expect(text).toContain('      mode:\n        description: Report the records (dry run), or act on the reviewed plan\n        required: true\n'
+      + '        default: dry-run\n        type: choice\n        options:\n          - dry-run\n          - apply\n');
+  });
+
+  test('the apply variable is set in one place only: the tool step, from mode apply', () => {
+    expect(text.split('\n').filter((line) => line.includes(APPLY_VAR) && !line.trim().startsWith('#'))).toEqual([
+      `          ${APPLY_VAR}: \${{ inputs.mode == 'apply' }}`,
+    ]);
+    expect(stepText(TOOL_STEP)).toContain(`          ${APPLY_VAR}: \${{ inputs.mode == 'apply' }}\n`);
+    for (const [name, input] of [['PPBF_AUDIT_TEST_CLEANUP_CONFIRM', 'confirm_delete'], ['PPBF_AUDIT_TEST_CLEANUP_EXPECT_FINGERPRINT', 'expected_fingerprint']]) {
+      expect(text.split('\n').filter((line) => line.includes(name) && !line.trim().startsWith('#')))
+        .toEqual([`          ${name}: \${{ inputs.${input} }}`]);
+    }
+    expect(runBodies(text).filter((line) => line.includes(APPLY_VAR))).toEqual([]);
+  });
+
+  test('the guard\'s phrase is the tool\'s', () => {
+    expect(fs.readFileSync(TOOL, 'utf8')).toContain(`export const CONFIRM_PHRASE = '${PHRASE}';`);
+    expect(runScript(GUARD_STEP)).toContain(`[ "$CONFIRM_DELETE" != "${PHRASE}" ]`);
   });
 
   test('one job, in the environment named by target, with a group of its own', () => {
@@ -236,9 +264,11 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
 });
 
 describe(`${FILE}: the guard step, run`, () => {
-  test('a matching target and an organization pass', () => {
+  test('a matching target and an organization pass, as a dry run and as a complete apply', () => {
     expect(guard({}).status).toBe(0);
     expect(guard({ ORGANIZATION: 'ALL_ORGANIZATIONS' }).status).toBe(0);
+    expect(guard(APPLY).status).toBe(0);
+    expect(guard({ ...APPLY, KINDS: 'test-organizations' }).status).toBe(0);
   });
 
   test.each([
@@ -249,6 +279,20 @@ describe(`${FILE}: the guard step, run`, () => {
     ['an organization with a line break', { ORGANIZATION: 'gym\n::warning::injected' }, 'one line'],
     ['an organization with a carriage return', { ORGANIZATION: 'gym\r' }, 'one line'],
     ['an organization with a tab', { ORGANIZATION: 'gym\tx' }, 'one line'],
+    ['a mode that is neither', { MODE: 'delete' }, 'mode must be dry-run or apply'],
+    ['a dry run with kinds', { KINDS: 'classes' }, 'for apply mode only'],
+    ['a dry run with the phrase', { CONFIRM_DELETE: PHRASE }, 'for apply mode only'],
+    ['a dry run with a fingerprint', { EXPECTED_FINGERPRINT: FINGERPRINT }, 'for apply mode only'],
+    ['an apply with no kinds', { ...APPLY, KINDS: '' }, 'apply mode needs kinds'],
+    ['an apply with a space in kinds', { ...APPLY, KINDS: 'classes, tvs' }, 'apply mode needs kinds'],
+    ['an apply with kinds in capitals', { ...APPLY, KINDS: 'CLASSES' }, 'apply mode needs kinds'],
+    ['an apply with no phrase', { ...APPLY, CONFIRM_DELETE: '' }, 'apply mode needs confirm_delete'],
+    ['an apply with the phrase in lower case', { ...APPLY, CONFIRM_DELETE: PHRASE.toLowerCase() }, 'apply mode needs confirm_delete'],
+    ['an apply with no fingerprint', { ...APPLY, EXPECTED_FINGERPRINT: '' }, 'apply mode needs expected_fingerprint'],
+    ['an apply with a short fingerprint', { ...APPLY, EXPECTED_FINGERPRINT: 'sha256:abc' }, 'apply mode needs expected_fingerprint'],
+    ['kinds with a line break', { ...APPLY, KINDS: 'classes\n::warning::injected' }, 'one line'],
+    ['a phrase with a line break', { ...APPLY, CONFIRM_DELETE: `${PHRASE}\n` }, 'one line'],
+    ['a fingerprint with a line break', { ...APPLY, EXPECTED_FINGERPRINT: `${FINGERPRINT}\n` }, 'one line'],
   ])('refuses %s', (_label, values, message) => {
     const run = guard(values as Record<string, string>);
     expect(run.status).toBe(1);
@@ -264,6 +308,14 @@ describe(`${FILE}: the tool step, run`, () => {
   test('an organization id is passed as one argument, never parsed by the shell', () => {
     expect(toolArgs('punxsy_prominence')).toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--organization', 'punxsy_prominence']);
     expect(toolArgs('a b; echo PWNED')).toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--organization', 'a b; echo PWNED']);
+  });
+
+  test('kinds reach npm as one argument after --kinds, and only when given', () => {
+    expect(toolArgs('punxsy_prominence', 'classes,tvs'))
+      .toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--organization', 'punxsy_prominence', '--kinds', 'classes,tvs']);
+    expect(toolArgs('ALL_ORGANIZATIONS', 'a b; echo PWNED'))
+      .toEqual(['run', 'pilot:cleanup-audit-test-records', '--', '--all-organizations', '--kinds', 'a b; echo PWNED']);
+    expect(toolArgs('ALL_ORGANIZATIONS')).not.toContain('--kinds');
   });
 
   test('a refusal on stderr fails the step and is captured for the summary', () => {
@@ -312,5 +364,23 @@ describe(`${FILE}: the record step, run`, () => {
 
   test('with no output at all it says so, and does not fail', () => {
     expect(summaryFor('')).toContain('No result line was captured');
+  });
+
+  test('a dry run says nothing was written', () => {
+    expect(summaryFor(`${resultLine}\n`)).toContain('### Audit test record cleanup (dry-run)');
+    expect(summaryFor(`${resultLine}\n`)).toContain('Dry run: nothing was written.');
+  });
+
+  test('an apply records its applied line, or that there was nothing to apply, with the mode, kinds and fingerprint', () => {
+    const applied = '{"event":"audit_test_cleanup.applied","status":"applied","kinds":["classes"],"counts":{"classes":3}}';
+    const values = { MODE: 'apply', KINDS: 'classes', EXPECTED_FINGERPRINT: FINGERPRINT };
+    const summary = summaryFor(`${plan}\n${applied}\n`, values);
+    expect(summary).toContain(applied);
+    expect(summary).toContain('### Audit test record cleanup (apply)');
+    expect(summary).toContain('- kinds: `classes`');
+    expect(summary).toContain(`- expected fingerprint: \`${FINGERPRINT}\``);
+    expect(summary).not.toContain('nothing was written');
+    const nothing = '{"event":"audit_test_cleanup.nothing-to-apply","kinds":["tvs"]}';
+    expect(summaryFor(`${nothing}\n`, values)).toContain(nothing);
   });
 });

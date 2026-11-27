@@ -75,6 +75,17 @@ type ClassReport = {
 type Hit = { table: string; column: string; key: Record<string, string>; organization_id: string | null; marker?: string };
 type Result = {
   status: string;
+  kinds?: string[];
+  class_ids?: Array<{ organization_id: string; class_id: string }>;
+  tv_ids?: Array<{ organization_id: string; tv_id: string }>;
+  organization_set_inactive?: string | null;
+  audit_rows?: number;
+  mismatches?: string[];
+  triggers?: string[];
+  reasons?: string[];
+  table?: string;
+  planned?: number;
+  written?: number;
   person_ref?: string;
   reason?: string;
   plan_fingerprint?: string;
@@ -102,6 +113,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let report: ReportFn;
 let reportWithoutKey: ReportFn;
+let apply: ReportFn;
 let runTool: RunFn;
 let parseOptions: ParseFn;
 let printableKey: (column: string, type: string, value: unknown, key: string) => string | null;
@@ -355,6 +367,7 @@ beforeAll(async () => {
   const tool = await nativeDynamicImport(pathToFileURL(TOOL_PATH).href);
   reportWithoutKey = tool.reportAuditTestRecords as ReportFn;
   report = (client, options, deps) => reportWithoutKey(client, options, { refKey: TEST_REF_KEY, ...deps } as Deps);
+  apply = (client, options, deps) => (tool.applyAuditTestRecords as ReportFn)(client, options, { refKey: TEST_REF_KEY, ...deps } as Deps);
   runTool = tool.run as RunFn;
   parseOptions = tool.parseOptions as ParseFn;
   printableKey = tool.printableKey as (column: string, type: string, value: unknown, key: string) => string | null;
@@ -899,7 +912,7 @@ describe('read-only and refusals', () => {
   });
 
   test.each([
-    ['an apply request (no write path exists)', { PPBF_AUDIT_TEST_CLEANUP_APPLY: 'true' }, 'APPLY_NOT_AVAILABLE'],
+    ['an apply request with no kinds', { PPBF_AUDIT_TEST_CLEANUP_APPLY: 'true' }, 'APPLY_WITHOUT_KINDS'],
     ['a mismatched hostname', { PPBF_EXPECTED_POSTGRES_HOSTNAME: 'ppbf-pg-195892.postgres.database.azure.com' }, 'POSTGRES_TARGET_MISMATCH'],
     ['a mismatched database', { PPBF_EXPECTED_POSTGRES_DATABASE: 'postgres' }, 'POSTGRES_TARGET_MISMATCH'],
     ['no declared hostname', { PPBF_EXPECTED_POSTGRES_HOSTNAME: '' }, 'MISSING_PPBF_EXPECTED_POSTGRES_HOSTNAME'],
@@ -981,5 +994,355 @@ describe('the command line, end to end', () => {
     const result = await runTool(envFor(name), ['--all-organizations'], { log: out.log });
     expect(result.status).toBe('dry-run');
     expectNothingRaw(out.text());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The apply (B6-3). Each refusal must leave every pilot table byte-identical.
+// ---------------------------------------------------------------------------
+
+// Typed here, not imported: a changed phrase in the tool must fail these tests.
+const CONFIRM = 'DELETE AUDIT TEST RECORDS';
+const NO_FINGERPRINT = `sha256:${'0'.repeat(64)}`;
+const APPLY_TABLES_FOR_CLASSES = ['audit_events', 'scheduler_attendance', 'scheduler_classes', 'scheduler_registrations',
+  'session_run_athletes', 'session_script_runs'];
+
+/** The running class, its live run and the activity row: what refuses a class apply in the template. */
+async function clearBlockers(target: Client) {
+  await target.query("delete from pilot.session_script_runs where run_id = 'run-live'");
+  await target.query("delete from pilot.activity_log where activity_id = 'act-1'");
+  await target.query("delete from pilot.scheduler_classes where class_id = 'c-strict-live'");
+}
+
+async function fingerprintOf(target: Client, scope: Options): Promise<string> {
+  return (await report(target, scope, { log: () => {} })).plan_fingerprint!;
+}
+
+const applyOptions = (scope: Options, kinds: string[], expectFingerprint: string): Options =>
+  ({ ...scope, apply: true, kinds, confirm: CONFIRM, expectFingerprint });
+
+/** The tables whose content differs between two snapshots. */
+function changedTables(before: Record<string, string>, after: Record<string, string>): string[] {
+  return Object.keys(after).filter((table) => before[table] !== after[table]).sort();
+}
+
+async function rowsText(target: Client, table: string, where: string, values: unknown[] = []): Promise<string[]> {
+  return (await target.query<{ r: string }>(`select t::text as r from pilot.${table} t where ${where} order by 1`, values)).rows.map((row) => row.r);
+}
+
+async function auditRows(target: Client) {
+  return (await target.query<{ event_type: string; organization_id: string; entity_id: string; actor_account_id: string | null; details: Record<string, unknown> }>(
+    `select event_type, organization_id, entity_id, actor_account_id, details from pilot.audit_events
+      where entity_type = 'audit_test_record_cleanup' order by organization_id`,
+  )).rows;
+}
+
+describe('the apply, by kind', () => {
+  test('classes: deletes the STRICT classes with their sign-ups and attendance, unties the run and the register mark, audits data_purged', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await clearBlockers(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const before = await snapshot(client);
+      const out = recorder();
+      const result = await apply(client, applyOptions({ organizationId: GYM }, ['classes'], fp), { log: out.log });
+      expect(result).toMatchObject({
+        status: 'applied', plan_fingerprint: fp, kinds: ['classes'], audit_rows: 1, organization_set_inactive: null,
+        counts: { classes: 4, registrations: 1, attendance: 1, tied_runs_untied: 1, register_marks_untied: 1, tvs: 0, sessions_revoked: 0 },
+      });
+      expect(result.class_ids!.map((c) => c.class_id)).toEqual(['c-strict-1', 'c-strict-2', 'c-strict-3', 'c-strict-untracked']);
+      // Only the class tables and the audit trail changed: the athletes, notes, TVs and every other row are untouched.
+      expect(changedTables(before, await snapshot(client))).toEqual(APPLY_TABLES_FOR_CLASSES);
+      const left = (await client.query<{ class_id: string }>('select class_id from pilot.scheduler_classes order by 1')).rows.map((r) => r.class_id);
+      expect(left).toEqual(['c-near-audit-test', 'c-near-emspace', 'c-near-lower', 'c-near-nbsp', 'c-near-nel', 'c-near-space',
+        'c-near-tab', 'c-other-strict', 'c-real']);
+      expect((await client.query('select registration_id from pilot.scheduler_registrations')).rows).toEqual([{ registration_id: REG_REAL }]);
+      expect((await client.query('select 1 from pilot.scheduler_attendance')).rowCount).toBe(0);
+      expect((await client.query("select class_id, run_state from pilot.session_script_runs where run_id = 'run-done'")).rows)
+        .toEqual([{ class_id: null, run_state: 'completed' }]);
+      expect((await client.query("select register_class_id from pilot.session_run_athletes where run_id = 'run-done'")).rows)
+        .toEqual([{ register_class_id: null }]);
+      const [audit] = await auditRows(client);
+      expect(audit).toMatchObject({ event_type: 'data_purged', organization_id: GYM, entity_id: GYM, actor_account_id: null });
+      expect(audit.details).toMatchObject({
+        plan_fingerprint: fp, scope: { organization_id: GYM }, kinds: ['classes'], tv_ids: [], organization_set_inactive: null,
+        class_ids: ['c-strict-1', 'c-strict-2', 'c-strict-3', 'c-strict-untracked'],
+        counts: { classes_deleted: 4, registrations_deleted: 1, attendance_deleted: 1, tied_runs_untied: 1, register_marks_untied: 1,
+          tvs_disconnected: 0, sessions_revoked: 0 },
+      });
+      expect((audit.details.rulings as string[]).length).toBe(3);
+      expectNothingRaw(`${out.text()}\n${JSON.stringify(audit)}`);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('tvs: the app\'s own Disconnect on the STRICT TV only; the NEAR, real and other gym\'s TVs are byte-identical', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        `update pilot.gym_tvs set device_key_hash = 'dk-b6', paired_at = now(), current_run_id = 'run-done',
+                current_run_set_by_account_id = $1 where tv_id = 'tv-strict'`, [COACH]);
+      const others = await rowsText(client, 'gym_tvs', "tv_id <> 'tv-strict'");
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const before = await snapshot(client);
+      const result = await apply(client, applyOptions({ organizationId: GYM }, ['tvs'], fp), { log: () => {} });
+      expect(result).toMatchObject({ status: 'applied', counts: { classes: 0, tvs: 1 }, tv_ids: [{ organization_id: GYM, tv_id: 'tv-strict' }] });
+      expect(changedTables(before, await snapshot(client))).toEqual(['audit_events', 'gym_tvs']);
+      expect((await client.query(
+        `select revoked_at is not null as revoked, current_run_id, current_run_set_by_account_id, pair_code_hash, pair_code_expires_at,
+                device_key_hash from pilot.gym_tvs where tv_id = 'tv-strict'`)).rows).toEqual([{
+        revoked: true, current_run_id: null, current_run_set_by_account_id: null, pair_code_hash: null, pair_code_expires_at: null,
+        device_key_hash: 'dk-b6',
+      }]);
+      expect(await rowsText(client, 'gym_tvs', "tv_id <> 'tv-strict'")).toEqual(others);
+      expect(await auditRows(client)).toEqual([expect.objectContaining({
+        event_type: 'update', organization_id: GYM, details: expect.objectContaining({ tv_ids: ['tv-strict'], class_ids: [] }),
+      })]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('test-organizations: the named test gym set inactive with its live sessions revoked; never deleted, nobody else touched', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        `insert into pilot.session_tokens (token_hash, account_id, organization_id, revoked_at) values
+           ('tok-test-gym-live', $1, $2, null), ('tok-test-gym-old', $1, $2, now() - interval '1 day'), ('tok-real-gym', $1, $3, null)`,
+        [COACH, TEST_GYM_2, GYM]);
+      const fp = await fingerprintOf(client, { organizationId: TEST_GYM_2 });
+      const before = await snapshot(client);
+      const old = await rowsText(client, 'session_tokens', "token_hash <> 'tok-test-gym-live'");
+      const result = await apply(client, applyOptions({ organizationId: TEST_GYM_2 }, ['test-organizations'], fp), { log: () => {} });
+      expect(result).toMatchObject({ status: 'applied', organization_set_inactive: TEST_GYM_2, counts: { sessions_revoked: 1 } });
+      expect(changedTables(before, await snapshot(client))).toEqual(['audit_events', 'organizations', 'session_tokens']);
+      expect((await client.query('select status from pilot.organizations where organization_id = $1', [TEST_GYM_2])).rows).toEqual([{ status: 'inactive' }]);
+      expect((await client.query("select revoked_at is not null as r from pilot.session_tokens where token_hash = 'tok-test-gym-live'")).rows).toEqual([{ r: true }]);
+      expect(await rowsText(client, 'session_tokens', "token_hash <> 'tok-test-gym-live'")).toEqual(old);
+      expect(await auditRows(client)).toEqual([expect.objectContaining({
+        event_type: 'update', organization_id: TEST_GYM_2,
+        details: expect.objectContaining({ organization_set_inactive: 'test-organizations', counts: expect.objectContaining({ sessions_revoked: 1 }) }),
+      })]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('hiit-fit: "hiit fit" set inactive while it is empty; Danielle\'s HIIT Fit untouched', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const fp = await fingerprintOf(client, { organizationId: HIIT_FIT_ID });
+      const other = await rowsText(client, 'organizations', 'organization_id <> $1', [HIIT_FIT_ID]);
+      const result = await apply(client, applyOptions({ organizationId: HIIT_FIT_ID }, ['hiit-fit'], fp), { log: () => {} });
+      expect(result).toMatchObject({ status: 'applied', organization_set_inactive: HIIT_FIT_ID });
+      expect((await client.query('select status from pilot.organizations where organization_id = $1', [HIIT_FIT_ID])).rows).toEqual([{ status: 'inactive' }]);
+      expect(await rowsText(client, 'organizations', 'organization_id <> $1', [HIIT_FIT_ID])).toEqual(other);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every organization: STRICT classes and TVs in both gyms; every NEAR and real class and TV byte-identical; one audit row per gym', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await clearBlockers(client);
+      const near = async () => [
+        ...await rowsText(client, 'scheduler_classes', "class_id like 'c-near-%' or class_id = 'c-real'"),
+        ...await rowsText(client, 'gym_tvs', "tv_id in ('tv-near', 'tv-real')"),
+        ...await rowsText(client, 'coach_observations', 'true'),
+      ];
+      const nearBefore = await near();
+      const fp = await fingerprintOf(client, { allOrganizations: true });
+      const result = await apply(client, applyOptions({ allOrganizations: true }, ['classes', 'tvs'], fp), { log: () => {} });
+      expect(result).toMatchObject({ status: 'applied', counts: { classes: 5, tvs: 2 }, audit_rows: 2 });
+      expect(await near()).toEqual(nearBefore);
+      expect((await auditRows(client)).map((row) => [row.organization_id, row.event_type])).toEqual([[GYM, 'data_purged'], [OTHER, 'data_purged']]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('nothing planned for the kinds asked: nothing written, no audit row', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const fp = await fingerprintOf(client, { organizationId: DANIELLES_HIIT });
+      const before = await snapshot(client);
+      expect(await apply(client, applyOptions({ organizationId: DANIELLES_HIIT }, ['classes', 'tvs'], fp), { log: () => {} }))
+        .toMatchObject({ status: 'nothing-to-apply', plan_fingerprint: fp });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('the apply refuses, writing nothing', () => {
+  type Setup = (c: Client) => Promise<unknown>;
+  const none: Setup = async () => {};
+  const refusals: Array<[string, Options, string[], Setup, Setup, Record<string, unknown>]> = [
+    // [label, scope, kinds, before the dry run, after the dry run, expected refusal]
+    ['a fingerprint that is not the reviewed plan\'s', { organizationId: GYM }, ['tvs'], none, none,
+      { reason: 'PLAN_FINGERPRINT_MISMATCH' }],
+    ['a sign-up added after the dry run', { organizationId: GYM }, ['classes'], clearBlockers,
+      (c) => c.query(`insert into pilot.scheduler_registrations (organization_id, registration_id, class_id, athlete_id, requested_by_role,
+          requested_by_account_id, status) values ($1, 'aaaaaaaa-0000-4000-8000-0000000000ff', 'c-strict-1', $2, 'coach', $3, 'registered')`,
+      [GYM, REAL_ATHLETE, COACH]), { reason: 'PLAN_FINGERPRINT_MISMATCH' }],
+    ['a class running now, a live run and an untracked reference', { organizationId: GYM }, ['classes'], none, none, {
+      reason: 'CLASS_APPLY_REFUSED', classes: [
+        { organization_id: GYM, class_id: 'c-strict-live', reasons: ['TIED_RUN_LIVE', 'CLASS_RUNNING_NOW'] },
+        { organization_id: GYM, class_id: 'c-strict-untracked', reasons: ['UNTRACKED_REFERENCE'] },
+      ] }],
+    ['a trigger the tool does not know on a table it writes', { organizationId: GYM }, ['tvs'], async (c) => {
+      await c.query('create function pilot.b6_noop() returns trigger language plpgsql as $$ begin return new; end $$');
+      await c.query('create trigger b6_noop before update on pilot.gym_tvs for each row execute function pilot.b6_noop()');
+    }, none, { reason: 'UNKNOWN_TRIGGER', triggers: ['gym_tvs.b6_noop'] }],
+    ['test-organizations on a gym that is not a test gym', { organizationId: GYM }, ['test-organizations'], none, none,
+      { reason: 'TEST_ORGANIZATION_NOT_NAMED' }],
+    ['test-organizations on "hiit fit"', { organizationId: HIIT_FIT_ID }, ['test-organizations'], none, none,
+      { reason: 'TEST_ORGANIZATION_NOT_NAMED' }],
+    ['hiit-fit on Danielle\'s HIIT Fit', { organizationId: DANIELLES_HIIT }, ['hiit-fit'], none, none,
+      { reason: 'HIIT_FIT_NOT_NAMED' }],
+    ['hiit-fit while "hiit fit" holds a membership', { organizationId: HIIT_FIT_ID }, ['hiit-fit'],
+      (c) => c.query("insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')", [COACH, HIIT_FIT_ID]),
+      none, { reason: 'HIIT_FIT_APPLY_REFUSED', reasons: ['NOT_EMPTY'] }],
+    ['hiit-fit when the name differs', { organizationId: HIIT_FIT_ID }, ['hiit-fit'],
+      (c) => c.query("update pilot.organizations set organization_name = 'HIIT Fit Two' where organization_id = $1", [HIIT_FIT_ID]),
+      none, { reason: 'HIIT_FIT_APPLY_REFUSED', reasons: ['NAME_DIFFERS'] }],
+  ];
+
+  test.each(refusals)('%s', async (label, scope, kinds, beforeDryRun, afterDryRun, expected) => {
+    const { client } = await freshDatabase();
+    try {
+      await beforeDryRun(client);
+      const fp = label.startsWith('a fingerprint that is not') ? NO_FINGERPRINT : await fingerprintOf(client, scope);
+      await afterDryRun(client);
+      const before = await snapshot(client);
+      const result = await apply(client, applyOptions(scope, kinds, fp), { log: () => {} });
+      expect(result).toMatchObject({ status: 'refused', ...expected });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an organization that does not exist', async () => {
+    const { client } = await freshDatabase();
+    try {
+      expect(await apply(client, applyOptions({ organizationId: 'org-b6-missing' }, ['classes'], NO_FINGERPRINT), { log: () => {} }))
+        .toEqual({ status: 'refused', reason: 'ORGANIZATION_NOT_FOUND' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a write that does not remove what was planned rolls back: WRITE_COUNT_MISMATCH', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await clearBlockers(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const before = await snapshot(client);
+      // Fault injection: the registrations delete removes nothing.
+      const spy = { query: (text: string, values?: unknown[]) => client.query(
+        text.startsWith('delete from pilot.scheduler_registrations') ? `${text} and false` : text, values) };
+      expect(await apply(spy, applyOptions({ organizationId: GYM }, ['classes'], fp), { log: () => {} }))
+        .toEqual({ status: 'refused', reason: 'WRITE_COUNT_MISMATCH', table: 'scheduler_registrations', planned: 1, written: 0 });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an end state that is not what was planned rolls back: END_STATE_MISMATCH', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const before = await snapshot(client);
+      // Fault injection: the Disconnect touches the planned TV but changes nothing on it.
+      const spy = { query: (text: string, values?: unknown[]) => client.query(
+        text.replace(/set revoked_at = coalesce[\s\S]*?pair_code_expires_at = null/, 'set tv_name = t.tv_name'), values) };
+      expect(await apply(spy, applyOptions({ organizationId: GYM }, ['tvs'], fp), { log: () => {} }))
+        .toEqual({ status: 'refused', reason: 'END_STATE_MISMATCH', mismatches: ['tvs_not_disconnected=1'] });
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an apply that was not asked for issues no statement at all', async () => {
+    const statements: string[] = [];
+    const spy = { query: async (text: string) => { statements.push(text); return { rows: [], rowCount: 0 }; } };
+    expect(await apply(spy, { organizationId: GYM }, { log: () => {} })).toEqual({ status: 'refused', reason: 'APPLY_NOT_REQUESTED' });
+    expect(await apply(spy, { ...applyOptions({ organizationId: GYM }, ['classes'], NO_FINGERPRINT), apply: 'true' }, { log: () => {} }))
+      .toEqual({ status: 'refused', reason: 'INVALID_APPLY' });
+    expect(statements).toEqual([]);
+  });
+});
+
+describe('the apply on the command line', () => {
+  const applyEnv = (fp: string, overrides: Record<string, string> = {}) => ({
+    PPBF_AUDIT_TEST_CLEANUP_APPLY: 'true', PPBF_AUDIT_TEST_CLEANUP_CONFIRM: CONFIRM, PPBF_AUDIT_TEST_CLEANUP_EXPECT_FINGERPRINT: fp, ...overrides,
+  });
+
+  test.each([
+    ['kinds with APPLY unset', {}, ['--organization', GYM, '--kinds', 'classes'], 'KINDS_WITHOUT_APPLY'],
+    ['kinds with APPLY=TRUE', { PPBF_AUDIT_TEST_CLEANUP_APPLY: 'TRUE' }, ['--organization', GYM, '--kinds', 'classes'], 'KINDS_WITHOUT_APPLY'],
+    ['kinds with APPLY=1', { PPBF_AUDIT_TEST_CLEANUP_APPLY: '1' }, ['--organization', GYM, '--kinds', 'classes'], 'KINDS_WITHOUT_APPLY'],
+    ['an apply with no kinds', applyEnv(NO_FINGERPRINT), ['--organization', GYM], 'APPLY_WITHOUT_KINDS'],
+    ['the sweep as a kind', applyEnv(NO_FINGERPRINT), ['--organization', GYM, '--kinds', 'sweep'], 'INVALID_KINDS'],
+    ['a kind twice', applyEnv(NO_FINGERPRINT), ['--organization', GYM, '--kinds', 'classes,classes'], 'INVALID_KINDS'],
+    ['an empty kind', applyEnv(NO_FINGERPRINT), ['--organization', GYM, '--kinds', 'classes,'], 'INVALID_KINDS'],
+    ['--kinds with no value', applyEnv(NO_FINGERPRINT), ['--organization', GYM, '--kinds'], 'INVALID_KINDS'],
+    ['--kinds twice', applyEnv(NO_FINGERPRINT), ['--organization', GYM, '--kinds', 'tvs', '--kinds', 'classes'], 'INVALID_KINDS'],
+    ['no confirm phrase', applyEnv(NO_FINGERPRINT, { PPBF_AUDIT_TEST_CLEANUP_CONFIRM: '' }), ['--organization', GYM, '--kinds', 'tvs'], 'APPLY_WITHOUT_CONFIRM_PHRASE'],
+    ['a confirm phrase in lower case', applyEnv(NO_FINGERPRINT, { PPBF_AUDIT_TEST_CLEANUP_CONFIRM: CONFIRM.toLowerCase() }),
+      ['--organization', GYM, '--kinds', 'tvs'], 'APPLY_WITHOUT_CONFIRM_PHRASE'],
+    ['no expected fingerprint', applyEnv(''), ['--organization', GYM, '--kinds', 'tvs'], 'APPLY_WITHOUT_EXPECTED_FINGERPRINT'],
+    ['a malformed fingerprint', applyEnv('sha256:abc'), ['--organization', GYM, '--kinds', 'tvs'], 'INVALID_EXPECTED_FINGERPRINT'],
+    ['a test gym kind for every organization', applyEnv(NO_FINGERPRINT), ['--all-organizations', '--kinds', 'test-organizations'],
+      'ORGANIZATION_KIND_NEEDS_ONE_ORGANIZATION'],
+    ['"hiit fit" for every organization', applyEnv(NO_FINGERPRINT), ['--all-organizations', '--kinds', 'tvs,hiit-fit'],
+      'ORGANIZATION_KIND_NEEDS_ONE_ORGANIZATION'],
+  ])('%s is refused before a client is created', async (_label, overrides, argv, reason) => {
+    const createClient = jest.fn();
+    const result = await runTool(envFor('unused', overrides as Record<string, string>), argv as string[], { createClient, log: () => {} });
+    expect(result).toEqual({ status: 'refused', reason });
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  test('a full apply through the script: exit 0, the applied line, no raw person id, the rows gone', async () => {
+    const { client, name } = await freshDatabase();
+    try {
+      await clearBlockers(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM });
+      const child = spawnSync(process.execPath, [TOOL_PATH, '--organization', GYM, '--kinds', 'classes,tvs'], {
+        cwd: WEB_DIR, env: { ...process.env, ...envFor(name), ...applyEnv(fp) }, encoding: 'utf8', timeout: 300_000,
+      });
+      const printed = `${child.stdout}\n${child.stderr}`;
+      expect(child.status).toBe(0);
+      expect(printed).toContain('"event":"audit_test_cleanup.applied"');
+      expect(printed).toContain(fp);
+      expectNothingRaw(printed);
+      expect((await client.query("select 1 from pilot.scheduler_classes where class_id like 'c-strict-%'")).rowCount).toBe(0);
+      expect((await client.query("select 1 from pilot.gym_tvs where tv_id = 'tv-strict' and revoked_at is not null")).rowCount).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a refused apply through the script exits 1 and writes nothing', async () => {
+    const { client, name } = await freshDatabase();
+    try {
+      const before = await snapshot(client);
+      const child = spawnSync(process.execPath, [TOOL_PATH, '--organization', GYM, '--kinds', 'classes'], {
+        cwd: WEB_DIR, env: { ...process.env, ...envFor(name), ...applyEnv(NO_FINGERPRINT) }, encoding: 'utf8', timeout: 300_000,
+      });
+      expect(child.status).toBe(1);
+      expect(child.stderr).toContain('"reason":"PLAN_FINGERPRINT_MISMATCH"');
+      expectNothingRaw(`${child.stdout}\n${child.stderr}`);
+      expect(await snapshot(client)).toEqual(before);
+    } finally {
+      await client.end();
+    }
   });
 });
