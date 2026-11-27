@@ -1296,6 +1296,9 @@ describe('the apply refuses, writing nothing', () => {
     expect(await apply(spy, { organizationId: GYM }, { log: () => {} })).toEqual({ status: 'refused', reason: 'APPLY_NOT_REQUESTED' });
     expect(await apply(spy, { ...applyOptions({ organizationId: GYM }, ['classes'], NO_FINGERPRINT), apply: 'true' }, { log: () => {} }))
       .toEqual({ status: 'refused', reason: 'INVALID_APPLY' });
+    // The command line cannot make an empty list ('' is [''], INVALID_KINDS); a caller can.
+    expect(await apply(spy, applyOptions({ organizationId: GYM }, [], NO_FINGERPRINT), { log: () => {} }))
+      .toEqual({ status: 'refused', reason: 'APPLY_WITHOUT_KINDS' });
     expect(statements).toEqual([]);
   });
 });
