@@ -90,7 +90,7 @@ the report stands.
    its `plan` and result line print them, and its fingerprint binds them. Get his word for this run.
 2. **Dispatch** with `mode` apply, the same `target`, `organization` and exactly those `kinds`,
    `confirm_delete` `DELETE AUDIT TEST RECORDS`, and `expected_fingerprint` the dry run's
-   `plan_fingerprint`. Other kinds, or anything changed since the dry run, refuses with
+   `plan_fingerprint`. Other kinds, or a change to anything the fingerprint covers (above), refuses with
    `PLAN_FINGERPRINT_MISMATCH` and writes nothing. The refusal prints only the fingerprint it expected:
    dry-run again, and have the new plan reviewed.
 3. **One kind group per run**, as App Overwatch chooses. What each kind writes, in one transaction:
@@ -107,7 +107,8 @@ the report stands.
      Test Gym inactive leaves none for a future write-audit; it can be set active again from the platform
      desk.
    - `hiit-fit` (Q4 A): only with `organization` `danielles`, and only while "hiit fit" holds no row
-     (`HIIT_FIT_APPLY_REFUSED` with `NOT_EMPTY` or `NAME_DIFFERS` otherwise). Inactive, as above.
+     (`HIIT_FIT_APPLY_REFUSED` with `NOT_EMPTY` or `NAME_DIFFERS` otherwise; `holding` names the tables it
+     holds rows in, with their counts and nothing else). Inactive, as above.
    - The sweep (K5) and every NEAR record are never written, in any mode.
 4. **Read the result.** `audit_test_cleanup.applied` gives the kinds, the fingerprint, the counts written
    (`classes`, `registrations`, `attendance`, `tied_runs_untied`, `register_marks_untied`, `tvs`,
@@ -119,8 +120,11 @@ the report stands.
    `END_STATE_MISMATCH`, ...) rolled everything back.
 5. **Dry-run again** on the same scope and kinds. What changes, per kind:
    - `classes`: the deleted classes are gone from `classes`, with their sign-ups and attendance.
-   - `tvs`: the TVs stay in `tvs.marked`, now with `revoked_at` set and no session or pair code. A second
-     apply of `tvs` leaves them alone (`nothing-to-apply`, with them in `tvs_already_disconnected`).
+   - `tvs`: the TVs stay in `tvs.marked`, now with `revoked_at` set and no session or pair code. Their
+     revocation time is in the fingerprint, so another `tvs` apply needs this fresh dry run's fingerprint.
+     It then leaves them alone: `nothing-to-apply`, no write and no audit row, with them listed in
+     `tvs_already_disconnected` (a gym with other STRICT TVs still connected gets its own audit row for
+     those only).
    - `test-organizations` and `hiit-fit`: the organization stays listed, with status `inactive`.
 
 **Locks.** The apply locks, for its transaction and before it reads the plan:

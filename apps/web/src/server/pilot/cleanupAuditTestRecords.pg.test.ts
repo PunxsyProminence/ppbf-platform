@@ -53,6 +53,8 @@ const COACH = 'acct-b6-coach';
 const TEST_ATHLETE = 'athlete-SENTINEL-Avery-Example';
 const NAMED_ATHLETE = 'athlete-SENTINEL-Blake-Example';
 const REAL_ATHLETE = 'athlete-b6-real';
+// A member whose account id carries a name. Must never print raw.
+const SENTINEL_ACCOUNT = 'acct-SENTINEL-Dana-Example';
 // Stands in for free text a record holds. Must never print.
 const TEXT_SENTINEL = 'SENTINEL-TEXT-Casey';
 const DAY = 24 * 60 * 60 * 1000;
@@ -1205,6 +1207,22 @@ describe('the apply, by kind', () => {
     }
   });
 
+  test('test-organizations: a member whose id carries a name never prints raw, in the applied line or the audit row', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query("insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')", [SENTINEL_ACCOUNT, TEST_GYM_2]);
+      await client.query("insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')", [SENTINEL_ACCOUNT, TEST_GYM_2]);
+      await client.query("insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('tok-b6-sentinel', $1, $2)", [SENTINEL_ACCOUNT, TEST_GYM_2]);
+      const fp = await fingerprintOf(client, { organizationId: TEST_GYM_2 }, ['test-organizations']);
+      const out = recorder();
+      expect(await apply(client, applyOptions({ organizationId: TEST_GYM_2 }, ['test-organizations'], fp), { log: out.log }))
+        .toMatchObject({ status: 'applied', counts: { sessions_revoked: 1 } });
+      expectNothingRaw(`${out.text()}\n${JSON.stringify(await auditRows(client))}`);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('hiit-fit: "hiit fit" set inactive while it is empty; Danielle\'s HIIT Fit untouched', async () => {
     const { client } = await freshDatabase();
     try {
@@ -1267,6 +1285,45 @@ describe('kinds and the fingerprint', () => {
     expect(bound).not.toBe(b61);
     expect(planFingerprint(scope, ['classes', 'tvs'], material)).toBe(bound);
     expect(planFingerprint(scope, ['classes'], material)).not.toBe(bound);
+  });
+
+  test('on the fixture, a dry run without kinds has B6-1\'s value, computed here from the raw rows with B6-1\'s expression', async () => {
+    const { client } = await freshDatabase();
+    try {
+      const rows = async (text: string) => (await client.query({ text, values: [GYM], rowMode: 'array' })).rows;
+      const strict = "('c-strict-1', 'c-strict-2', 'c-strict-3', 'c-strict-live', 'c-strict-untracked')";
+      const material = {
+        classes: await rows(`select organization_id, class_id, title, status, extract(epoch from start_at)::text, extract(epoch from end_at)::text,
+            (start_at <= now() and now() < end_at),
+            exists (select 1 from pilot.activity_log a where a.organization_id = c.organization_id and a.class_id = c.class_id),
+            exists (select 1 from pilot.floor_plans_daily f where f.organization_id = c.organization_id and f.class_id = c.class_id)
+          from pilot.scheduler_classes c where organization_id = $1 and class_id in ${strict} order by 1, 2`),
+        registrations: await rows(`select organization_id, class_id, registration_id, athlete_id, status from pilot.scheduler_registrations
+          where organization_id = $1 and class_id in ${strict} order by 1, 2, 3, 4`),
+        attendance: await rows(`select organization_id, class_id, attendance_id, athlete_id, status from pilot.scheduler_attendance
+          where organization_id = $1 and class_id in ${strict} order by 1, 2, 3, 4`),
+        tied_runs: await rows(`select organization_id, class_id, run_id, coalesce(run_state, 'none') from pilot.session_script_runs
+          where organization_id = $1 and class_id in ${strict} order by 1, 2, 3, 4`),
+        register_marks: await rows(`select organization_id, register_class_id, run_id, athlete_id from pilot.session_run_athletes
+          where organization_id = $1 and register_class_id in ${strict} order by 1, 2, 3, 4`),
+        unknown_foreign_keys: [],
+        missing_foreign_keys: [],
+        tvs: await rows(`select organization_id, tv_id, 'ZZ-AUDIT', extract(epoch from paired_at)::text, extract(epoch from revoked_at)::text,
+            current_run_id is not null, pair_code_hash is not null, current_run_id
+          from pilot.gym_tvs where organization_id = $1 and tv_id = 'tv-strict'`),
+        organizations: [],
+        hiit_fit_holding: [],
+      };
+      expect(material.classes.length).toBe(5);
+      expect(material.tied_runs.length).toBe(2);
+      const b61 = `sha256:${crypto.createHash('sha256').update(JSON.stringify({
+        markers: ['ZZ-AUDIT', 'AUDIT TEST'], strict_rule: 'a marker first, exact case, then the end or a character that is not a letter or digit',
+        scope: { organization_id: GYM }, ...material,
+      })).digest('hex')}`;
+      expect((await report(client, { organizationId: GYM }, { log: () => {} })).plan_fingerprint).toBe(b61);
+    } finally {
+      await client.end();
+    }
   });
 
   test('on the database: kinds change the dry run\'s fingerprint, their order does not, and the plan and dry-run line name them', async () => {
@@ -1349,9 +1406,12 @@ describe('the apply refuses before its first write, writing nothing', () => {
       expected: { reason: 'TEST_ORGANIZATION_NOT_NAMED' } }],
     ['hiit-fit on Danielle\'s HIIT Fit', { scope: { organizationId: DANIELLES_HIIT }, kinds: ['hiit-fit'],
       expected: { reason: 'HIIT_FIT_NOT_NAMED' } }],
-    ['hiit-fit while "hiit fit" holds a membership', { scope: { organizationId: HIIT_FIT_ID }, kinds: ['hiit-fit'],
-      before: (c) => c.query("insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')", [COACH, HIIT_FIT_ID]),
-      expected: { reason: 'HIIT_FIT_APPLY_REFUSED', reasons: ['NOT_EMPTY'] } }],
+    ['hiit-fit while "hiit fit" holds a membership (named by table, with its count)', { scope: { organizationId: HIIT_FIT_ID }, kinds: ['hiit-fit'],
+      before: async (c) => {
+        await c.query("insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')", [SENTINEL_ACCOUNT, GYM]);
+        await c.query("insert into pilot.organization_memberships (account_id, organization_id, role) values ($1, $2, 'coach')", [SENTINEL_ACCOUNT, HIIT_FIT_ID]);
+      },
+      expected: { reason: 'HIIT_FIT_APPLY_REFUSED', reasons: ['NOT_EMPTY'], holding: { organization_memberships: 1 } } }],
     ['hiit-fit when the name differs', { scope: { organizationId: HIIT_FIT_ID }, kinds: ['hiit-fit'],
       before: (c) => c.query("update pilot.organizations set organization_name = 'HIIT Fit Two' where organization_id = $1", [HIIT_FIT_ID]),
       expected: { reason: 'HIIT_FIT_APPLY_REFUSED', reasons: ['NAME_DIFFERS'] } }],
@@ -1509,21 +1569,46 @@ describe('the apply\'s checks, each proved by a fault', () => {
       { reason: 'WRITE_COUNT_MISMATCH', ...detail });
   });
 
+  /** The other gym's STRICT class gets a sign-up and an attendance row, so a delete without its scope would reach them. */
+  async function otherGymSignUp(c: Client) {
+    await clearBlockers(c);
+    await insertAthlete(c, OTHER, 'athlete-b6-other', 'Other Athlete');
+    await c.query(`insert into pilot.scheduler_registrations (organization_id, registration_id, class_id, athlete_id, requested_by_role,
+      requested_by_account_id, status) values ($1, 'aaaaaaaa-0000-4000-8000-0000000000fd', 'c-other-strict', 'athlete-b6-other', 'coach', $2,
+      'registered')`, [OTHER, COACH]);
+    await c.query(`insert into pilot.scheduler_attendance (organization_id, attendance_id, class_id, athlete_id, status, method,
+      checked_in_by_role, checked_in_by_account_id, checked_in_at) values ($1, 'aaaaaaaa-0000-4000-8000-0000000000fc', 'c-other-strict',
+      'athlete-b6-other', 'present', 'coach_override', 'coach', $2, now())`, [OTHER, COACH]);
+  }
+
   test.each([
-    ['class delete', /^delete from pilot\.scheduler_classes/, { o: OTHER, c: 'c-other-strict' }, ['classes'], 'scheduler_classes', "class_id = 'c-other-strict'"],
-    ['TV Disconnect', /^update pilot\.gym_tvs/, { o: OTHER, v: 'tv-other-strict' }, ['tvs'], 'gym_tvs', "tv_id = 'tv-other-strict'"],
-  ])('the scope restated on the %s: a STRICT row in another gym slipped into the keys is left alone', async (_label, match, key, kinds, table, where) => {
+    ['class delete', /^delete from pilot\.scheduler_classes/, { o: OTHER, c: 'c-other-strict' }, ['classes'], 'scheduler_classes'],
+    ['attendance delete', /^delete from pilot\.scheduler_attendance/, { o: OTHER, c: 'c-other-strict' }, ['classes'], 'scheduler_attendance'],
+    ['registrations delete', /^delete from pilot\.scheduler_registrations/, { o: OTHER, c: 'c-other-strict' }, ['classes'], 'scheduler_registrations'],
+    ['TV Disconnect', /^update pilot\.gym_tvs/, { o: OTHER, v: 'tv-other-strict' }, ['tvs'], 'gym_tvs'],
+  ])('the scope restated on the %s: another gym\'s STRICT rows slipped into the keys are left alone', async (_label, match, key, kinds, table) => {
     const { client } = await freshDatabase();
     try {
-      await clearBlockers(client);
+      await otherGymSignUp(client);
       const fp = await fingerprintOf(client, GYM_SCOPE, kinds);
+      const where = `organization_id = '${OTHER}'`;
       const other = await rowsText(client, table, where);
+      expect(other.length).toBeGreaterThan(0);
       const result = await apply(faulty(client, [{ match, values: addKey(key) }]), applyOptions(GYM_SCOPE, kinds, fp), { log: () => {} });
       expect(result.status).toBe('applied');
       expect(await rowsText(client, table, where)).toEqual(other);
     } finally {
       await client.end();
     }
+  });
+
+  test.each([
+    ['a test gym', { organizationId: TEST_GYM_2 }, ['test-organizations'], TEST_GYM_2],
+    ['"hiit fit"', { organizationId: HIIT_FIT_ID }, ['hiit-fit'], HIIT_FIT_ID],
+  ])('the name restated on the update of %s: renamed just before it, the update changes nothing and rolls back', async (_label, scope, kinds, id) => {
+    await refusedWithFault(async () => {}, scope, kinds, (c) => [{ match: /^update pilot\.organizations/,
+      before: () => c.query("update pilot.organizations set organization_name = 'Renamed Gym' where organization_id = $1", [id]) }],
+    { reason: 'WRITE_COUNT_MISMATCH', table: 'organizations', planned: 1, written: 0 });
   });
 });
 
@@ -1588,6 +1673,37 @@ describe('the apply\'s locks', () => {
       expect(await apply(faulty(client, hooks), applyOptions({ organizationId: GYM }, ['classes'], fp), { log: () => {} }))
         .toMatchObject({ status: 'applied', counts: { classes: 4 } });
       expect(code).toBe('55P03');
+    } finally {
+      await other.end();
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['a planned attendance row: it cannot change', ['classes'], clearBlockers, /^delete from pilot\.scheduler_attendance/,
+      `update pilot.scheduler_attendance set status = status where attendance_id = '${ATT_TEST}'`],
+    ['a planned sign-up: it cannot change', ['classes'], clearBlockers, /^delete from pilot\.scheduler_attendance/,
+      `update pilot.scheduler_registrations set status = status where registration_id = '${REG_TEST}'`],
+    ['a planned register mark: it cannot change', ['classes'], clearBlockers, /^delete from pilot\.scheduler_attendance/,
+      "update pilot.session_run_athletes set marked_by_role = marked_by_role where run_id = 'run-done'"],
+    ['a planned tied run: its state cannot change', ['classes'], clearBlockers, /^delete from pilot\.scheduler_attendance/,
+      "update pilot.session_script_runs set run_state = run_state where run_id = 'run-done'"],
+    ['a planned TV: it cannot be renamed', ['tvs'], async () => {}, /^update pilot\.gym_tvs/,
+      "update pilot.gym_tvs set tv_name = 'zz-audit TV' where tv_id = 'tv-strict'"],
+  ])('%s while the apply runs', async (_label, kinds, setup, match, sql) => {
+    const { client, name } = await freshDatabase();
+    const other = await otherSession(name);
+    try {
+      await setup(client);
+      const fp = await fingerprintOf(client, { organizationId: GYM }, kinds);
+      const before = await rowsText(client, kinds.includes('tvs') ? 'gym_tvs' : 'session_run_athletes', 'true');
+      let code: string | undefined;
+      const hooks = [{ match, before: () => other.query(sql).catch((error: { code?: string }) => { code = error.code; }) }];
+      expect((await apply(faulty(client, hooks), applyOptions({ organizationId: GYM }, kinds, fp), { log: () => {} })).status).toBe('applied');
+      expect(code).toBe('55P03');
+      if (kinds.includes('tvs')) {
+        expect(await rowsText(client, 'gym_tvs', "tv_id <> 'tv-strict'")).toEqual(before.filter((row) => !row.includes(',tv-strict,')));
+      }
     } finally {
       await other.end();
       await client.end();

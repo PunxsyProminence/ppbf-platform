@@ -744,7 +744,11 @@ export async function applyAuditTestRecords(client, options, { log = defaultLog,
     if (kinds.includes('hiit-fit')) {
       const hiit = plan.organizations.hiitFit;
       if (organizationId !== HIIT_FIT.organization_id || !hiit.found_id) return await refuseInside('HIIT_FIT_NOT_NAMED');
-      if (hiit.apply_would_refuse.length > 0) return await refuseInside('HIIT_FIT_APPLY_REFUSED', { reasons: hiit.apply_would_refuse });
+      if (hiit.apply_would_refuse.length > 0) {
+        // The plan's "names the tables, with counts only": table names and numbers, nothing from a row.
+        const holding = Object.fromEntries(hiit.holding_tables.map((table) => [table, hiit.rows_by_table[table]]));
+        return await refuseInside('HIIT_FIT_APPLY_REFUSED', { reasons: hiit.apply_would_refuse, holding });
+      }
     }
     // A STRICT TV already disconnected (revoked, no session, no pair code) is left as it is: the
     // Disconnect would change nothing. It is reported apart and does not make its gym "affected".
