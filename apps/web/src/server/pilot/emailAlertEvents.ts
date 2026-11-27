@@ -269,9 +269,9 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * reads it and has not had it, and nobody twice, because the send log's key
  * is one row per person per notice (OW27-03 B). A send that certainly never
  * reached the person (skipped before any try went to Graph, or refused at
- * once on its only try) is queued again by a restore after it came due;
- * one whose try Graph may have taken is not (emailAlertQueue.ts,
- * enqueueEmailAlertSends). The restore time is the row's
+ * once on its only try, whether or not a later claim of it was skipped before
+ * Graph) is queued again by a restore after it came due; one whose try Graph
+ * may have taken is not (emailAlertQueue.ts, enqueueEmailAlertSends). The restore time is the row's
  * updated_at: setAnnouncementActive is the only write to a notice and stamps
  * it on every call, so a Restore pressed on a notice already live counts the
  * same and reaches only those who have not had it.
