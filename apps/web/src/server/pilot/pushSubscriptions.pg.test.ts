@@ -639,6 +639,28 @@ describe('a removal of browsers decides again under the save\'s locks (Codex on 
     expect(await readPushOffer(parent, ENV)).toEqual({ offered: false });
     expect(await rows(client)).toEqual([]);
   });
+
+  test('the removal reads only on its own connection: with a pool of one it still finishes (reviewer M: a pool read inside it would wait for ever)', async () => {
+    const client = await freshDatabase('pushstore_drop_pool_one');
+    activePool = new Pool({ connectionString: connectionStringFor('pushstore_drop_pool_one'), max: 1 });
+    const b = browser('https://push.example.test/send/pool-one');
+    // A row left from before, for an athlete now under 18.
+    await client.query(
+      `insert into pilot.push_subscriptions (organization_id, account_id, user_type, endpoint, key_p256dh, key_auth)
+       values ($1, $2, 'adult_athlete', $3, $4, $5)`,
+      [ORG, MINOR, b.endpoint, b.keys.p256dh, b.keys.auth],
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      readPushOffer(minor, ENV).then(() => 'finished'),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve('waited for ever'), 5_000);
+      }),
+    ]);
+    clearTimeout(timer);
+    expect(outcome).toBe('finished');
+    expect(await rows(client)).toEqual([]);
+  });
 });
 
 test('no audit row carries an endpoint or a key; each save, move and removal is audited', async () => {
