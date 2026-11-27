@@ -20,7 +20,7 @@ This folder holds the runner image, its Azure settings and the script that creat
 | `Dockerfile` | The official `ghcr.io/actions/actions-runner` image, pinned by version and digest, plus the Azure CLI and build tools. No secret, ever. Runner trace to stdout is off. |
 | `entrypoint.sh` | Forces the guard hook on (and other hooks off), then runs the runner once with the single-use just-in-time (JIT) configuration in `JIT_CONFIG`. The container then ends. |
 | `job-started-guard.sh` | `ACTIONS_RUNNER_HOOK_JOB_STARTED`. Refuses every job except those in `allowed-jobs.txt`, from `main`, started by `workflow_dispatch` or `schedule`, in this repository. **On every exit except an allow (refusal or unexpected error), it SIGKILLs the runner's Worker.** A failing hook alone does not stop the job: the runner queues the hook as an `always()` step, so the job's own `if: always()` steps would still run. |
-| `allowed-jobs.txt` | The 19 jobs that reach Postgres and build no images. Baked in, so a workflow cannot widen it. |
+| `allowed-jobs.txt` | The 20 jobs that reach Postgres and build no images. Baked in, so a workflow cannot widen it. |
 | `write-setup-info.sh` | Writes the runner's `.setup_info`, so "Set up job" and the database preflight print `Cloud: Azure`, the region and the image tag. |
 
 ## Security model
