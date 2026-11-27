@@ -36,6 +36,8 @@ const PG_PASSWORD = 'postgres';
 const PG_DATABASE = 'ppbf_test_push_browser_purge';
 // A second database, built the same way, with the table dropped.
 const PG_DATABASE_NO_TABLE = 'ppbf_test_push_browser_purge_no_table';
+// A third, where one athlete's purge is refused and rolled back.
+const PG_DATABASE_REFUSED = 'ppbf_test_push_browser_purge_refused';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-push-browser-purge-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
@@ -89,9 +91,10 @@ type PurgeEvent = Record<string, unknown> & { blocked_by?: Record<string, number
 /**
  * Runs the purge and returns its one JSON line. Without apply it is the dry
  * run, which reports what it would delete and rolls everything back. Storage
- * is switched off: no case here has a file.
+ * is switched off, so an athlete with a file is refused and rolled back; a run
+ * that refuses one exits 1, which `refusalExpected` allows.
  */
-async function purge(db: Db, apply: boolean): Promise<PurgeEvent> {
+async function runPurge(db: Db, apply: boolean, refusalExpected: boolean): Promise<PurgeEvent> {
   const output = await new Promise<string>((resolve, reject) => {
     execFile(
       process.execPath,
@@ -108,11 +111,17 @@ async function purge(db: Db, apply: boolean): Promise<PurgeEvent> {
           PPBF_RETENTION_APPLY: apply ? 'true' : '',
         },
       },
-      (error, stdout, stderr) => (error ? reject(new Error(`${stdout}${stderr}`)) : resolve(`${stdout}${stderr}`)),
+      (error, stdout, stderr) => (error && !refusalExpected
+        ? reject(new Error(`${stdout}${stderr}`))
+        : resolve(`${stdout}${stderr}`)),
     );
   });
   const line = output.split('\n').find((entry) => entry.trim().startsWith('{'));
-  const event = JSON.parse(line ?? '{}') as PurgeEvent;
+  return JSON.parse(line ?? '{}') as PurgeEvent;
+}
+
+async function purge(db: Db, apply: boolean): Promise<PurgeEvent> {
+  const event = await runPurge(db, apply, false);
   // A purge that was refused proves nothing below.
   expect(event.blocked_by ?? {}).toEqual({});
   return event;
@@ -436,6 +445,33 @@ describe('the retention purge and the web push browsers', () => {
     ]) {
       expect(await browserRowsOf(db, accountId)).toBe(1);
     }
+  });
+
+  test("an athlete whose purge is refused keeps their login's browsers, and the run does not count them", async () => {
+    const db = await freshDatabase(PG_DATABASE_REFUSED);
+    const { people, purgedEndpoints } = await seed(db, true);
+    // A video and no storage: this athlete's savepoint is rolled back
+    // (STORAGE_CREDENTIAL_MISSING), the browser delete with it.
+    await db.client.query(
+      `insert into pilot.video_sessions
+         (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title, blob_path,
+          file_name, file_size_bytes, mime_type)
+       values ('vid-push-gone', $1, $2, 'ath-push-gone', 'clip', 'org-push/vid-push-gone.mp4', 'clip.mp4', 5, 'video/mp4')`,
+      [ORG_ID, COACH_ID],
+    );
+
+    const applied = await runPurge(db, true, true);
+    expect(applied.event).toBe('retention.cleanup.incomplete');
+    expect(applied.blocked_by).toEqual({ STORAGE_CREDENTIAL_MISSING: 1 });
+    // Only the other retired login's one browser went, and only it is counted.
+    expect(applied.push_browsers_deleted).toBe(1);
+    expect((await lastAuditDetails(db)).push_browsers_deleted).toBe(1);
+    expect(await browserRowsOf(db, people.liveAtPurgeLogin)).toBe(0);
+    // The refused athlete's login is not retired, and its three browsers stay.
+    expect(await retiredLogin(db, people.athleteLogin)).toEqual({ athlete_id: 'ath-push-gone', deleted: true });
+    expect(await browserRowsOf(db, people.athleteLogin)).toBe(3);
+    const kept = await db.client.query('select 1 from pilot.push_subscriptions where endpoint = any($1::text[])', [purgedEndpoints.slice(0, 3)]);
+    expect(kept.rowCount).toBe(3);
   });
 
   test('a database without the table purges as before and reports none', async () => {

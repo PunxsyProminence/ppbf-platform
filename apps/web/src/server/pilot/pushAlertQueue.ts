@@ -40,9 +40,11 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * Nobody else gets a row.
  *   - THE BROWSER IS THE OPT-IN. The plan builds to QA A on #2228 (recommended;
  *     Jason has not answered QA): the tap on a device turns push on, whatever
- *     the email switch says. Under QA B this join gains the email switch. No
- *     browser row can exist before WP-3 (the only code that creates one),
- *     which waits for Jason's answer.
+ *     the email switch says. Under QA B this join gains the email switch,
+ *     before WP-3: no screen calls the save route (PUT
+ *     /api/pilot/push/subscription) until WP-3, which waits for Jason's
+ *     answer, and the route refuses everyone until the push keys are set
+ *     (pushKeys, pushSubscriptions.ts).
  *   - UNDER THAT USER TYPE, as the email queue asks the switch's: a browser
  *     saved as a parent's does not get a staff event. The sender asks the
  *     person's user type again before each send.
