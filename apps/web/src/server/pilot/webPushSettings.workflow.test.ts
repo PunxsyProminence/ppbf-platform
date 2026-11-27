@@ -147,6 +147,11 @@ function deploy(file: string, step: string, values: Partial<Record<string, strin
   };
 }
 
+/** What the step itself printed: everything but the az stand-in's own lines. */
+function said(run: Run): string {
+  return run.output.split('\n').filter((line) => !line.startsWith('AZ_')).join('\n');
+}
+
 /** A real VAPID key pair, as App Overwatch's release would make one: P-256, base64url, no padding. */
 function keyPair(): { publicKey: string; privateKey: string } {
   const ecdh = createECDH('prime256v1');
@@ -190,6 +195,7 @@ describe('how the web push settings reach the app', () => {
       expect(run.args.filter((arg) => arg.includes('WEB_PUSH'))).toEqual([]);
       expect(run.args.filter((arg) => arg.trim() === '')).toEqual([]);
       expect(run.args[run.args.length - 1]).toBe(lastStatic);
+      expect(said(run)).not.toMatch(/WEB_PUSH|push/i);
     }
     // And beside the interest-form organization, still that one assignment last.
     const withOrg = deploy(file, step, { PPBF_PUBLIC_INTEREST_ORG_ID: 'punxsy_prominence' });
@@ -208,7 +214,27 @@ describe('how the web push settings reach the app', () => {
         `${SUBJECT}=${subject}`,
         PRIVATE_KEY_REFERENCE,
       ]);
+      // The step's own words never carry a value (az's own output is az's: see the step's comment).
+      expect(said(set)).not.toContain(KEYS.publicKey);
+      expect(said(set)).not.toContain(subject);
+      // Beside the interest-form organization, still after it: nothing else moves.
+      const withOrg = deploy(file, step, { PPBF_PUBLIC_INTEREST_ORG_ID: 'punxsy_prominence' });
+      const both = deploy(file, step, { ...GOOD, [SUBJECT]: subject, PPBF_PUBLIC_INTEREST_ORG_ID: 'punxsy_prominence' });
+      expect(both.args).toEqual([...withOrg.args, `${PUBLIC_KEY}=${KEYS.publicKey}`, `${SUBJECT}=${subject}`, PRIVATE_KEY_REFERENCE]);
     }
+  });
+
+  test.each(DEPLOY_STEPS)('$label: the push settings are the last argument of az, one quoted array', ({ file, step }) => {
+    // Every other optional array (the interest-form organization, the Research
+    // Archive) comes before it, so a run with those set cannot be reordered.
+    const lines = runScript(file, step).split('\n').map((line) => line.trim());
+    // Expanded in one place only, as one quoted array (the other mentions count it or fill it).
+    const at = lines.flatMap((line, index) => (line.includes('${WEB_PUSH_ENV[@]}') ? [index] : []));
+    expect(at).toHaveLength(1);
+    expect(lines[at[0]]).toBe('"${WEB_PUSH_ENV[@]}"');
+    expect(lines[at[0] - 1].endsWith(' \\')).toBe(true);
+    expect(lines.slice(0, at[0]).some((line) => line.startsWith('az containerapp update'))).toBe(true);
+    expect(lines.slice(0, at[0]).filter((line) => /^"\$\{[A-Z_]+_ENV\[@\]\}" \\$/.test(line)).length).toBeGreaterThan(0);
   });
 
   test.each(DEPLOY_STEPS)('$label: only one set stops before az, naming the other', ({ file, step }) => {
@@ -241,6 +267,8 @@ describe('how the web push settings reach the app', () => {
       const run = deploy(file, step, { ...GOOD, [SUBJECT]: value });
       expect({ value, status: run.status, azCalls: run.azCalls, said: run.output.includes(`this deploy takes (see pushKeys in pushSubscriptions.ts): ${SUBJECT}.`) })
         .toEqual({ value, status: 1, azCalls: 0, said: true });
+      if (value.trim().length > 'mailto:'.length) expect(run.output).not.toContain(value.trim());
+      expect(run.output).not.toContain(KEYS.publicKey);
     }
   });
 

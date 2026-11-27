@@ -357,17 +357,21 @@ jobs:
 
           # Web push: both PPBF_WEB_PUSH_* variables, or neither. Neither set:
           # nothing is appended and the command below is exactly as it was. One
-          # set: the deploy stops here naming the other. Both set: each must have
-          # a shape the app also takes (pushKeys in pushSubscriptions.ts): an
-          # 87-character base64url public key, and a plain https: URL or mailto:
-          # address as the subject (pushKeys takes any URL of those two kinds).
-          # A key that is not the private key's own is not caught here: the app
-          # then refuses all three and push stays off. Then both are appended
-          # with the private key, which is never a variable: it is the
-          # Container App secret ppbf-web-push-vapid-private-key. THE RELEASE
-          # CREATES THAT SECRET BEFORE THESE VARIABLES ARE SET. Messages name
-          # variables, never values. A deployed value stays on the app if the
-          # variables are later deleted: deleting them does not switch push off.
+          # set: the deploy stops here naming the other. Both set: each must
+          # match a shape: an 87-character base64url public key, and a plain
+          # https: URL or mailto: address as the subject. That is not the app's
+          # own check (pushKeys in pushSubscriptions.ts): a key that is not the
+          # private key's pair, or a subject URL the app cannot parse, passes
+          # here, and the app then refuses all three, so push stays off. Then
+          # both are appended with the private key, which is never a variable:
+          # it is the Container App secret ppbf-web-push-vapid-private-key. THE
+          # RELEASE CREATES THAT SECRET BEFORE THESE VARIABLES ARE SET. This
+          # script's messages name variables, never values, but the run log
+          # shows both values (GitHub prints a step's env, and az prints the app
+          # it updated) and this repository's run logs are public: the subject
+          # is a role address or a URL, never a person's own address. A deployed
+          # value stays on the app if the variables are later deleted: deleting
+          # them does not switch push off.
           WEB_PUSH_ENV=()
           WEB_PUSH_UNSET=()
           for name in PPBF_WEB_PUSH_VAPID_PUBLIC_KEY PPBF_WEB_PUSH_SUBJECT; do
@@ -1197,17 +1201,21 @@ jobs:
 
           # Web push: both PPBF_WEB_PUSH_* variables, or neither. Neither set:
           # nothing is appended and the command below is exactly as it was. One
-          # set: the deploy stops here naming the other. Both set: each must have
-          # a shape the app also takes (pushKeys in pushSubscriptions.ts): an
-          # 87-character base64url public key, and a plain https: URL or mailto:
-          # address as the subject (pushKeys takes any URL of those two kinds).
-          # A key that is not the private key's own is not caught here: the app
-          # then refuses all three and push stays off. Then both are appended
-          # with the private key, which is never a variable: it is the
-          # Container App secret ppbf-web-push-vapid-private-key. THE RELEASE
-          # CREATES THAT SECRET BEFORE THESE VARIABLES ARE SET. Messages name
-          # variables, never values. A deployed value stays on the app if the
-          # variables are later deleted: deleting them does not switch push off.
+          # set: the deploy stops here naming the other. Both set: each must
+          # match a shape: an 87-character base64url public key, and a plain
+          # https: URL or mailto: address as the subject. That is not the app's
+          # own check (pushKeys in pushSubscriptions.ts): a key that is not the
+          # private key's pair, or a subject URL the app cannot parse, passes
+          # here, and the app then refuses all three, so push stays off. Then
+          # both are appended with the private key, which is never a variable:
+          # it is the Container App secret ppbf-web-push-vapid-private-key. THE
+          # RELEASE CREATES THAT SECRET BEFORE THESE VARIABLES ARE SET. This
+          # script's messages name variables, never values, but the run log
+          # shows both values (GitHub prints a step's env, and az prints the app
+          # it updated) and this repository's run logs are public: the subject
+          # is a role address or a URL, never a person's own address. A deployed
+          # value stays on the app if the variables are later deleted: deleting
+          # them does not switch push off.
           WEB_PUSH_ENV=()
           WEB_PUSH_UNSET=()
           for name in PPBF_WEB_PUSH_VAPID_PUBLIC_KEY PPBF_WEB_PUSH_SUBJECT; do
