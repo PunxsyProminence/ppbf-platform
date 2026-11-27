@@ -27,11 +27,24 @@ interface RouteContext {
 //                                     a tied session the register treats it as a tap made then, so
 //                                     an Absent or Excused set after it wins (OD-2026-10-21-004
 //                                     ruling 1). Without it the tap counts as made now, as before.
+//        optional page_id              the random in-memory id of the page that kept the tap (W4
+//                                     item 7; #2182 round 12), stored nowhere with the tap. On a
+//                                     tied session the register lets the tap win over an untouched
+//                                     Absent that this run's own no-shows tap set from the same page,
+//                                     which sends its kept saves in tap order. Without it, or from
+//                                     another page, an Absent set after the tap wins, as above.
+//        optional request_key          a kept tap's key, the same on every resend (OVERWATCH
+//                                     7170099938 on #2178): recorded with the tap, so a resend of a
+//                                     tap that landed writes nothing and is answered with the first
+//                                     answer (replayed, and live), and the page decides whether its
+//                                     earlier send landed by this key, never by the mark's state.
 //
 // STAFF ONLY, like every other route under runs/: coach, organization admin and the legacy admin
 // name. platform_owner is refused (running a session is gym work, OD-2026-10-08-003 R2), and so
 // are athlete, parent, board and every other role: who was in a session is a staff record with no
-// athlete or parent view (OD-2026-10-10-003 items 3 and 4).
+// athlete or parent view of the run (OD-2026-10-10-003 items 3 and 4). The one derived fact a family
+// is given, whether their own child (or the athlete themselves) is on the floor now, comes from the
+// on-the-floor route, not from here (lane W4-3; OD-2026-11-21-006, FN-0 F1).
 //
 // THE WRITE IS THE DELIVERING COACH'S, WHILE THE RUN IS LIVE, decided in the module with the
 // run row locked; another coach's run answers exactly like a missing one. The module also
@@ -59,6 +72,10 @@ function badRequest(code: string) {
 
 // A day at most: the page drops what it keeps at sign-out, and the role cache lasts 8 hours.
 const TAPPED_MS_AGO_MAX = 24 * 60 * 60 * 1000;
+// A kept tap's page id (W4 item 7, #2182 round 12) and request key (OVERWATCH 7170099938): text of 1
+// to 200 characters, no NUL and no unpaired surrogate, as the no-shows tap's ids (runs/[runId]/route.ts).
+const ID_TEXT_MAX = 200;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
@@ -94,7 +111,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return badRequest('INVALID_BODY');
     }
     const record = body as Record<string, unknown>;
-    const extras = Object.keys(record).filter((key) => !['athlete_id', 'present', 'tapped_ms_ago'].includes(key));
+    const extras = Object.keys(record).filter((key) => !['athlete_id', 'present', 'tapped_ms_ago', 'page_id', 'request_key'].includes(key));
     if (extras.length > 0) {
       return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
     }
@@ -113,8 +130,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
     ) {
       return badRequest('tapped_ms_ago');
     }
+    // The page the tap was kept on: the register lets it win over that page's own no-shows Absent.
+    const pageId = record.page_id ?? undefined;
+    if (
+      pageId !== undefined
+      && (typeof pageId !== 'string' || pageId.trim() === '' || pageId.length > ID_TEXT_MAX || pageId.includes(NUL) || LONE_SURROGATE.test(pageId))
+    ) {
+      return badRequest('page_id');
+    }
+    // A kept tap's key: text of 1 to 200 characters, never blank, with no NUL and no unpaired
+    // surrogate (jsonb could not store it in the tap's record), as for the run route's keys.
+    const requestKey = record.request_key ?? undefined;
+    if (
+      requestKey !== undefined
+      && (typeof requestKey !== 'string' || requestKey.trim() === '' || requestKey.length > ID_TEXT_MAX || requestKey.includes(NUL) || LONE_SURROGATE.test(requestKey))
+    ) {
+      return badRequest('request_key');
+    }
 
-    const { outcome, register } = await setRunAthletePresent({
+    const { outcome, register, replayed, live } = await setRunAthletePresent({
       actor: {
         accountId: principal.accountId,
         role: principal.role,
@@ -126,8 +160,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       present: record.present,
       // The server's clock less the page's count since the tap; no clock on the tablet is read.
       ...(tappedMsAgo === undefined ? {} : { tappedAt: new Date(Date.now() - tappedMsAgo).toISOString() }),
+      ...(pageId === undefined ? {} : { pageId }),
+      ...(requestKey === undefined ? {} : { requestKey }),
     });
-    const holdWarning = register?.effect === 'created' || register?.effect === 'flipped'
+    // The hold warning when the tap wrote a mark, and when a late kept tap marked the athlete here while
+    // the register kept a change made after it (register_newer): the tap is then the athlete's only
+    // check-in, and staff see the warning in both places (OD-2026-10-06-024 ruling 1; OVERWATCH
+    // 7165860051 on #2182: "Same ruled warning, same words; no new warning").
+    const holdWarning = register?.effect === 'created' || register?.effect === 'flipped' || register?.effect === 'register_newer'
       ? await readStaffHoldWarning(principal.role, principal.organizationId, athleteId)
       : null;
     return NextResponse.json({
@@ -136,6 +176,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       present: record.present,
       ...(register ? { register } : {}),
       ...(holdWarning ? { hold_warning: holdWarning } : {}),
+      ...(replayed ? { replayed: true, live } : {}),
     });
   } catch (error) {
     if (error instanceof SessionScriptRunError) {

@@ -7,6 +7,7 @@ import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { gymDayIso } from '@/src/lib/gymTime';
+import { useRoomNames } from '@/src/client/roomNames';
 import {
   DEFAULT_PROGRAM,
   PROGRAMS,
@@ -110,6 +111,8 @@ export default function AthleteAchievements({
   audience = 'athlete',
   allowProgramChange = true,
 }: AthleteAchievementsProps) {
+  // The mentors heading in the gym's words, the athlete's and the family's form (RN-3; Q-A A).
+  const names = useRoomNames();
   const [recognitions, setRecognitions] = useState<RecognitionItem[]>([]);
   const [awards, setAwards] = useState<MilestoneAwardItem[]>([]);
   const [mentorships, setMentorships] = useState<MentorshipItem[]>([]);
@@ -464,7 +467,7 @@ export default function AthleteAchievements({
       {/* ------------------------------------------------------------------ */}
       {mentorships.length > 0 && (
         <div className="mt-[var(--s5)]">
-          <h4 className="t-label">{isFamily ? 'Who they train with' : 'Who you train with'}</h4>
+          <h4 className="t-label">{isFamily ? names.name('card:who-they-train-with') : names.name('card:who-you-train-with')}</h4>
           <ul className="mt-[var(--s3)] space-y-[var(--s2)]" role="list">
             {mentorships.map((link) => {
               const iAmMentor = link.mentor_athlete_id === athleteId;

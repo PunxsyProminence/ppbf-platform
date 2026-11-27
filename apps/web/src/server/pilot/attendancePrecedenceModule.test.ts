@@ -8,8 +8,11 @@
 // double-count the view exists to prevent, and it would look perfectly
 // reasonable in review.
 
+import type { PoolClient } from 'pg';
+
 import {
   getAthleteAttendanceTotals,
+  getAttendanceLast28Days,
   getOrganizationParticipationTotals,
   listAthleteAttendanceDays,
   listOverlappingSourceDays,
@@ -137,6 +140,33 @@ describe('listOverlappingSourceDays', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('contributing_sources > 1');
     expect(params).toEqual(['org-1', 25]);
+  });
+});
+
+describe('getAttendanceLast28Days on a caller\'s transaction (the stopped-coming mark, SC-3a-2)', () => {
+  const ROW = { athlete_id: 'ath-1', days_present: 2, days_absent: 1, days_excused: 0, last_present_day: '2026-11-20' };
+
+  test('given a client, the view read runs on it and never on the pool (reviewer J: a pooled read here survived every suite)', async () => {
+    const client = { query: jest.fn(async () => ({ rows: [ROW] })) };
+    const result = await getAttendanceLast28Days('org-1', ['ath-1'], '2026-11-25', client as unknown as PoolClient);
+
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = client.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain('from pilot.attendance_reconciled');
+    expect(sql).toContain('athlete_id = any($2::text[])');
+    expect(params).toEqual(['org-1', ['ath-1'], '2026-10-29', '2026-11-25']);
+    expect(result.get('ath-1')).toMatchObject({ last_present_day: '2026-11-20', days_since_last_present: 5 });
+  });
+
+  test('without a client, the same read goes to the pool, as it always has', async () => {
+    mockQuery.mockResolvedValueOnce([ROW]);
+    const result = await getAttendanceLast28Days('org-1', ['ath-1'], '2026-11-25');
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(String(mockQuery.mock.calls[0][0])).toContain('from pilot.attendance_reconciled');
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', ['ath-1'], '2026-10-29', '2026-11-25']);
+    expect(result.get('ath-1')).toMatchObject({ last_present_day: '2026-11-20' });
   });
 });
 
