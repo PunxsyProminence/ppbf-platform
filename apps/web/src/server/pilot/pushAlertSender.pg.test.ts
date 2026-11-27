@@ -538,18 +538,25 @@ describe('web push sender', () => {
       for (let count = 0; count < 11; count += 1) await addBrowser(client, COACH_ID, 'staff');
       await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
       let started = 0;
+      let gaveUp = 0;
       const { posted, dependencies } = recorder({}, async () => {
         started += 1;
-        // Answers only once every post has started: one after another, none ever would.
+        // Answers only once every post has started: posted one after another,
+        // the first would give up waiting (reviewer J, round 2: without the
+        // count below, the tenth's 201 alone made the row sent).
         const deadline = Date.now() + 5_000;
         while (started < 10) {
-          if (Date.now() > deadline) throw new Error('posted one after another');
+          if (Date.now() > deadline) {
+            gaveUp += 1;
+            throw new Error('posted one after another');
+          }
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
         return 201;
       });
       expect((await runPushAlertSweep(dependencies, [])).sent).toBe(1);
       expect(posted).toHaveLength(10);
+      expect(gaveUp).toBe(0);
     } finally {
       await client.end();
     }
