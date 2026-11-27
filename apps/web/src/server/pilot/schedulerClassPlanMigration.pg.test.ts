@@ -397,7 +397,13 @@ describe('the migration is additive', () => {
       const plansBefore = await rows('pilot.session_scripts', 'script_id');
       const [classColumns, classConstraints, classIndexes] = await shape(CLASSES_TABLE);
       const untouched = ['pilot.session_scripts', 'pilot.scheduler_registrations', 'pilot.scheduler_attendance'];
-      const shapeBefore = await Promise.all(untouched.map(shape));
+      // One query at a time: a pg Client runs one, and queues the rest with a deprecation warning.
+      const shapesOf = async (tables: string[]) => {
+        const shapes = [];
+        for (const table of tables) shapes.push(await shape(table));
+        return shapes;
+      };
+      const shapeBefore = await shapesOf(untouched);
 
       await applyMigrationTransaction(client, migrationSql);
       await link(client, CLASS, PLAN);
@@ -417,7 +423,7 @@ describe('the migration is additive', () => {
         [...classConstraints, 'pilot_scheduler_classes_script_fk'].sort(),
         [...classIndexes, 'pilot_scheduler_classes_script'].sort(),
       ]);
-      expect(await Promise.all(untouched.map(shape))).toEqual(shapeBefore);
+      expect(await shapesOf(untouched)).toEqual(shapeBefore);
       await expect(readinessOnly(client)).resolves.toBeUndefined();
     } finally {
       await client.end();
@@ -446,6 +452,24 @@ describe('the migration is additive', () => {
     try {
       await insertClass(client, ORG, 'class-classplan-today', COACH);
       expect(await classRow(client, 'class-classplan-today')).toMatchObject({ organization_id: ORG, script_id: null });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a re-run takes no lock on the class table', async () => {
+    // Reviewer J on #2238: the column comment, written on every re-run, took SHARE UPDATE EXCLUSIVE,
+    // so a VACUUM, ANALYZE or CREATE INDEX on the table could time the `all` chain out.
+    const client = await cloneOf(AFTER);
+    try {
+      await client.query('BEGIN');
+      await client.query(migrationSql);
+      const held = await client.query<{ mode: string }>(
+        `select mode from pg_locks
+          where pid = pg_backend_pid() and locktype = 'relation' and relation = to_regclass('${CLASSES_TABLE}')`,
+      );
+      await client.query('ROLLBACK');
+      expect(held.rows).toEqual([]);
     } finally {
       await client.end();
     }
@@ -538,6 +562,12 @@ describe('the runner', () => {
       `alter table ${CLASSES_TABLE} alter column script_id set default '${PLAN}'`],
     ['script_id of another type', 'class_plan_column_ready',
       `alter table ${CLASSES_TABLE} alter column script_id type varchar(64)`],
+    // Reviewer J on #2238: each case from here to the end of the key's cases passed the gate before.
+    // The index is rebuilt under the default collation, so only the column's rule is wrong.
+    ['script_id under another collation', 'class_plan_column_ready',
+      `alter table ${CLASSES_TABLE} alter column script_id type text collate "C";
+       ${recreateIndex(`index pilot_scheduler_classes_script on ${CLASSES_TABLE}(organization_id, script_id collate "default")
+         where script_id is not null`)}`],
     // class_plan_fk_ready
     ['the plan key dropped', 'class_plan_fk_ready',
       `alter table ${CLASSES_TABLE} drop constraint pilot_scheduler_classes_script_fk`],
@@ -556,6 +586,19 @@ describe('the runner', () => {
     ['the plan key on script_id alone (any gym\'s plan)', 'class_plan_fk_ready',
       `create unique index classplan_script_id_only on pilot.session_scripts(script_id);
        ${recreateKey(`foreign key (script_id) references pilot.session_scripts(script_id) on delete set null (script_id)`)}`],
+    ['the plan key deferrable', 'class_plan_fk_ready',
+      recreateKey(`foreign key (organization_id, script_id)
+        references pilot.session_scripts(organization_id, script_id) on delete set null (script_id)
+        deferrable initially deferred`)],
+    ['the plan key cascading an update', 'class_plan_fk_ready',
+      recreateKey(`foreign key (organization_id, script_id)
+        references pilot.session_scripts(organization_id, script_id) on update cascade on delete set null (script_id)`)],
+    // MATCH FULL refuses a class with a gym and no plan, so it only validates on a table with no
+    // classes; once there, every class scheduled without a plan would be refused (23503).
+    ['the plan key MATCH FULL (every class with no plan refused)', 'class_plan_fk_ready',
+      `delete from ${CLASSES_TABLE};
+       ${recreateKey(`foreign key (organization_id, script_id)
+         references pilot.session_scripts(organization_id, script_id) match full on delete set null (script_id)`)}`],
     // class_plan_index_ready
     ['the plan index dropped', 'class_plan_index_ready', 'drop index pilot.pilot_scheduler_classes_script'],
     ['the plan index over every class (another predicate)', 'class_plan_index_ready',
@@ -568,6 +611,12 @@ describe('the runner', () => {
         where script_id is not null`)],
     ['the plan index on script_id alone', 'class_plan_index_ready',
       recreateIndex(`index pilot_scheduler_classes_script on ${CLASSES_TABLE}(script_id) where script_id is not null`)],
+    ['the plan index BRIN, not btree', 'class_plan_index_ready',
+      recreateIndex(`index pilot_scheduler_classes_script on ${CLASSES_TABLE} using brin (organization_id, script_id)
+        where script_id is not null`)],
+    ['the plan index under another collation', 'class_plan_index_ready',
+      recreateIndex(`index pilot_scheduler_classes_script on ${CLASSES_TABLE}(organization_id, script_id collate "C")
+        where script_id is not null`)],
   ])('refuses a database with %s, and names it (%s)', async (_label, missing, breakIt) => {
     const client = await cloneOf(AFTER);
     try {
@@ -591,7 +640,7 @@ describe('the runner', () => {
     }
   });
 
-  test('holds its locks for at most 10 seconds, and leaves nothing behind when it gives up', async () => {
+  test('waits at most 10 seconds for its locks, and leaves nothing behind when it gives up', async () => {
     const client = await cloneOf(BEFORE);
     const blocker = new Client({ connectionString: connectionStringFor(lastClone) });
     await blocker.connect();

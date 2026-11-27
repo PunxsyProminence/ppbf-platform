@@ -54,11 +54,13 @@
 -- (apps/web/scripts/pilot-apply-scheduler-class-plan-migration.mjs) opens the
 -- transaction itself and sets lock_timeout. Idempotent: every statement guards
 -- itself, because the `all` chain re-runs every migration on every dispatch.
--- The guards read the catalog BEFORE altering, so a re-run takes none of the
--- column, key or index locks (`add column if not exists` and `create index if
--- not exists` would each lock the table first and check after), and does not
--- wait on a class write in progress (schedulerClassPlanMigration.pg.test.ts,
--- "a re-run does not wait on a class write in progress").
+-- The guards read the catalog BEFORE altering (`add column if not exists` and
+-- `create index if not exists` would each lock the table first and check
+-- after), and the column comment is written only when it differs, so a re-run
+-- takes no lock on pilot.scheduler_classes at all and does not wait on a class
+-- write in progress (schedulerClassPlanMigration.pg.test.ts, "a re-run takes
+-- no lock on the class table" and "a re-run does not wait on a class write in
+-- progress").
 
 do $$
 begin
@@ -103,5 +105,19 @@ begin
   end if;
 end $$;
 
-comment on column pilot.scheduler_classes.script_id is
-  'The session plan this class runs (lane W4-5), or null for a class with no plan. The start follows the newest version of that plan''s lineage (sessionScriptRuns.ts startSessionScriptRun refuses a superseded version with SESSION_SCRIPT_SUPERSEDED; sessionScriptAuthoring.ts''s header: the browse list and the start check follow the highest version), so the stored id may name an older version of the plan. Which plan a caller may link is the module''s rule (the gym''s own), not this file''s.';
+-- The column's comment, written only when it differs: `comment on column` takes a SHARE UPDATE
+-- EXCLUSIVE lock on the class table, so writing it on every re-run made the `all` chain wait on
+-- (and, at the runner's lock_timeout, fail behind) a VACUUM, ANALYZE or CREATE INDEX on it
+-- (reviewer J on #2238, OBSERVED).
+do $$
+declare
+  wanted constant text := 'The session plan this class runs (lane W4-5), or null for a class with no plan. The start follows the newest version of that plan''s lineage (sessionScriptRuns.ts startSessionScriptRun refuses a superseded version with SESSION_SCRIPT_SUPERSEDED; sessionScriptAuthoring.ts''s header: the browse list and the start check follow the highest version), so the stored id may name an older version of the plan. Which plan a caller may link is the module''s rule (the gym''s own), not this file''s.';
+begin
+  if col_description(
+       to_regclass('pilot.scheduler_classes'),
+       (select attnum from pg_attribute
+         where attrelid = to_regclass('pilot.scheduler_classes') and attname = 'script_id' and not attisdropped)
+     ) is distinct from wanted then
+    execute format('comment on column pilot.scheduler_classes.script_id is %L', wanted);
+  end if;
+end $$;

@@ -31,13 +31,20 @@ function textArray(values) {
   return `array[${values.map((value) => `'${value}'`).join(', ')}]::text[]`;
 }
 
-// One column of `table`, exactly: its type, nullable, and with no default (a default would stamp
-// every existing and every new class with a plan nobody chose).
+// The database's default collation, the one a `text` column gets when none is named (the form
+// pilot-apply-athlete-reached-out-marks-migration.mjs reads it in).
+const DEFAULT_COLLATION = "(select oid from pg_collation where collname = 'default' and collnamespace = 'pg_catalog'::regnamespace)";
+
+// One text column of `table`, exactly: its type, nullable, with no default (a default would stamp
+// every existing and every new class with a plan nobody chose), and the default collation, the
+// collation of the plan key it points at (reviewer J on #2238: a column under another collation
+// passed this check).
 function nullableColumn(table, name, type) {
   return `exists (
     select 1 from pg_attribute a
      where a.attrelid = ${table} and a.attname = '${name}' and not a.attisdropped
        and format_type(a.atttypid, a.atttypmod) = '${type}' and not a.attnotnull and not a.atthasdef
+       and a.attcollation = ${DEFAULT_COLLATION}
   )`;
 }
 
@@ -47,24 +54,34 @@ function nullableColumn(table, name, type) {
 // table; and that a delete of the target sets ONLY `setNullColumn` to null ('n' with that one
 // column in confdelsetcols). The whole-key form ('n' with no column list) would null
 // organization_id too and fail at delete time; cascade would delete the class.
+// Also, as the migration writes it (reviewer J on #2238, each OBSERVED passing before): MATCH
+// SIMPLE ('s'; MATCH FULL refuses every class with a gym and no plan, which is every class
+// scheduled without one), ON UPDATE NO ACTION ('a') and not deferrable -- the checks
+// pilot-apply-video-clip-tags-sparring-link-migration.mjs and
+// pilot-apply-athlete-reached-out-marks-migration.mjs already make on their keys.
 function setNullForeignKey(table, name, columns, target, targetColumns, setNullColumn) {
   return `exists (
     select 1 from pg_constraint c
      where c.conrelid = ${table} and c.conname = '${name}' and c.contype = 'f' and c.convalidated
        and c.confrelid = to_regclass('${target}') and c.confdeltype = 'n'
+       and c.confmatchtype = 's' and c.confupdtype = 'a' and not c.condeferrable
        and ${keyColumns('c.conkey', 'c.conrelid')} = ${textArray(columns)}
        and ${keyColumns('c.confkey', 'c.confrelid')} = ${textArray(targetColumns)}
        and ${keyColumns('c.confdelsetcols', 'c.conrelid')} = ${textArray([setNullColumn])}
   )`;
 }
 
-// A valid btree index on `table` by name: unique or not as stated, its columns in order, no
-// expressions, and its predicate exactly (so one widened to every class, or narrowed to fewer, is
-// refused).
+// A valid btree index on `table` by name: btree (the access method, as
+// pilot-apply-audit-events-entity-index-migration.mjs checks; reviewer J on #2238 rebuilt it as
+// BRIN and it passed), unique or not as stated, its columns in order, each under the default
+// collation, no expressions, and its predicate exactly (so one widened to every class, or narrowed
+// to fewer, is refused).
 function index(name, table, { unique, columns, predicate }) {
   return `exists (
     select 1 from pg_index i
      where i.indexrelid = to_regclass('pilot.${name}') and i.indrelid = ${table}
+       and (select c.relam from pg_class c where c.oid = i.indexrelid) = (select oid from pg_am where amname = 'btree')
+       and string_to_array(i.indcollation::text, ' ')::oid[] = array[${columns.map(() => DEFAULT_COLLATION).join(', ')}]::oid[]
        and i.indisvalid and i.indisunique = ${unique ? 'true' : 'false'} and i.indexprs is null
        and (
          select array_agg(a.attname::text order by k.ord)
