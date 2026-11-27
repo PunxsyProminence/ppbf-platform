@@ -28,6 +28,16 @@ name: cleanup-audit-test-records
 # elsewhere for more than 10 seconds fails the run (code 55P03). This workflow
 # has a concurrency group of its own, outside the release lock.
 #
+# WHERE IT RUNS: on a single-use runner inside Azure when the repository
+# variable PPBF_AZURE_DB_RUNNER is 'true' and the run is from main (the `launch`
+# job at the end of this file, session-token-cleanup.yml's pattern; lane DBT,
+# OD-2026-11-17-008: GitHub places some ubuntu-latest jobs on AWS machines,
+# which the database firewall does not admit). Otherwise on GitHub's runner,
+# as before. The runner stops an hour after it starts (azure-runner.conf,
+# REPLICA_TIMEOUT_SECONDS), so a production run's approval and the report must
+# both fit in that hour. RE-RUN WITH "Re-run all jobs", never "Re-run failed
+# jobs": `cleanup` alone would wait for this attempt's runner, which is gone.
+#
 # Run order and how to read the report: docs/AUDIT_TEST_RECORD_CLEANUP_RUNBOOK.md.
 
 on:
@@ -79,8 +89,9 @@ concurrency:
 
 jobs:
   cleanup:
+    needs: launch
     environment: ${{ inputs.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.launch.outputs.runs-on) }}
     timeout-minutes: 30
     env:
       # RESOURCE_GROUP is resolved per target by the step below, never set
@@ -297,3 +308,64 @@ jobs:
               echo 'Dry run: nothing was written.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Where `cleanup` runs (lane DBT, OD-2026-11-17-008), as session-token-cleanup.yml
+  # does it. `cleanup` waits for this job through `needs`; it sits below
+  # `cleanup` so that the resource-group guard still comes before the file's
+  # first Azure login (workflowResourceGroupContract.test.ts). With the
+  # repository variable PPBF_AZURE_DB_RUNNER set to 'true' and a run from main:
+  # a single-use runner inside Azure, which the database firewall always
+  # admits. Otherwise GitHub's runner, exactly as before. Runs from other
+  # branches stay on GitHub, because the Azure runner's guard refuses them.
+  # This job declares no environment: it reaches only GitHub, Azure Resource
+  # Manager and Key Vault, never the database, and its Azure login trusts main.
+  # The runner's guard admits `cleanup` only once the runner image carries the
+  # infra/gh-runner/allowed-jobs.txt line for it (a rebuild and a roll).
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      runs-on: ${{ steps.azure.outputs.runs-on || '"ubuntu-latest"' }}
+    steps:
+      - name: Choose The Runner
+        id: route
+        env:
+          SWITCH: ${{ vars.PPBF_AZURE_DB_RUNNER }}
+        run: |
+          if [ "${SWITCH,,}" = "true" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "azure=true" >> "$GITHUB_OUTPUT"
+            echo "cleanup runs on a single-use runner in Azure."
+          else
+            echo "azure=false" >> "$GITHUB_OUTPUT"
+            echo "cleanup runs on GitHub's runner (PPBF_AZURE_DB_RUNNER is not 'true', or this run is not from main)."
+          fi
+
+      - name: Checkout Source Code
+        if: steps.route.outputs.azure == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Authenticate via Azure OIDC
+        if: steps.route.outputs.azure == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Launch A Runner In Azure
+        id: azure
+        if: steps.route.outputs.azure == 'true'
+        uses: ./.github/actions/azure-runner-launch
+        with:
+          app-id: ${{ vars.PPBF_RUNNER_APP_ID }}
+          installation-id: ${{ vars.PPBF_RUNNER_INSTALLATION_ID }}
+
+      # Fail closed: a launch that reported success but named no runner must
+      # not quietly send `cleanup` to GitHub's runner.
+      - name: Check A Runner Was Named
+        if: steps.route.outputs.azure == 'true'
+        env:
+          RUNS_ON: ${{ steps.azure.outputs.runs-on }}
+        run: test -n "$RUNS_ON"

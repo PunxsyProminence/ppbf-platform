@@ -16,6 +16,11 @@
 // src/Runner.Worker/Handlers/ScriptHandlerHelpers.cs: "--noprofile --norc -e
 // -o pipefail {0}"); a step with no `shell:` gets `bash -e {0}`.
 //
+// Where it runs (Codex finding 4723994429 on #2242): `cleanup` takes its
+// runner from a `launch` job built as session-token-cleanup.yml's is (a
+// single-use Azure runner when PPBF_AZURE_DB_RUNNER is 'true' and the run is
+// from main, otherwise GitHub's); the route step's own bash is RUN here too.
+//
 // WHAT THIS CANNOT SHOW. Nothing here evaluates a GitHub expression, talks to
 // Azure or checks the production environment's approval rule. The tool's own
 // behaviour is proved in cleanupAuditTestRecords.pg.test.ts.
@@ -39,6 +44,25 @@ const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 
 function readWorkflow(file: string): string {
   return fs.readFileSync(path.join(WORKFLOW_DIR, file), 'utf8').replace(/\r\n/g, '\n');
+}
+
+/** Each job under `jobs:`, by id, as its whole block of lines. */
+function jobBlocks(text: string): Map<string, string> {
+  const jobsAt = text.indexOf('\njobs:\n');
+  if (jobsAt === -1) throw new Error(`${FILE}: no jobs: section`);
+  const lines = text.slice(jobsAt + '\njobs:\n'.length).split('\n');
+  const blocks = new Map<string, string>();
+  let current: string | null = null;
+  for (const line of lines) {
+    const id = /^ {2}([a-z][a-z0-9_-]*):$/.exec(line);
+    if (id) {
+      current = id[1];
+      blocks.set(current, '');
+    } else if (current !== null) {
+      blocks.set(current, `${blocks.get(current)}${line}\n`);
+    }
+  }
+  return blocks;
 }
 
 /** One named step, from its `- name:` line to the line before the next step. */
@@ -199,9 +223,11 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
     expect(runScript(GUARD_STEP)).toContain(`[ "$CONFIRM_DELETE" != "${PHRASE}" ]`);
   });
 
-  test('one job, in the environment named by target, with a group of its own', () => {
-    expect([...text.matchAll(/^ {2}([a-z-]+):\n {4}environment:/gm)].map((m) => m[1])).toEqual(['cleanup']);
-    expect(text).toContain('    environment: ${{ inputs.target }}\n');
+  test('two jobs, launch and cleanup; only cleanup runs in the environment named by target; a group of its own', () => {
+    const jobs = jobBlocks(text);
+    expect([...jobs.keys()]).toEqual(['cleanup', 'launch']);
+    expect([...jobs].filter(([, block]) => /^ {4}environment:/m.test(block)).map(([id]) => id)).toEqual(['cleanup']);
+    expect(jobs.get('cleanup')).toContain('    environment: ${{ inputs.target }}\n');
     expect(text).toContain('  group: cleanup-audit-test-records-${{ inputs.target }}\n  cancel-in-progress: false\n');
   });
 
@@ -261,6 +287,65 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
   test('the record step runs only after the guard passed, and on every outcome after that', () => {
     expect(stepText(GUARD_STEP)).toContain('        id: guard\n');
     expect(stepText(RECORD_STEP)).toContain("        if: always() && steps.guard.outcome == 'success'\n");
+  });
+});
+
+describe(`${FILE}: where the job runs (Codex finding 4723994429 on #2242)`, () => {
+  const text = readWorkflow(FILE);
+  const allowed = fs.readFileSync(path.join(REPO_ROOT, 'infra/gh-runner/allowed-jobs.txt'), 'utf8').split('\n');
+
+  /** Runs the launch job's route step as GitHub would (no `shell:`: bash -e) and returns what it wrote. */
+  function route(values: Record<string, string>): string {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'b6-route-'));
+    try {
+      const output = path.join(temp, 'output');
+      fs.writeFileSync(output, '');
+      const run = bash(runScript('Choose The Runner'), { GITHUB_OUTPUT: output, ...values });
+      if (run.status !== 0) throw new Error(run.output);
+      return fs.readFileSync(output, 'utf8');
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  test('cleanup keeps its job id, waits for launch and takes its runner from it; it is on the runner allow-list', () => {
+    expect(text).toMatch(/\n {2}cleanup:\n {4}needs: launch\n {4}environment: \$\{\{ inputs\.target \}\}\n {4}runs-on: \$\{\{ fromJSON\(needs\.launch\.outputs\.runs-on\) \}\}\n/);
+    expect(jobBlocks(text).get('cleanup')).not.toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(allowed).toContain('cleanup-audit-test-records.yml:cleanup');
+  });
+
+  test('launch is session-token-cleanup.yml\'s: last in the file, no environment, four steps gated on the route, GitHub\'s runner as the fallback, fail-closed', () => {
+    const launch = /\n {2}launch:\n([\s\S]*)$/.exec(text)?.[1] ?? '';
+    expect(launch).not.toBe('');
+    expect(launch).not.toMatch(/\n {2}[a-z-]+:\n/);
+    expect(launch).not.toMatch(/^ {4}environment:/m);
+    expect(launch).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(launch).toContain('SWITCH: ${{ vars.PPBF_AZURE_DB_RUNNER }}');
+    const gated = launch.split(/\n {6}- name: /).slice(2);
+    expect(gated).toHaveLength(4);
+    for (const step of gated) expect(step).toContain("if: steps.route.outputs.azure == 'true'");
+    expect(launch).toContain(`runs-on: \${{ steps.azure.outputs.runs-on || '"ubuntu-latest"' }}`);
+    expect(launch).toContain('uses: ./.github/actions/azure-runner-launch');
+    expect(launch).toContain('app-id: ${{ vars.PPBF_RUNNER_APP_ID }}');
+    expect(launch).toContain('installation-id: ${{ vars.PPBF_RUNNER_INSTALLATION_ID }}');
+    expect(launch).toMatch(/- name: Check A Runner Was Named\n {8}if: steps\.route\.outputs\.azure == 'true'\n {8}env:\n {10}RUNS_ON: \$\{\{ steps\.azure\.outputs\.runs-on \}\}\n {8}run: test -n "\$RUNS_ON"\n/);
+    // launch never reaches the database, so it is not on the runner allow-list.
+    expect(allowed).not.toContain('cleanup-audit-test-records.yml:launch');
+  });
+
+  test('the route step sends cleanup to Azure only when the switch is true and the run is from main', () => {
+    expect(route({ SWITCH: 'true', GITHUB_REF: 'refs/heads/main' })).toBe('azure=true\n');
+    expect(route({ SWITCH: 'TRUE', GITHUB_REF: 'refs/heads/main' })).toBe('azure=true\n');
+    expect(route({ SWITCH: 'true', GITHUB_REF: 'refs/heads/claude/some-branch' })).toBe('azure=false\n');
+    expect(route({ SWITCH: '', GITHUB_REF: 'refs/heads/main' })).toBe('azure=false\n');
+    expect(route({ SWITCH: 'false', GITHUB_REF: 'refs/heads/main' })).toBe('azure=false\n');
+  });
+
+  test('the resource-group guard still comes before the file\'s first Azure login', () => {
+    const guardAt = text.indexOf('- name: Resolve Target Resource Group');
+    const loginAt = text.indexOf('uses: azure/login@');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(loginAt).toBeGreaterThan(guardAt);
   });
 });
 

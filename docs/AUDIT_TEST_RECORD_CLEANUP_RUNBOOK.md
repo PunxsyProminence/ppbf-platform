@@ -83,6 +83,22 @@ locked elsewhere for more than 10 seconds, the whole run fails (`audit_test_clea
 transaction: a sweep table locked for more than 10 seconds is listed in `tables_failed`, and the rest of
 the report stands.
 
+**Where it runs.** The `launch` job decides, as `session-token-cleanup.yml`'s does (lane DBT,
+OD-2026-11-17-008). With the repository variable `PPBF_AZURE_DB_RUNNER` set to `true` and a dispatch
+from `main`, `cleanup` runs on a single-use runner inside Azure, which the database firewall admits;
+otherwise on GitHub's runner, where a job GitHub places on AWS stops at the database preflight
+(`PROBE_TIMEOUT`, as the first staging attempt did, run 46000784632).
+- **Before the first Azure run:** the runner image must carry this job's line in
+  `infra/gh-runner/allowed-jobs.txt`. Its guard refuses any job not baked into the image, so rebuild
+  (`build-runner-image`) and roll (`IMAGE` in `azure-runner.conf`, then `resources.sh create --apply`), as
+  `infra/gh-runner/README.md` says. Until then leave the variable unset for this workflow's runs, or
+  expect the job to be refused.
+- **The runner stops an hour after it starts** (`REPLICA_TIMEOUT_SECONDS` 3600). `launch` starts it
+  before the production approval is asked for, so the approval and the run (up to 30 minutes) must fit in
+  that hour: dispatch production when the approver is ready.
+- **Re-run with "Re-run all jobs"**, never "Re-run failed jobs": `cleanup` alone would wait for that
+  attempt's runner, which is gone. If an approval came too late, cancel the run and dispatch again.
+
 ## Applying it (App Overwatch, with Jason's word for each run)
 
 1. **Dry run first**, on the exact scope the apply will use (`target` and `organization`) and naming the
