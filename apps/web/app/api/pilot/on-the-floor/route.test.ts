@@ -124,6 +124,19 @@ it('a family refusal is the one fixed text, with no id and no reason passed thro
   expect(await response.json()).toEqual(FAMILY_FAILURE);
 });
 
+// Codex on #2220 (4723722713); App Overwatch 7228636120. A session that outlived the athlete's record is
+// refused with a 403, as the other athlete-self routes refuse it (assertAthleteBelongsToOrganization),
+// never answered "not counted".
+it('an athlete whose record is gone is refused with a 403 and the one fixed text, never "not counted"', async () => {
+  mockPrincipal.mockResolvedValue(principal('athlete', 'org-1', 'a-gone'));
+  mockFamily.mockRejectedValue(forbidden('Forbidden: athlete does not belong to organization'));
+  const response = await GET(new NextRequest(URL));
+  expect(response.status).toBe(403);
+  const body = await response.json();
+  expect(body).toEqual(FAMILY_FAILURE);
+  expect(body).not.toHaveProperty('on_the_floor');
+});
+
 it.each(['parent', 'athlete'])('a failed %s read is a 500 with the one fixed text, and no id in the log', async (role) => {
   mockPrincipal.mockResolvedValue(principal(role, 'org-1', role === 'athlete' ? 'a-7' : null));
   const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});

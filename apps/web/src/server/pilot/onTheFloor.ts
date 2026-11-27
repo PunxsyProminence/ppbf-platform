@@ -253,9 +253,15 @@ export async function onTheFloorForFamily(actor: ActorIdentity, now: Date): Prom
 
   const day = gymDayIso(now);
   if (!day) throw new Error('ON_THE_FLOOR_DAY_UNRESOLVED');
+  const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
+  // An athlete's session can outlive their record, so the live record is required, as on the other
+  // athlete-self routes (OD-2026-09-29-002 item 10): a missing or soft-deleted one is refused before
+  // anything is settled, never answered "not counted" (Codex on #2220, 4723722713).
+  if (actor.role === 'athlete' && !live.has(actor.athleteId as string)) {
+    throw new ForbiddenError('Forbidden: athlete does not belong to organization');
+  }
   await closeIdleSessionRuns(organizationId, { now });
 
-  const live = new Set((await organizationActionableRoster(organizationId)).map((athlete) => athlete.athlete_id));
   const ids = scope.filter((id) => live.has(id));
   const guardian = actor.role === 'parent' ? actor.accountId : null;
   const counted = await countedAmong(organizationId, ids, day, now, true, guardian);
