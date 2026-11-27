@@ -633,31 +633,64 @@ export default function SchedulerPage() {
   useEffect(() => {
     if (planToRead === null) return;
     let current = true;
+    // Gives up after 8 seconds, as the read of today's classes does (components/SessionClassPicker.tsx,
+    // fetchTieableClasses), so a read that never answers cannot hold Schedule Class (reviewers L and
+    // M on #2240): it ends as "could not be read", and the class is scheduled without a plan.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     void (async () => {
       let read: ClassPlan | null = null;
       try {
         const url = `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(planToRead)}`;
-        const response = await fetch(url, { method: 'GET', credentials: 'include' });
+        const response = await fetch(url, { method: 'GET', credentials: 'include', signal: controller.signal });
         const script = response.ok ? ((await response.json()) as { script?: { script_id?: unknown; name?: unknown } | null }).script : null;
         if (typeof script?.script_id === 'string' && typeof script.name === 'string' && script.name.trim() !== '') {
           read = { scriptId: script.script_id, name: script.name };
         }
       } catch {
         // Not read: no plan is sent.
+      } finally {
+        clearTimeout(timer);
       }
       if (current) setPlanRead(read);
     })();
-    return () => { current = false; };
+    return () => {
+      current = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [planToRead]);
-  // Next keeps window.history.replaceState in step with its router
-  // (node_modules/next/dist/docs/01-app/01-getting-started/04-linking-and-navigating.md:344-348).
+  // THE FORM IS BROUGHT INTO VIEW (reviewer L on #2240), as Session Plans brings an opened plan
+  // (app/coach/session-scripts/page.tsx:296-309, app scrub CF-08). The form is drawn below the
+  // whole class list, so a coach arriving from "Schedule a class" was left at the top with the plan
+  // out of sight. Once, on arrival, when the list has loaded and the plan read has ended, so the list
+  // cannot grow above it afterwards; and when the plan is dropped, as its button goes and would take
+  // focus with it.
+  const newClassHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [focusNewClass, setFocusNewClass] = useState(0);
+  useEffect(() => {
+    if (focusNewClass === 0) return;
+    const heading = newClassHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView?.({ block: 'center' });
+  }, [focusNewClass]);
+  const arrivalShown = useRef(false);
+  useEffect(() => {
+    if (arrivalShown.current || loading || planToRead === null || planRead === undefined) return;
+    arrivalShown.current = true;
+    setFocusNewClass((count) => count + 1);
+  }, [loading, planToRead, planRead]);
+  // Next keeps window.history.replaceState in step with its router when it is passed null, as its
+  // docs do (node_modules/next/dist/docs/01-app/01-getting-started/04-linking-and-navigating.md:403);
+  // passed Next's own history state, it skips its router (next/dist/client/components/app-router.js,
+  // the `data?.__NA || data?._N` early return; reviewer L on #2240).
   const dropPlan = () => {
     setPlanAsked(null);
     setPlanRead(undefined);
     const params = new URLSearchParams(window.location.search);
     params.delete('plan');
     const query = params.toString();
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
   };
 
   // onAnswered: the server replied, whatever it said (never on a lost request).
@@ -1171,17 +1204,31 @@ export default function SchedulerPage() {
               <section className="grid gap-4 lg:grid-cols-2">
                 {roleCanManageClasses(role) ? (
                   <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
-                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
-                    {planAsked === null ? null : planRead === undefined ? (
-                      <p className="t-body" role="status">Reading the session plan…</p>
-                    ) : planRead === null ? (
-                      <p className="t-body" role="status">The session plan could not be read, so this class will be scheduled without one.</p>
-                    ) : (
+                    <h3 ref={newClassHeadingRef} tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
+                    {/* One status line whose words change, so the read's end is announced too
+                        (reviewer L on #2240); the button sits outside it. */}
+                    {planAsked === null ? null : (
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                        <p className="t-body">{`Session plan: ${planRead.name}`}</p>
-                        <button type="button" onClick={dropPlan} disabled={actionInFlight} className="btn btn--ghost disabled:opacity-60">
-                          Schedule without a plan
-                        </button>
+                        <p className="t-body" role="status">
+                          {planRead === undefined
+                            ? 'Reading the session plan…'
+                            : planRead === null
+                              ? 'The session plan could not be read, so this class will be scheduled without one.'
+                              : `Session plan: ${planRead.name}`}
+                        </p>
+                        {planRead ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              dropPlan();
+                              setFocusNewClass((count) => count + 1);
+                            }}
+                            disabled={actionInFlight}
+                            className="btn btn--ghost disabled:opacity-60"
+                          >
+                            Schedule without a plan
+                          </button>
+                        ) : null}
                       </div>
                     )}
                     <div>
