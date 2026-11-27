@@ -285,6 +285,16 @@ function forgetPendingClassKey(): void {
   }
 }
 
+/* THE PLAN A NEW CLASS KEEPS (lane W4-5, SP-4b; OW27-29 A, "Class keeps the plan; Start runs it",
+   docs/current/OWNER_DECISIONS.md:1514-1523). Session Plans' "Schedule a class" opens this page with
+   ?plan=<script_id>. The form is not filled from the plan: filling it was option B, not chosen. */
+type ClassPlan = { scriptId: string; name: string };
+
+/* create_class's refusal of a plan this gym does not have (CLASS_PLAN_NOT_FOUND,
+   src/server/pilot/schedulerDb.ts:212), in plain words. */
+const CLASS_PLAN_NOT_FOUND_WORDS =
+  'That session plan was not found in this gym, so nothing was scheduled. Choose it again on Session Plans, or schedule without a plan.';
+
 /* What Repeat weekly will make, before anything is sent. PROPOSED copy. */
 function repeatPreview(startAt: string, endAt: string, repeat: WeeklyRepeat): string {
   const start = startAt ? parseInstantAsGymTime(startAt) : null;
@@ -603,6 +613,53 @@ export default function SchedulerPage() {
     loadSchedulerState().catch((err) => console.error('Failed to load scheduler state:', err));
   }, [loadSchedulerState]);
 
+  // The plan named by ?plan= (ClassPlan above), until it is dropped. planRead: undefined while it
+  // is read, null when it could not be read, so the class is scheduled without one.
+  const [planAsked, setPlanAsked] = useState<string | null>(null);
+  const [planRead, setPlanRead] = useState<ClassPlan | null | undefined>(undefined);
+  // Read in an effect, as Session Plans reads ?script= (app/coach/session-scripts/page.tsx:357-364),
+  // not with useSearchParams, which needs a Suspense boundary on a prerendered page
+  // (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md:183).
+  useEffect(() => {
+    void (async () => {
+      const asked = await Promise.resolve(new URLSearchParams(window.location.search).get('plan'));
+      if (asked) setPlanAsked(asked);
+    })();
+  }, []);
+  // Read only for a role with Schedule New Class (roleCanManageClasses): a parent or an athlete makes
+  // no plan read. The GET answers { script }, the plan with its name
+  // (app/api/pilot/session-scripts/route.ts:62-67).
+  const planToRead = roleCanManageClasses(role) ? planAsked : null;
+  useEffect(() => {
+    if (planToRead === null) return;
+    let current = true;
+    void (async () => {
+      let read: ClassPlan | null = null;
+      try {
+        const url = `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(planToRead)}`;
+        const response = await fetch(url, { method: 'GET', credentials: 'include' });
+        const script = response.ok ? ((await response.json()) as { script?: { script_id?: unknown; name?: unknown } | null }).script : null;
+        if (typeof script?.script_id === 'string' && typeof script.name === 'string' && script.name.trim() !== '') {
+          read = { scriptId: script.script_id, name: script.name };
+        }
+      } catch {
+        // Not read: no plan is sent.
+      }
+      if (current) setPlanRead(read);
+    })();
+    return () => { current = false; };
+  }, [planToRead]);
+  // Next keeps window.history.replaceState in step with its router
+  // (node_modules/next/dist/docs/01-app/01-getting-started/04-linking-and-navigating.md:344-348).
+  const dropPlan = () => {
+    setPlanAsked(null);
+    setPlanRead(undefined);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('plan');
+    const query = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  };
+
   // onAnswered: the server replied, whatever it said (never on a lost request).
   async function runAction(
     payload: Record<string, unknown>,
@@ -647,11 +704,16 @@ export default function SchedulerPage() {
         recorded?: boolean;
         class_ids?: unknown[];
         already_created?: boolean;
+        code?: string;
       };
       // The app's own answer, not a gateway page: a timeout there may have landed.
       if (result.ok === true || typeof result.error === 'string') onAnswered?.();
       if (!response.ok || !result.ok) {
-        showError(result.error || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
+        // A refusal carries its code beside its words (jsonError, src/server/pilot/http.ts:186-191).
+        // Every refusal but CLASS_PLAN_NOT_FOUND is shown as the server words it, CLASS_PLAN_RETIRED's
+        // approved text included (src/server/pilot/schedulerDb.ts:177-179).
+        const words = result.code === 'CLASS_PLAN_NOT_FOUND' ? CLASS_PLAN_NOT_FOUND_WORDS : result.error;
+        showError(words || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
         return;
       }
 
@@ -1110,6 +1172,18 @@ export default function SchedulerPage() {
                 {roleCanManageClasses(role) ? (
                   <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                     <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
+                    {planAsked === null ? null : planRead === undefined ? (
+                      <p className="t-body" role="status">Reading the session plan…</p>
+                    ) : planRead === null ? (
+                      <p className="t-body" role="status">The session plan could not be read, so this class will be scheduled without one.</p>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        <p className="t-body">{`Session plan: ${planRead.name}`}</p>
+                        <button type="button" onClick={dropPlan} disabled={actionInFlight} className="btn btn--ghost disabled:opacity-60">
+                          Schedule without a plan
+                        </button>
+                      </div>
+                    )}
                     <div>
                       <label htmlFor="new-class-title" className="t-label">
                         Class title
@@ -1268,6 +1342,9 @@ export default function SchedulerPage() {
                             capacity: newClassCapacity,
                             ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
                             request_key: createClassKey,
+                            // Sent once; the route puts it on every class of a repeat
+                            // (app/api/pilot/scheduler/route.ts:881-882).
+                            ...(planRead ? { script_id: planRead.scriptId } : {}),
                             ...(newClassRepeat
                               ? 'weeks' in newClassRepeatRule
                                 ? { repeat_weeks: newClassRepeatRule.weeks }
@@ -1285,6 +1362,7 @@ export default function SchedulerPage() {
                             setNewClassRepeatMode('weeks');
                             setNewClassRepeatWeeks(String(REPEAT_WEEKS_DEFAULT));
                             setNewClassRepeatUntil('');
+                            dropPlan();
                           },
                           () => {
                             forgetPendingClassKey();
@@ -1292,7 +1370,10 @@ export default function SchedulerPage() {
                           },
                         );
                       }}
-                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
+                      // Held while ?plan= is being read: a press then would schedule the class
+                      // without the plan the screen says it is reading.
+                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)
+                        || (planAsked !== null && planRead === undefined)}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
                       Schedule Class
