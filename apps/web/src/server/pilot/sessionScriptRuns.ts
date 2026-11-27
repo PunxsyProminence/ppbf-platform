@@ -577,6 +577,9 @@ export async function startClassPlanRun(
 ): Promise<{ run: LiveSessionScriptRun; classPlan: TieableClassPlan | null }> {
   await sweepIdleRuns(organizationId);
   return withTransaction(async (client) => {
+    // The reads after the lock must see what committed during the wait: set here, as the keyed
+    // run actions below do, rather than left to the database's default (reviewer P on #2259).
+    await client.query('set transaction isolation level read committed');
     const linked = await client.query<{ lineage_id: string }>(
       `select s.lineage_id
          from pilot.scheduler_classes c
@@ -586,16 +589,18 @@ export async function startClassPlanRun(
     );
     let classPlan: TieableClassPlan | null = null;
     let script: StartedScript | null = null;
-    if (linked.rows.length > 0) {
-      const lineageId = linked.rows[0].lineage_id;
-      const locked = await client.query<{ script_id: string }>(
-        `select script_id from pilot.session_scripts
-          where organization_id = $1 and lineage_id = $2
-          order by version desc
-          limit 1
-            for share`,
-        [organizationId, lineageId],
-      );
+    const lineageId = linked.rows[0]?.lineage_id;
+    const locked = lineageId === undefined ? null : await client.query<{ script_id: string }>(
+      `select script_id from pilot.session_scripts
+        where organization_id = $1 and lineage_id = $2
+        order by version desc
+        limit 1
+          for share`,
+      [organizationId, lineageId],
+    );
+    // The plan deleted while this start waited (nothing in the app deletes one; reviewer P on #2259):
+    // the class has no plan now, and the session starts without one.
+    if (lineageId !== undefined && locked !== null && locked.rows.length > 0) {
       const head = await client.query<{ script_id: string; version: number; name: string; authoring_state: string }>(
         `select script_id, version, name, authoring_state from pilot.session_scripts
           where organization_id = $1 and lineage_id = $2

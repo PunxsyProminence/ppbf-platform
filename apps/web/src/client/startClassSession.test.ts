@@ -53,6 +53,23 @@ test('the class\'s own plan for a class with none returns classPlan null', async
     .resolves.toEqual({ kind: 'started', run: RUN, classPlan: null });
 });
 
+test.each([
+  ['missing', undefined],
+  ['a string', 'scr-2'],
+  ['missing its name', { script_id: 'scr-2', retired: false, has_blocks: true }],
+  ['with retired as text', { script_id: 'scr-2', name: 'Footwork night', retired: 'no', has_blocks: true }],
+])('a resolved plan answered %s is read as none, never shown', async (_label, classPlan) => {
+  respond({ ok: true, body: { run: RUN, class_plan: classPlan } });
+  await expect(startClassSession({ scriptId: null, classId: 'cls-1', classPlan: true }))
+    .resolves.toEqual({ kind: 'started', run: RUN, classPlan: null });
+});
+
+test('the class\'s own plan with an empty class id is a plain open-gym start', async () => {
+  const fetchMock = respond({ ok: true, body: { run: RUN } });
+  await startClassSession({ scriptId: null, classId: '', classPlan: true });
+  expect(JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({});
+});
+
 test('the class\'s own plan with no class is a plain open-gym start', async () => {
   const fetchMock = respond({ ok: true, body: { run: RUN } });
   await expect(startClassSession({ scriptId: null, classId: null, classPlan: true })).resolves.toEqual({ kind: 'started', run: RUN });

@@ -503,7 +503,7 @@ export interface TieableClass {
   held_by_other_session: boolean;
   /**
    * The class's plan, null for none (App Overwatch 7215533652 on #2189, Q1). Always set here;
-   * optional in the type only because a route test fixture has none (runs/route.test.ts:470-471).
+   * optional in the type only because a route test fixture has none (runs/route.test.ts:521).
    */
   plan?: TieableClassPlan | null;
 }
@@ -511,9 +511,11 @@ export interface TieableClass {
 /**
  * Today's classes (the gym's day) this actor may tie a session to, earliest first: the start picker.
  * Each carries its plan resolved to the NEWEST version of its lineage, because the start refuses a
- * superseded version (sessionScriptRuns.ts:476-486, SESSION_SCRIPT_SUPERSEDED) while the class keeps
- * the id it was scheduled with (pilot_slice_postgres_scheduler_class_plan_migration.sql). A retire
- * is written to the current version in place (sessionScriptAuthoring.ts setSessionScriptRetired).
+ * superseded version (sessionScriptRuns.ts startSessionScriptRun, SESSION_SCRIPT_SUPERSEDED) while
+ * the class keeps the id it was scheduled with (pilot_slice_postgres_scheduler_class_plan_migration.sql).
+ * A retire is written to the current version in place (sessionScriptAuthoring.ts setSessionScriptRetired).
+ * This is what the screen names before Start; the class screen's Start resolves the plan again, the
+ * same way, in its own transaction (sessionScriptRuns.ts startClassPlanRun; Codex P1 on #2241).
  */
 export async function listTieableClasses(actor: Tier, now = new Date()): Promise<TieableClass[]> {
   const rows = await query<SchedulerClass & {

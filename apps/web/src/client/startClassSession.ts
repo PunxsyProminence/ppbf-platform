@@ -28,6 +28,19 @@ export type StartClassSessionOutcome =
   /** No answer arrived: nothing is known to have started. */
   | { readonly kind: 'network' };
 
+/**
+ * The class's plan as the server resolved it, or null when it sent none or one of another shape:
+ * a value not read is never shown as a plan (reviewer Q on #2259).
+ */
+function classPlanFrom(value: unknown): ClassPlanView | null {
+  if (!value || typeof value !== 'object') return null;
+  const plan = value as Record<string, unknown>;
+  return typeof plan.script_id === 'string' && typeof plan.name === 'string'
+    && typeof plan.retired === 'boolean' && typeof plan.has_blocks === 'boolean'
+    ? { script_id: plan.script_id, name: plan.name, retired: plan.retired, has_blocks: plan.has_blocks }
+    : null;
+}
+
 /** The coach's own live session, or null when there is none. Throws when it cannot be read. */
 export async function fetchOwnLiveRun(): Promise<LiveSessionScriptRun | null> {
   const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, { method: 'GET', credentials: 'include' });
@@ -47,7 +60,7 @@ export async function startClassSession(input: {
   readonly classId: string | null;
   readonly classPlan?: boolean;
 }): Promise<StartClassSessionOutcome> {
-  const classPlan = input.classPlan === true && input.classId !== null;
+  const classPlan = input.classPlan === true && Boolean(input.classId);
   let response: Response;
   try {
     response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
@@ -66,14 +79,14 @@ export async function startClassSession(input: {
 
   const payload = (await response.json().catch(() => ({}))) as {
     run?: LiveSessionScriptRun;
-    class_plan?: ClassPlanView | null;
+    class_plan?: unknown;
     error?: string;
     message?: string;
   };
 
   if (response.ok && payload.run) {
     return classPlan
-      ? { kind: 'started', run: payload.run, classPlan: payload.class_plan ?? null }
+      ? { kind: 'started', run: payload.run, classPlan: classPlanFrom(payload.class_plan) }
       : { kind: 'started', run: payload.run };
   }
 

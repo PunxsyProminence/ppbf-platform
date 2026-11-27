@@ -927,8 +927,8 @@ describe('today\'s classes a session can be tied to', () => {
 // #2189, Q1): each of today's classes carries its plan, resolved to the newest version of the
 // lineage it was scheduled with, with its name, whether it is retired and whether it has blocks.
 describe('today\'s classes carry their plan, as its newest version', () => {
-  /** One version of a plan in the gym (every version here is of one lineage), with `blocks` blocks. */
-  async function addPlan(gym: Gym, scriptId: string, version: number, name: string, blocks: number) {
+  /** One version of a plan in the gym (of one lineage unless `lineage` says), with `blocks` blocks. */
+  async function addPlan(gym: Gym, scriptId: string, version: number, name: string, blocks: number, lineage = 'scr-lineage') {
     const { organizationId } = gym;
     await client.query(
       `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
@@ -937,8 +937,8 @@ describe('today\'s classes carry their plan, as its newest version', () => {
     );
     await client.query(
       `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
-       values ($1, $2, 'scr-lineage', $3, $4, $5)`,
-      [organizationId, scriptId, version, name, gym.coach.accountId],
+       values ($1, $2, $3, $4, $5, $6)`,
+      [organizationId, scriptId, lineage, version, name, gym.coach.accountId],
     );
     for (let order = 1; order <= blocks; order += 1) {
       await client.query(
@@ -1098,16 +1098,20 @@ describe('today\'s classes carry their plan, as its newest version', () => {
       expect(classPlan).toBeNull();
     });
 
-    test('two gyms holding the same plan id: the start reads its own gym\'s plan', async () => {
+    test('two gyms holding the same plan id: each start reads its own gym\'s plan', async () => {
       const gym = await newGym('plan-start-same-id');
       const other = await newGym('plan-start-same-id-other');
+      // Different lineages too, so a read that crossed gyms at any step would find the other's.
       await addPlan(gym, 'scr-same', 1, 'Footwork night', 0);
-      await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2);
+      await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2, 'scr-lineage-elsewhere');
       await linkPlan(gym, 'scr-same');
       await linkPlan(other, 'scr-same');
-      const { run, classPlan } = await startPlan(gym, gym.coach);
-      expect(run.script_id).toBeNull();
-      expect(classPlan).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+      const mine = await startPlan(gym, gym.coach);
+      expect(mine.run.script_id).toBeNull();
+      expect(mine.classPlan).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+      const theirs = await startPlan(other, other.coach);
+      expect(theirs.run).toMatchObject({ script_id: 'scr-same', current_block_id: 'scr-same-b1' });
+      expect(theirs.classPlan).toEqual({ script_id: 'scr-same', name: 'Another gym\'s plan', retired: false, has_blocks: true });
     });
 
     test('the class rules are the scripted start\'s: another coach\'s class and another gym\'s are refused, nothing written', async () => {
@@ -1140,6 +1144,28 @@ describe('today\'s classes carry their plan, as its newest version', () => {
         const { run, classPlan } = await starting;
         expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
         expect(classPlan?.retired).toBe(true);
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+    });
+
+    test('the plan deleted while the start waited: the session starts without a plan (reviewer P on #2259)', async () => {
+      const gym = await newGym('plan-start-deleted');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        await other.query('BEGIN');
+        await other.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered', () => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        const { run, classPlan } = await starting;
+        expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+        expect(classPlan).toBeNull();
       } finally {
         await other.query('ROLLBACK').catch(() => {});
         await other.end();

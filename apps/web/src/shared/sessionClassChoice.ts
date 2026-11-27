@@ -29,10 +29,12 @@ export interface TieableClassView {
 }
 
 /**
- * What Start sends for the chosen class's plan, and the one line the class screen shows
- * (OW27-29 A, "Class keeps the plan; Start runs it"; App Overwatch 7215533652 on #2189). A retired
- * plan (Q2) or one with no blocks (Q3) starts a session tied to the class without it; retired is
- * checked first. No class, or a class with no plan: nothing is sent and nothing is shown.
+ * What a class's plan starts as, and the one line the class screen shows for it (OW27-29 A, "Class
+ * keeps the plan; Start runs it"; App Overwatch 7215533652 on #2189). A retired plan (Q2) or one
+ * with no blocks (Q3) starts a session tied to the class without it; retired is checked first. No
+ * class, or a class with no plan: nothing starts with it and nothing is shown. The class screen's
+ * Start does not send this scriptId: the server resolves the class's plan when Start is committed
+ * (sessionScriptRuns.ts startClassPlanRun; Codex P1 on #2241), and the screen words its answer here.
  */
 export function classPlanStart(item: Pick<TieableClassView, 'plan'> | undefined): { scriptId: string | null; line: string | null } {
   const plan = item?.plan;

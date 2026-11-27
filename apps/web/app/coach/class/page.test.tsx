@@ -377,7 +377,7 @@ test('a start refused as already live shows the running session, restored, never
   });
 
   expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
-  expect(screen.getByText('You already had a session in progress. It has been restored, not restarted.')).toHaveAttribute('role', 'status');
+  expect(screen.getByText('You already had a session in progress. It has been restored, not restarted.').closest('[role="status"]')).not.toBeNull();
   expect(posts).toHaveLength(1);
 });
 
@@ -651,15 +651,44 @@ describe('a class with a plan (SP-4a)', () => {
     ['brought back before Start', { retired: true }, {}, 'This class runs the plan: Footwork night.'],
     ['given its first blocks before Start', { has_blocks: false }, {}, 'This class runs the plan: Footwork night.'],
   ])('a plan %s: what the server resolved starts, and the screen says it', async (_label, listed, resolved, words) => {
+    const runs = classPlanStart({ plan: plan(resolved) }).scriptId !== null;
     serve({
       classes: [{ ...YOUTH, plan: plan(listed) }],
-      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth' }), class_plan: plan(resolved) }),
+      // The run the server starts matches what it resolved: the plan's newest version, or plain.
+      start: () => jsonResponse({
+        run: plainRun({ class_id: 'class-youth', ...(runs ? { script_id: 'scr-youth-v2', script_version: 2 } : {}) }),
+        class_plan: plan(resolved),
+      }),
     });
     await open();
+    // The status region the words will arrive in is on the page before the start (reviewer Q on #2259).
+    const regions = new Set(screen.getAllByRole('status'));
     expect(await screen.findByText(classPlanStart({ plan: plan(listed) }).line ?? '')).toBeInTheDocument();
     await pressStart();
     expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
-    expect(await screen.findByText(words)).toHaveAttribute('role', 'status');
+    const said = await screen.findByText(words);
+    const region = said.closest('[role="status"]');
+    expect(region).not.toBeNull();
+    expect(regions.has(region as HTMLElement)).toBe(true);
+  });
+
+  test('what started is said for the class it started with: untied afterwards, the words go', async () => {
+    serve({
+      classes: [{ ...YOUTH, plan: plan() }],
+      start: () => jsonResponse({ run: plainRun({ class_id: 'class-youth' }), class_plan: plan({ retired: true }) }),
+      patch: () => jsonResponse({ class_id: null }),
+    });
+    await open();
+    expect(await screen.findByText('This class runs the plan: Footwork night.')).toBeInTheDocument();
+    await pressStart();
+    const words = "This class's plan, Footwork night, is retired, so this session starts without it.";
+    expect(await screen.findByText(words)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Untie from the class' }));
+    });
+
+    await waitFor(() => expect(screen.queryByText(words)).toBeNull());
   });
 
   test('the line follows the choice: none for a class with no plan or for open gym, and neither sends a plan', async () => {

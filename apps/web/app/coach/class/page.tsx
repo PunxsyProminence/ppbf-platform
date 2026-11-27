@@ -69,6 +69,18 @@ function ClassScreen() {
   const shownRun = reportedRun ?? liveRun;
   const [liveRunCheck, setLiveRunCheck] = useState<'loading' | 'checked' | 'unavailable'>('loading');
   const [notice, setNotice] = useState('');
+  // The words said after a start about what started (below), and the class they were said for:
+  // they go if the session is tied to another class or untied, as they would then read as untrue
+  // (reviewer Q on #2259).
+  const startedNote = useRef<{ text: string; classId: string } | null>(null);
+  const onRunChange = useCallback((run: LiveSessionScriptRun) => {
+    setReportedRun(run);
+    const said = startedNote.current;
+    if (said && run.class_id !== said.classId) {
+      startedNote.current = null;
+      setNotice((current) => (current === said.text ? '' : current));
+    }
+  }, []);
   // Bumped when Gym TVs sends, takes off or changes a TV, so the console reads TV status again
   // (Overwatch Q10 = A: no timer).
   const [tvChanges, setTvChanges] = useState(0);
@@ -198,9 +210,12 @@ function ClassScreen() {
           setNotice(RESTORED);
         } else if (outcome.classPlan) {
           // What started, in the same words, when it is not what the line said: the line goes with
-          // the picker once the session is live, so nothing false is left standing.
+          // the picker once the session is live (Q2 A: "the screen says" it starts without the plan).
           const started = classPlanStart({ plan: outcome.classPlan }).line;
-          if (started && started !== lineAtPress) setNotice(started);
+          if (started && started !== lineAtPress && classChoice) {
+            startedNote.current = { text: started, classId: classChoice };
+            setNotice(started);
+          }
         }
         return;
       }
@@ -241,11 +256,15 @@ function ClassScreen() {
           </div>
         )}
 
-        {notice && (
-          <p role="status" className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
-            {notice}
-          </p>
-        )}
+        {/* A status region that stays on the page while its words come and go, so a notice is
+            announced when it appears, as the Start section goes (reviewer Q on #2259). */}
+        <div role="status">
+          {notice && (
+            <p className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] bg-[rgba(0,0,0,.28)] px-[var(--s4)] py-[var(--s3)] text-[color:var(--brass-300)]">
+              {notice}
+            </p>
+          )}
+        </div>
 
         {/* The live-floor saves this page keeps (W4 item 7): on the page, not in the console, so
             their words stay when a session ends while one still waits. */}
@@ -263,7 +282,7 @@ function ClassScreen() {
                     tvStatusRefresh={tvChanges}
                     // Every run the console adopts is the page's too, so Gym TVs below never works
                     // from an older copy of the switch or of which run is live.
-                    onRunChange={setReportedRun}
+                    onRunChange={onRunChange}
                     onSettled={(settled) => {
                       setLiveRun(null);
                       resetClassChoice();
