@@ -44,7 +44,7 @@ import { writePilotAuditEvent } from './audit';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { emailAlertUserTypeFor, type EmailAlertSwitchSubject } from './emailAlertSwitches';
-import { ForbiddenError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, ValidationError } from './errors';
 
 export type PushSubject = EmailAlertSwitchSubject;
 export type PushOffer = { readonly offered: false } | { readonly offered: true; readonly public_key: string };
@@ -204,14 +204,21 @@ const LINKED_ATHLETE_DOB_SQL = `select to_char(ath.dob, 'YYYY-MM-DD') as dob
 
 /**
  * EVERYTHING A SAVE RESTS ON, AGAIN UNDER THE SAVE'S OWN LOCKS (reviewers E
- * and F on #2236), taken in the email store's order (emailAlertSwitches.ts
- * lockPerson, which says why no writer waits the other way): the athlete row
- * FOR SHARE (an athlete), the account FOR NO KEY UPDATE, then the gym FOR
- * SHARE. The account lock also queues one person's saves, so the cap holds.
+ * and F on #2236), taken in the order of main's email store
+ * (emailAlertSwitches.ts lockPerson, whose comment says why no writer waits
+ * the other way): the athlete row FOR SHARE (an athlete), the account FOR NO
+ * KEY UPDATE, then the gym FOR SHARE. The account lock also queues one
+ * person's saves, so the cap holds. The athlete and gym locks keep the email
+ * store's order; a change committed just after a save would leave the same
+ * row either way, which the next offer read clears and the sender re-checks.
  * True only if, under them, the login is active and not deleted, its
  * membership of this gym is active with a role of the same user type, the gym
  * is active (a gym not active refuses a switch-on, as email does), and an
  * athlete's linked record is live and 18 or over.
+ *
+ * A copy, not an import: lockPerson is not exported, and its file belongs to
+ * W4-1's open PRs. Once they merge, an exported helper is to replace this, so
+ * A5 (#2219) reaches the check under the locks too.
  */
 async function stillOfferedUnderLock(
   client: PoolClient, subject: PushSubject, userType: EmailAlertUserType, now: Date,
@@ -312,6 +319,12 @@ export async function savePushBrowser(
     const pgError = error as { code?: unknown; constraint?: unknown };
     if (pgError.code === '23503' && pgError.constraint === 'pilot_push_subscription_membership_fk') {
       throw new ForbiddenError(NOT_OFFERED);
+    }
+    // Two people at the cap, each taking the other's oldest browser at once,
+    // can deadlock (reviewer E on #2236). Nothing was written; say so, as
+    // guardianLoginMove.ts does, rather than a 500.
+    if (pgError.code === '40P01') {
+      throw new ConflictError('Conflict: this browser was being changed at the same moment. Nothing was saved; try again.');
     }
     throw error;
   }
