@@ -14,10 +14,11 @@ export const dynamic = 'force-dynamic';
  * applied it; GO on #2192, 7206014991). No name, initials or id of anyone, on any branch.
  *
  *   GET, board                   { ok, read_at, classes: [{ title, start_at, end_at, room }], rounds, total }
- *   GET, staff, volunteer        { ok, read_at, classes: [{ title, start_at, end_at, room, here }], rounds }
+ *   GET, staff, volunteer        { ok, read_at, classes: [{ title, start_at, end_at, room, count }], rounds }
  *   GET, coach and gym admin     { ok, read_at, classes: [{ title, start_at, end_at, room }], rounds }
  *
- *   rounds: [{ tv_name, phase, round, rounds_total, is_paused }], one per session the gym's TVs show (QE A)
+ *   rounds: [{ tv_name, phase, round, rounds_total, is_paused }], one per TV showing a session with a round
+ *           clock (QE A); a session sent to two TVs is listed under each
  *   total:  { status: 'available', count } from 5 up; { status: 'insufficient_data', count: null } for 0 to 4 (flag 3)
  *
  * The board gets one floored total and no count per class (flags 3 and 4). Staff-role and volunteer
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       read_at: now.toISOString(),
       classes: classes.map((item) => {
         const shown: Record<string, unknown> = Object.fromEntries(CLASS_KEYS.map((key) => [key, item[key]]));
-        if (countsEachClass) shown.here = item.here;
+        if (countsEachClass) shown.count = item.count;
         return shown;
       }),
       rounds: rounds.map(({ tv_name, phase, round, rounds_total, is_paused }) => ({

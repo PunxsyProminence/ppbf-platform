@@ -31,8 +31,6 @@ let activeClient: Client | null = null;
 let mockFailQuery: RegExp | null = null;
 /** When set, every transaction fails before its first statement (the idle close's path). */
 let mockFailTransactions = false;
-/** When set, runs once just before the first query whose SQL matches (a change committed mid-read). */
-let mockBeforeQuery: { match: RegExp; run: () => Promise<void> } | null = null;
 
 function mockInjectedFailure(): Error {
   return Object.assign(new Error('injected failure for the test'), { code: 'XX000' });
@@ -42,11 +40,6 @@ jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
     if (mockFailQuery?.test(text)) throw mockInjectedFailure();
-    if (mockBeforeQuery?.match.test(text)) {
-      const hook = mockBeforeQuery;
-      mockBeforeQuery = null;
-      await hook.run();
-    }
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
@@ -172,7 +165,7 @@ async function addClass(gym: Gym, classId: string, day: string, startLocal: stri
   );
 }
 
-type MarkBy = 'coach' | 'self' | 'parent' | 'old_parent';
+type MarkBy = 'coach' | 'self' | 'parent' | 'old_parent' | 'parent_method_only';
 
 /** A register mark written at `writtenAt` by `by` (the method and role the scheduler records for it). */
 async function mark(
@@ -183,6 +176,8 @@ async function mark(
     self: ['self', 'athlete'],
     parent: ['parent', 'parent'],
     old_parent: ['coach_override', 'parent'],
+    // The family's method with a staff role: the method alone marks it the family's.
+    parent_method_only: ['parent', 'coach'],
   }[by];
   await client.query(
     `insert into pilot.scheduler_attendance
@@ -208,13 +203,14 @@ async function addTv(gym: Gym, tvId: string, name: string, runId: string | null)
  * clock was set up and last changed, which the idle close reads.
  */
 async function addTimer(
-  gym: Gym, runId: string, { state = 'running' as 'running' | 'paused', secondsAgo = 90, activityAt = at(-10) } = {},
+  gym: Gym, runId: string, { state = 'running' as 'ready' | 'running' | 'paused', secondsAgo = 90, activityAt = at(-10) } = {},
 ) {
   await client.query(
     `insert into pilot.round_timers
        (organization_id, run_id, round_seconds, rest_seconds, rounds_total, state, started_at, paused_at,
         configured_by_account_id, created_at, updated_at)
-     values ($1, $2, 60, 30, 5, $3, now() - make_interval(secs => $4), case when $3 = 'paused' then now() end,
+     values ($1, $2, 60, 30, 5, $3, case when $3 <> 'ready' then now() - make_interval(secs => $4) end,
+             case when $3 = 'paused' then now() end,
              $5, $6::timestamptz, $6::timestamptz)`,
     [gym.organizationId, runId, state, secondsAgo, gym.coachId, activityAt],
   );
@@ -320,9 +316,9 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
   test('classes running now, each with its own count, and the gym total', async () => {
     const gym = await newGym('count');
     const other = await newGym('other');
-    await addAthletes(gym, ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13']);
+    await addAthletes(gym, ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14']);
     await addAthletes(gym, ['gone'], { deleted: true });
-    await addAthletes(other, ['o1', 'o2', 'o3', 'o4', 'o5', 'o6']);
+    await addAthletes(other, ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'a1']); // a1: the same id in another gym
 
     await addClass(gym, 'early-bag-work', TODAY, '14:30'); // running: 14:30 to 15:30
     await addClass(gym, 'full-sparring', TODAY, '14:45', 'full'); // running; full is not cancelled
@@ -331,6 +327,7 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
     await addClass(gym, 'noon-class', TODAY, '12:00'); // ended at 13:00
     await addClass(gym, 'yesterday', '2026-11-24', '14:30');
     await addClass(other, 'other-gym', TODAY, '14:30');
+    await addClass(other, 'early-bag-work', TODAY, '14:30'); // the same class id in another gym
 
     // early-bag-work: three count.
     await mark(gym, 'early-bag-work', 'a1', 'present', at(-20)); // a staff mark
@@ -349,11 +346,15 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
     await mark(gym, 'later-youth', 'a9', 'present', at(-60), 'self');
     await mark(gym, 'later-youth', 'a10', 'present', at(-15));
     await mark(gym, 'later-youth', 'a13', 'present', at(-60), 'old_parent'); // a parent's mark in the older form: also held
+    await mark(gym, 'later-youth', 'a14', 'present', at(-60), 'parent_method_only'); // the family's method alone: held
     // noon-class: ended, but today's gym day, so it counts in the total.
     await mark(gym, 'noon-class', 'a11', 'present', at(-170));
     // yesterday and the other gym: never counted here.
     await mark(gym, 'yesterday', 'a12', 'present', at(-1460));
     await mark(other, 'other-gym', 'o1', 'present', at(-20));
+    await mark(other, 'early-bag-work', 'o2', 'present', at(-20));
+    await mark(other, 'early-bag-work', 'o3', 'present', at(-20));
+    await mark(other, 'early-bag-work', 'a1', 'present', at(-20));
 
     const classes = await classesRunningNow(gym.organizationId, NOW);
     expect(classes).toEqual([
@@ -362,21 +363,24 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
         start_at: '2026-11-25T19:30:00.000Z',
         end_at: '2026-11-25T20:30:00.000Z',
         room: 'Ring 1',
-        here: 3,
+        count: 3,
       },
       {
         title: 'full-sparring',
         start_at: '2026-11-25T19:45:00.000Z',
         end_at: '2026-11-25T20:45:00.000Z',
         room: 'Ring 1',
-        here: 1,
+        count: 1,
       },
     ]);
-    for (const each of classes) expect(Object.keys(each).sort()).toEqual(['end_at', 'here', 'room', 'start_at', 'title']);
+    for (const each of classes) expect(Object.keys(each).sort()).toEqual(['count', 'end_at', 'room', 'start_at', 'title']);
 
     // a1, a2, a6 (early-bag-work), a10 (later-youth, a staff mark), a11 (noon-class): five different athletes.
     expect(await registerTotalToday(gym.organizationId, NOW)).toBe(5);
-    expect(await registerTotalToday(other.organizationId, NOW)).toBe(1);
+    // The other gym counts its own: o1, o2, o3 and its own a1. None of its marks reach this gym's count.
+    expect(await registerTotalToday(other.organizationId, NOW)).toBe(4);
+    expect((await classesRunningNow(other.organizationId, NOW)).map((each) => [each.title, each.count]))
+      .toEqual([['early-bag-work', 3], ['other-gym', 1]]);
   });
 
   test('a family\'s mark counts from its class\'s start, and at the class\'s end the class is no longer running', async () => {
@@ -391,11 +395,25 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
 
     const atStart = new Date('2026-11-25T20:10:00Z');
     expect(await registerTotalToday(gym.organizationId, atStart)).toBe(2);
-    expect((await classesRunningNow(gym.organizationId, atStart)).map((each) => [each.title, each.here])).toEqual([['evening', 2]]);
+    expect((await classesRunningNow(gym.organizationId, atStart)).map((each) => [each.title, each.count])).toEqual([['evening', 2]]);
 
     const atEnd = new Date('2026-11-25T21:10:00Z');
     expect(await classesRunningNow(gym.organizationId, atEnd)).toEqual([]);
     expect(await registerTotalToday(gym.organizationId, atEnd)).toBe(2); // still today's gym day
+  });
+
+  test('the gym day, not the UTC day: an evening class counts on its own gym day', async () => {
+    const gym = await newGym('evening');
+    await addAthletes(gym, ['e1', 'e2']);
+    const evening = new Date('2026-11-26T01:30:00Z'); // 20:30 at the gym on 2026-11-25; already the 26th in UTC
+    await addClass(gym, 'late-fight', TODAY, '20:00'); // 01:00Z on the 26th, running at 20:30
+    await addClass(gym, 'next-morning', '2026-11-26', '06:00'); // the next gym day
+    await mark(gym, 'late-fight', 'e1', 'present', '2026-11-26T01:20:00Z');
+    await mark(gym, 'next-morning', 'e2', 'present', '2026-11-26T01:25:00Z'); // a staff mark, written ahead
+
+    expect((await classesRunningNow(gym.organizationId, evening)).map((each) => [each.title, each.count]))
+      .toEqual([['late-fight', 1]]);
+    expect(await registerTotalToday(gym.organizationId, evening)).toBe(1);
   });
 
   test('an empty gym counts 0, which the board floor suppresses', async () => {
@@ -421,7 +439,7 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     // Start every run first: a run start sweeps idle runs on the real clock.
     const ring = (await startSessionScriptRun(gym.organizationId, gym.coachId, {})).run_id;
     // One live run per coach, so each other run is a second coach's.
-    const coaches = ['c2', 'c3', 'c4', 'c5', 'c6'].map((name) => `${name}@${gym.organizationId}`);
+    const coaches = ['c2', 'c3', 'c4', 'c5', 'c6', 'c7'].map((name) => `${name}@${gym.organizationId}`);
     for (const id of coaches) {
       await client.query(`insert into pilot.accounts (account_id, role, organization_id) values ($1, 'coach', $2)`, [id, gym.organizationId]);
       await client.query(
@@ -431,16 +449,17 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     }
     const runs: string[] = [];
     for (const id of coaches) runs.push((await startSessionScriptRun(gym.organizationId, id, {})).run_id);
-    const [pausedId, hiddenId, noClockId, offTvId, forgottenId] = runs;
+    const [pausedId, hiddenId, noClockId, offTvId, forgottenId, readyId] = runs;
     const otherRun = (await startSessionScriptRun(other.organizationId, other.coachId, {})).run_id;
 
-    for (const id of [ring, pausedId, hiddenId, noClockId, offTvId]) await setRun(gym, id, { startedAt: at(-10), shown: true });
+    for (const id of [ring, pausedId, hiddenId, noClockId, offTvId, readyId]) await setRun(gym, id, { startedAt: at(-10), shown: true });
     await setRun(gym, hiddenId, { startedAt: at(-10), shown: false }); // the coach chose not to show it
     await setRun(gym, forgottenId, { startedAt: at(-240), shown: true }); // idle past three hours
     await setRun(other, otherRun, { startedAt: at(-10), shown: true });
 
     await addTimer(gym, ring, { secondsAgo: 90 }); // 90 s into 60 s rounds with 30 s rest: round 2, work
     await addTimer(gym, pausedId, { state: 'paused', secondsAgo: 20 });
+    await addTimer(gym, readyId, { state: 'ready' }); // set up, not started: round 0, "ready"
     await addTimer(gym, hiddenId);
     await addTimer(gym, offTvId);
     await addTimer(gym, forgottenId, { secondsAgo: 60, activityAt: at(-240) });
@@ -452,12 +471,14 @@ describe('listLiveTvRounds on a real database (QE A, F13)', () => {
     await addTv(gym, 'tv-4', 'Plain TV', noClockId); // a session with no round clock
     await addTv(gym, 'tv-5', 'Old TV', forgottenId);
     await addTv(gym, 'tv-6', 'Idle TV', null); // a TV showing nothing
+    await addTv(gym, 'tv-7', 'Warmup TV', readyId);
     await addTv(other, 'tv-1', 'Other gym TV', otherRun);
 
     const rounds = await listLiveTvRounds(gym.organizationId, NOW);
     expect(rounds).toEqual([
       { tv_name: 'Bag TV', phase: 'work', round: 1, rounds_total: 5, is_paused: true },
       { tv_name: 'Ring TV', phase: 'work', round: 2, rounds_total: 5, is_paused: false },
+      { tv_name: 'Warmup TV', phase: 'ready', round: 0, rounds_total: 5, is_paused: false },
     ]);
     for (const each of rounds) expect(Object.keys(each).sort()).toEqual(['is_paused', 'phase', 'round', 'rounds_total', 'tv_name']);
 

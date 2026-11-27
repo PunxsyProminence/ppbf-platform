@@ -16,7 +16,8 @@ import { query, queryOne } from './db';
  *   - THE LINE'S OWN RULE (QD A; FN0-Q2 A, OD-2026-11-25-002): a present mark on a class whose gym
  *     day is today; a mark the family wrote counts from the class's start, a staff mark from when it
  *     is written. The same test as onTheFloor.ts's register half, so every home counts a person the
- *     same way.
+ *     same way, but for one difference: a cancelled class's marks, which the coach and admin line
+ *     keeps (FN0-Q1 A), are left out of these counts (flag 10).
  *   - LEFT OUT: a cancelled class (flag 10), a deleted athlete, another gym's marks.
  *
  * No name, initials or id leaves this module: a class comes back as its title, times and room, and
@@ -30,7 +31,7 @@ export interface ClassRunningNow {
   readonly end_at: string;
   readonly room: string;
   /** How many are here on this class, by the line's own rule. */
-  readonly here: number;
+  readonly count: number;
 }
 
 /** The board's floor, held for a live count (flag 3): every count from 0 to 4 is suppressed. */
@@ -43,7 +44,7 @@ interface ClassRow {
   start_at: Date | string;
   end_at: Date | string;
   location: string;
-  here: number | string;
+  count: number | string;
 }
 
 function iso(value: Date | string): string {
@@ -81,11 +82,11 @@ export async function classesRunningNow(organizationId: string, now: Date): Prom
                 and a.deleted_at is null
               where sa.organization_id = c.organization_id
                 and sa.class_id = c.class_id
-                and ${countedMarkSql('$2', '$3', '$4')}) as here
+                and ${countedMarkSql('$2', '$3', '$4')}) as count
        from pilot.scheduler_classes c
       where c.organization_id = $1
         and c.status <> 'cancelled'
-        and c.start_at <= $2::timestamptz
+        and c.start_at between $2::timestamptz - interval '2 days' and $2::timestamptz
         and c.end_at > $2::timestamptz
         and (c.start_at at time zone $3)::date = $4::date
       order by c.start_at asc, c.title asc`,
@@ -96,7 +97,7 @@ export async function classesRunningNow(organizationId: string, now: Date): Prom
     start_at: iso(row.start_at),
     end_at: iso(row.end_at),
     room: row.location,
-    here: Number(row.here),
+    count: Number(row.count),
   }));
 }
 

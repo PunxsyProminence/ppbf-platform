@@ -40,7 +40,7 @@ const CLASS_ROW = {
   start_at: '2026-11-25T19:30:00.000Z',
   end_at: '2026-11-25T20:30:00.000Z',
   room: 'Ring 1',
-  here: 3,
+  count: 3,
   class_id: 'class-1',
   coach_account_id: 'coach@gym',
 };
@@ -117,8 +117,8 @@ describe.each(['staff', 'volunteer'])('a %s account', (role) => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(Object.keys(body).sort()).toEqual(['classes', 'ok', 'read_at', 'rounds']);
-    expect(body.classes).toEqual([{ ...CLASS_SHOWN, here: 3 }]);
-    expect(Object.keys(body.classes[0]).sort()).toEqual(['end_at', 'here', 'room', 'start_at', 'title']);
+    expect(body.classes).toEqual([{ ...CLASS_SHOWN, count: 3 }]);
+    expect(Object.keys(body.classes[0]).sort()).toEqual(['count', 'end_at', 'room', 'start_at', 'title']);
     expect(body.rounds).toEqual([ROUND_SHOWN]);
     expect(mockTotal).not.toHaveBeenCalled();
   });
