@@ -2,6 +2,7 @@ import BoardSeatDirectory from './BoardSeatDirectory';
 import { BOARD_AGGREGATE_BOUNDARY_STATEMENT } from './boardWorkspaceConfig';
 import BoardSummaryPanel from './BoardSummaryPanel';
 import BoardWorkspaceLinks from './BoardWorkspaceLinks';
+import { BoardOnTheFloorLine } from '@/components/OnTheFloorClassesLine';
 
 export default function BoardHubPage() {
   return (
@@ -50,6 +51,9 @@ export default function BoardHubPage() {
         <div className="mt-[var(--s5)]">
           <BoardSummaryPanel variant="hub" heading="Board Hub Aggregate" />
         </div>
+
+        {/* What is running on the floor now (lane W4-3, FN-4b): a board reader only. */}
+        <BoardOnTheFloorLine className="mt-[var(--s5)]" />
 
         <BoardSeatDirectory />
       </div>

@@ -271,3 +271,34 @@ test('the identity panel carries the two facts and neither slogan', () => {
   expect(screen.queryByText('Mission-Focused Governance')).toBeNull();
   expect(screen.queryByText('Community Impact Oversight')).toBeNull();
 });
+
+// Lane W4-3, FN-4b (GO on #2192, 7206014991): what is running on the floor now sits after the seat's
+// aggregate panel, for a board reader only. The platform owner reading a seat does not get it.
+describe('what is running on the floor now, on a seat page (lane W4-3, FN-4b)', () => {
+  const originalFetch = global.fetch;
+  const CLASSES = { ok: true, read_at: '2026-11-25T23:12:00.000Z', classes: [], rounds: [], total: { status: 'available', count: 6 } };
+  let fetchMock: jest.Mock;
+  beforeEach(() => {
+    fetchMock = jest.fn(async () => ({ ok: true, json: async () => CLASSES }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  test('the seat holder gets the line directly after the aggregate panel, read once', async () => {
+    renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+    const line = screen.getByRole('region', { name: 'What is running on the floor' });
+    expect(await within(line).findByText('On the floor now: 6')).toBeTruthy();
+    expect(line.previousElementSibling?.textContent).toBe('organization aggregate panel');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/pilot/on-the-floor/classes');
+  });
+
+  test('the platform owner reading a seat gets no line, and nothing is read for it', () => {
+    renderSeat('treasurer', { role: 'platform_owner', seats: [] });
+    expect(screen.getByText(/Platform owner view/)).toBeDefined();
+    expect(screen.queryByRole('region', { name: 'What is running on the floor' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
