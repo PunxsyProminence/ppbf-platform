@@ -15,7 +15,9 @@ export const dynamic = 'force-dynamic';
  * WHO (OW27-02 C; GO on #2159, section 8): coach, organization admin ('admin'
  * by alias), parent, athlete. An athlete under 18, or with no date of birth,
  * gets `{ offered: false }` on GET and 403 on PUT. PUT { switched_on }: an adult
- * athlete with no confirmed address gets 409 (EM-2b adds the address).
+ * athlete with no confirmed address gets 409 (the address and its code are
+ * me/address, EM-2b-2). GET adds code_pending for an adult athlete, never an
+ * address.
  *
  * GET WRITES, only for a caller no longer offered a switch, or whose user type
  * has changed since their row was saved (T-1 A on #2169): the store switches
