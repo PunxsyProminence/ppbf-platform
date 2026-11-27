@@ -485,6 +485,14 @@ export async function describeRunClass(actor: Tier, classId: string) {
   };
 }
 
+/** A class's plan as Start runs it: the newest version of the lineage the class was scheduled with. */
+export interface TieableClassPlan {
+  script_id: string;
+  name: string;
+  retired: boolean;
+  has_blocks: boolean;
+}
+
 export interface TieableClass {
   class_id: string;
   title: string;
@@ -492,19 +500,51 @@ export interface TieableClass {
   end_at: string;
   /** A live session other than the caller's already runs it (one live session per class). */
   held_by_other_session: boolean;
+  /**
+   * The class's plan, null for none (App Overwatch 7215533652 on #2189, Q1). Always set here;
+   * optional in the type only because a route test fixture has none (runs/route.test.ts:470-471).
+   */
+  plan?: TieableClassPlan | null;
 }
 
-/** Today's classes (the gym's day) this actor may tie a session to, earliest first: the start picker. */
+/**
+ * Today's classes (the gym's day) this actor may tie a session to, earliest first: the start picker.
+ * Each carries its plan resolved to the NEWEST version of its lineage, because the start refuses a
+ * superseded version (sessionScriptRuns.ts:476-486, SESSION_SCRIPT_SUPERSEDED) while the class keeps
+ * the id it was scheduled with (pilot_slice_postgres_scheduler_class_plan_migration.sql). A retire
+ * is written to the current version in place (sessionScriptAuthoring.ts setSessionScriptRetired).
+ */
 export async function listTieableClasses(actor: Tier, now = new Date()): Promise<TieableClass[]> {
-  const rows = await query<SchedulerClass & { held_by_other_session: boolean }>(
+  const rows = await query<SchedulerClass & {
+    held_by_other_session: boolean;
+    plan_script_id: string | null;
+    plan_name: string;
+    plan_retired: boolean;
+    plan_has_blocks: boolean;
+  }>(
     `select c.class_id, c.title, c.start_at::text, c.end_at::text, c.coach_account_id,
             c.scheduled_by_account_id, c.covering_coach_account_id, c.status,
             exists (
               select 1 from pilot.session_script_runs r
                where r.organization_id = c.organization_id and r.class_id = c.class_id
                  and r.run_state = 'in_progress' and r.delivered_by_account_id <> $2
-            ) as held_by_other_session
+            ) as held_by_other_session,
+            head.script_id as plan_script_id, head.name as plan_name,
+            head.authoring_state = 'retired' as plan_retired,
+            exists (
+              select 1 from pilot.session_script_blocks b
+               where b.organization_id = head.organization_id and b.script_id = head.script_id
+            ) as plan_has_blocks
        from pilot.scheduler_classes c
+       left join pilot.session_scripts linked
+         on linked.organization_id = c.organization_id and linked.script_id = c.script_id
+       left join lateral (
+         select s.organization_id, s.script_id, s.name, s.authoring_state
+           from pilot.session_scripts s
+          where s.organization_id = linked.organization_id and s.lineage_id = linked.lineage_id
+          order by s.version desc
+          limit 1
+       ) head on true
       where c.organization_id = $1 and c.status <> 'cancelled'
         and c.start_at between $3::timestamptz - interval '36 hours' and $3::timestamptz + interval '36 hours'
       order by c.start_at, c.class_id`,
@@ -514,5 +554,10 @@ export async function listTieableClasses(actor: Tier, now = new Date()): Promise
   return rows
     .filter((item) => gymDayIso(item.start_at) === today)
     .filter((item) => isOrganizationAdminRole(actor.role) || actorRunsClass(actor, item))
-    .map(({ class_id, title, start_at, end_at, held_by_other_session }) => ({ class_id, title, start_at, end_at, held_by_other_session }));
+    .map(({ class_id, title, start_at, end_at, held_by_other_session, ...head }) => ({
+      class_id, title, start_at, end_at, held_by_other_session,
+      plan: head.plan_script_id === null
+        ? null
+        : { script_id: head.plan_script_id, name: head.plan_name, retired: head.plan_retired, has_blocks: head.plan_has_blocks },
+    }));
 }

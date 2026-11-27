@@ -11,7 +11,7 @@ import SaveQueueNotice from '@/components/SaveQueueNotice';
 import SessionScriptLiveDelivery, { RUN_GONE } from '@/components/SessionScriptLiveDelivery';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
-import { defaultClassChoice, type ClassChoice, type TieableClassView } from '@/src/shared/sessionClassChoice';
+import { classPlanStart, defaultClassChoice, type ClassChoice, type TieableClassView } from '@/src/shared/sessionClassChoice';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
 import { painTileRead, usePainReports, type PainReportsRead } from '@/components/usePainReports';
 
@@ -19,8 +19,11 @@ import { painTileRead, usePainReports, type PainReportsRead } from '@/components
 //
 // One screen for running tonight's class on the gym floor tablet:
 //   - no live session: today's classes (the picker Session Plans uses) and one Start, which starts
-//     a session with no plan, tied to the chosen class or open gym. ?class=<id> chooses that class
-//     when it is one of today's free classes. Plans are still started from Session Plans;
+//     a session tied to the chosen class or open gym. ?class=<id> chooses that class when it is one
+//     of today's free classes. A class scheduled with a plan runs its newest version, named in one
+//     line under the picker; a retired plan, or one with no blocks, starts the session without it
+//     and the line says so (OW27-29 A, "Class keeps the plan; Start runs it"; App Overwatch
+//     7215533652 on #2189). Session Plans' own start is unchanged;
 //   - a live session: the live console (SessionScriptLiveDelivery, moved here from Session Plans)
 //     and Gym TVs (GymTvPanel), so the coach sends the session to a TV from the same screen.
 // While a session is live the pain list shows under the console and Gym TVs (lane U2-6b-2;
@@ -90,15 +93,35 @@ function ClassScreen() {
   // until chosen when the picker cannot choose; a default is worked out again at Start.
   const [classChoice, setClassChoice] = useState<ClassChoice>(undefined);
   const classPick = useRef<{ picked: boolean; classes: readonly TieableClassView[] }>({ picked: false, classes: [] });
+  // The same list as state, so the plan line follows the list as well as the choice.
+  const [pickedClasses, setPickedClasses] = useState<readonly TieableClassView[]>([]);
+  const keepPick = useCallback((pick: { picked: boolean; classes: readonly TieableClassView[] }) => {
+    classPick.current = pick;
+    setPickedClasses(pick.classes);
+  }, []);
+  // Bumped to remount the picker, which reads today's classes again.
+  const [classReads, setClassReads] = useState(0);
   const [classNote, setClassNote] = useState('');
   // ?class=<id>: applied once, to the first list the picker reads; after that the coach's picks rule.
   const preselect = useRef<'pending' | 'applied' | 'done'>(wantedClass ? 'pending' : 'done');
+  // After a superseded refusal the coach chooses again (App Overwatch 7215533652 on #2189, accepting
+  // "Today's classes are read again, the coach chooses again, and one more press starts"): the
+  // re-read list's clock default does not choose for them, as it could be another class than the
+  // one they chose (reviewers N and O on #2241). Until their own pick, nothing is chosen, and the
+  // picker says "Choose the class, or No class, to start."
+  const choosesAgain = useRef(false);
   const onClassChoice = useCallback((choice: ClassChoice, info: ClassChoiceInfo) => {
+    if (!info.picked && choosesAgain.current) {
+      keepPick(info);
+      setClassChoice(undefined);
+      return;
+    }
+    if (info.picked) choosesAgain.current = false;
     if (!info.picked && preselect.current === 'pending') {
       const named = info.classes.find((item) => item.class_id === wantedClass && !item.held_by_other_session);
       if (named) {
         preselect.current = 'applied';
-        classPick.current = { picked: true, classes: info.classes };
+        keepPick({ picked: true, classes: info.classes });
         setClassChoice(named.class_id);
         return;
       }
@@ -110,15 +133,17 @@ function ClassScreen() {
       return;
     }
     if (info.picked) preselect.current = 'done';
-    classPick.current = info;
+    keepPick(info);
     setClassChoice(choice);
-  }, [wantedClass]);
+  }, [wantedClass, keepPick]);
   const resetClassChoice = useCallback(() => {
     preselect.current = 'done';
-    classPick.current = { picked: false, classes: [] };
+    choosesAgain.current = false;
+    keepPick({ picked: false, classes: [] });
     setClassChoice(undefined);
     setClassNote('');
-  }, []);
+  }, [keepPick]);
+  const planLine = classPlanStart(pickedClasses.find((item) => item.class_id === classChoice)).line;
 
   // Gym TVs was told the session is not live (it ended elsewhere, or was replaced). Ask the server
   // which session is live now. None: the console goes, and the screen says why, in the console's
@@ -154,12 +179,15 @@ function ClassScreen() {
         return;
       }
     }
+    // The chosen class's plan from the list the picker reported: its newest version, or none when
+    // it is retired or has no blocks (OW27-29 A; App Overwatch 7215533652 on #2189, Q2 and Q3).
+    const { scriptId } = classPlanStart(classPick.current.classes.find((item) => item.class_id === classChoice));
     inFlight.current = true;
     setStarting(true);
     setStartError('');
     setNotice('');
     try {
-      const outcome = await startClassSession({ scriptId: null, classId: classChoice });
+      const outcome = await startClassSession({ scriptId, classId: classChoice });
       if ((outcome.kind === 'started' || outcome.kind === 'already_live') && outcome.run) {
         setLiveRun(outcome.run);
         setLiveRunCheck('checked');
@@ -167,11 +195,19 @@ function ClassScreen() {
         return;
       }
       setStartError(startRefusalWords(outcome));
+      // The plan was replaced between the read and Start: no retry (startClassSession.ts:1-5).
+      // Today's classes are read again, the coach chooses again, and one more press starts
+      // (App Overwatch 7215533652 on #2189).
+      if (outcome.kind === 'refused' && outcome.code === 'SESSION_SCRIPT_SUPERSEDED') {
+        resetClassChoice();
+        choosesAgain.current = true;
+        setClassReads((count) => count + 1);
+      }
     } finally {
       inFlight.current = false;
       setStarting(false);
     }
-  }, [classChoice, setLiveRun]);
+  }, [classChoice, setLiveRun, resetClassChoice]);
 
   return (
     <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
@@ -261,7 +297,12 @@ function ClassScreen() {
         {/* With the live-session check failed, Start shows but stays off, as the alert above says. */}
         {!liveRun && liveRunCheck !== 'loading' && (
           <section aria-label="Start a session" className="mt-[var(--s6)]">
-            <SessionClassPicker value={classChoice} onChange={onClassChoice} />
+            <SessionClassPicker key={classReads} value={classChoice} onChange={onClassChoice} />
+            {/* A status region that stays while the line comes and goes, so the line is announced
+                when it appears, not only when it changes (reviewer O on #2241). */}
+            <div role="status">
+              {planLine && <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{planLine}</p>}
+            </div>
             {classNote && <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{classNote}</p>}
             <button
               type="button"

@@ -1,0 +1,226 @@
+name: cleanup-audit-test-records
+
+# Reports the audit test records left in a gym (pilot blocker B6), by explicit
+# markers only: classes and TVs whose name starts 'ZZ-AUDIT' or 'AUDIT TEST'
+# followed by a break, the Audit Test Gyms, "hiit fit", and every other marked
+# text in the pilot schema. Jason ruled "2A", remove them (OD-2026-10-11-009
+# item 2); App Overwatch's GO, QR and QS answers are on #2227.
+#
+# THIS VERSION ONLY REPORTS. There is no mode input and no apply variable: the
+# script has no write path and refuses an apply request. The apply, with its
+# confirm phrase, kinds and reviewed fingerprint, comes in B6-3. App Overwatch
+# runs this dry run; a production dispatch runs in the production environment,
+# which holds it for that environment's approval, as RR-1's workflow does.
+#
+# The repository is public, so this log is too. The script prints no free text
+# and no raw person id: person ids print as an HMAC under
+# PPBF_AUDIT_TEST_CLEANUP_REF_KEY (an environment secret; with none set, a
+# random key for that run alone). The key is never printed.
+#
+# Do not dispatch while a migration of the same target runs. The first read
+# holds read locks, for the seconds it lasts, on the tables it reads directly
+# and, with a test gym or "hiit fit" in scope, on every table with an
+# organization_id. A migration that needs one of them waits; a lock held
+# elsewhere for more than 10 seconds fails the run (code 55P03). This workflow
+# has a concurrency group of its own, outside the release lock.
+#
+# Run order and how to read the report: docs/AUDIT_TEST_RECORD_CLEANUP_RUNBOOK.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      organization:
+        description: An organization_id, or ALL_ORGANIZATIONS for every organization
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: cleanup-audit-test-records-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # RESOURCE_GROUP is resolved per target by the step below, never set
+      # here: production reads secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
+      # staging fallback (see workflowResourceGroupContract.test.ts).
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+    steps:
+      # Free text reaches the shell through the environment, never by
+      # interpolation: `${{ ... }}` in a `run:` block is substituted before
+      # bash parses the line, so a value with a quote and a semicolon becomes
+      # commands.
+      - name: Confirm Explicit Target
+        id: guard
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          ORGANIZATION: ${{ inputs.organization }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" != "$CONFIRM_TARGET" ]; then
+            echo "::error::confirm_target does not match target."
+            exit 1
+          fi
+          if [ -z "$ORGANIZATION" ] || [[ "$ORGANIZATION" == -* ]]; then
+            echo "::error::organization must be an organization_id or ALL_ORGANIZATIONS."
+            exit 1
+          fi
+          # A line break would let the rest of the value start a line of the
+          # public log (npm echoes its arguments), where GitHub reads it as a
+          # workflow command.
+          if [[ "$ORGANIZATION" =~ [[:cntrl:]] ]]; then
+            echo "::error::organization must be one line, with no control characters."
+            exit 1
+          fi
+
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses, so an unset secret stops the run here -- before the Azure
+      # login, and long before anything touches a database.
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
+      # The script opens only read-only transactions and rolls each back. Its
+      # target guard compares the connection with PPBF_EXPECTED_POSTGRES_*: the
+      # environment's vars when they are set, otherwise the host and database
+      # of the same connection string, so then the target is fixed only by
+      # CONTAINER_APP_NAME and RESOURCE_GROUP above, as in RR-1's workflow.
+      # The organization reaches the command as a quoted variable, never by
+      # interpolation. The reference key reaches the script through the
+      # environment only; no run block names it.
+      - name: Report Audit Test Records
+        working-directory: apps/web
+        env:
+          ORGANIZATION: ${{ inputs.organization }}
+          PPBF_AUDIT_TEST_CLEANUP_REF_KEY: ${{ secrets.PPBF_AUDIT_TEST_CLEANUP_REF_KEY }}
+        # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
+        # and `tee` would discard a refused run's exit code (actions/runner,
+        # ScriptHandlerHelpers.cs: bash is `--noprofile --norc -e -o pipefail`).
+        shell: bash
+        run: |
+          if [ "$ORGANIZATION" = "ALL_ORGANIZATIONS" ]; then
+            SCOPE=(--all-organizations)
+          else
+            SCOPE=(--organization "$ORGANIZATION")
+          fi
+          npm run pilot:cleanup-audit-test-records -- "${SCOPE[@]}" 2>&1 | tee -a "$RUNNER_TEMP/tool-output.txt"
+
+      # The summary carries the run's settings and the tool's one-line result
+      # (fingerprint, key kind, counts), never the plan itself: the plan is in
+      # the log above. It runs only once the guard has passed, so a value the
+      # guard refused never reaches the summary.
+      - name: Record The Report
+        if: always() && steps.guard.outcome == 'success'
+        env:
+          TARGET: ${{ inputs.target }}
+          ORGANIZATION: ${{ inputs.organization }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          RESULT="$(grep -m1 '"event":"audit_test_cleanup.dry-run"' "$RUNNER_TEMP/tool-output.txt" 2>/dev/null || true)"
+          REFUSED="$(grep -m1 -E '"event":"audit_test_cleanup.(refused|failed)"' "$RUNNER_TEMP/tool-output.txt" 2>/dev/null || true)"
+          {
+            echo '### Audit test record report (dry run)'
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- organization: \`$ORGANIZATION\`"
+            echo "- result: \`$JOB_STATUS\`"
+            echo ''
+            if [ -n "$RESULT" ]; then
+              echo 'The tool'"'"'s result line (fingerprint, key kind, counts):'
+              echo ''
+              echo '```json'
+              printf '%s\n' "$RESULT"
+              echo '```'
+            elif [ -n "$REFUSED" ]; then
+              echo 'The tool refused or failed:'
+              echo ''
+              echo '```json'
+              printf '%s\n' "$REFUSED"
+              echo '```'
+            else
+              echo 'No result line was captured; read the job log.'
+            fi
+            echo ''
+            echo 'The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the'
+            echo 'job log. It prints ids, counts and keyed references, never a record'"'"'s text.'
+            echo 'This version only reports; nothing was written.'
+          } >> "$GITHUB_STEP_SUMMARY"

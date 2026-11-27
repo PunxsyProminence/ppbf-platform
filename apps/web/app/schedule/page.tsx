@@ -258,6 +258,7 @@ function newRequestKey(): string {
    server answers. Storage can be blocked or full: every touch is in a try, and
    the page works without it (the key then lives in memory only, as before). */
 const PENDING_CLASS_KEY = 'ppbf.schedule.pendingCreateClassKey';
+
 const STORED_KEY_SHAPE = /^[A-Za-z0-9_-]{8,128}$/;
 
 function pendingClassKey(): string | null {
@@ -284,6 +285,16 @@ function forgetPendingClassKey(): void {
     // Nothing to clear if storage cannot be reached.
   }
 }
+
+/* THE PLAN A NEW CLASS KEEPS (lane W4-5, SP-4b; OW27-29 A, "Class keeps the plan; Start runs it",
+   docs/current/OWNER_DECISIONS.md:1514-1523). Session Plans' "Schedule a class" opens this page with
+   ?plan=<script_id>. The form is not filled from the plan: filling it was option B, not chosen. */
+type ClassPlan = { scriptId: string; name: string };
+
+/* create_class's refusal of a plan this gym does not have (CLASS_PLAN_NOT_FOUND,
+   src/server/pilot/schedulerDb.ts:212), in plain words. */
+const CLASS_PLAN_NOT_FOUND_WORDS =
+  'That session plan was not found in this gym, so nothing was scheduled. Choose it again on Session Plans, or schedule without a plan.';
 
 /* What Repeat weekly will make, before anything is sent. PROPOSED copy. */
 function repeatPreview(startAt: string, endAt: string, repeat: WeeklyRepeat): string {
@@ -312,6 +323,17 @@ const HOLD_REASON_WORDS: Readonly<Record<string, string>> = {
 
 /** The admin's coach picker: active coaches of this gym only, the set
  *  review_coaching_request's assertActiveCoachAccount accepts. */
+/**
+ * The words for classes scheduled. With a session plan they name it, so the plan line going from
+ * the form never reads as "dropped" (App Overwatch on #2240, 7216136881: "A"); without one they are
+ * as before.
+ */
+function classesScheduledWords(count: number, planName: string | null): string {
+  const plan = planName ? ` with the session plan ${planName}` : '';
+  if (count > 1) return `${count} weekly classes scheduled${plan}.`;
+  return planName ? `Class scheduled${plan}.` : 'Class scheduled successfully.';
+}
+
 function coachOptionsFrom(members: unknown): CoachOption[] {
   if (!Array.isArray(members)) return [];
   const options = coachOptionRows(members);
@@ -603,6 +625,86 @@ export default function SchedulerPage() {
     loadSchedulerState().catch((err) => console.error('Failed to load scheduler state:', err));
   }, [loadSchedulerState]);
 
+  // The plan named by ?plan= (ClassPlan above), until it is dropped. planRead: undefined while it
+  // is read, null when it could not be read, so the class is scheduled without one.
+  const [planAsked, setPlanAsked] = useState<string | null>(null);
+  const [planRead, setPlanRead] = useState<ClassPlan | null | undefined>(undefined);
+  // Read in an effect, as Session Plans reads ?script= (app/coach/session-scripts/page.tsx:357-364),
+  // not with useSearchParams, which needs a Suspense boundary on a prerendered page
+  // (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/use-search-params.md:183).
+  useEffect(() => {
+    void (async () => {
+      const asked = await Promise.resolve(new URLSearchParams(window.location.search).get('plan'));
+      if (asked) setPlanAsked(asked);
+    })();
+  }, []);
+  // Read only for a role with Schedule New Class (roleCanManageClasses): a parent or an athlete makes
+  // no plan read. The GET answers { script }, the plan with its name
+  // (app/api/pilot/session-scripts/route.ts:62-67).
+  const planToRead = roleCanManageClasses(role) ? planAsked : null;
+  useEffect(() => {
+    if (planToRead === null) return;
+    let current = true;
+    // Gives up after 8 seconds, as the read of today's classes does (components/SessionClassPicker.tsx,
+    // fetchTieableClasses), so a read that never answers cannot hold Schedule Class (reviewers L and
+    // M on #2240): it ends as "could not be read", and the class is scheduled without a plan.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    void (async () => {
+      let read: ClassPlan | null = null;
+      try {
+        const url = `${apiBase()}/api/pilot/session-scripts?script_id=${encodeURIComponent(planToRead)}`;
+        const response = await fetch(url, { method: 'GET', credentials: 'include', signal: controller.signal });
+        const script = response.ok ? ((await response.json()) as { script?: { script_id?: unknown; name?: unknown } | null }).script : null;
+        if (typeof script?.script_id === 'string' && typeof script.name === 'string' && script.name.trim() !== '') {
+          read = { scriptId: script.script_id, name: script.name };
+        }
+      } catch {
+        // Not read: no plan is sent.
+      } finally {
+        clearTimeout(timer);
+      }
+      if (current) setPlanRead(read);
+    })();
+    return () => {
+      current = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [planToRead]);
+  // THE FORM IS BROUGHT INTO VIEW (reviewer L on #2240), as Session Plans brings an opened plan
+  // (app/coach/session-scripts/page.tsx:296-309, app scrub CF-08). The form is drawn below the
+  // whole class list, so a coach arriving from "Schedule a class" was left at the top with the plan
+  // out of sight. Once, on arrival, when the list has loaded and the plan read has ended, so the list
+  // cannot grow above it afterwards; and when the plan is dropped, as its button goes and would take
+  // focus with it.
+  const newClassHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [focusNewClass, setFocusNewClass] = useState(0);
+  useEffect(() => {
+    if (focusNewClass === 0) return;
+    const heading = newClassHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView?.({ block: 'center' });
+  }, [focusNewClass]);
+  const arrivalShown = useRef(false);
+  useEffect(() => {
+    if (arrivalShown.current || loading || planToRead === null || planRead === undefined) return;
+    arrivalShown.current = true;
+    setFocusNewClass((count) => count + 1);
+  }, [loading, planToRead, planRead]);
+  // Next keeps window.history.replaceState in step with its router when it is passed null, as its
+  // docs do (node_modules/next/dist/docs/01-app/01-getting-started/04-linking-and-navigating.md:403);
+  // passed Next's own history state, it skips its router (next/dist/client/components/app-router.js,
+  // the `data?.__NA || data?._N` early return; reviewer L on #2240).
+  const dropPlan = () => {
+    setPlanAsked(null);
+    setPlanRead(undefined);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('plan');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  };
+
   // onAnswered: the server replied, whatever it said (never on a lost request).
   async function runAction(
     payload: Record<string, unknown>,
@@ -647,11 +749,16 @@ export default function SchedulerPage() {
         recorded?: boolean;
         class_ids?: unknown[];
         already_created?: boolean;
+        code?: string;
       };
       // The app's own answer, not a gateway page: a timeout there may have landed.
       if (result.ok === true || typeof result.error === 'string') onAnswered?.();
       if (!response.ok || !result.ok) {
-        showError(result.error || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
+        // A refusal carries its code beside its words (jsonError, src/server/pilot/http.ts:186-191).
+        // Every refusal but CLASS_PLAN_NOT_FOUND is shown as the server words it, CLASS_PLAN_RETIRED's
+        // approved text included (src/server/pilot/schedulerDb.ts:177-179).
+        const words = result.code === 'CLASS_PLAN_NOT_FOUND' ? CLASS_PLAN_NOT_FOUND_WORDS : result.error;
+        showError(words || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
         return;
       }
 
@@ -677,7 +784,11 @@ export default function SchedulerPage() {
             : payload.action === 'create_class' && result.already_created === true
               ? 'Already scheduled: your earlier tap went through. Nothing was added twice.'
               : payload.action === 'create_class' && (result.class_ids?.length ?? 0) > 1
-                ? `${result.class_ids?.length} weekly classes scheduled.`
+                // The plan sent is the one this render names (the press built the payload from it).
+                ? classesScheduledWords(
+                  result.class_ids?.length ?? 0,
+                  planRead && payload.script_id === planRead.scriptId ? planRead.name : null,
+                )
                 : successMessage;
       if (payload.action === 'attendance_checkin') {
         const warned = checkInHoldWarningFrom(result.hold_warning);
@@ -1109,7 +1220,33 @@ export default function SchedulerPage() {
               <section className="grid gap-4 lg:grid-cols-2">
                 {roleCanManageClasses(role) ? (
                   <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
-                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
+                    <h3 ref={newClassHeadingRef} tabIndex={-1} className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
+                    {/* One status line whose words change, so the read's end is announced too
+                        (reviewer L on #2240); the button sits outside it. */}
+                    {planAsked === null ? null : (
+                      <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                        <p className="t-body" role="status">
+                          {planRead === undefined
+                            ? 'Reading the session plan…'
+                            : planRead === null
+                              ? 'The session plan could not be read, so this class will be scheduled without one.'
+                              : `Session plan: ${planRead.name}`}
+                        </p>
+                        {planRead ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              dropPlan();
+                              setFocusNewClass((count) => count + 1);
+                            }}
+                            disabled={actionInFlight}
+                            className="btn btn--ghost disabled:opacity-60"
+                          >
+                            Schedule without a plan
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
                     <div>
                       <label htmlFor="new-class-title" className="t-label">
                         Class title
@@ -1268,13 +1405,16 @@ export default function SchedulerPage() {
                             capacity: newClassCapacity,
                             ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
                             request_key: createClassKey,
+                            // Sent once; the route puts it on every class of a repeat
+                            // (app/api/pilot/scheduler/route.ts:881-882).
+                            ...(planRead ? { script_id: planRead.scriptId } : {}),
                             ...(newClassRepeat
                               ? 'weeks' in newClassRepeatRule
                                 ? { repeat_weeks: newClassRepeatRule.weeks }
                                 : { repeat_until: newClassRepeatRule.until }
                               : {}),
                           },
-                          'Class scheduled successfully.',
+                          classesScheduledWords(1, planRead ? planRead.name : null),
                           () => {
                             setNewClassTitle('');
                             setNewClassStartAt('');
@@ -1285,6 +1425,7 @@ export default function SchedulerPage() {
                             setNewClassRepeatMode('weeks');
                             setNewClassRepeatWeeks(String(REPEAT_WEEKS_DEFAULT));
                             setNewClassRepeatUntil('');
+                            dropPlan();
                           },
                           () => {
                             forgetPendingClassKey();
@@ -1292,7 +1433,10 @@ export default function SchedulerPage() {
                           },
                         );
                       }}
-                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
+                      // Held while ?plan= is being read: a press then would schedule the class
+                      // without the plan the screen says it is reading.
+                      disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)
+                        || (planAsked !== null && planRead === undefined)}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
                       Schedule Class
