@@ -6,11 +6,15 @@ name: cleanup-audit-test-records
 # text in the pilot schema. Jason ruled "2A", remove them (OD-2026-10-11-009
 # item 2); App Overwatch's GO, QR and QS answers are on #2227.
 #
-# THIS VERSION ONLY REPORTS. There is no mode input and no apply variable: the
-# script has no write path and refuses an apply request. The apply, with its
-# confirm phrase, kinds and reviewed fingerprint, comes in B6-3. App Overwatch
-# runs this dry run; a production dispatch runs in the production environment,
-# which holds it for that environment's approval, as RR-1's workflow does.
+# mode dry-run (the default) only reports; kinds, when given, are bound into
+# its fingerprint. mode apply (B6-3) acts only on the plan that was reviewed: it
+# needs kinds, confirm_delete set to the phrase, and expected_fingerprint set
+# to the plan_fingerprint of a dry run of the same scope and the same kinds; the
+# script locks the planned rows, recomputes the fingerprint and refuses on any
+# difference, before its first write. Each apply needs Jason's
+# word (the brief: production data). A production dispatch runs in the
+# production environment, which holds it for that environment's approval, as
+# RR-1's workflow does.
 #
 # The repository is public, so this log is too. The script prints no free text
 # and no raw person id: person ids print as an HMAC under
@@ -44,6 +48,26 @@ on:
         description: An organization_id, or ALL_ORGANIZATIONS for every organization
         required: true
         type: string
+      mode:
+        description: Report the records (dry run), or act on the reviewed plan
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      kinds:
+        description: The kinds to act on (apply) or to bind into the dry run's fingerprint, comma separated (classes, tvs, test-organizations, hiit-fit)
+        required: false
+        type: string
+      confirm_delete:
+        description: For apply mode, type DELETE AUDIT TEST RECORDS exactly
+        required: false
+        type: string
+      expected_fingerprint:
+        description: For apply mode, the plan_fingerprint (sha256:...) printed by the dry run you reviewed
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -74,6 +98,10 @@ jobs:
           TARGET: ${{ inputs.target }}
           CONFIRM_TARGET: ${{ inputs.confirm_target }}
           ORGANIZATION: ${{ inputs.organization }}
+          MODE: ${{ inputs.mode }}
+          KINDS: ${{ inputs.kinds }}
+          CONFIRM_DELETE: ${{ inputs.confirm_delete }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
         run: |
           set -euo pipefail
           if [ "$TARGET" != "$CONFIRM_TARGET" ]; then
@@ -87,8 +115,34 @@ jobs:
           # A line break would let the rest of the value start a line of the
           # public log (npm echoes its arguments), where GitHub reads it as a
           # workflow command.
-          if [[ "$ORGANIZATION" =~ [[:cntrl:]] ]]; then
-            echo "::error::organization must be one line, with no control characters."
+          if [[ "$ORGANIZATION$KINDS$CONFIRM_DELETE$EXPECTED_FINGERPRINT" =~ [[:cntrl:]] ]]; then
+            echo "::error::organization, kinds, confirm_delete and expected_fingerprint must be one line, with no control characters."
+            exit 1
+          fi
+          if [ -n "$KINDS" ] && [[ ! "$KINDS" =~ ^[a-z-]+(,[a-z-]+)*$ ]]; then
+            echo "::error::kinds must be classes, tvs, test-organizations or hiit-fit, comma separated, no spaces."
+            exit 1
+          fi
+          if [ "$MODE" = "dry-run" ]; then
+            if [ -n "$CONFIRM_DELETE$EXPECTED_FINGERPRINT" ]; then
+              echo "::error::confirm_delete and expected_fingerprint are for apply mode only."
+              exit 1
+            fi
+          elif [ "$MODE" = "apply" ]; then
+            if [ -z "$KINDS" ]; then
+              echo "::error::apply mode needs kinds: exactly the kinds of the dry run you reviewed."
+              exit 1
+            fi
+            if [ "$CONFIRM_DELETE" != "DELETE AUDIT TEST RECORDS" ]; then
+              echo "::error::apply mode needs confirm_delete set to DELETE AUDIT TEST RECORDS exactly."
+              exit 1
+            fi
+            if [[ ! "$EXPECTED_FINGERPRINT" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::apply mode needs expected_fingerprint set to the plan_fingerprint printed by the dry run you reviewed."
+              exit 1
+            fi
+          else
+            echo "::error::mode must be dry-run or apply."
             exit 1
           fi
 
@@ -159,7 +213,10 @@ jobs:
       - name: Check The Database Is Reachable From This Runner
         uses: ./.github/actions/db-preflight
 
-      # The script opens only read-only transactions and rolls each back. Its
+      # A dry run opens only read-only transactions and rolls each back. An
+      # apply happens only when PPBF_AUDIT_TEST_CLEANUP_APPLY is exactly 'true'
+      # (mode apply), with the kinds, the phrase and the reviewed fingerprint;
+      # the script checks each again itself. Its
       # target guard compares the connection with PPBF_EXPECTED_POSTGRES_*: the
       # environment's vars when they are set, otherwise the host and database
       # of the same connection string, so then the target is fixed only by
@@ -167,10 +224,14 @@ jobs:
       # The organization reaches the command as a quoted variable, never by
       # interpolation. The reference key reaches the script through the
       # environment only; no run block names it.
-      - name: Report Audit Test Records
+      - name: Run The Audit Test Record Cleanup
         working-directory: apps/web
         env:
           ORGANIZATION: ${{ inputs.organization }}
+          KINDS: ${{ inputs.kinds }}
+          PPBF_AUDIT_TEST_CLEANUP_APPLY: ${{ inputs.mode == 'apply' }}
+          PPBF_AUDIT_TEST_CLEANUP_CONFIRM: ${{ inputs.confirm_delete }}
+          PPBF_AUDIT_TEST_CLEANUP_EXPECT_FINGERPRINT: ${{ inputs.expected_fingerprint }}
           PPBF_AUDIT_TEST_CLEANUP_REF_KEY: ${{ secrets.PPBF_AUDIT_TEST_CLEANUP_REF_KEY }}
         # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
         # and `tee` would discard a refused run's exit code (actions/runner,
@@ -178,14 +239,17 @@ jobs:
         shell: bash
         run: |
           if [ "$ORGANIZATION" = "ALL_ORGANIZATIONS" ]; then
-            SCOPE=(--all-organizations)
+            ARGS=(--all-organizations)
           else
-            SCOPE=(--organization "$ORGANIZATION")
+            ARGS=(--organization "$ORGANIZATION")
           fi
-          npm run pilot:cleanup-audit-test-records -- "${SCOPE[@]}" 2>&1 | tee -a "$RUNNER_TEMP/tool-output.txt"
+          if [ -n "$KINDS" ]; then
+            ARGS+=(--kinds "$KINDS")
+          fi
+          npm run pilot:cleanup-audit-test-records -- "${ARGS[@]}" 2>&1 | tee -a "$RUNNER_TEMP/tool-output.txt"
 
       # The summary carries the run's settings and the tool's one-line result
-      # (fingerprint, key kind, counts), never the plan itself: the plan is in
+      # (fingerprint, key kind, counts; or what an apply wrote), never the plan itself: the plan is in
       # the log above. It runs only once the guard has passed, so a value the
       # guard refused never reaches the summary.
       - name: Record The Report
@@ -193,19 +257,24 @@ jobs:
         env:
           TARGET: ${{ inputs.target }}
           ORGANIZATION: ${{ inputs.organization }}
+          MODE: ${{ inputs.mode }}
+          KINDS: ${{ inputs.kinds }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
           JOB_STATUS: ${{ job.status }}
         run: |
-          RESULT="$(grep -m1 '"event":"audit_test_cleanup.dry-run"' "$RUNNER_TEMP/tool-output.txt" 2>/dev/null || true)"
+          RESULT="$(grep -m1 -E '"event":"audit_test_cleanup.(dry-run|applied|nothing-to-apply)"' "$RUNNER_TEMP/tool-output.txt" 2>/dev/null || true)"
           REFUSED="$(grep -m1 -E '"event":"audit_test_cleanup.(refused|failed)"' "$RUNNER_TEMP/tool-output.txt" 2>/dev/null || true)"
           {
-            echo '### Audit test record report (dry run)'
+            echo "### Audit test record cleanup ($MODE)"
             echo ''
             echo "- target: \`$TARGET\`"
             echo "- organization: \`$ORGANIZATION\`"
+            echo "- kinds: \`${KINDS:-none}\`"
+            echo "- expected fingerprint: \`${EXPECTED_FINGERPRINT:-none}\`"
             echo "- result: \`$JOB_STATUS\`"
             echo ''
             if [ -n "$RESULT" ]; then
-              echo 'The tool'"'"'s result line (fingerprint, key kind, counts):'
+              echo 'The tool'"'"'s result line (fingerprint and counts; for an apply, what it wrote):'
               echo ''
               echo '```json'
               printf '%s\n' "$RESULT"
@@ -220,7 +289,11 @@ jobs:
               echo 'No result line was captured; read the job log.'
             fi
             echo ''
-            echo 'The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the'
-            echo 'job log. It prints ids, counts and keyed references, never a record'"'"'s text.'
-            echo 'This version only reports; nothing was written.'
+            if [ "$MODE" = "apply" ]; then
+              echo 'Apply mode: the applied, nothing-to-apply or refused line above says what was written, if anything.'
+            else
+              echo 'The full plan (classes, TVs, test gyms, "hiit fit", the sweep) is in the'
+              echo 'job log. It prints ids, counts and keyed references, never a record'"'"'s text.'
+              echo 'Dry run: nothing was written.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
