@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { ConflictError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
 import { findRegistrationBlockingHold } from './trainingHolds';
 
@@ -22,6 +22,11 @@ export interface SchedulerClass {
   status: 'open' | 'full' | 'cancelled';
   created_at: string;
   updated_at: string;
+  // The session plan this class runs (lane W4-5 SP-3); null = none. Only
+  // createSchedulerClasses writes it; listSchedulerStore and getSchedulerClassById
+  // do not select it, because reading a class's plan is SP-4's (the W4-5 plan's
+  // SP-4 allowlist, #2189).
+  script_id?: string | null;
 }
 
 export interface SchedulerRegistration {
@@ -156,6 +161,14 @@ export async function getSchedulerClassById(organizationId: string, classId: str
  * refused, and the transaction takes back anything this call inserted. Two
  * submits racing on one key: the second waits on the first's rows, then finds
  * them.
+ *
+ * THE PLAN (lane W4-5, SP-3). Every class of one create names the same session
+ * plan, or none (the route puts one script_id on every record). A plan named
+ * must be one of this gym's, checked here so the caller is told in words
+ * (CLASS_PLAN_NOT_FOUND, 400); the foreign key pilot_scheduler_classes_script_fk
+ * (infra/azure/pilot_slice_postgres_scheduler_class_plan_migration.sql) is the
+ * backstop. The plan is part of "exactly as asked": the same key with another
+ * plan, or with none, is CLASS_REQUEST_KEY_REUSED.
  */
 export type CreateClassesOutcome = 'created' | 'already_created';
 
@@ -172,39 +185,60 @@ export async function createSchedulerClasses(
     column('class_id'), column('title'), column('start_at'), column('end_at'), column('location'),
     column('capacity'), column('scheduled_by_account_id'), column('coach_account_id'),
     column('covering_coach_account_id'), column('status'), column('created_at'), column('updated_at'),
+    column('script_id'),
   ];
+  const scriptId = items[0]?.script_id ?? null;
+  if (items.some((item) => (item.script_id ?? null) !== scriptId)) {
+    // The route never builds this; a caller that does is wrong, not the user.
+    throw new Error('createSchedulerClasses: every class of one create must name the same plan');
+  }
   return withTransaction(async (client) => {
+    if (scriptId !== null) {
+      // FOR KEY SHARE is the lock the foreign key's own check takes
+      // (contentImport/apply.ts:88), held to commit. A DELETE takes FOR UPDATE,
+      // which conflicts with it (PostgreSQL docs, "Row-Level Locks"), so the
+      // plan row cannot go between this read and the insert below.
+      const plan = await client.query(
+        `select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2 for key share`,
+        [organizationId, scriptId],
+      );
+      if (plan.rows.length === 0) {
+        throw new ValidationError('script_id must name a session plan of this gym', 'CLASS_PLAN_NOT_FOUND');
+      }
+    }
     const inserted = await client.query<{ class_id: string }>(
       `insert into pilot.scheduler_classes (
          organization_id, class_id, title, start_at, end_at, location, capacity,
          scheduled_by_account_id, coach_account_id, covering_coach_account_id,
-         status, created_at, updated_at
+         status, created_at, updated_at, script_id
        )
        select $1::text, r.*
          from unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
                      $7::integer[], $8::text[], $9::text[], $10::text[], $11::text[],
-                     $12::timestamptz[], $13::timestamptz[])
+                     $12::timestamptz[], $13::timestamptz[], $14::text[])
            as r(class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id,
-                coach_account_id, covering_coach_account_id, status, created_at, updated_at)
+                coach_account_id, covering_coach_account_id, status, created_at, updated_at, script_id)
        on conflict (organization_id, class_id) do nothing
        returning class_id`,
       params,
     );
     if (inserted.rows.length === items.length) return 'created';
     if (inserted.rows.length === 0) {
-      // The same request again only if every class is there as asked; status and
-      // cover are not compared (a class cancelled since is still the one made).
+      // The same request again only if every class is there as asked, its plan
+      // included; status and cover are not compared (a class cancelled since is
+      // still the one made).
       const same = await client.query<{ count: string }>(
         `select count(*)::text as count
            from pilot.scheduler_classes c
            join unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
-                       $7::integer[], $8::text[])
-             as r(class_id, title, start_at, end_at, location, capacity, coach_account_id)
+                       $7::integer[], $8::text[], $9::text[])
+             as r(class_id, title, start_at, end_at, location, capacity, coach_account_id, script_id)
              on c.class_id = r.class_id
           where c.organization_id = $1 and c.title = r.title and c.start_at = r.start_at
             and c.end_at = r.end_at and c.location = r.location and c.capacity = r.capacity
-            and c.coach_account_id = r.coach_account_id`,
-        [...params.slice(0, 7), column('coach_account_id')],
+            and c.coach_account_id = r.coach_account_id
+            and c.script_id is not distinct from r.script_id`,
+        [...params.slice(0, 7), column('coach_account_id'), column('script_id')],
       );
       if (Number(same.rows[0]?.count ?? 0) === items.length) return 'already_created';
     }

@@ -47,7 +47,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { ConflictError } from './errors';
+import { ConflictError, PilotError, ValidationError } from './errors';
 import { createSchedulerClasses, type SchedulerClass } from './schedulerDb';
 
 jest.setTimeout(180_000);
@@ -65,6 +65,11 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 
 const ORG_ID = 'org-create-classes';
 const COACH_ID = 'acct-coach-1';
+// The plan a class runs (lane W4-5, SP-3): two plans of this gym, one of another gym's.
+const OTHER_ORG_ID = 'org-create-classes-other';
+const PLAN_ID = 'plan-create-classes-1';
+const SECOND_PLAN_ID = 'plan-create-classes-2';
+const OTHER_PLAN_ID = 'plan-create-classes-other';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -282,5 +287,114 @@ describe('createSchedulerClasses (Repeat weekly)', () => {
     const client = await freshDatabase('lw_create_single');
     await expect(createSchedulerClasses(ORG_ID, weeklyClasses('solo').slice(0, 1))).resolves.toBe('created');
     expect((await stored(client)).map((row) => row.class_id)).toEqual(['solo-0']);
+  });
+});
+
+/** Two plans of this gym and one of another gym's, each authored by a coach of its own gym. */
+async function seedPlans(client: Client) {
+  for (const [org, author] of [[ORG_ID, 'acct-plan-author'], [OTHER_ORG_ID, 'acct-plan-author-other']] as const) {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [org],
+    );
+    await client.query(`insert into pilot.accounts (account_id, role, organization_id) values ($1, 'coach', $2)`, [author, org]);
+    // A plan's discipline (default 'boxing') must be one of its gym's (pilot_session_scripts_discipline_fk).
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+      [org],
+    );
+  }
+  for (const [org, plan, author] of [
+    [ORG_ID, PLAN_ID, 'acct-plan-author'],
+    [ORG_ID, SECOND_PLAN_ID, 'acct-plan-author'],
+    [OTHER_ORG_ID, OTHER_PLAN_ID, 'acct-plan-author-other'],
+  ] as const) {
+    await client.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+       values ($1, $2, $2, 1, 'Evening plan', $3)`,
+      [org, plan, author],
+    );
+  }
+}
+
+async function storedPlans(client: Client) {
+  const result = await client.query(
+    `select class_id, script_id from pilot.scheduler_classes where organization_id = $1 order by start_at, class_id`,
+    [ORG_ID],
+  );
+  return result.rows.map((row) => [row.class_id, row.script_id]);
+}
+
+describe('createSchedulerClasses names the plan the classes run (lane W4-5, SP-3)', () => {
+  test('a plan of the gym is stored on every class of a weekly repeat', async () => {
+    const client = await freshDatabase('w45_plan_weekly');
+    await seedPlans(client);
+    await expect(createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }))).resolves.toBe('created');
+    expect(await storedPlans(client)).toEqual([['a-0', PLAN_ID], ['a-1', PLAN_ID], ['a-2', PLAN_ID], ['a-3', PLAN_ID]]);
+  });
+
+  test.each([
+    ['another gym\'s plan', OTHER_PLAN_ID],
+    ['an id that names no plan', 'plan-nobody-made'],
+  ])('%s is refused with CLASS_PLAN_NOT_FOUND (400), and nothing is written', async (_label, plan) => {
+    const client = await freshDatabase('w45_plan_refused');
+    await seedPlans(client);
+    const error = await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: plan })).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error).toMatchObject({
+      status: 400,
+      code: 'CLASS_PLAN_NOT_FOUND',
+      message: 'script_id must name a session plan of this gym',
+    });
+    expect(await stored(client)).toEqual([]);
+  });
+
+  test('the same key with the same plan again adds nothing and says so', async () => {
+    const client = await freshDatabase('w45_plan_replay');
+    await seedPlans(client);
+    await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }));
+    const before = await storedPlans(client);
+
+    await expect(createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: PLAN_ID }))).resolves.toBe('already_created');
+    expect(await storedPlans(client)).toEqual(before);
+  });
+
+  test.each<[string, string | null, string | null]>([
+    ['made with a plan, sent again with another', PLAN_ID, SECOND_PLAN_ID],
+    ['made with a plan, sent again with none', PLAN_ID, null],
+    ['made with no plan, sent again with one', null, PLAN_ID],
+  ])('the same key %s is CLASS_REQUEST_KEY_REUSED and changes nothing', async (_label, first, again) => {
+    const client = await freshDatabase('w45_plan_key_other');
+    await seedPlans(client);
+    await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: first }));
+    const before = await storedPlans(client);
+
+    const error = await createSchedulerClasses(ORG_ID, weeklyClasses('a', { script_id: again })).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({ status: 409, code: 'CLASS_REQUEST_KEY_REUSED' });
+    expect(await storedPlans(client)).toEqual(before);
+  });
+
+  test('a create with no plan stores none, as before', async () => {
+    const client = await freshDatabase('w45_plan_none');
+    await seedPlans(client);
+    await expect(createSchedulerClasses(ORG_ID, weeklyClasses('a'))).resolves.toBe('created');
+    expect(await storedPlans(client)).toEqual([['a-0', null], ['a-1', null], ['a-2', null], ['a-3', null]]);
+  });
+
+  test('classes of one create naming different plans are a programming error, and nothing is written', async () => {
+    const client = await freshDatabase('w45_plan_mixed');
+    await seedPlans(client);
+    const classes = weeklyClasses('a', { script_id: PLAN_ID });
+    classes[2] = { ...classes[2], script_id: SECOND_PLAN_ID };
+
+    const error = await createSchedulerClasses(ORG_ID, classes).catch((caught) => caught);
+    expect(error).toBeInstanceOf(Error);
+    // A plain Error: jsonError answers it as an opaque 500, not as the caller's fault.
+    expect(error).not.toBeInstanceOf(PilotError);
+    expect((error as Error).message).toBe('createSchedulerClasses: every class of one create must name the same plan');
+    expect(await stored(client)).toEqual([]);
   });
 });
