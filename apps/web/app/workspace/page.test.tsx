@@ -8,7 +8,7 @@
 // no way back.
 
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 
 import WorkspacePage from './page';
 
@@ -54,6 +54,13 @@ const FORBIDDEN_HREF_PREFIXES = [
 
 const originalFetch = global.fetch;
 
+const FLOOR_CLASSES = {
+  ok: true,
+  read_at: '2026-11-25T23:12:00.000Z',
+  classes: [{ title: 'Bag work', start_at: '2026-11-25T23:00:00.000Z', end_at: '2026-11-26T00:00:00.000Z', room: 'Ring 1', count: 3 }],
+  rounds: [],
+};
+
 function fetchMock(notices: unknown[] = []) {
   return jest.fn(async (url: string) => {
     if (url.includes('/api/pilot/auth/session')) {
@@ -72,6 +79,11 @@ function fetchMock(notices: unknown[] = []) {
 
     if (url.includes('/api/pilot/announcements/get')) {
       return { ok: true, json: async () => ({ ok: true, announcements: notices }) } as Response;
+    }
+
+    // What is running on the floor now (lane W4-3, FN-4b): one class, with how many are here.
+    if (url.includes('/api/pilot/on-the-floor/classes')) {
+      return { ok: true, json: async () => FLOOR_CLASSES } as Response;
     }
 
     throw new Error(`unexpected request: ${url}`);
@@ -190,4 +202,33 @@ it.each(ADMITS_STAFF)('links %s, whose own gate admits staff and volunteers', as
   const gate = page.match(/allowedRoles=\{\[([^\]]*)\]\}/);
   expect(gate?.[1]).toMatch(/'staff'/);
   expect(gate?.[1]).toMatch(/'volunteer'/);
+});
+
+// Lane W4-3, FN-4b (GO on #2192, 7206014991; QH): the classes running now, and how many are here, under
+// the header; and the sentence that said attendance is no part of this role, reworded as QH gives it.
+describe('what is running on the floor now (lane W4-3, FN-4b)', () => {
+  it('sits directly under the header, read once, with each class\'s count', async () => {
+    global.fetch = fetchMock() as unknown as typeof fetch;
+    render(<WorkspacePage />);
+    await sessionRead();
+    const line = screen.getByRole('region', { name: 'What is running on the floor' });
+    expect(await within(line).findByText(/^Running now: Bag work, .+ to .+, Ring 1, 3 here$/)).toBeTruthy();
+    expect(line.previousElementSibling?.tagName).toBe('HEADER');
+    const reads = (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).includes('/api/pilot/on-the-floor/classes'));
+    expect(reads).toHaveLength(1);
+  });
+
+  it('says what the line above shows, in QH\'s words, and no longer that attendance is out of reach', async () => {
+    global.fetch = fetchMock() as unknown as typeof fetch;
+    render(<WorkspacePage />);
+    await sessionRead();
+    const heading = screen.getByRole('heading', { name: 'What Your Sign-In Does Not Open' });
+    const text = (heading.nextElementSibling?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    expect(text).toBe(
+      'Athlete records, the class schedule and attendance records, video, intake review, and the admin and board '
+      + 'consoles are not part of staff or volunteer access. The line above shows only the classes running now and '
+      + 'how many are here. If your work needs one of them, ask an organization admin to change your role rather '
+      + 'than opening a page that will refuse you.',
+    );
+  });
 });

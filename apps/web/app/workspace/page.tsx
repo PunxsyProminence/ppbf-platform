@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import OnTheFloorClassesLine from '@/components/OnTheFloorClassesLine';
 import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -142,6 +143,9 @@ function WorkspaceContent() {
           </div>
         </header>
 
+        {/* What is running on the floor now, and how many are here (lane W4-3, FN-4b). */}
+        <OnTheFloorClassesLine />
+
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Your Account</h2>
           {/* The role in words. The raw account and organization ids are not
@@ -210,8 +214,10 @@ function WorkspaceContent() {
               does not open". */}
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What Your Sign-In Does Not Open</h2>
           <p className="t-body mt-[var(--s3)] max-w-[64ch]">
-            Athlete records, class scheduling and attendance, video, intake review, and the admin and
-            board consoles are not part of staff or volunteer access. If your work needs one of them,
+            {/* Reworded for the line above (lane W4-3, FN-4b; QH, GO on #2192, 7206014991). */}
+            Athlete records, the class schedule and attendance records, video, intake review, and the admin
+            and board consoles are not part of staff or volunteer access. The line above shows only the
+            classes running now and how many are here. If your work needs one of them,
             ask an organization admin to change your role rather than opening a page that will refuse
             you.
           </p>
