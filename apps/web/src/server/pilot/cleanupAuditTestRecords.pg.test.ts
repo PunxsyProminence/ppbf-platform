@@ -558,6 +558,23 @@ describe('the fingerprint', () => {
     }
   });
 
+  test('moves when a planned class stops running, with its times unchanged (only the clock moves)', async () => {
+    const { client } = await freshDatabase();
+    try {
+      await client.query(
+        "update pilot.scheduler_classes set start_at = now() - interval '1 hour', end_at = now() + interval '2 seconds' where class_id = 'c-strict-1'",
+      );
+      const before = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(before.classes!.find((c) => c.class_id === 'c-strict-1')!.apply_would_refuse).toEqual(['CLASS_RUNNING_NOW']);
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      const after = await report(client, { organizationId: GYM }, { log: () => {} });
+      expect(after.classes!.find((c) => c.class_id === 'c-strict-1')!.apply_would_refuse).toEqual([]);
+      expect(after.plan_fingerprint).not.toBe(before.plan_fingerprint);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('does not move with a login in a "hiit fit" that already holds rows: only which tables hold rows counts', async () => {
     const { client } = await freshDatabase();
     try {
@@ -587,7 +604,6 @@ describe('the fingerprint', () => {
     ['a planned class\'s title, same marker', "update pilot.scheduler_classes set title = 'ZZ-AUDIT renamed' where class_id = 'c-strict-1'"],
     ['a tied run\'s state', "update pilot.session_script_runs set run_state = 'abandoned' where run_id = 'run-done'"],
     ['"hiit fit"\'s name', `update pilot.organizations set organization_name = 'hiit fit studio' where organization_id = '${HIIT_FIT_ID}'`],
-    ['whether a planned class is running now', "update pilot.scheduler_classes set start_at = now() - interval '1 minute', end_at = now() + interval '1 hour' where class_id = 'c-strict-1'"],
     ['the session on a STRICT TV', "update pilot.gym_tvs set current_run_id = 'run-live' where tv_id = 'tv-strict'",
       "update pilot.gym_tvs set device_key_hash = 'k', paired_at = '2026-10-19T22:00:00Z', current_run_id = 'run-done' where tv_id = 'tv-strict'"],
     ['a register mark let go', "update pilot.session_run_athletes set register_class_id = null where run_id = 'run-done'"],
