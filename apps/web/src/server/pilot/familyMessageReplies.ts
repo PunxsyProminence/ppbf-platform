@@ -17,10 +17,10 @@
  *   - The athlete reads none of it (Q-C A).
  *
  * A reply holds only what a guardian wrote; there is no staff-only field on
- * it to strip. No push, and no email that says what was written: a reply is
- * there when a coach opens the athlete's family notes. A staff member who
- * switches email alerts on gets only "open the app" (lane W4-1,
- * emailAlertEvents.ts).
+ * it to strip. No email or push says what was written: a reply is there when
+ * a coach opens the athlete's family notes. A staff member who switches email
+ * alerts on gets only "open the app" (lane W4-1, emailAlertEvents.ts), and so
+ * does a browser they turn push on in (lane W5-WP, pushAlertSender.ts).
  */
 import { randomUUID } from 'node:crypto';
 
