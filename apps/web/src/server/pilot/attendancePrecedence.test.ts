@@ -116,6 +116,16 @@ const LEGACY_READERS = new Set<string>([
   // statements names one attendance relation; nothing is summed or crossed.
   // Approved by name in "OVERWATCH: GO W4-3" on #2192.
   'src/server/pilot/onTheFloor.ts',
+  // How many are here, for the board's, the platform owner's and the staff-role
+  // and volunteer homes (lane W4-3, FN-4a; Q12 A as App Overwatch applied it).
+  // It counts present register marks by the line's own rule (QD A: a family's
+  // mark from the class's start, a staff mark from when written), which needs
+  // the register row's method and who checked in, and each class's own count;
+  // the reconciled view carries neither and would add sources (FN-0 F9). Register
+  // only, no run table (flag 12); each statement names one attendance relation;
+  // nothing is summed or crossed. Not attendance; no figure reads it.
+  // PENDING App Overwatch's answer to #2192 comment 7206129227.
+  'src/server/pilot/floorCount.ts',
 ]);
 
 const SCANNED_DIRECTORIES = ['app', 'components', 'src'];
