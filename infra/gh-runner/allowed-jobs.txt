@@ -7,6 +7,7 @@ apply-migrations.yml:apply
 approve-library-baseline.yml:approve
 backup.yml:dump
 check-database.yml:check
+cleanup-audit-test-records.yml:cleanup
 cleanup-intake-research-requirements.yml:cleanup
 cleanup-membership-orphans.yml:cleanup
 deploy-production.yml:build-and-deploy
