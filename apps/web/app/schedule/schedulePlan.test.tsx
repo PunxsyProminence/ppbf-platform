@@ -353,12 +353,16 @@ describe('the plan line after review', () => {
     arriveWithPlan();
     await renderPage();
     await screen.findByText(`Session plan: ${PLAN_NAME}`);
+    // The arrival's own move to the heading first, so it cannot be what passes this test.
+    const heading = screen.getByRole('heading', { name: 'Schedule New Class' });
+    await waitFor(() => expect(heading).toHaveFocus());
     const drop = screen.getByRole('button', { name: 'Schedule without a plan' });
     drop.focus();
+    expect(drop).toHaveFocus();
 
     fireEvent.click(drop);
 
-    expect(screen.getByRole('heading', { name: 'Schedule New Class' })).toHaveFocus();
+    await waitFor(() => expect(heading).toHaveFocus());
   });
 
   test('dropping the plan rewrites the address with no history state of Next\'s, so its router sees it', async () => {
