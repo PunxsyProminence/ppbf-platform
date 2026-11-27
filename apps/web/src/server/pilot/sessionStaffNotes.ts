@@ -154,8 +154,8 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
 /**
  * Inside a write's transaction: the actor's staff role HERE, if the actor
  * STILL holds an active staff membership in this organization on an active,
- * undeleted account; otherwise null. The membership and account rows are
- * share-locked until the write commits.
+ * undeleted account; otherwise null. The account and membership rows are
+ * share-locked, in that order, until the write commits.
  *
  * The same question staffNoteRoleInOrganization asks before the transaction,
  * asked again inside it: an admin ending the membership, or deactivating or
