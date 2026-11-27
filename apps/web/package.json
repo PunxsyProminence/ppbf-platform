@@ -287,6 +287,7 @@
     "test:migrations:email-alert-switches": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertSwitchesMigration.pg.test.ts --testTimeout=300000",
     "test:migrations:email-alert-sweep-indexes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertSweepIndexes.pg.test.ts --testTimeout=300000",
     "test:migrations:web-push": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/webPushMigration.pg.test.ts --testTimeout=300000",
+    "test:migrations:push-subscriptions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/pushSubscriptions.pg.test.ts --testTimeout=300000",
     "test:migrations:email-alert-switch-store": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/emailAlertSwitches.pg.test.ts --testTimeout=300000",
     "test:migrations:organization-email-alert-events": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/organizationEmailAlertEventsMigration.pg.test.ts --testTimeout=300000",
     "test:migrations:email-alert-gym-events": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/organizationEmailAlertEvents.pg.test.ts --testTimeout=300000",
