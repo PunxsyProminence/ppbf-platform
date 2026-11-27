@@ -348,6 +348,7 @@ describe('the register count on a real database (QD A: the line\'s own rule)', (
     await mark(gym, 'later-youth', 'a8', 'present', at(-60), 'parent');
     await mark(gym, 'later-youth', 'a9', 'present', at(-60), 'self');
     await mark(gym, 'later-youth', 'a10', 'present', at(-15));
+    await mark(gym, 'later-youth', 'a13', 'present', at(-60), 'old_parent'); // a parent's mark in the older form: also held
     // noon-class: ended, but today's gym day, so it counts in the total.
     await mark(gym, 'noon-class', 'a11', 'present', at(-170));
     // yesterday and the other gym: never counted here.
