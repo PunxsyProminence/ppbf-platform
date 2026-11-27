@@ -17,7 +17,9 @@ import type { ShadowValidationResult } from './shadowChat';
  * in-app safety escalation Jason ruled for an athlete-scoped high-risk SHADOW
  * message (OD-2026-10-01-008 section 3, applied to F-076 by OD-2026-10-15-002):
  * the athlete's coach of record, any coach actively covering them, and admins.
- * No email, text or push -- the escalation list is the only channel.
+ * No text or push, and no email that says what happened -- the escalation list
+ * is the only place it is read. A staff member who switches email alerts on
+ * gets only "open the app" (lane W4-1, emailAlertEvents.ts).
  *
  * SHADOW STILL ANSWERS (OD-2026-10-10-007). The mark this module adds to the
  * request carries no topic and no fallback classification, so the answer, its

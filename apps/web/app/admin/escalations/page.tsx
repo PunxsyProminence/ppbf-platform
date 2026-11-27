@@ -325,8 +325,9 @@ export default function EscalationsPage() {
               Escalations
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              This platform sends no email or push notification -- a near miss, pain report, or safety-gate flag
-              severe enough to escalate lands here, and only here. Nothing auto-resolves; a human closes every row.
+              No email says what happened -- a near miss, pain report, or safety-gate flag severe enough to
+              escalate is read here, and only here. Staff who switch email alerts on get only &ldquo;open the
+              app&rdquo;. Nothing auto-resolves; a human closes every row.
             </p>
             {/* Room DNA (clinic): both of these were --locked red, the colour
                 this room reserves for a medical or safeguarding fact. One is a

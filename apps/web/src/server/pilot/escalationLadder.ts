@@ -9,9 +9,10 @@ import { athleteNotDeletedSql } from './deletedAthletes';
 /**
  * Red Flag Escalation ladder (capability #194) -- the pull-based surface
  * that puts a near miss, pain report, or safety-gate flag in front of a
- * human without them needing to already know where to look. There is no
- * notification channel in this platform (no email, ever), so this table and
- * the /admin/escalations page that reads it ARE the escalation mechanism.
+ * human without them needing to already know where to look. No email in this
+ * platform says what happened (a staff member who switches email alerts on
+ * gets only "open the app", lane W4-1), so this table and the
+ * /admin/escalations page that reads it ARE the escalation mechanism.
  *
  * Deliberately NOT unified with pilot.compliance_violations /
  * violation_escalations as systems -- violation_escalations (the manual

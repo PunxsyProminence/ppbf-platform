@@ -50,31 +50,93 @@ export interface EmailAlertSource {
   readonly candidates: (from: Date, to: Date) => Promise<EmailAlertCandidate[]>;
 }
 
-export const EMAIL_ALERT_SOURCES: readonly EmailAlertSource[] = [];
-
 /**
  * Queues one send per candidate whose switch is on under that user type and
  * whose gym has the event ticked; nobody else gets a row. A candidate already
- * queued for that event is left as it is. Returns how many rows were written.
+ * queued for that event is left as it is (insert ... on conflict do nothing,
+ * which also takes a candidate named twice), with one exception.
+ *
+ * A RESTORED GYM NOTICE IS OFFERED AGAIN to whoever has certainly not had it
+ * (Overwatch on #2193, comment 7165858842: "A restore sets the notice live
+ * again, so it emails anyone who has not had that notice (one email per person
+ * per notice, OW27-03 B, through the send key)"). A send counts as certainly
+ * not had when no try of it can have reached the person:
+ *   - skipped (the notice retired before it went out, or the person switched
+ *     off at the time, say) with no status or error from any earlier try: every
+ *     claim of it ended in a skip, before Graph. A row with one cannot be shown
+ *     undelivered, since it keeps only its last status and error: an earlier
+ *     try may have reached Graph (a 5xx or timeout after Graph took the mail,
+ *     or a lease that ran out mid-send). So it is not offered again;
+ *   - failed on its first and only try, which a failed row with one try can
+ *     only have done by a final refusal (a Graph 4xx other than 429, a
+ *     malformed address, an empty message: emailAlertSender.ts). A row failed
+ *     after retries cannot be shown undelivered either, and is not offered
+ *     again.
+ * It is offered again only while the notice is active and was changed after
+ * the row became due (updated_at after next_try_at; setAnnouncementActive is
+ * the only write that stamps updated_at, on a retire as on a restore, and a
+ * retire leaves the notice inactive). next_try_at is never later than the
+ * sender's check (every write of it is at or before the row's next claim, and
+ * the claim takes only rows already due), so a restore whose statement starts
+ * after the row became due counts even if the sender read the notice as
+ * retired just before it; updated_at is the restore statement's start, so one
+ * that started before the row became due and committed after the sender's
+ * read is missed, a window of one statement. A skipped row whose notice is
+ * unchanged (a minor's login the source names and the sender refuses) stays
+ * skipped, rather than being queued and skipped again on every tick.
+ *
+ * A failed row keeps its tries (at most 5 in all, plan 5.4) and its last status
+ * and error. A skipped row starts its tries again from 0: every claim of it
+ * ended in a skip before Graph, so the five tries still count only tries that
+ * could reach the person, and a person skipped on every restore is not
+ * dropped from the next one when the skips alone would have used them up
+ * (reviewer A on #2193). The re-offer is its own UPDATE, not an ON CONFLICT DO UPDATE, so a
+ * candidate named twice cannot fail the statement and it locks only the rows
+ * it changes. The sender asks every check again. Returns how many rows were
+ * written or queued again.
  */
 export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCandidate[]): Promise<number> {
   const due = candidates.filter((candidate) =>
     isEmailAlertEventFor(candidate.userType, candidate.eventKind) && UUID_SHAPE.test(candidate.eventId));
   if (due.length === 0) return 0;
   const column = (pick: (candidate: EmailAlertCandidate) => string) => due.map(pick);
-  const written = await query<{ send_id: string }>(
-    `insert into pilot.email_alert_sends (organization_id, account_id, user_type, event_kind, event_id)
-     select c.organization_id, c.account_id, c.user_type, c.event_kind, c.event_id
-       from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
-              as c(organization_id, account_id, user_type, event_kind, event_id)
-       join pilot.email_alert_switches s
-         on s.organization_id = c.organization_id and s.account_id = c.account_id
-        and s.switched_on and s.user_type = c.user_type
-       left join pilot.organization_email_alert_events g
-         on g.organization_id = c.organization_id and g.user_type = c.user_type and g.event_kind = c.event_kind
-      where coalesce(g.ticked, true)
-     on conflict on constraint pilot_email_alert_send_once_key do nothing
-     returning send_id`,
+  const result = await queryOne<{ written: number }>(
+    `with c as (
+       select distinct c.organization_id, c.account_id, c.user_type, c.event_kind, c.event_id
+         from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
+                as c(organization_id, account_id, user_type, event_kind, event_id)
+         join pilot.email_alert_switches s
+           on s.organization_id = c.organization_id and s.account_id = c.account_id
+          and s.switched_on and s.user_type = c.user_type
+         left join pilot.organization_email_alert_events g
+           on g.organization_id = c.organization_id and g.user_type = c.user_type and g.event_kind = c.event_kind
+        where coalesce(g.ticked, true)
+     ),
+     inserted as (
+       insert into pilot.email_alert_sends (organization_id, account_id, user_type, event_kind, event_id)
+       select organization_id, account_id, user_type, event_kind, event_id from c
+       on conflict on constraint pilot_email_alert_send_once_key do nothing
+       returning send_id
+     ),
+     offered_again as (
+       update pilot.email_alert_sends r
+          set status = 'queued', skip_reason = null, finished_at = null,
+              tries = case when r.status = 'skipped' then 0 else r.tries end,
+              next_try_at = clock_timestamp(), user_type = c.user_type
+         from c
+        where r.organization_id = c.organization_id and r.account_id = c.account_id
+          and r.event_kind = c.event_kind and r.event_id = c.event_id
+          and r.event_kind = 'gym_notice'
+          and ((r.status = 'skipped' and r.last_status_code is null and r.last_error_code is null)
+               or (r.status = 'failed' and r.tries = 1))
+          and exists (select 1 from pilot.announcements n
+                       where n.organization_id = r.organization_id
+                         and n.announcement_id = r.event_id::uuid
+                         and n.active
+                         and n.updated_at > r.next_try_at)
+       returning r.send_id
+     )
+     select ((select count(*) from inserted) + (select count(*) from offered_again))::int as written`,
     [
       column((candidate) => candidate.organizationId),
       column((candidate) => candidate.accountId),
@@ -83,7 +145,7 @@ export async function enqueueEmailAlertSends(candidates: readonly EmailAlertCand
       column((candidate) => candidate.eventId),
     ],
   );
-  return written.length;
+  return result?.written ?? 0;
 }
 
 /**
@@ -140,6 +202,7 @@ export interface ClaimedEmailAlertSend {
   readonly account_id: string;
   readonly user_type: EmailAlertUserType;
   readonly event_kind: string;
+  readonly event_id: string;
   readonly tries: number;
   readonly lease_token: string;
 }
@@ -161,7 +224,7 @@ export async function claimDueEmailAlertSends(limit: number): Promise<ClaimedEma
             lease_expires_at = clock_timestamp() + make_interval(secs => $2)
        from due
       where s.send_id = due.send_id
-      returning s.send_id, s.organization_id, s.account_id, s.user_type, s.event_kind, s.tries, s.lease_token`,
+      returning s.send_id, s.organization_id, s.account_id, s.user_type, s.event_kind, s.event_id, s.tries, s.lease_token`,
     [limit, EMAIL_ALERT_LEASE_SECONDS],
   );
 }

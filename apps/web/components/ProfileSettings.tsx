@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import EmailAlertSwitch, { type EmailAlertSwitchStyles } from './EmailAlertSwitch';
 import FightCard from './FightCard';
 import { requiresDocumentLoad } from './cameraDocuments';
 import { clearRoleSession } from './roleSession';
@@ -43,6 +44,14 @@ const CHOICE_BASE =
 const CHOICE_ON = 'border-[color:var(--brass-500)] bg-[rgb(var(--brass-400-rgb)_/_.14)] text-[color:var(--bone-100)]';
 const CHOICE_OFF =
   'border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-500)]';
+const EMAIL_ALERT_STYLES: EmailAlertSwitchStyles = {
+  panel: PANEL,
+  heading: HEADING,
+  help: HELP,
+  choiceBase: CHOICE_BASE,
+  choiceOn: CHOICE_ON,
+  choiceOff: CHOICE_OFF,
+};
 
 export default function ProfileSettings() {
   const [settings, setSettings] = useState<ProfileSettingsPayload | null>(null);
@@ -362,6 +371,10 @@ export default function ProfileSettings() {
           ))}
         </div>
       </section>
+
+      {/* -------------------------------------------------- EMAIL ALERTS -- */}
+      {/* Staff and parents only; it renders nothing for anyone else (EM-2). */}
+      <EmailAlertSwitch styles={EMAIL_ALERT_STYLES} />
 
       {/* -------------------------------------------------------- SIGN-IN -- */}
       <section className={PANEL} aria-labelledby="signin-heading">
