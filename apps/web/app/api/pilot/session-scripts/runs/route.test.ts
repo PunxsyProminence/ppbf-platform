@@ -6,6 +6,7 @@ import {
   SessionScriptRunError,
   getLiveRunForCoach,
   listSettledRunsForScript,
+  startClassPlanRun,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
 import { SessionRunClassError, describeRunClass, listTieableClasses } from '@/src/server/pilot/sessionRunClass';
@@ -25,6 +26,7 @@ jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   ...jest.requireActual('@/src/server/pilot/sessionScriptRuns'),
   getLiveRunForCoach: jest.fn(),
   listSettledRunsForScript: jest.fn(),
+  startClassPlanRun: jest.fn(),
   startSessionScriptRun: jest.fn(),
 }));
 
@@ -32,6 +34,7 @@ const mockPrincipal = jest.mocked(requirePrincipal);
 const mockGetLive = jest.mocked(getLiveRunForCoach);
 const mockListSettled = jest.mocked(listSettledRunsForScript);
 const mockStart = jest.mocked(startSessionScriptRun);
+const mockStartClassPlan = jest.mocked(startClassPlanRun);
 
 const liveRun = {
   organization_id: 'org-1',
@@ -259,6 +262,54 @@ describe('POST runs — start', () => {
       await POST(post(body));
       expect(mockStart).toHaveBeenLastCalledWith('org-1', 'acct-coach', expect.objectContaining({ classId: null }));
     }
+  });
+
+  // Codex P1 on #2241: the class's own plan is resolved by the server when Start is committed.
+  it('class_plan: true starts the class\'s own plan through startClassPlanRun, and answers the plan it resolved', async () => {
+    const resolved = { script_id: 'scr-2', name: 'Footwork night', retired: false, has_blocks: true };
+    mockStartClassPlan.mockResolvedValue({ run: { ...liveRun, class_id: 'class-1' }, classPlan: resolved });
+    const response = await POST(post({ class_id: ' class-1 ', class_plan: true, athletes_present: 9 }));
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ run: expect.objectContaining({ class_id: 'class-1' }), class_plan: resolved });
+    expect(mockStartClassPlan).toHaveBeenCalledWith('org-1', 'acct-coach', {
+      activityId: null,
+      athletesPresent: 9,
+      deliveredOn: undefined,
+      actorRole: 'coach',
+      classId: 'class-1',
+    });
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it('a class with no plan answers class_plan null', async () => {
+    mockStartClassPlan.mockResolvedValue({ run: { ...liveRun, class_id: 'class-1' }, classPlan: null });
+    const response = await POST(post({ class_id: 'class-1', class_plan: true }));
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ class_plan: null }));
+  });
+
+  it.each([
+    ['without a class', { class_plan: true }],
+    ['with a null class', { class_plan: true, class_id: null }],
+    ['beside a script', { class_plan: true, class_id: 'class-1', script_id: 'scr-1' }],
+    ['as false', { class_plan: false, class_id: 'class-1' }],
+    ['as a string', { class_plan: 'true', class_id: 'class-1' }],
+    ['as null', { class_plan: null, class_id: 'class-1' }],
+  ])('class_plan %s is 400 class_plan, and nothing starts', async (_label, body) => {
+    const response = await POST(post(body));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'class_plan' });
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStartClassPlan).not.toHaveBeenCalled();
+  });
+
+  it('a class refusal from a class-plan start keeps its code and words', async () => {
+    mockStartClassPlan.mockRejectedValueOnce(new SessionRunClassError('SESSION_CLASS_NOT_YOURS', 403));
+    const response = await POST(post({ class_id: 'class-1', class_plan: true }));
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error: string; message?: string };
+    expect(body.error).toBe('SESSION_CLASS_NOT_YOURS');
+    expect(body.message).toEqual(expect.any(String));
   });
 
   it('a class_id that is sent must name a class', async () => {
