@@ -1,4 +1,5 @@
-import PDFDocument from 'pdfkit';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
 
 import {
   LIBRARY_PDF_MAX_PAGES,
@@ -6,23 +7,31 @@ import {
   hasPdfSignature,
 } from './libraryPdfText';
 
+const FIXTURE_SCRIPT = path.join(__dirname, 'libraryPdfFixture.mjs');
+
 // Run by `npm run test:pdf-text` with --experimental-vm-modules (npm test ignores
 // .pdf.test.ts files). REAL pdf-parse (no mock) over PDFs built in memory, so the
 // suite proves the parser loads and keeps page numbers under this repo's jest.
 // Generated fixtures only: no real paper is committed (owner decision 2A).
 
 function buildPdf(pageTexts: readonly (string | null)[]): Promise<Buffer> {
+  // pdfkit is ESM-only below the surface now (fontkit 3), so it runs in a child
+  // process under native Node; see libraryPdfFixture.mjs.
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ autoFirstPage: false });
-    const parts: Buffer[] = [];
-    doc.on('data', (part: Buffer) => parts.push(part));
-    doc.on('end', () => resolve(Buffer.concat(parts)));
-    doc.on('error', reject);
-    for (const text of pageTexts) {
-      doc.addPage();
-      if (text !== null) doc.fontSize(14).text(text, 72, 72);
-    }
-    doc.end();
+    const child = spawn(process.execPath, [FIXTURE_SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on('data', (part: Buffer) => out.push(part));
+    child.stderr.on('data', (part: Buffer) => err.push(part));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`PDF fixture build failed (${code}): ${Buffer.concat(err).toString('utf8')}`));
+        return;
+      }
+      resolve(Buffer.from(Buffer.concat(out).toString('utf8'), 'base64'));
+    });
+    child.stdin.end(JSON.stringify(pageTexts));
   });
 }
 
