@@ -1,3 +1,6 @@
+import http from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
+
 import { EMAIL_ALERT_LEASE_SECONDS, EMAIL_ALERT_MAX_TRIES } from './emailAlertQueue';
 import {
   EMAIL_ALERT_LEASE_LEFT_TO_SEND_SECONDS,
@@ -97,6 +100,53 @@ it('cuts the token fetch off at its timeout: a hung identity endpoint fails the 
     expect(sendPlainTextMail).not.toHaveBeenCalled();
   } finally {
     global.fetch = realFetch;
+    process.env.IDENTITY_ENDPOINT = env.endpoint;
+    process.env.IDENTITY_HEADER = env.header;
+    if (env.endpoint === undefined) delete process.env.IDENTITY_ENDPOINT;
+    if (env.header === undefined) delete process.env.IDENTITY_HEADER;
+    actual.resetTokenCache();
+  }
+});
+
+// A reviewer on EM-3b-2: the cut-off covers the token response's body, not
+// only its headers. A real local server answers with headers and part of a
+// body, then stalls.
+it('the token cut-off covers the response body: headers, then a stalled body, fail as ManagedIdentityError within the bound', async () => {
+  const actual = jest.requireActual('./managedIdentityToken');
+  actual.resetTokenCache();
+  (getGraphAccessToken as jest.Mock).mockImplementationOnce(actual.getGraphAccessToken);
+  const sockets = new Set<Socket>();
+  let requests = 0;
+  const server = http.createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(200, { 'content-type': 'application/json', 'content-length': '200' });
+    response.write('{"access_token":"t');
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const env = { endpoint: process.env.IDENTITY_ENDPOINT, header: process.env.IDENTITY_HEADER };
+  process.env.IDENTITY_ENDPOINT = `http://127.0.0.1:${(server.address() as AddressInfo).port}/msi/token`;
+  process.env.IDENTITY_HEADER = 'identity-header';
+  let giveUp: NodeJS.Timeout | undefined;
+  try {
+    const started = Date.now();
+    const outcome = await Promise.race([
+      emailAlertSenderDependencies(EMAIL_ALERT_MAIL_TIMEOUT_MS, 200).prepareSend().then(() => 'resolved', (error: unknown) => error),
+      new Promise((resolve) => {
+        giveUp = setTimeout(() => resolve('still waiting after 3 s'), 3_000);
+      }),
+    ]);
+    expect(outcome).toMatchObject({ name: 'ManagedIdentityError', message: 'IDENTITY_TOKEN_MALFORMED' });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(requests).toBe(1);
+    expect(sendPlainTextMail).not.toHaveBeenCalled();
+  } finally {
+    clearTimeout(giveUp);
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
     process.env.IDENTITY_ENDPOINT = env.endpoint;
     process.env.IDENTITY_HEADER = env.header;
     if (env.endpoint === undefined) delete process.env.IDENTITY_ENDPOINT;
