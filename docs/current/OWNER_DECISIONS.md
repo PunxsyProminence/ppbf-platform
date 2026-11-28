@@ -20,6 +20,9 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-28-007 | 2026-11-28 | Before a question goes to Jason, check it against his earlier answers in any wording | PRIMARY |  |  |
+| OD-2026-11-28-006 | 2026-11-28 | AS-13's last word questions: "research library" stays, the Medical Restrictions page says "athlete", "LBC" stays | PRIMARY |  |  |
+| OD-2026-11-28-005 | 2026-11-28 | Web push turned on in production, and the first email alert and pop-up proven end to end | PRIMARY |  |  |
 | OD-2026-11-28-004 | 2026-11-28 | Release of main `b1fbec2c` to production without Jason's signed-in staging check: the email alert fixes, EM-IX-2 and WP-3 | PRIMARY |  |  |
 | OD-2026-11-28-003 | 2026-11-28 | Release of main `aae16b0d` to production now, without waiting for #2261: email alerts, web push groundwork, classes from a session plan, the floor line and the gym drawers | PRIMARY |  |  |
 | OD-2026-11-28-002 | 2026-11-28 | Web push QA and QB, the clean-up tool's scramble key, and its production dry run | PRIMARY |  |  |
@@ -679,6 +682,78 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-28-007 -- Before a question goes to Jason, check it against his earlier answers in any wording
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app) while App Overwatch was working; the UTC time is from that session's transcript. New; edits no earlier entry.
+
+**Jason (2026-11-28 13:00:00 UTC, PRIMARY):** *"in the future validate the questions i have answered a version of these questions several times"*
+
+He typed it a minute after answering a four-question dialog (OD-2026-11-28-005 and -006).
+
+**Ruling:** before any question goes to Jason, check it against what he has already answered, including answers given in other words. Apply the earlier answer instead of asking again.
+
+**What it caught (Overwatch's check after his words):**
+- **Already ruled:** the test-method question was covered by OD-2026-10-19-012 ("use neeko": tests run on the existing coach@ login, Neeko's athlete account and Jason's own parent login, with the ZZ-AUDIT prefix).
+- **Arguably ruled:** "member or athlete" on the Medical Restrictions page was arguably covered by AS-13's own one-name-per-thing scope.
+- **No earlier answer found:** the push subject and "LBC". A search of this file for "LBC", "push subject" and "VAPID" found nothing.
+
+This adds to the existing ASKED ONCE, RULED ONCE rule (`~/.claude/rules/ppbf-workspace.md`), whose search had been run on the question's exact words only.
+
+**Applied (Overwatch, not his words):**
+- The test message carried the ZZ-AUDIT prefix that OD-2026-10-19-012 requires.
+- Before a question goes out, App Overwatch now searches this file and the lane's brief for the subject of the question, not only its exact words.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-28-006 -- AS-13's last word questions: "research library" stays, the Medical Restrictions page says "athlete", "LBC" stays
+
+**Provenance: PRIMARY.** Jason typed or picked these in the same session; the UTC times are from its transcript. The lane put the three questions in #2222, comment 7203447106 (2026-11-26 21:09 UTC). New; edits no earlier entry.
+
+**CS-12b, "research library" or "Video Library" on the Video Publications page.** App Overwatch first put it in a dialog he did not answer. He typed instead:
+
+**Jason (2026-11-28 12:50:54 UTC, PRIMARY):** *"research libray and video libray are two different things"*
+
+**Ruling:** keep "research library" on the publish page; it is not the Video Library.
+
+**CS-18e and CS-18f, asked again in a dialog after Jason (12:57:09 UTC): *"asl the questions"*.**
+
+- "Should the picker and its lines say "athlete" instead of "member"?" (Medical Restrictions page). **Jason (12:59:10 UTC): *"A: Athlete (Recommended)"***. The page says "Athlete", "Choose an athlete" and "No medical restriction on file for this athlete."
+- "What should "LBC" say in "LBC informed" and "Record LBC date"?" **Jason (12:59:10 UTC): *"Keep LBC (Recommended)"***. No word change.
+
+**Applied (Overwatch, not his words):** posted to the lane on #2222 (comments 7239512191 and 7239609173). CS-18i (credential types) was released for building at the same time, because its file overlap with the W4-1 stack had gone. The lane opened #2265 for it.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-28-005 -- Web push turned on in production, and the first email alert and pop-up proven end to end
+
+**Provenance: PRIMARY.** Jason typed or picked these in the same session; the UTC times are from its transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-28 about 12:56 UTC):** "Which next: the push key plus an email test (A), or the pilot blockers (B)?" It had said that web push was off because production had no push key, and that creating the key pair is a step in a release, which needs his word.
+
+**Jason (2026-11-28 12:56:40 UTC, PRIMARY):** *"Push key + email test"*
+
+**Then, in a dialog (answers at 12:59:10 UTC):**
+- "Web push "subject" ... Which should it be?" **Jason: *"A: Website (Recommended)"*** (https://www.punxsyprominence.org; no email address in the public run log).
+- "How should we run the first email + pop-up test on production?" **Jason: *"A: Your parent login (Recommended)"***. His parent login turns on email alerts and "Pop-ups on this device" on an iPad added to the Home Screen; a coach message goes to Neeko's family; he confirms both arrive. OD-2026-10-19-012 already covered this (OD-2026-11-28-007).
+
+**Jason, after the test (2026-11-28 13:17:54 UTC, PRIMARY):** *"Both arrived"*
+
+**Ruling:** the push key is created and production carries it. The test runs on Jason's own logins.
+
+**Applied (Overwatch, not his words):**
+- **Keys:** one P-256 key pair per environment. Each private key is the Container App secret `ppbf-web-push-vapid-private-key` on `app-ppbf-staging` and `app-ppbf-production`; its value was never printed. The public key (87 characters) and the subject `https://www.punxsyprominence.org` are GitHub environment variables `PPBF_WEB_PUSH_VAPID_PUBLIC_KEY` and `PPBF_WEB_PUSH_SUBJECT` for staging and production. Each pair was checked as a pair before it was set.
+- **Release of main `c23d25c8`** (records only since `b1fbec2c`; no migration): deploy-staging run 46147525454, revision `app-ppbf-staging--0000329`, 3 WEB_PUSH settings on the app. Deploy-production run 46148061775; its gate was approved by PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds). Revision `app-ppbf-production--0000225`, image `sha256:7be43a07d10d4e63d5ef41d17d9af0525473941336b0d0f75e9697655ab9f51d`, at 100% traffic, with 3 WEB_PUSH settings. www home, login and schedule returned 200. The worker is on (`PPBF_SHADOW_WORKER_ENABLED` true).
+- **Test:** the family note goes through the coach's "Post to the Family's Page" on SHADOW Decision Loop, which is the family_note event in emailAlertEvents.ts. The test record carries the ZZ-AUDIT prefix (OD-2026-10-19-012), so the B6 clean-up tool's explicit markers can find it.
+- **What "Both arrived" proves (REPORTED by Jason):** on production, a family email alert sent through Microsoft Graph as Admin@ arrived, and a web push pop-up arrived on an iPad opened from the Home Screen. Not proven by it: sign-in link and invite emails (pilot blocker B8 uses the same mailer but a different message), and the board and staff floor line (FN-4b).
+
+**Status:** recorded 2026-11-28 by PR.
 
 ---
 
