@@ -66,7 +66,9 @@ function resolveSslConfig() {
  * The indexes this migration promises, each on its own table, with its one key
  * (a column, or an expression) and its predicate written as PostgreSQL prints
  * them back (pg_get_expr), null where there is none. The notice texts are the
- * migration's expression and predicate as PostgreSQL 18.4 normalised them.
+ * migration's expression and predicate as PostgreSQL 18.4 normalised them; a
+ * local PostgreSQL 16.15 prints the same texts. A server that printed them
+ * otherwise would have the index refused as not ready, never accepted.
  */
 export const SWEEP_INDEXES = [
   {

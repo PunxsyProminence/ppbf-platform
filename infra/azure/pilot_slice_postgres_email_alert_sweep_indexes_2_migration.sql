@@ -33,16 +33,17 @@
 -- EM-4b's gym_notice source reads pilot.announcements across every gym by
 -- the moment a notice went live, NOTICE_LIVE_FROM: `greatest(n.created_at,
 -- coalesce(n.starts_at, n.created_at), n.updated_at) > <from> and ... <= <to>`,
--- under `n.kind = 'notice'` (emailAlertEvents.ts, lines 292-311). Both
--- indexes on that table lead with organization_id (the announcements and
--- announcement-placements migrations). Codex on #2193, review comment
--- 4723722868 (P1): "there is no functional index for this expression, while
+-- under `n.kind = 'notice'` (emailAlertEvents.ts, lines 292-311). The
+-- table's primary key and both its indexes lead with organization_id (the
+-- announcements and announcement-placements migrations). Codex on #2193,
+-- review comment 4723722868 (P1): "there is no functional index for this expression, while
 -- this query supplies no organization predicate, so the new source devolves
 -- to a full-table scan on every tick." App Overwatch on #2159, 7228634076,
 -- asks for it fixed. Measured on embedded PostgreSQL 18.4, 200,000 rows in 50
 -- gyms, the source's own SQL through node-pg: a parallel sequential scan of
--- the whole table (about 30 ms) before; an index scan of this index (about
--- 0.1 ms) after.
+-- the whole table (about 30 ms) before; a scan of this index after (an index
+-- scan, about 0.1 ms for the 21 rows in that window; with other data the
+-- planner may pick a bitmap scan of the same index).
 --
 -- family_thread_posts.created_at is not left to its column default: the
 -- table's guard trigger sets it to clock_timestamp() on every insert, whatever
@@ -76,17 +77,24 @@
 -- table's new writes are held from the moment the runner starts waiting for
 -- it until COMMIT, so the table built first is held longest. The order:
 --   - pilot.announcements first. Only a coach, an admin role, the platform
---     owner or a board-seat holder writes it (posting, retiring or restoring
---     a notice: the announcements post and update routes). A new notice can
---     be held through all three waits and builds: about 30 seconds of waiting
---     at worst;
+--     owner or a board member writes it (posting, retiring or restoring a
+--     notice: the announcements post and update routes; posting as the board
+--     needs a held seat, and a coach or board member may retire or restore
+--     only their own notice). A new notice can be held through all three
+--     waits and builds: about 30 seconds of waiting at worst;
 --   - then the family thread posts (a guardian's message, familyThreads.ts
 --     startFamilyThread and writeAgainInFamilyThread; a staff reply,
 --     replyInFamilyThread): held through their own wait and build and the
 --     coach notes' wait and build, about 20 seconds of waiting at worst;
 --   - then the coach notes (createCoachObservation, intake.ts): held only
 --     through their own wait and build, about 10 seconds at worst.
--- So no guardian's or coach's write is held for the announcements index. A
+-- The retention purge also writes the last two tables (an athlete's delete
+-- cascades to their coach notes and thread posts; an account's delete sets
+-- its posts' author to null), in one transaction, and only when a person
+-- dispatches it with APPLY (pilot-cleanup-deleted-data.mjs,
+-- retention-cleanup.yml); how it meets the runner was not probed.
+-- So no family thread post or coach note is held for the announcements
+-- index's wait or build; a new notice is. A
 -- wait that reaches 10 seconds fails the runner with 55P03 and rolls
 -- everything back, and the operator re-runs in a quieter moment. The tables'
 -- production row counts are not known from the repository, so neither are
@@ -103,8 +111,9 @@
 -- (pilot.family_thread_posts) and the announcements migration; the guard
 -- below names a missing table rather than failing inside the create. The
 -- kind and starts_at columns come from announcement-placements, earlier in
--- `all`. No begin;/commit; here, matching the runner-opens-the-transaction
--- convention; the runner is
+-- `all`; a database without them fails inside the create with 42703, rolled
+-- back with nothing built, not with the named error. No begin;/commit; here,
+-- matching the runner-opens-the-transaction convention; the runner is
 -- apps/web/scripts/pilot-apply-email-alert-sweep-indexes-2-migration.mjs.
 
 do $pilot_email_alert_sweep_indexes_2$
