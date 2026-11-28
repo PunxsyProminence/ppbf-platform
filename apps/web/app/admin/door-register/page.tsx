@@ -326,10 +326,10 @@ export default function DoorRegisterPage() {
                                    one lands the recorder inside this page's own
                                    document, which was served camera=(). */
                                 <ChromeLink href={door.href} className="underline">
-                                  {door.label}
+                                  {roomNames.door(door)}
                                 </ChromeLink>
                               ) : (
-                                door.label
+                                roomNames.door(door)
                               )}
                               {door.hint ? <span className="ledger-id block">{door.hint}</span> : null}
                             </td>

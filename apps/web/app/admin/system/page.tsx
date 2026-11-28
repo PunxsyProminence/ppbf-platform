@@ -73,6 +73,7 @@ const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'build-runner-image.yml', name: 'build-runner-image', purpose: 'Builds the self-hosted runner image in Azure (manual, main only).', runsOn: ['manual'] },
   { file: 'check-database.yml', name: 'check-database', purpose: 'Read-only database diagnostics.', runsOn: ['manual'] },
   { file: 'ci.yml', name: 'ci', purpose: 'Typecheck, lint, tests and build for pull requests and main.', runsOn: ['pull request', 'push', 'manual'] },
+  { file: 'cleanup-audit-test-records.yml', name: 'cleanup-audit-test-records', purpose: 'Reports the audit test records left in a gym, by explicit markers only, dry run (writes nothing).', runsOn: ['manual'] },
   { file: 'cleanup-intake-research-requirements.yml', name: 'cleanup-intake-research-requirements', purpose: 'Deletes the research-requirement rows intake uploads wrote before 2026-10-03, dry run first.', runsOn: ['manual'] },
   { file: 'cleanup-membership-orphans.yml', name: 'cleanup-membership-orphans', purpose: 'One-off cleanup of orphaned memberships.', runsOn: ['manual'] },
   { file: 'deploy-production.yml', name: 'deploy-production', purpose: 'Production deployment, schema before code.', runsOn: ['manual'] },

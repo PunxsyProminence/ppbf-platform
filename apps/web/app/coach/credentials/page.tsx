@@ -166,7 +166,7 @@ export default function StaffCredentialsUploadPage() {
             </p>
           ) : items.length === 0 ? (
             <p className="t-body">
-              No clearance types are set up for this organization yet. Ask an administrator.
+              No credential types are set up for this organization yet. Ask an administrator.
             </p>
           ) : (
             <ul className="space-y-[var(--s3)]">

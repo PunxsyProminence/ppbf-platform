@@ -95,12 +95,15 @@ import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
 import { setRunAthletePresent } from './sessionRunAthletes';
+import { createRunStaffNote } from './sessionStaffNotes';
 import { describeRunClass, listTieableClasses, markSessionNoShowsAbsent, setSessionRunClass } from './sessionRunClass';
+import { setSessionScriptRetired } from './sessionScriptAuthoring';
 import {
   finishSessionScriptRun,
   keyedSessionScriptRunAction,
   listSettledRunsForOrganization,
   pauseSessionScriptRun,
+  startClassPlanRun,
   startSessionScriptRun,
   type RunActionAsked,
 } from './sessionScriptRuns';
@@ -809,8 +812,8 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Each tap is recorded on the run with the names it sent, each once and sorted, and whom it marked.
     const names = [gym.ada, gym.ben, gym.cy, 'athlete-dee', 'athlete-eve', 'athlete-unknown'];
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [gym.ben, 'athlete-eve'], marked_at: expect.any(String) },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [], marked_at: expect.any(String) },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [gym.ben, 'athlete-eve'], marked_at: expect.any(String), page_id: null },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: null, athlete_ids: names, marked_athlete_ids: [], marked_at: expect.any(String), page_id: null },
     ]);
   });
 
@@ -917,6 +920,296 @@ describe('today\'s classes a session can be tied to', () => {
     await addClass(gym.organizationId, 'class-early-today', gym.coach.accountId, "'2026-10-14T04:30:00Z'::timestamptz"); // 12:30 AM, 14 October
     await addClass(gym.organizationId, 'class-tomorrow', gym.coach.accountId, "'2026-10-15T04:30:00Z'::timestamptz"); // 12:30 AM, 15 October
     expect((await listTieableClasses(gym.coach, now)).map((item) => item.class_id)).toEqual(['class-early-today']);
+  });
+});
+
+// SP-4a of lane W4-5 (OW27-29 A, "Class keeps the plan; Start runs it"; App Overwatch 7215533652 on
+// #2189, Q1): each of today's classes carries its plan, resolved to the newest version of the
+// lineage it was scheduled with, with its name, whether it is retired and whether it has blocks.
+describe('today\'s classes carry their plan, as its newest version', () => {
+  /** One version of a plan in the gym (of one lineage unless `lineage` says), with `blocks` blocks. */
+  async function addPlan(gym: Gym, scriptId: string, version: number, name: string, blocks: number, lineage = 'scr-lineage') {
+    const { organizationId } = gym;
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact') on conflict do nothing`,
+      [organizationId],
+    );
+    await client.query(
+      `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [organizationId, scriptId, lineage, version, name, gym.coach.accountId],
+    );
+    for (let order = 1; order <= blocks; order += 1) {
+      await client.query(
+        `insert into pilot.session_script_blocks
+           (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
+         values ($1, $2, $3, $4, $5, $6, 'block', 'cue')`,
+        [organizationId, `${scriptId}-b${order}`, scriptId, order, (order - 1) * 10, order * 10],
+      );
+    }
+  }
+  const linkPlan = (gym: Gym, scriptId: string) => client.query(
+    `update pilot.scheduler_classes set script_id = $3 where organization_id = $1 and class_id = $2`,
+    [gym.organizationId, gym.klass, scriptId],
+  );
+  const planOf = async (by: ActorIdentity) => (await listTieableClasses(by)).find((item) => item.class_id === 'class-today')?.plan;
+  const retire = (gym: Gym, scriptId: string, retired: boolean) => setSessionScriptRetired({
+    organizationId: gym.organizationId, actorAccountId: gym.coach.accountId, actorRole: gym.coach.role, scriptId, retired,
+  });
+
+  test('the response keys are pinned: a class with no plan carries plan null; a plan carries exactly four keys', async () => {
+    const gym = await newGym('plan-keys');
+    const [plain] = await listTieableClasses(gym.coach);
+    expect(Object.keys(plain).sort()).toEqual(['class_id', 'end_at', 'held_by_other_session', 'plan', 'start_at', 'title']);
+    expect(plain.plan).toBeNull();
+
+    await addPlan(gym, 'scr-1', 1, 'Footwork night', 2);
+    await linkPlan(gym, 'scr-1');
+    const [planned] = await listTieableClasses(gym.coach);
+    expect(Object.keys(planned).sort()).toEqual(['class_id', 'end_at', 'held_by_other_session', 'plan', 'start_at', 'title']);
+    expect(Object.keys(planned.plan ?? {}).sort()).toEqual(['has_blocks', 'name', 'retired', 'script_id']);
+    expect(planned.plan).toEqual({ script_id: 'scr-1', name: 'Footwork night', retired: false, has_blocks: true });
+  });
+
+  test('a class scheduled with v1 while v2 exists carries v2\'s id and name; another gym\'s higher version of the same lineage id is not it', async () => {
+    const gym = await newGym('plan-newest');
+    const other = await newGym('plan-other-gym');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 3);
+    await addPlan(other, 'scr-v3-elsewhere', 3, 'Another gym\'s plan', 1);
+    await linkPlan(gym, 'scr-v1');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    // An organization admin reads the same plan; the plan never changes which classes are listed.
+    expect(await planOf(gym.admin)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    expect((await listTieableClasses(gym.otherCoach)).map((item) => item.class_id)).toEqual([]);
+  });
+
+  test('the newest version retired: retired true; brought back: false', async () => {
+    const gym = await newGym('plan-retired');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 2);
+    await linkPlan(gym, 'scr-v1');
+    expect(await retire(gym, 'scr-v2', true)).toMatchObject({ outcome: 'retired' });
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: true, has_blocks: true });
+    expect(await retire(gym, 'scr-v2', false)).toMatchObject({ outcome: 'brought_back' });
+    expect((await planOf(gym.coach))?.retired).toBe(false);
+  });
+
+  test('has_blocks is the newest version\'s: none on v2 is false even when v1 had blocks; blocks on v2 are true when v1 had none', async () => {
+    const gym = await newGym('plan-blocks');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 0);
+    await linkPlan(gym, 'scr-v1');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: false });
+
+    const later = await newGym('plan-blocks-later');
+    await addPlan(later, 'scr-v1', 1, 'Footwork night', 0);
+    await addPlan(later, 'scr-v2', 2, 'Footwork night, revised', 1);
+    await linkPlan(later, 'scr-v1');
+    expect(await planOf(later.coach)).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+  });
+
+  test('two gyms holding the same plan id: each class reads its own gym\'s plan, name, state and blocks (reviewer N on #2241)', async () => {
+    // Content import names a plan by its lineage key (contentImport/lineage.ts), so two gyms can
+    // hold the same script_id; each read must stay inside the class's own gym.
+    const gym = await newGym('plan-same-id');
+    const other = await newGym('plan-same-id-other');
+    await addPlan(gym, 'scr-same', 1, 'Footwork night', 0);
+    await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2);
+    await client.query(
+      `update pilot.session_scripts set authoring_state = 'retired' where organization_id = $1 and script_id = 'scr-same'`,
+      [other.organizationId],
+    );
+    await linkPlan(gym, 'scr-same');
+    await linkPlan(other, 'scr-same');
+    expect(await planOf(gym.coach)).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+    expect(await planOf(other.coach)).toEqual({ script_id: 'scr-same', name: 'Another gym\'s plan', retired: true, has_blocks: true });
+  });
+
+  // Codex P1 on #2241 (finding 4723993483; App Overwatch 7229515935): the class's plan is resolved
+  // when Start is committed, in the start's own transaction, not taken from the list the screen read.
+  describe('Start resolves the class\'s plan when it is committed', () => {
+    const startPlan = (gym: Gym, by: ActorIdentity, classId = gym.klass) =>
+      startClassPlanRun(gym.organizationId, by.accountId, { classId, actorRole: by.role });
+
+    test('the newest version runs, tied to the class, and comes back as resolved', async () => {
+      const gym = await newGym('plan-start-newest');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 3);
+      await linkPlan(gym, 'scr-v1');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v2', script_version: 2, class_id: gym.klass, current_block_id: 'scr-v2-b1' });
+      expect(classPlan).toEqual({ script_id: 'scr-v2', name: 'Footwork night, revised', retired: false, has_blocks: true });
+    });
+
+    test('retired after the screen read the list: the session starts tied to the class without it', async () => {
+      const gym = await newGym('plan-start-retired');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      expect((await planOf(gym.coach))?.retired).toBe(false);
+      await retire(gym, 'scr-v1', true);
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, script_version: null, current_block_id: null, class_id: gym.klass });
+      expect(classPlan).toEqual({ script_id: 'scr-v1', name: 'Footwork night', retired: true, has_blocks: true });
+    });
+
+    test('brought back after the screen read it as retired: it runs', async () => {
+      const gym = await newGym('plan-start-back');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      await retire(gym, 'scr-v1', true);
+      expect((await planOf(gym.coach))?.retired).toBe(true);
+      await retire(gym, 'scr-v1', false);
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v1', class_id: gym.klass });
+      expect(classPlan?.retired).toBe(false);
+    });
+
+    test('given its first block in place after the screen read it as empty: it runs from that block', async () => {
+      const gym = await newGym('plan-start-blocks');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 0);
+      await linkPlan(gym, 'scr-v1');
+      expect((await planOf(gym.coach))?.has_blocks).toBe(false);
+      await client.query(
+        `insert into pilot.session_script_blocks
+           (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say)
+         values ($1, 'scr-v1-late', 'scr-v1', 1, 0, 10, 'block', 'cue')`,
+        [gym.organizationId],
+      );
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: 'scr-v1', current_block_id: 'scr-v1-late' });
+      expect(classPlan?.has_blocks).toBe(true);
+    });
+
+    test('with no blocks: the session starts tied to the class without it', async () => {
+      const gym = await newGym('plan-start-empty');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 0);
+      await linkPlan(gym, 'scr-v1');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+      expect(classPlan).toEqual({ script_id: 'scr-v1', name: 'Footwork night', retired: false, has_blocks: false });
+    });
+
+    test('a class with no plan starts plain, and answers no plan', async () => {
+      const gym = await newGym('plan-start-none');
+      const { run, classPlan } = await startPlan(gym, gym.coach);
+      expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+      expect(classPlan).toBeNull();
+    });
+
+    test('two gyms holding the same plan id: each start reads its own gym\'s plan', async () => {
+      const gym = await newGym('plan-start-same-id');
+      const other = await newGym('plan-start-same-id-other');
+      // Different lineages too, so a read that crossed gyms at any step would find the other's.
+      await addPlan(gym, 'scr-same', 1, 'Footwork night', 0);
+      await addPlan(other, 'scr-same', 1, 'Another gym\'s plan', 2, 'scr-lineage-elsewhere');
+      await linkPlan(gym, 'scr-same');
+      await linkPlan(other, 'scr-same');
+      const mine = await startPlan(gym, gym.coach);
+      expect(mine.run.script_id).toBeNull();
+      expect(mine.classPlan).toEqual({ script_id: 'scr-same', name: 'Footwork night', retired: false, has_blocks: false });
+      const theirs = await startPlan(other, other.coach);
+      expect(theirs.run).toMatchObject({ script_id: 'scr-same', current_block_id: 'scr-same-b1' });
+      expect(theirs.classPlan).toEqual({ script_id: 'scr-same', name: 'Another gym\'s plan', retired: false, has_blocks: true });
+    });
+
+    test('the class rules are the scripted start\'s: another coach\'s class and another gym\'s are refused, nothing written', async () => {
+      const gym = await newGym('plan-start-rules');
+      const other = await newGym('plan-start-rules-other');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      await expect(startPlan(gym, gym.otherCoach)).rejects.toMatchObject({ message: 'SESSION_CLASS_NOT_YOURS' });
+      await expect(startClassPlanRun(other.organizationId, other.coach.accountId, { classId: 'class-elsewhere', actorRole: 'coach' }))
+        .rejects.toMatchObject({ message: 'SESSION_CLASS_NOT_FOUND' });
+      const { rows } = await client.query(`select 1 from pilot.session_script_runs where organization_id in ($1, $2)`, [gym.organizationId, other.organizationId]);
+      expect(rows).toEqual([]);
+    });
+
+    test('a retire in progress is waited for, and the session then starts without the plan', async () => {
+      const gym = await newGym('plan-start-race');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        // A retire as setSessionScriptRetired writes it: the current version locked FOR UPDATE, then set.
+        await other.query('BEGIN');
+        await other.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1' for update`, [gym.organizationId]);
+        await other.query(`update pilot.session_scripts set authoring_state = 'retired' where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        const { run, classPlan } = await starting;
+        expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+        expect(classPlan?.retired).toBe(true);
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+    });
+
+    test('the plan deleted while the start waited: the session starts without a plan (reviewer P on #2259)', async () => {
+      const gym = await newGym('plan-start-deleted');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        await other.query('BEGIN');
+        await other.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered', () => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        const { run, classPlan } = await starting;
+        expect(run).toMatchObject({ script_id: null, class_id: gym.klass });
+        expect(classPlan).toBeNull();
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+    });
+
+    test('a new version committed while the start waited is refused as superseded, and nothing is written', async () => {
+      const gym = await newGym('plan-start-edit-race');
+      await addPlan(gym, 'scr-v1', 1, 'Footwork night', 2);
+      await linkPlan(gym, 'scr-v1');
+      const other = new Client({ connectionString: activeConnectionString as string });
+      await other.connect();
+      try {
+        // An edit of a run plan as sessionScriptAuthoring.ts writes it: the current version locked, the next inserted.
+        await other.query('BEGIN');
+        await other.query(`select 1 from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1' for update`, [gym.organizationId]);
+        await other.query(
+          `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, created_by_account_id)
+           values ($1, 'scr-v2', 'scr-lineage', 2, 'Footwork night, revised', $2)`,
+          [gym.organizationId, gym.coach.accountId],
+        );
+        const starting = startPlan(gym, gym.coach);
+        const early = await Promise.race([starting.then(() => 'answered', () => 'answered'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 750))]);
+        expect(early).toBe('waiting');
+        await other.query('COMMIT');
+        await expect(starting).rejects.toMatchObject({ message: 'SESSION_SCRIPT_SUPERSEDED', status: 409 });
+      } finally {
+        await other.query('ROLLBACK').catch(() => {});
+        await other.end();
+      }
+      const { rows } = await client.query(`select 1 from pilot.session_script_runs where organization_id = $1`, [gym.organizationId]);
+      expect(rows).toEqual([]);
+    });
+  });
+
+  test('a plan row deleted clears the class\'s link (on delete set null), and the class carries no plan', async () => {
+    const gym = await newGym('plan-deleted');
+    await addPlan(gym, 'scr-v1', 1, 'Footwork night', 1);
+    await addPlan(gym, 'scr-v2', 2, 'Footwork night, revised', 1);
+    await linkPlan(gym, 'scr-v1');
+    await client.query(`delete from pilot.session_scripts where organization_id = $1 and script_id = 'scr-v1'`, [gym.organizationId]);
+    const { rows } = await client.query(`select script_id from pilot.scheduler_classes where organization_id = $1 and class_id = $2`, [gym.organizationId, gym.klass]);
+    expect(rows).toEqual([{ script_id: null }]);
+    expect(await planOf(gym.coach)).toBeNull();
   });
 });
 
@@ -1069,8 +1362,8 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(await refusal(markSessionNoShowsAbsent(gym.otherCoach, runId, naming([gym.ben], 'key-lost'))))
       .toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
     expect(await noShowTaps(gym, runId)).toEqual([
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked_athlete_ids: [gym.ben], marked_at: expect.any(String) },
-      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked_athlete_ids: [], marked_at: expect.any(String) },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-lost', athlete_ids: [gym.ben], marked_athlete_ids: [gym.ben], marked_at: expect.any(String), page_id: null },
+      { run_id: runId, class_id: gym.klass, action: 'mark_no_shows', request_key: 'key-none', athlete_ids: [gym.ada], marked_athlete_ids: [], marked_at: expect.any(String), page_id: null },
     ]);
   });
 
@@ -1110,7 +1403,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     const { run_id: runId } = await start(gym, gym.coach);
     await startedAnHourAgo(gym, runId);
     const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ada, gym.ben, gym.cy], 'key-own')))
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ada, gym.ben, gym.cy], 'key-own'), pageId: 'page-1' }))
       .toEqual({ marked: [gym.ada, gym.ben, gym.cy] });
     // The tap records when it wrote the marks, exactly as written.
     const [tapRecord] = await noShowTaps(gym, runId);
@@ -1121,8 +1414,9 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     expect(stamps[0].same).toBe(true);
     await letTheClockMove();
 
-    // Ben's here tap reads as made a minute ago, before the no-shows tap landed: it still flips him.
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minutesAgo(1) }))
+    // Ben's here tap, kept on the same page, reads as made a minute ago, before the no-shows tap
+    // landed: on one page it came after the no-shows tap, so it still flips him.
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'flipped', previous_status: 'absent' } });
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'present' });
 
@@ -1131,7 +1425,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       `update pilot.scheduler_attendance set note = 'rang home', updated_at = now() where organization_id = $1 and athlete_id = $2`,
       [gym.organizationId, gym.ada],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minutesAgo(1) }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent' });
 
@@ -1140,22 +1434,42 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       `update pilot.scheduler_attendance set status = 'excused' where organization_id = $1 and athlete_id = $2`,
       [gym.organizationId, gym.cy],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.cy, present: true, tappedAt: minutesAgo(1) }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.cy, present: true, tappedAt: minutesAgo(1), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'excused' } });
+  });
+
+  // #2182 round 12, reviewer A: each tab keeps its own queue, so tap order holds only on one page. A
+  // here tap from the coach's other tab or device, made before the no-shows tap's Absent, loses to it
+  // (condition 1), as does one sent with no page id.
+  test('a here tap from another page, or with no page id, made before the run\'s own no-shows Absent, does not flip it', async () => {
+    const gym = await newGym('other-page-no-shows');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await startedAnHourAgo(gym, runId);
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ada, gym.ben], 'key-page'), pageId: 'page-1' }))
+      .toEqual({ marked: [gym.ada, gym.ben] });
+    const [tapRecord] = await noShowTaps(gym, runId);
+    expect(tapRecord).toMatchObject({ page_id: 'page-1' });
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: minuteAgo, pageId: 'page-2' }))
+      .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: minuteAgo }))
+      .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
+    expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent' });
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent' });
   });
 
   test('another run\'s no-shows Absent is not this run\'s: a here tap made before a change to it does not flip it', async () => {
     const gym = await newGym('other-run-no-shows');
     const first = await start(gym, gym.coach);
     await startedAnHourAgo(gym, first.run_id);
-    expect(await markSessionNoShowsAbsent(gym.coach, first.run_id, naming([gym.ben], 'key-first'))).toEqual({ marked: [gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, first.run_id, { ...naming([gym.ben], 'key-first'), pageId: 'page-1' })).toEqual({ marked: [gym.ben] });
     await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, first.run_id, { runState: 'completed' });
     await letTheClockMove();
     const second = await start(gym, gym.coach);
     await startedAnHourAgo(gym, second.run_id);
     // A tap on the second run made before the first run's Absent was written.
     expect(await setRunAthletePresent({
-      actor: gym.coach, runId: second.run_id, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60 * 60_000 + 1000).toISOString(),
+      actor: gym.coach, runId: second.run_id, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60 * 60_000 + 1000).toISOString(), pageId: 'page-1',
     })).toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
   });
 
@@ -1163,7 +1477,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
     const gym = await newGym('not-the-taps');
     const { run_id: runId } = await start(gym, gym.coach);
     await startedAnHourAgo(gym, runId);
-    expect(await markSessionNoShowsAbsent(gym.coach, runId, naming([gym.ben], 'key-ben'))).toEqual({ marked: [gym.ben] });
+    expect(await markSessionNoShowsAbsent(gym.coach, runId, { ...naming([gym.ben], 'key-ben'), pageId: 'page-1' })).toEqual({ marked: [gym.ben] });
     const [tapRecord] = await noShowTaps(gym, runId);
     // An Absent for Ada written elsewhere, by chance stamped at the tap's very moment.
     await client.query(
@@ -1172,7 +1486,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
        values ($1, 'att-ada', $2, $3, 'absent', 'admin_override', 'organization_admin', $4, '', $5::timestamptz, $5::timestamptz)`,
       [gym.organizationId, gym.klass, gym.ada, gym.admin.accountId, tapRecord.marked_at],
     );
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ada, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString(), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
 
     // Round 14, reviewer A: Ben's Absent on another class, by chance at the tap's moment, is not the
@@ -1185,7 +1499,7 @@ describe('a repeated request changes nothing (W4 item 7 retry queue)', () => {
       [gym.organizationId, gym.ben, gym.admin.accountId, tapRecord.marked_at],
     );
     await setSessionRunClass(gym.coach, runId, 'class-two');
-    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString() }))
+    expect(await setRunAthletePresent({ actor: gym.coach, runId, athleteId: gym.ben, present: true, tappedAt: new Date(Date.now() - 60_000).toISOString(), pageId: 'page-1' }))
       .toMatchObject({ register: { effect: 'register_newer', status: 'absent' } });
     expect(await register(gym, gym.ben, 'class-two')).toMatchObject({ status: 'absent' });
   });
@@ -1684,5 +1998,162 @@ describe('a kept run action or tie is decided by its own request key', () => {
     expect(await ties(gym, runId)).toEqual([{
       run_id: runId, class_id: gym.klass, previous_class_id: null, action: 'tie_class', request_key: null, copied: [], released: [],
     }]);
+  });
+});
+
+// OVERWATCH 7170099938 on #2178, carried to OQ-4's kept here taps: whether a tap's earlier send landed is
+// decided by its own request key, recorded on the run with the tap's first answer, never by the mark
+// matching the tap, which another tab or device tapping the same athlete would also give.
+describe('a kept here tap is decided by its own request key', () => {
+  const keyedTap = (by: ActorIdentity, runId: string, athleteId: string, requestKey: string, present = true) =>
+    setRunAthletePresent({ actor: by, runId, athleteId, present, requestKey });
+
+  /** The here taps' key records on a run, oldest first. */
+  async function hereTaps(gym: Gym, runId: string) {
+    const { rows } = await client.query<{ details: Record<string, unknown> }>(
+      `select details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'session_script_run' and entity_id = $2 and details->>'action' = 'here_tap'
+        order by audit_id`,
+      [gym.organizationId, runId],
+    );
+    return rows.map((row) => row.details);
+  }
+
+  test('a tap whose answer is lost: the resend is answered with the first answer, replayed, and two resends at once write nothing', async () => {
+    const gym = await newGym('tap-key-lost');
+    const { run_id: runId } = await start(gym, gym.coach);
+    const first = await keyedTap(gym.coach, runId, gym.ada, 'key-ada');
+    expect(first).toEqual({ outcome: 'marked', register: { effect: 'created' } });
+    const landed = await gymState(gym, runId);
+    await letTheClockMove();
+    const resent = await Promise.all([keyedTap(gym.coach, runId, gym.ada, 'key-ada'), keyedTap(gym.coach, runId, gym.ada, 'key-ada')]);
+    for (const again of resent) expect(again).toEqual({ ...first, replayed: true, live: true });
+    expect(await gymState(gym, runId)).toEqual(landed);
+    // The record keeps the athlete nested: it is not read as activity on the athlete's own session.
+    expect(await hereTaps(gym, runId)).toEqual([{
+      run_id: runId, action: 'here_tap', request_key: 'key-ada', asked: { athlete_id: gym.ada, present: true }, answer: first,
+    }]);
+  });
+
+  test('another tab or device marks the same athlete first: this send, landing later, is its own no-op, recorded and replayed', async () => {
+    const gym = await newGym('tap-key-same');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-a')).toEqual({ outcome: 'unchanged' });
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-a')).toEqual({ outcome: 'unchanged', replayed: true, live: true });
+    expect((await hereTaps(gym, runId)).map((details) => details.request_key)).toEqual(['key-a']);
+  });
+
+  test('another tab or device marks the same athlete and the session ends: a key never recorded is refused, never replayed', async () => {
+    const gym = await newGym('tap-key-ended');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const before = await gymState(gym, runId);
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ada, 'key-never'))).toMatchObject({ message: 'SESSION_RUN_NOT_LIVE', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(before);
+  });
+
+  test('a tap that landed before the session ended is replayed after it, saying the run is no longer live', async () => {
+    const gym = await newGym('tap-key-after');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-ada')).toEqual({ outcome: 'marked' });
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-ada')).toEqual({ outcome: 'marked', replayed: true, live: false });
+  });
+
+  test('the same key for another athlete or the other way is refused and writes nothing; another coach gets not-found', async () => {
+    const gym = await newGym('tap-key-reuse');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await keyedTap(gym.coach, runId, gym.ada, 'key-1');
+    const before = await gymState(gym, runId);
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ben, 'key-1'))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    expect(await refusal(keyedTap(gym.coach, runId, gym.ada, 'key-1', false))).toMatchObject({ message: 'SESSION_RUN_KEY_REUSED', status: 409 });
+    expect(await gymState(gym, runId)).toEqual(before);
+    expect(await refusal(keyedTap(gym.otherCoach, runId, gym.ada, 'key-1'))).toMatchObject({ message: 'SESSION_RUN_NOT_FOUND', status: 404 });
+    // The same key on the coach's next run is that run's own: written there, not replayed.
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, runId, { runState: 'completed' });
+    const { run_id: nextRunId } = await start(gym, gym.coach, null);
+    expect(await keyedTap(gym.coach, nextRunId, gym.ada, 'key-1')).toEqual({ outcome: 'marked' });
+  });
+
+  test('a take-back keyed and resent writes once; a keyless tap is as before and records no key', async () => {
+    const gym = await newGym('tap-key-untap');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    const first = await keyedTap(gym.coach, runId, gym.ada, 'key-off', false);
+    expect(first).toEqual({ outcome: 'unmarked', register: { effect: 'removed' } });
+    const after = await gymState(gym, runId);
+    expect(await keyedTap(gym.coach, runId, gym.ada, 'key-off', false)).toEqual({ ...first, replayed: true, live: true });
+    expect(await gymState(gym, runId)).toEqual(after);
+    expect((await hereTaps(gym, runId)).map((details) => details.request_key)).toEqual(['key-off']);
+  });
+});
+
+// #2182 round 13, both reviewers: a kept staff note's resend looks its key up before the write locks the
+// athlete's mark. A first send of the same key still being written then, whose commit is followed by a
+// take-back of the mark from another device, makes the resend's write refuse as not present although the
+// note was written. The key is looked up again after that refusal, so the resend reads as landed.
+describe('a kept staff note refused as not present is looked up again by its key', () => {
+  /** Waits until at least `count` lock requests in this database are waiting. */
+  async function waiters(count: number) {
+    for (let tries = 0; tries < 200; tries += 1) {
+      const { rows } = await client.query<{ n: number }>(
+        `select count(*)::int as n from pg_locks l join pg_stat_activity a on a.pid = l.pid
+          where not l.granted and a.datname = current_database()`,
+      );
+      if (rows[0].n >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`test bug: ${count} lock waiters never appeared`);
+  }
+
+  test('a first send that committed before a take-back is found, and the resend answers as landed', async () => {
+    const gym = await newGym('note-key-race');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+
+    // The first send, still being written: the mark row locked and the note inserted, not yet committed.
+    const first = new Client({ connectionString: activeConnectionString as string });
+    await first.connect();
+    try {
+      await first.query('BEGIN');
+      await first.query(
+        `select removed_at from pilot.session_run_athletes where organization_id = $1 and run_id = $2 and athlete_id = $3 for update`,
+        [gym.organizationId, runId, gym.ada],
+      );
+      await first.query(
+        `insert into pilot.session_staff_notes
+           (organization_id, note_id, run_id, athlete_id, author_account_id, author_role, note, request_key)
+         values ($1, '00000000-0000-4000-8000-000000000001', $2, $3, $4, 'coach', 'Wrist taped.', 'key-note')`,
+        [gym.organizationId, runId, gym.ada, gym.coach.accountId],
+      );
+      // Another device takes the mark back: it waits on the first send's lock.
+      const takeBack = tap(gym.coach, runId, gym.ada, false);
+      await waiters(1);
+      // The resend: its key lookup misses (not committed yet), then its write waits behind the take-back.
+      const resend = createRunStaffNote({ actor: gym.coach, runId, athleteId: gym.ada, note: 'Wrist taped.', requestKey: 'key-note' });
+      await waiters(2);
+      await first.query('COMMIT');
+      expect(await takeBack).toMatchObject({ outcome: 'unmarked' });
+      // Refused as not present by its write, then found by its key: the first send's note, replayed.
+      expect(await resend).toMatchObject({ note_id: '00000000-0000-4000-8000-000000000001', replayed: true });
+    } finally {
+      await first.end();
+    }
+    const { rows } = await client.query(
+      `select note_id from pilot.session_staff_notes where organization_id = $1 and run_id = $2`,
+      [gym.organizationId, runId],
+    );
+    expect(rows).toEqual([{ note_id: '00000000-0000-4000-8000-000000000001' }]);
+  });
+
+  test('a note refused as not present with no note under its key is still refused', async () => {
+    const gym = await newGym('note-key-none');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    await tap(gym.coach, runId, gym.ada, false);
+    await expect(createRunStaffNote({ actor: gym.coach, runId, athleteId: gym.ada, note: 'Wrist taped.', requestKey: 'key-none' }))
+      .rejects.toMatchObject({ code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' });
   });
 });

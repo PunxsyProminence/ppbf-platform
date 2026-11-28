@@ -109,6 +109,10 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
         ? routes.attendanceToday()
         : jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1', 'ath_2'], marks: [] });
     }
+    if (url.includes('/api/pilot/on-the-floor/classes')) {
+      // The classes and rounds above the line's names (lane W4-3, FN-4b): HEALTHY, as below.
+      return jsonResponse({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] });
+    }
     if (url.includes('/api/pilot/on-the-floor')) {
       // The "on the floor now" line (lane W4-3, FN-3). Default is a HEALTHY read
       // with nobody counted, for the same reason as the reads above: a "could
@@ -607,7 +611,15 @@ describe("the Development tab shows the coach's real credential record", () => {
     // "could not be read" box, and a bare /could not be read/ match would go
     // green whichever of the two failed -- including when this one did not.
     expect(screen.queryByText(/credential record could not be read/i)).not.toBeNull();
-    expect(screen.queryByText(/no active clearance types/i)).toBeNull();
+    expect(screen.queryByText(/no active credential types/i)).toBeNull();
+  });
+
+  test('a gym with no credential types says so in the page\'s own words (AS-13 CS-18i)', async () => {
+    await renderWorkspace({ credentials: () => jsonResponse({ ok: true, items: [] }) });
+    openTab('Your Growth');
+
+    expect(screen.queryByText(/no active credential types configured/i)).not.toBeNull();
+    expect(screen.queryByText(/clearance types/i)).toBeNull();
   });
 
   test('no document reference reaches this hub, even for the document\'s own owner', async () => {

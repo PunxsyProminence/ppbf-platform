@@ -13,6 +13,10 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import GymTabletSettings from './GymTabletSettings';
 import { isGymTabletMarked } from '@/src/lib/gymTabletMark';
+import { turnOffPushInThisBrowser } from './PushAlertSwitch';
+
+// What turning push off does in a browser is PushAlertSwitch.test.tsx's; here, only when it is asked for.
+jest.mock('./PushAlertSwitch', () => ({ turnOffPushInThisBrowser: jest.fn(async () => undefined) }));
 
 const originalFetch = global.fetch;
 
@@ -31,7 +35,10 @@ async function mount() {
   });
 }
 
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  window.localStorage.clear();
+  jest.clearAllMocks();
+});
 afterEach(() => {
   global.fetch = originalFetch;
 });
@@ -108,4 +115,28 @@ test('marking and unmarking this device change the mark this browser keeps', asy
     fireEvent.click(screen.getByRole('button', { name: 'Unmark this device' }));
   });
   expect(isGymTabletMarked()).toBe(false);
+});
+
+test('marking this device also turns web push off in this browser (OW27-17 B); unmarking, or a mark the browser refused, does not', async () => {
+  respond({ ok: true, body: { idle_minutes: 60, is_default: true } });
+  await mount();
+  const spy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('QuotaExceededError');
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Mark this device as a gym tablet' }));
+  });
+  spy.mockRestore();
+  expect(turnOffPushInThisBrowser).not.toHaveBeenCalled();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Mark this device as a gym tablet' }));
+  });
+  expect(isGymTabletMarked()).toBe(true);
+  expect(turnOffPushInThisBrowser).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Unmark this device' }));
+  });
+  expect(turnOffPushInThisBrowser).toHaveBeenCalledTimes(1);
 });

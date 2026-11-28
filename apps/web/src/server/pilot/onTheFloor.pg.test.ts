@@ -26,6 +26,8 @@ let activeClient: Client | null = null;
 let mockFailQuery: RegExp | null = null;
 /** When set, every transaction fails before its first statement (the idle close's path). */
 let mockFailTransactions = false;
+/** When set, runs once just before the first query whose SQL matches (a change committed mid-read). */
+let mockBeforeQuery: { match: RegExp; run: () => Promise<void> } | null = null;
 
 function mockInjectedFailure(): Error {
   return Object.assign(new Error('injected failure for the test'), { code: 'XX000' });
@@ -35,6 +37,11 @@ jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
     if (mockFailQuery?.test(text)) throw mockInjectedFailure();
+    if (mockBeforeQuery?.match.test(text)) {
+      const hook = mockBeforeQuery;
+      mockBeforeQuery = null;
+      await hook.run();
+    }
     const result = await activeClient.query(text, params);
     return result.rows;
   }),
@@ -63,7 +70,7 @@ jest.mock('./db', () => ({
 import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { ForbiddenError } from './errors';
-import { listOnTheFloorForStaff } from './onTheFloor';
+import { listOnTheFloorForStaff, onTheFloorForFamily } from './onTheFloor';
 import { startSessionScriptRun } from './sessionScriptRuns';
 
 jest.setTimeout(240_000);
@@ -170,18 +177,42 @@ async function member(gym: Gym, role: PilotRole): Promise<ActorIdentity> {
   return actor(gym.organizationId, accountId, role);
 }
 
-async function addAthlete(gym: Gym, athleteId: string, name: string, { deleted = false } = {}) {
+async function addAthlete(
+  gym: Gym, athleteId: string, name: string, { deleted = false, dob = '2012-01-01' as string | null } = {},
+) {
   await client.query(
     `insert into pilot.athletes
        (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag,
         coach_id, created_at, updated_at, deleted_at)
-     values ($1, $2, $3, '2012-01-01', '100', 'active', 'contact', true, $4, now(), now(), $5)`,
-    [gym.organizationId, athleteId, name, gym.coach.accountId, deleted ? new Date() : null],
+     values ($1, $2, $3, $6::date, '100', 'active', 'contact', true, $4, now(), now(), $5)`,
+    [gym.organizationId, athleteId, name, gym.coach.accountId, deleted ? new Date() : null, dob],
   );
 }
 
+/** A parent account with an active membership, backing one pilot.parents row linked to these athletes. */
+async function parentOf(gym: Gym, athleteIds: readonly string[]): Promise<ActorIdentity> {
+  const parent = await member(gym, 'parent');
+  const parentId = `parent-row-${parent.accountId}`;
+  await client.query(
+    `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'A parent')`,
+    [gym.organizationId, parentId, parent.accountId],
+  );
+  for (const athleteId of athleteIds) {
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'parent')`,
+      [gym.organizationId, parentId, athleteId],
+    );
+  }
+  return parent;
+}
+
+/** An athlete's own session: the athlete role, and the athlete record it is linked to (or none). */
+function athleteAccount(gym: Gym, athleteId: string | null): ActorIdentity {
+  return { ...actor(gym.organizationId, `athlete-${athleteId ?? 'none'}@${gym.organizationId}`, 'athlete'), athleteId };
+}
+
 /** A class at `startLocal` gym time on `day` (one hour long). */
-async function addClass(gym: Gym, classId: string, day: string, startLocal: string, { cancelled = false } = {}) {
+async function addClass(gym: Gym, classId: string, day: string, startLocal: string, { cancelled = false, full = false } = {}) {
   await client.query(
     `insert into pilot.scheduler_classes
        (organization_id, class_id, title, start_at, end_at, location, capacity,
@@ -190,7 +221,7 @@ async function addClass(gym: Gym, classId: string, day: string, startLocal: stri
              ($3 || ' ' || $4)::timestamp at time zone 'America/New_York',
              ($3 || ' ' || $4)::timestamp at time zone 'America/New_York' + interval '1 hour',
              'Main floor', 20, $5, $5, $6)`,
-    [gym.organizationId, classId, day, startLocal, gym.coach.accountId, cancelled ? 'cancelled' : 'open'],
+    [gym.organizationId, classId, day, startLocal, gym.coach.accountId, cancelled ? 'cancelled' : full ? 'full' : 'open'],
   );
 }
 
@@ -541,5 +572,219 @@ describe('listOnTheFloorForStaff on a real database', () => {
 
     mockFailQuery = statement;
     await expect(listOnTheFloorForStaff(gym.coach, NOW)).rejects.toThrow('injected failure');
+  });
+});
+
+describe('onTheFloorForFamily on a real database (FN-2)', () => {
+  /*
+   * One gym, read at NOW (15:00 at the gym). Every child but Kim and the other
+   * parent's child is linked to parent A.
+   *   Reg   a staff mark on a class that started at 14:00            counts
+   *   Run   a mark on an untied live run                              counts (FN-0 F1: the new fact)
+   *   Cxr   a present mark on a cancelled class                       staff only (FN0-Q1 A)
+   *   Cxu   a mark on a run tied to a cancelled class                 staff only (flag 9)
+   *   Tie   a mark on a run tied to an open class, no register mark   counts (only a cancelled tie is left out)
+   *   Ful   a present mark on a full class                            counts (full is not cancelled)
+   *   Fru   a mark on a run tied to a full class                      counts
+   *   Exc   a run mark, then Excused on the run's class               nobody (FN0-Q6 A)
+   *   Eve   a parent's own mark on the 18:00 class                    nobody yet (FN0-Q2 A)
+   *   Non   no mark                                                   nobody
+   *   Adu   18 or over, marked                                        staff, and herself; not the parent (F6)
+   *   Del   deleted, marked                                           nobody; refused as an athlete
+   *   Kim   marked, linked to parent B only                           staff, and parent B
+   * F6's "no date of birth reads as a minor" cannot be built as a row: pilot.athletes.dob is NOT NULL
+   * (infra/azure/pilot_slice_postgres.sql:88), so that rule lives in isMinor alone.
+   */
+  async function familyGym(label: string) {
+    const gym = await newGym(label);
+    for (const [id, name, dob] of [
+      ['reg', 'Reg', '2012-01-01'], ['run', 'Run', '2012-01-01'], ['cxr', 'Cxr', '2012-01-01'],
+      ['cxu', 'Cxu', '2012-01-01'], ['tie', 'Tie', '2012-01-01'], ['ful', 'Ful', '2012-01-01'], ['fru', 'Fru', '2012-01-01'],
+      ['exc', 'Exc', '2012-01-01'], ['eve', 'Eve', '2012-01-01'], ['non', 'Non', '2012-01-01'],
+      ['adu', 'Adu', '2000-01-01'], ['kim', 'Kim', '2012-01-01'],
+    ] as const) {
+      await addAthlete(gym, id, name, { dob });
+    }
+    await addAthlete(gym, 'del', 'Del', { deleted: true });
+
+    const [coachB, coachC, coachD, coachE] = [
+      await member(gym, 'coach'), await member(gym, 'coach'), await member(gym, 'coach'), await member(gym, 'coach'),
+    ];
+    // Every run is started before any clock is set: a start sweeps idle runs on the real clock.
+    const untied = await liveRun(gym, gym.coach);
+    const cancelledTie = await liveRun(gym, coachB);
+    const sentHome = await liveRun(gym, coachC);
+    const forgotten = await liveRun(gym, coachD); // idle past 3 hours, no marks
+    const fullTie = await liveRun(gym, coachE);
+    for (const runId of [untied, cancelledTie, sentHome, fullTie]) await setRunStart(gym, runId, at(-30));
+    await setRunStart(gym, forgotten, at(-300));
+
+    await addClass(gym, 'f-now', TODAY, '14:00');
+    await addClass(gym, 'f-cancelled', TODAY, '13:00', { cancelled: true });
+    await addClass(gym, 'f-sent-home', TODAY, '14:30');
+    await addClass(gym, 'f-evening', TODAY, '18:00');
+    await addClass(gym, 'f-full', TODAY, '14:00', { full: true });
+    await tieRun(gym, cancelledTie, 'f-cancelled');
+    await tieRun(gym, sentHome, 'f-sent-home');
+    await tieRun(gym, fullTie, 'f-full');
+    // Another gym's class with the same id, cancelled there: class ids are unique only per gym, so the
+    // cancelled-tie check must match the run's own gym (Tie still counts).
+    const twin = await newGym(`${label}-twin`);
+    await addClass(twin, 'f-sent-home', TODAY, '14:30', { cancelled: true });
+
+    for (const id of ['reg', 'adu', 'del', 'kim']) await registerMark(gym, 'f-now', id, 'present', at(-30));
+    await hereMark(gym, untied, 'run', at(-20));
+    await registerMark(gym, 'f-cancelled', 'cxr', 'present', at(-90));
+    await hereMark(gym, cancelledTie, 'cxu', at(-20));
+    await hereMark(gym, sentHome, 'exc', at(-20));
+    await hereMark(gym, sentHome, 'tie', at(-20)); // the open class's register holds no mark for her
+    await registerMark(gym, 'f-full', 'ful', 'present', at(-30));
+    await hereMark(gym, fullTie, 'fru', at(-20));
+    await registerMark(gym, 'f-sent-home', 'exc', 'excused', at(-10));
+    await registerMark(gym, 'f-evening', 'eve', 'present', at(-60), 'parent');
+
+    const parentA = await parentOf(gym, ['reg', 'run', 'cxr', 'cxu', 'tie', 'ful', 'fru', 'exc', 'eve', 'non', 'adu', 'del']);
+    const parentB = await parentOf(gym, ['kim']);
+    return { gym, parentA, parentB, forgotten };
+  }
+
+  const ids = (answer: { on_the_floor: readonly string[] | boolean }) => [...(answer.on_the_floor as readonly string[])].sort();
+
+  test('a parent is answered with their own minor children who count, by id, and nothing else (F6, checks 1 to 3)', async () => {
+    const { gym, parentA, parentB } = await familyGym('parents');
+
+    const a = await onTheFloorForFamily(parentA, NOW);
+    expect(Object.keys(a).sort()).toEqual(['on_the_floor', 'reader']);
+    expect(a.reader).toBe('parent');
+    expect(ids(a)).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
+    expect(ids(await onTheFloorForFamily(parentB, NOW))).toEqual(['kim']);
+
+    // The same gym's staff line keeps the cancelled class's mark and the run tied to it (FN0-Q1 A), the
+    // adult, and the other family's child; it never had the sent-home, early or unmarked children.
+    expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toEqual(['Adu', 'Cxr', 'Cxu', 'Fru', 'Ful', 'Kim', 'Reg', 'Run', 'Tie']);
+  });
+
+  test('an athlete is answered yes or no about themselves only, by the family rules', async () => {
+    const { gym } = await familyGym('athletes');
+    const expected: Record<string, boolean> = {
+      reg: true, run: true, adu: true, kim: true, tie: true, ful: true, fru: true,
+      cxr: false, cxu: false, exc: false, eve: false, non: false,
+    };
+    for (const [id, onFloor] of Object.entries(expected)) {
+      const answer = await onTheFloorForFamily(athleteAccount(gym, id), NOW);
+      expect({ id, answer }).toEqual({ id, answer: { reader: 'athlete', on_the_floor: onFloor } });
+    }
+  });
+
+  // Codex on #2220 (4723722713); App Overwatch 7228636120. An athlete's session can outlive their record:
+  // a soft-deleted or missing record is refused, as on the other athlete-self routes (OD-2026-09-29-002
+  // item 10), never answered "not counted", and nothing is settled for it.
+  test('an athlete whose record is soft-deleted, or missing, is refused before anything is settled', async () => {
+    const { gym, forgotten } = await familyGym('athlete-record-gone');
+    const other = await newGym('athlete-record-gone-other');
+    await addAthlete(other, 'elsewhere', 'Elsewhere');
+    for (const caller of [
+      athleteAccount(gym, 'del'), // soft-deleted, with a present mark on today's register
+      athleteAccount(gym, 'ghost'), // never a record in this gym
+      athleteAccount(gym, 'elsewhere'), // a live record, but in another gym
+    ]) {
+      await expect(onTheFloorForFamily(caller, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    expect(await runState(gym, forgotten)).toBe('in_progress');
+
+    // A session that outlives its record: answered while the record is live, refused once it is deleted.
+    expect(await onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).toEqual({ reader: 'athlete', on_the_floor: true });
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = 'reg'`, [gym.organizationId]);
+    await expect(onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  test('a parent of no live minor child, or one naming another gym, gets an empty answer and nothing is settled', async () => {
+    const { gym, parentA, forgotten } = await familyGym('empty-scope');
+
+    const adultsAndDeletedOnly = await parentOf(gym, ['adu', 'del']);
+    const unlinked = await parentOf(gym, []);
+    const other = await newGym('empty-scope-other');
+    for (const parent of [adultsAndDeletedOnly, unlinked, { ...parentA, organizationId: other.organizationId }]) {
+      expect(await onTheFloorForFamily(parent, NOW)).toEqual({ reader: 'parent', on_the_floor: [] });
+    }
+    expect(await runState(gym, forgotten)).toBe('in_progress');
+
+    // A parent with a child in scope does run the close first, as the staff line does (F13).
+    expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
+    expect(await runState(gym, forgotten)).toBe('abandoned');
+  });
+
+  test('a guardian link removed after the scope is read, before the line is counted, is not counted (App Overwatch on #2192)', async () => {
+    const { gym, parentA } = await familyGym('link-removed');
+    expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual(['fru', 'ful', 'reg', 'run', 'tie']);
+
+    // The links go the moment the first count statement is sent: guardianAthleteIds has already read
+    // them, so only a check inside each count statement can see that they are gone. Two more children
+    // turn adult at the same moment (one counted through the register, one through a run), so the 18
+    // rule is applied to the date of birth each statement returns, not only to the earlier scope.
+    mockBeforeQuery = {
+      match: /from pilot\.session_run_athletes m|from pilot\.scheduler_attendance sa/,
+      // One statement, so it is queued on the client before either count statement is sent.
+      run: async () => {
+        await client.query(
+          `with unlinked as (
+             delete from pilot.guardian_links where organization_id = $1 and athlete_id = any($2::text[]) returning 1
+           )
+           update pilot.athletes set dob = '2000-01-01' where organization_id = $1 and athlete_id = any($3::text[])`,
+          [gym.organizationId, ['reg', 'run', 'tie'], ['ful', 'fru']],
+        );
+      },
+    };
+    try {
+      expect(ids(await onTheFloorForFamily(parentA, NOW))).toEqual([]);
+      expect(mockBeforeQuery).toBeNull();
+    } finally {
+      mockBeforeQuery = null;
+    }
+    // The athlete's own line and the staff line are not the guardian's, and do not change.
+    expect(await onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).toEqual({ reader: 'athlete', on_the_floor: true });
+    expect(names(await listOnTheFloorForStaff(gym.coach, NOW))).toContain('Reg');
+  });
+
+  test('anyone but a parent, or an athlete linked to a record, is refused (403) before anything is read or closed', async () => {
+    const gym = await newGym('family-refused');
+    await addAthlete(gym, 'amy', 'Amy');
+    const forgotten = await liveRun(gym, gym.coach);
+    await setRunStart(gym, forgotten, at(-300));
+    await hereMark(gym, forgotten, 'amy', at(-240));
+
+    const refused: ActorIdentity[] = [
+      gym.coach,
+      gym.admin,
+      { ...gym.admin, role: 'admin' },
+      await member(gym, 'board'),
+      await member(gym, 'volunteer'),
+      await member(gym, 'staff'),
+      await member(gym, 'platform_owner'),
+      athleteAccount(gym, null), // an athlete account with no athlete record (FN-0 check 8)
+      { ...(await member(gym, 'parent')), accountId: '' }, // a parent with no account id: refused, never unchecked
+    ];
+    for (const caller of refused) {
+      await expect(onTheFloorForFamily(caller, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    expect(await runState(gym, forgotten)).toBe('in_progress');
+  });
+
+  test.each([
+    ['the idle close', null],
+    ['the run marks', /from pilot\.session_run_athletes m/],
+    ['the register', /from pilot\.scheduler_attendance sa/],
+    ['the roster', /from pilot\.athletes/],
+  ])('when %s fails, the family read fails: never an answer from part of it', async (_label, statement) => {
+    const { parentA, gym } = await familyGym('family-fails');
+    if (statement) mockFailQuery = statement;
+    else mockFailTransactions = true;
+    try {
+      await expect(onTheFloorForFamily(parentA, NOW)).rejects.toThrow('injected failure');
+      await expect(onTheFloorForFamily(athleteAccount(gym, 'reg'), NOW)).rejects.toThrow('injected failure');
+    } finally {
+      mockFailQuery = null;
+      mockFailTransactions = false;
+    }
   });
 });

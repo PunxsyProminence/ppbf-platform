@@ -17,8 +17,9 @@
 ## Intent
 Athlete Voice owns the bridge from the feedback box to the escalation
 ladder: when an athlete's submission routes to safeguarding, an
-`athlete_voice` escalation is filed so the platform's only notification
-surface carries the alarm and not just the queue. It must never restate,
+`athlete_voice` escalation is filed so the escalation ladder, the only place
+the platform says what happened (an opted-in admin's email says only "open
+the app", lane W4-1), carries the alarm and not just the queue. It must never restate,
 quote, or hint at the submission's words outside the safeguarding triage
 queue; it must never surface a disclosure-driven escalation — or its
 existence — to a coach; and it must never let any observable difference in

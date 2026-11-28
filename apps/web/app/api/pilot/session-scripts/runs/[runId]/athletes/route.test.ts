@@ -197,10 +197,12 @@ describe('POST', () => {
   });
 
   // D4 (OD-2026-10-21-002): on a session tied to a class, what the tap did to the register.
-  it('answers what a tied tap did to the register, with the hold warning only when it wrote a mark', async () => {
+  it('answers what a tied tap did to the register, with the hold warning when it wrote a mark or the register kept a later change', async () => {
     const HOLD = { hold_id: 'hold-1', scope: 'contact', reason_category: 'medical', athlete_explanation: '', lift_condition_text: '', expires_at: null };
     mockHold.mockResolvedValue(HOLD);
-    for (const register of [{ effect: 'created' }, { effect: 'flipped', previous_status: 'absent' }]) {
+    // register_newer: a late kept tap marked the athlete here and the register kept a change made after
+    // it; the tap is the athlete's only check-in, so the warning still shows (OVERWATCH 7165860051).
+    for (const register of [{ effect: 'created' }, { effect: 'flipped', previous_status: 'absent' }, { effect: 'register_newer', status: 'excused' }]) {
       mockSet.mockResolvedValueOnce({ outcome: 'marked', register });
       const response = await post({ athlete_id: 'ath-1', present: true });
       await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, register, hold_warning: HOLD });
@@ -324,5 +326,87 @@ describe('POST tapped_ms_ago', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'tapped_ms_ago' });
     expect(mockSet).not.toHaveBeenCalled();
+  });
+});
+
+// W4 item 7, #2182 round 12: the page a kept tap was made on, so the register lets it win over that
+// page's own no-shows Absent and nothing else's (schedulerDb.ts writeSessionRegisterPresent).
+describe('POST page_id', () => {
+  it('hands the module the page id; without it, or with null, none, exactly as before', async () => {
+    await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 1_000, page_id: 'page-1' });
+    await post({ athlete_id: 'ath-1', present: true, tapped_ms_ago: 1_000 });
+    await post({ athlete_id: 'ath-1', present: true, page_id: null });
+    expect(mockSet.mock.calls[0][0]).toEqual(expect.objectContaining({ pageId: 'page-1' }));
+    expect(mockSet.mock.calls[1][0]).not.toHaveProperty('pageId');
+    expect(mockSet.mock.calls[2][0]).not.toHaveProperty('pageId');
+  });
+
+  it('takes a page id of 200 characters, and a surrogate pair', async () => {
+    expect((await post({ athlete_id: 'ath-1', present: true, page_id: 'p'.repeat(200) })).status).toBe(200);
+    expect((await post({ athlete_id: 'ath-1', present: true, page_id: `p-${String.fromCharCode(0xd83e, 0xdd4a)}` })).status).toBe(200);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '  '],
+    ['too long', 'p'.repeat(201)],
+    ['a number', 7],
+    ['with a NUL', `p${String.fromCharCode(0)}1`],
+    ['with a lone high surrogate', `p${String.fromCharCode(0xd800)}`],
+    ['with a lone low surrogate', `p${String.fromCharCode(0xdc00)}`],
+  ])('refuses a page_id that is %s, and marks nothing', async (_label, value) => {
+    const response = await post({ athlete_id: 'ath-1', present: true, page_id: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'page_id' });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+});
+
+// OVERWATCH 7170099938 on #2178: a kept here tap carries its own request key, and the module decides a
+// resend by it; a resend of a recorded key is answered with the first answer, replayed.
+describe('POST request_key', () => {
+  it('hands the module the key; without it, or with null, none, exactly as before', async () => {
+    await post({ athlete_id: 'ath-1', present: true, request_key: 'key-1' });
+    await post({ athlete_id: 'ath-1', present: true });
+    await post({ athlete_id: 'ath-1', present: true, request_key: null });
+    expect(mockSet.mock.calls[0][0]).toEqual(expect.objectContaining({ requestKey: 'key-1' }));
+    expect(mockSet.mock.calls[1][0]).not.toHaveProperty('requestKey');
+    expect(mockSet.mock.calls[2][0]).not.toHaveProperty('requestKey');
+  });
+
+  it('answers a replay with replayed and live, and a first answer without them', async () => {
+    mockSet.mockResolvedValueOnce({ outcome: 'marked', replayed: true, live: false });
+    const replay = await post({ athlete_id: 'ath-1', present: true, request_key: 'key-1' });
+    await expect(replay.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, replayed: true, live: false });
+    mockSet.mockResolvedValueOnce({ outcome: 'marked' });
+    const first = await post({ athlete_id: 'ath-1', present: true, request_key: 'key-2' });
+    await expect(first.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true });
+  });
+
+  it('takes a key of 200 characters, and a surrogate pair', async () => {
+    expect((await post({ athlete_id: 'ath-1', present: true, request_key: 'k'.repeat(200) })).status).toBe(200);
+    expect((await post({ athlete_id: 'ath-1', present: true, request_key: `k-${String.fromCharCode(0xd83e, 0xdd4a)}` })).status).toBe(200);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '  '],
+    ['too long', 'k'.repeat(201)],
+    ['a number', 7],
+    ['with a NUL', `k${String.fromCharCode(0)}1`],
+    ['with a lone high surrogate', `k${String.fromCharCode(0xd800)}`],
+    ['with a lone low surrogate', `k${String.fromCharCode(0xdc00)}`],
+  ])('refuses a request_key that is %s, and marks nothing', async (_label, value) => {
+    const response = await post({ athlete_id: 'ath-1', present: true, request_key: value });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'request_key' });
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('answers the same key sent for another tap with 409 and its code', async () => {
+    mockSet.mockRejectedValueOnce(new SessionScriptRunError('SESSION_RUN_KEY_REUSED', 409));
+    const response = await post({ athlete_id: 'ath-1', present: false, request_key: 'key-1' });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'SESSION_RUN_KEY_REUSED' });
   });
 });

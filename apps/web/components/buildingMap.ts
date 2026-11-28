@@ -850,11 +850,17 @@ export function doorsByRoom(role: ClubRole | null): Array<{ room: Room; doors: D
  * words (Overwatch's Q-E A on #2212: "a low-ranked match on the room's shown
  * name"). An old room name is not matched (OW27-41 A), unless a door's own
  * keywords already hold it.
+ *
+ * `labelOf`, when given, is the label the menus show for a door (the gym's
+ * name for a door that is a card, lane W4-9 RN-3), scored in place of the
+ * door's own label, so Search matches the name shown and not the old one
+ * (OW27-41 A).
  */
 export function searchDoors(
   role: ClubRole | null,
   query: string,
   roomNameOf?: (href: string) => string | null,
+  labelOf?: (door: Door) => string,
 ): Door[] {
   const visible = visibleDoors(role);
   const q = query.trim().toLowerCase();
@@ -862,7 +868,7 @@ export function searchDoors(
 
   const scored: Array<{ door: Door; score: number }> = [];
   for (const door of visible) {
-    const label = door.label.toLowerCase();
+    const label = (labelOf ? labelOf(door) : door.label).toLowerCase();
     const hay = `${label} ${door.keywords ?? ''} ${door.href}`.toLowerCase();
 
     let score = -1;

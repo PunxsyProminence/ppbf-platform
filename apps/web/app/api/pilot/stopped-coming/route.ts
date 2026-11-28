@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
  * and the "reached out" mark on it (SC-3a-2; OW27-33 B, Overwatch W4-6 Q4 A).
  *
  *   GET   { ok, gap_days, is_default, today, athletes: [{ athlete_id, full_name, last_came_day, days_since_came,
- *           reached_out: { by_name, on_day } | null }] }
+ *           reached_out: { by_name, by_role: 'coach' | 'office', on_day } | null }] }
  *   PUT   { athlete_id, reached_out: true | false }
  *         -> { ok, outcome: 'marked' | 'already_marked' | 'taken_back' | 'not_marked' }
  *

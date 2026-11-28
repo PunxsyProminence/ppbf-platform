@@ -14,6 +14,7 @@ import {
   getLiveRunForCoach,
   listSettledRunsForOrganization,
   listSettledRunsForScript,
+  startClassPlanRun,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
 
@@ -114,7 +115,9 @@ export async function GET(request: NextRequest) {
 
 // Every start field is optional: a start without script_id is a plain session (Jason 2026-10-12,
 // issue #1523); a start without class_id is tied to no class (open gym).
-const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on', 'class_id'] as const;
+// class_plan: true starts the class's own plan, resolved by the server at the start
+// (sessionScriptRuns.ts startClassPlanRun; Codex P1 on #2241): it names a class and no script.
+const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on', 'class_id', 'class_plan'] as const;
 
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
@@ -190,6 +193,14 @@ export async function POST(request: NextRequest) {
       return badRequest('class_id');
     }
 
+    if (
+      record.class_plan !== undefined
+      && (record.class_plan !== true || typeof record.class_id !== 'string'
+        || (record.script_id !== undefined && record.script_id !== null))
+    ) {
+      return badRequest('class_plan');
+    }
+
     // A date, not a timestamp: delivered_on is which night this was, and accepting a full
     // timestamp here would invite it to be confused with the start time the server owns.
     //
@@ -208,13 +219,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const run = await startSessionScriptRun(principal.organizationId, principal.accountId, {
-      scriptId: typeof record.script_id === 'string' ? record.script_id.trim() : null,
+    const start = {
       activityId: (record.activity_id as string | undefined) ?? null,
       athletesPresent,
       deliveredOn: (record.delivered_on as string | undefined) ?? undefined,
-      classId: typeof record.class_id === 'string' ? record.class_id.trim() : null,
       actorRole: principal.role,
+    };
+    if (record.class_plan === true && typeof record.class_id === 'string') {
+      const { run, classPlan } = await startClassPlanRun(principal.organizationId, principal.accountId, {
+        ...start,
+        classId: record.class_id.trim(),
+      });
+      return NextResponse.json({ run, class_plan: classPlan }, { status: 201 });
+    }
+
+    const run = await startSessionScriptRun(principal.organizationId, principal.accountId, {
+      ...start,
+      scriptId: typeof record.script_id === 'string' ? record.script_id.trim() : null,
+      classId: typeof record.class_id === 'string' ? record.class_id.trim() : null,
     });
 
     return NextResponse.json({ run }, { status: 201 });

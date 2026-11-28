@@ -365,7 +365,8 @@ export default function CardCatalog() {
       const group = searchGroupOf(href, role);
       return group && group !== 'home' && group !== 'lab' ? roomNames.place(group) : null;
     };
-    return searchDoors(role, query, roomNameOf).filter((door) => allowed.has(door.href));
+    // A door that is a card (the /profile door) is matched by the name shown (RN-3, OW27-41 A).
+    return searchDoors(role, query, roomNameOf, roomNames.door).filter((door) => allowed.has(door.href));
   }, [trimmed, grouped, openDoors, role, query, roomNames]);
 
   const matchedActs = useMemo(
@@ -633,6 +634,7 @@ export default function CardCatalog() {
                     showRoom
                     role={role}
                     placeName={roomNames.place}
+                    doorLabel={roomNames.door}
                     onPick={() => go(door)}
                     onHover={() => setCursor(actCount + i)}
                   />
@@ -660,6 +662,7 @@ export default function CardCatalog() {
                             current={door.href === hereHref}
                             idx={i}
                             active={i === cursor}
+                            doorLabel={roomNames.door}
                             onPick={() => go(door)}
                             onHover={() => setCursor(i)}
                           />
@@ -697,10 +700,11 @@ export default function CardCatalog() {
 }
 
 function CatalogRow({
-  door, idx, active, showRoom, role, current, placeName, onPick, onHover,
+  door, idx, active, showRoom, role, current, placeName, doorLabel, onPick, onHover,
 }: {
   door: Door; idx: number; active: boolean; showRoom?: boolean; role?: ClubRole | null; current?: boolean;
   placeName?: (place: RoomPlace) => string;
+  doorLabel?: (door: Door) => string;
   onPick: () => void; onHover: () => void;
 }) {
   const group = showRoom ? searchGroupOf(door.href, role ?? null) : null;
@@ -716,7 +720,7 @@ function CatalogRow({
       onMouseEnter={onHover}
     >
       <div className="catalog-row-main">
-        <b>{door.label}</b>
+        <b>{doorLabel ? doorLabel(door) : door.label}</b>
         {current && <span className="catalog-row-hint" style={{ fontSize: 'var(--t-xs)' }}>You are here.</span>}
         {door.hint && <span className="catalog-row-hint">{door.hint}</span>}
       </div>

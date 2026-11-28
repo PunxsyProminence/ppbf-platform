@@ -49,10 +49,10 @@ let schedulerToday: { classes: Array<Record<string, unknown>>; attendance: Array
    Corner's. The Session Log keeps its pre-check-in note box, and the note still
    carries into the session, because the Corner's button calls the same
    handleCheckIn. Until AS-8 the Session Log had a second Start training. */
-const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
+const corner = () => within(screen.getByRole('region', { name: 'My Corner' }));
 const sessionLog = () => within(screen.getByRole('region', { name: 'Session log' }));
 const startTrainingButton = async () =>
-  within(await screen.findByRole('region', { name: 'My corner' })).findByRole('button', { name: 'Start training' });
+  within(await screen.findByRole('region', { name: 'My Corner' })).findByRole('button', { name: 'Start training' });
 // The session read never answers: the workspace stays on 'loading'.
 let sessionListHangs = false;
 let sessionUpdateFails = false;
@@ -564,7 +564,7 @@ describe('the opening screen (lane AS-8)', () => {
     expect(screen.getByRole('button', { name: 'How I feel today' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: 'Dashboard' }).getAttribute('aria-current')).toBeNull();
     expect(screen.getByRole('region', { name: "Today's class" })).toBeTruthy();
-    const myCorner = within(screen.getByRole('region', { name: 'My corner' }));
+    const myCorner = within(screen.getByRole('region', { name: 'My Corner' }));
     expect(myCorner.getByRole('button', { name: 'Report pain or soreness' })).toBeTruthy();
     expect(await myCorner.findByRole('button', { name: 'Start training' })).toBeTruthy();
   });
@@ -583,7 +583,7 @@ describe('the opening screen (lane AS-8)', () => {
       const heading = screen.getByRole('heading', { level: 1 });
       const nav = screen.getByRole('button', { name: 'Today' });
       const imHere = screen.getByRole('region', { name: "Today's class" });
-      const myCorner = screen.getByRole('region', { name: 'My corner' });
+      const myCorner = screen.getByRole('region', { name: 'My Corner' });
       const reportPain = within(myCorner).getByRole('button', { name: 'Report pain or soreness' });
       const chalkboard = container.querySelector('.chalkboard') as Element;
       expect(chalkboard).not.toBeNull();
@@ -601,7 +601,7 @@ describe('the opening screen (lane AS-8)', () => {
       await Promise.resolve();
     });
     openTab('Goals');
-    expect(screen.queryByRole('region', { name: 'My corner' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'My Corner' })).toBeNull();
     expect(precedes(screen.getByRole('button', { name: 'Progress' }), container.querySelector('.chalkboard') as Element)).toBe(true);
   });
 
@@ -624,7 +624,7 @@ describe('the opening screen (lane AS-8)', () => {
       window.matchMedia = ((query: string) => ({ matches: reduce && query.includes('reduce'), media: query })) as unknown as typeof window.matchMedia;
       try {
         await renderWorkspace();
-        fireEvent.click(within(screen.getByRole('region', { name: 'My corner' })).getByRole('button', { name: 'Report pain or soreness' }));
+        fireEvent.click(within(screen.getByRole('region', { name: 'My Corner' })).getByRole('button', { name: 'Report pain or soreness' }));
         expect(scrolls).toEqual([{ behavior, block: 'center' }]);
         expect(document.activeElement?.id).toBe('pain-location-select');
       } finally {

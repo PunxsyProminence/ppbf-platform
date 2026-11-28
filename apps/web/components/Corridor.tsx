@@ -39,7 +39,9 @@ export default function Corridor() {
   if (!role) return null;
 
   const room = group ? searchGroupLabel(group, roomNames.place) : 'All pages';
-  const where = here ? `${room}, ${here.label}` : room;
+  // The page's name as the menus show it (a card name reads the gym's word, RN-3).
+  const hereLabel = here ? roomNames.door(here) : null;
+  const where = here ? `${room}, ${hereLabel}` : room;
 
   return (
     <div className="corridor-root">
@@ -55,7 +57,7 @@ export default function Corridor() {
         {/* The page's name steps off the phone: the page's own title says it,
             and keeping it made the room name beside it the part that was cut
             ("FRONT OF…"). */}
-        {here && <span className="corridor-trigger-here hidden sm:inline">{here.label}</span>}
+        {here && <span className="corridor-trigger-here hidden sm:inline">{hereLabel}</span>}
       </button>
     </div>
   );
