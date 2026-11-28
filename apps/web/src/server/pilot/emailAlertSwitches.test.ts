@@ -194,7 +194,7 @@ describe('the address code, without a database', () => {
     mockQueryOne.mockResolvedValueOnce({ dob: null }).mockResolvedValueOnce(null);
     await expect(requestEmailAlertAddressCode({ ...athlete, address }, sendCode, NOW)).rejects.toBeInstanceOf(ForbiddenError);
     mockQueryOne.mockResolvedValueOnce({ dob: null }).mockResolvedValueOnce(null);
-    await expect(confirmEmailAlertAddress({ ...athlete, code: '123456' }, NOW)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(confirmEmailAlertAddress({ ...athlete, code: '123456' }, () => NOW)).rejects.toBeInstanceOf(ForbiddenError);
     expect(sendCode).not.toHaveBeenCalled();
     expect(withTransaction).not.toHaveBeenCalled();
     expect(getRateLimitStatus(`email_alert_code_address:${hashToken(address)}`).count).toBe(0);
@@ -207,7 +207,7 @@ describe('the address code, without a database', () => {
     await expect(requestEmailAlertAddressCode({ ...athlete, address: 'not an address' }, sendCode, NOW))
       .rejects.toMatchObject({ status: 400, message: 'Enter a valid email address' });
     for (const code of ['12345', '1234567', 'abcdef', 123456, null]) {
-      await expect(confirmEmailAlertAddress({ ...athlete, code }, NOW))
+      await expect(confirmEmailAlertAddress({ ...athlete, code }, () => NOW))
         .rejects.toMatchObject({ status: 400, message: 'Enter the six-digit code from the email' });
     }
     expect(mockQueryOne.mock.calls.every((call) => /join pilot\.athletes/.test(call[0]))).toBe(true);
@@ -221,8 +221,8 @@ describe('the address code, without a database', () => {
     for (const attempt of [
       () => requestEmailAlertAddressCode({ ...athlete, address: 'not an address' }, sendCode, NOW),
       () => requestEmailAlertAddressCode({ ...athlete, address: 'well.formed@example.test' }, sendCode, NOW),
-      () => confirmEmailAlertAddress({ ...athlete, code: '12' }, NOW),
-      () => confirmEmailAlertAddress({ ...athlete, code: '123456' }, NOW),
+      () => confirmEmailAlertAddress({ ...athlete, code: '12' }, () => NOW),
+      () => confirmEmailAlertAddress({ ...athlete, code: '123456' }, () => NOW),
     ]) {
       await expect(attempt()).rejects.toThrow(new ForbiddenError('Forbidden: email alerts are not offered to this account'));
     }

@@ -5,6 +5,7 @@ import { emailAlertCodeMailer } from '@/src/server/pilot/emailAlertCode';
 import {
   confirmEmailAlertAddress,
   emailAlertCodeLimitError,
+  refuseUnlessAdultAthlete,
   requestEmailAlertAddressCode,
 } from '@/src/server/pilot/emailAlertSwitches';
 import { ConflictError, ForbiddenError, ServiceUnavailableError, ValidationError } from '@/src/server/pilot/errors';
@@ -14,8 +15,9 @@ import { requirePrincipal } from '@/src/server/pilot/http';
  * An adult athlete's alert address route (lane W4-1, EM-2b-2; plan on #2159,
  * section 8; OW27-38 B, OW27-02 C). The store is mocked: this file pins who may
  * call, that the request names nobody else, the body shape, and that every
- * answer is the store's, mapped without an address in it. The adult check,
- * the limits, the tries and the races are emailAlertAddress.pg.test.ts.
+ * answer is the store's, mapped without an address in it, and that the store's
+ * adult check is asked after the request is read and before it is judged. The adult check
+ * itself, the limits, the tries and the races are emailAlertAddress.pg.test.ts.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -25,7 +27,12 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/emailAlertSwitches', () => {
   const actual = jest.requireActual('@/src/server/pilot/emailAlertSwitches');
-  return { ...actual, requestEmailAlertAddressCode: jest.fn(), confirmEmailAlertAddress: jest.fn() };
+  return {
+    ...actual,
+    refuseUnlessAdultAthlete: jest.fn(),
+    requestEmailAlertAddressCode: jest.fn(),
+    confirmEmailAlertAddress: jest.fn(),
+  };
 });
 
 const mailer = jest.fn();
@@ -34,9 +41,11 @@ jest.mock('@/src/server/pilot/emailAlertCode', () => ({ emailAlertCodeMailer: je
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockRequest = requestEmailAlertAddressCode as jest.Mock;
 const mockConfirm = confirmEmailAlertAddress as jest.Mock;
+const mockRefuse = refuseUnlessAdultAthlete as jest.Mock;
 
 const URL = 'http://localhost/api/pilot/email-alerts/me/address';
 const ADDRESS = 'adult.person@example.test';
+const NOT_OFFERED = 'Forbidden: email alerts are not offered to this account';
 const SENT = { offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: false, code_pending: true };
 const CONFIRMED = { offered: true, user_type: 'adult_athlete', switched_on: false, address_confirmed: true, code_pending: false };
 
@@ -53,6 +62,7 @@ const athlete = () => mockPrincipal.mockResolvedValue(principal('athlete', 'ath-
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRefuse.mockResolvedValue(undefined);
   mockRequest.mockResolvedValue(SENT);
   mockConfirm.mockResolvedValue(CONFIRMED);
 });
@@ -103,6 +113,7 @@ describe.each(['POST', 'PUT'] as const)('%s', (method) => {
     async (role) => {
       mockPrincipal.mockResolvedValue(principal(role));
       expect((await send(method, body)).status).toBe(403);
+      expect(mockRefuse).not.toHaveBeenCalled();
       expect(store()).not.toHaveBeenCalled();
       expect(emailAlertCodeMailer).not.toHaveBeenCalled();
     },
@@ -123,6 +134,8 @@ describe.each(['POST', 'PUT'] as const)('%s', (method) => {
     const response = await send(method, sent);
     expect(response.status).toBe(400);
     expect((await response.json()).error).not.toMatch(/email|address|code|six/i);
+    // An adult: the adult check passed first, then the shape was judged.
+    expect(mockRefuse).toHaveBeenCalledTimes(1);
     expect(store()).not.toHaveBeenCalled();
   });
 
@@ -136,10 +149,52 @@ describe.each(['POST', 'PUT'] as const)('%s', (method) => {
 
   it('an athlete the store does not offer a switch (under 18, no date of birth, record gone) gets its 403', async () => {
     athlete();
-    store().mockRejectedValue(new ForbiddenError('Forbidden: email alerts are not offered to this account'));
+    store().mockRejectedValue(new ForbiddenError(NOT_OFFERED));
     const response = await send(method, body);
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'Forbidden: email alerts are not offered to this account' });
+    expect(await response.json()).toEqual({ error: NOT_OFFERED });
+  });
+
+  // L1 (Codex and a reviewer on EM-2b-2): the request is read in full, then
+  // the store's adult check is asked, then the shape is judged, so an athlete
+  // it refuses gets the one plain 403, whatever they typed.
+  it('an athlete the adult check refuses gets the same plain 403 for a query field, any malformed body, extra fields and a well-formed body', async () => {
+    athlete();
+    let current: NextRequest | null = null;
+    const readFirst: boolean[] = [];
+    mockRefuse.mockImplementation(async () => {
+      readFirst.push(current!.bodyUsed);
+      throw new ForbiddenError(NOT_OFFERED);
+    });
+    const sends: Array<[string, unknown, string]> = [
+      ['well-formed', body, URL],
+      ['a query field', body, `${URL}?account_id=acct-other`],
+      ['an empty query field', body, `${URL}?x=`],
+      ['no body', '', URL],
+      ['not JSON', '{"', URL],
+      ['an array', [body], URL],
+      ['a missing field', {}, URL],
+      ['a second field', { ...body, account_id: 'acct-other' }, URL],
+      ['a number for the string', { [field]: 12345 }, URL],
+      ['a malformed value', { [field]: method === 'POST' ? 'not an address' : '12' }, URL],
+    ];
+    const answers = [];
+    for (const [label, sent, url] of sends) {
+      const request = new NextRequest(url, { method, body: typeof sent === 'string' ? sent : JSON.stringify(sent) });
+      current = request;
+      const response = await (method === 'POST' ? route.POST(request) : route.PUT(request));
+      answers.push({ label, status: response.status, headers: [...response.headers.entries()], body: await response.text() });
+    }
+    const plain = { status: 403, headers: answers[0].headers, body: JSON.stringify({ error: NOT_OFFERED }) };
+    expect(answers).toEqual(sends.map(([label]) => ({ label, ...plain })));
+    // The body was read before the check was asked, for every shape.
+    expect(readFirst).toEqual(sends.map(() => true));
+    expect(mockRefuse).toHaveBeenCalledTimes(sends.length);
+    for (const call of mockRefuse.mock.calls) {
+      expect(call[0]).toEqual({ organizationId: 'org-1', accountId: 'acct-athlete', role: 'athlete', athleteId: 'ath-1' });
+    }
+    expect(store()).not.toHaveBeenCalled();
+    expect(emailAlertCodeMailer).not.toHaveBeenCalled();
   });
 });
 

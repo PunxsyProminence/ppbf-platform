@@ -49,10 +49,12 @@ import {
 } from './emailAlertQueue';
 import {
   deliverEmailAlertSend,
+  emailAlertSenderDependencies,
   runEmailAlertSweep,
   type EmailAlertSenderDependencies,
 } from './emailAlertSender';
 import { MailSendError, type OutboundMessage } from './graphMailer';
+import { resetTokenCache } from './managedIdentityToken';
 
 jest.setTimeout(180_000);
 
@@ -401,6 +403,48 @@ describe('email alert sender', () => {
     }
   });
 
+  test('a hung token fetch is cut off: the try is recorded as SEND_ERROR and retried, within the bound, and nothing is sent', async () => {
+    const client = await freshDatabase('emailsender_token_hang');
+    activeClient = client;
+    const realFetch = global.fetch;
+    const env = { endpoint: process.env.IDENTITY_ENDPOINT, header: process.env.IDENTITY_HEADER };
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      resetTokenCache();
+      process.env.IDENTITY_ENDPOINT = 'http://identity.test/msi/token';
+      process.env.IDENTITY_HEADER = 'identity-header';
+      const urls: string[] = [];
+      global.fetch = jest.fn((url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        urls.push(String(url));
+        // Never answers; without a cut-off it gives up after three seconds.
+        const giveUp = setTimeout(() => reject(new Error('never answered')), 3_000);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(giveUp);
+          reject(new Error('aborted'));
+        });
+      })) as unknown as typeof fetch;
+      const real: EmailAlertSenderDependencies = {
+        ...emailAlertSenderDependencies(30_000, 50),
+        gymName: async () => 'GYM',
+        stillReads: async () => true,
+      };
+      const started = Date.now();
+      expect(await runEmailAlertSweep(real, [])).toMatchObject({ sent: 0, retried: 1 });
+      expect(Date.now() - started).toBeLessThan(2_500);
+      expect(urls).toHaveLength(1);
+      expect(urls[0].startsWith('http://identity.test/msi/token?resource=')).toBe(true);
+      expect(await sendRows(client)).toMatchObject([{ status: 'queued', tries: 1, last_status_code: null, last_error_code: 'SEND_ERROR' }]);
+    } finally {
+      global.fetch = realFetch;
+      process.env.IDENTITY_ENDPOINT = env.endpoint;
+      process.env.IDENTITY_HEADER = env.header;
+      if (env.endpoint === undefined) delete process.env.IDENTITY_ENDPOINT;
+      if (env.header === undefined) delete process.env.IDENTITY_HEADER;
+      resetTokenCache();
+      await client.end();
+    }
+  });
+
   test('a claim that lost its lease sends nothing and writes nothing', async () => {
     const client = await freshDatabase('emailsender_lease_guard');
     activeClient = client;
@@ -461,6 +505,182 @@ describe('email alert sender', () => {
       };
       expect(await deliverEmailAlertSend(claimed, slowToken)).toBe('lost');
       expect(sent).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Codex on EM-3b-2: the gym's name and the Graph token can be slow, so the
+  // person is asked again after them, just before the lease check and the
+  // send, and is mailed at the address that answer gives.
+  test.each([
+    ['the switch turned off', 'prepareSend', 'switched_off', 'coach',
+      `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
+    ['the switch turned off', 'gymName', 'switched_off', 'coach',
+      `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
+    ['the account switched off', 'prepareSend', 'sign_in_off', 'coach',
+      `update pilot.accounts set active_flag = false where account_id = '${COACH_ID}'`],
+    ['the membership switched off', 'gymName', 'sign_in_off', 'coach',
+      `update pilot.organization_memberships set active_flag = false where account_id = '${COACH_ID}'`],
+    ['the date of birth corrected to under 18', 'prepareSend', 'not_offered', 'adult',
+      `update pilot.athletes set dob = '2012-06-01' where athlete_id = '${ADULT_ATHLETE}'`],
+    ['the event no longer readable', 'prepareSend', 'not_offered', 'coach', 'unread'],
+    ['the gym unticking the event', 'prepareSend', 'gym_unticked', 'coach',
+      `insert into pilot.organization_email_alert_events (organization_id, user_type, event_kind, ticked)
+       values ('${ORG_ID}', 'staff', 'safety_escalation', false)`],
+    ['the sign-in address removed', 'prepareSend', 'no_address', 'coach',
+      `update pilot.accounts set login_email = null where account_id = '${COACH_ID}'`],
+  ])('%s while %s runs: nothing is sent, and the send is skipped as %s', async (_label, step, reason, who, change) => {
+    const client = await freshDatabase('emailsender_recheck_late');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        who === 'adult'
+          ? candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_1)
+          : candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      let reads = true;
+      const makeChange = async () => {
+        if (change === 'unread') reads = false;
+        else await client.query(change);
+      };
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => reads,
+        gymName: async (organizationId) => {
+          if (step === 'gymName') await makeChange();
+          return dependencies.gymName(organizationId);
+        },
+        prepareSend: async () => {
+          if (step === 'prepareSend') await makeChange();
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(slow, [])).toMatchObject({ sent: 0, skipped: 1 });
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'skipped', skip_reason: reason, finished: true }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['a coach\'s sign-in address', 'coach', `update pilot.accounts set login_email = 'coach.next@example.com' where account_id = '${COACH_ID}'`,
+      'coach.next@example.com'],
+    ['an adult athlete\'s confirmed address', 'adult',
+      `update pilot.email_alert_switches set confirmed_address = 'adult.next@example.com' where account_id = '${ADULT_ID}'`,
+      'adult.next@example.com'],
+  ])('%s changed while the token is fetched: the email goes to the new address only', async (_label, who, change, address) => {
+    const client = await freshDatabase('emailsender_address_late');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([
+        who === 'adult'
+          ? candidate(ADULT_ID, 'adult_athlete', 'coach_message', EVENT_1)
+          : candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1),
+      ]);
+      const { sent, dependencies } = recorder();
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        prepareSend: async () => {
+          await client.query(change);
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(slow, [])).toMatchObject({ sent: 1, skipped: 0 });
+      expect(sent).toEqual([{ to: address, subject: 'GYM: open the app', body: 'open the app' }]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sent', tries: 1 }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // A reviewer on EM-3b-2: the second recheck comes before the lease check,
+  // so the time it takes counts against the lease too.
+  test('the lease runs short while the second recheck runs: nothing is sent, nothing recorded', async () => {
+    const client = await freshDatabase('emailsender_recheck_lease');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { sent, dependencies } = recorder();
+      let reads = 0;
+      const slow: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => {
+          reads += 1;
+          // By the end of the second recheck only three minutes of the lease are left.
+          if (reads === 2) await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() + interval '3 minutes'`);
+          return true;
+        },
+      };
+      const [claimed] = await claimDueEmailAlertSends(1);
+      expect(await deliverEmailAlertSend(claimed, slow)).toBe('lost');
+      expect(reads).toBe(2);
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sending', finished: false }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a person the first recheck refuses costs no token: the preparation is never started', async () => {
+    const client = await freshDatabase('emailsender_no_token');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      await client.query(`update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`);
+      const { sent, dependencies } = recorder();
+      let tokens = 0;
+      let names = 0;
+      const counting: EmailAlertSenderDependencies = {
+        ...dependencies,
+        gymName: async (organizationId) => {
+          names += 1;
+          return dependencies.gymName(organizationId);
+        },
+        prepareSend: async () => {
+          tokens += 1;
+          return dependencies.prepareSend();
+        },
+      };
+      expect(await runEmailAlertSweep(counting, [])).toMatchObject({ sent: 0, skipped: 1 });
+      expect({ tokens, names }).toEqual({ tokens: 0, names: 0 });
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'skipped', skip_reason: 'switched_off' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a second recheck that throws records nothing: the row stays claimed until its lease runs out, then is put back as LEASE_EXPIRED', async () => {
+    const client = await freshDatabase('emailsender_recheck_throws');
+    activeClient = client;
+    try {
+      await enqueueEmailAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      const { sent, dependencies } = recorder();
+      let reads = 0;
+      const failing: EmailAlertSenderDependencies = {
+        ...dependencies,
+        stillReads: async () => {
+          reads += 1;
+          if (reads === 2) throw new Error('the read failed');
+          return true;
+        },
+      };
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        expect(await runEmailAlertSweep(failing, [])).toMatchObject({ sent: 0, skipped: 0, retried: 0, failed: 0, lost: 0 });
+        expect(errors).toHaveBeenCalledWith('Email alert send failed', { errorClass: 'Error' });
+      } finally {
+        errors.mockRestore();
+      }
+      expect(reads).toBe(2);
+      expect(sent).toEqual([]);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sending', tries: 1, last_status_code: null, last_error_code: null }]);
+      await client.query(`update pilot.email_alert_sends set lease_expires_at = clock_timestamp() - interval '1 second'`);
+      expect(await recoverExpiredEmailAlertLeases()).toBe(1);
+      expect(await sendRows(client)).toMatchObject([{ status: 'queued', tries: 1, last_status_code: null, last_error_code: 'LEASE_EXPIRED' }]);
     } finally {
       await client.end();
     }

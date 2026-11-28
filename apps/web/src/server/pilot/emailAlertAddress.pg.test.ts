@@ -91,6 +91,22 @@ jest.mock('./db', () => ({
   }),
 }));
 
+// The route test below signs each person in as their session would.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+// The route's own mailer: no route test here may reach a send.
+jest.mock('./emailAlertCode', () => ({
+  emailAlertCodeMailer: jest.fn(() => async () => {
+    throw new Error('test bug: the route reached the code email');
+  }),
+}));
+
+import { NextRequest } from 'next/server';
+
+import * as addressRoute from '@/app/api/pilot/email-alerts/me/address/route';
+
 import type { PilotRole } from './contracts';
 import {
   confirmEmailAlertAddress,
@@ -103,7 +119,7 @@ import {
   type EmailAlertCodeMailer,
 } from './emailAlertSwitches';
 import { MailSendError } from './graphMailer';
-import { jsonError } from './http';
+import { jsonError, requirePrincipal } from './http';
 import { getRateLimitStatus } from './rateLimit';
 import { hashToken } from './security';
 
@@ -279,7 +295,7 @@ function post(key: keyof typeof SUBJECTS, address: string, send: EmailAlertCodeM
 }
 
 function put(key: keyof typeof SUBJECTS, code: string, now: Date = NOW) {
-  return confirmEmailAlertAddress({ ...subject(key), code }, now);
+  return confirmEmailAlertAddress({ ...subject(key), code }, () => now);
 }
 
 function wrong(code: string): string {
@@ -1094,6 +1110,135 @@ describe('the adult athlete\'s alert address on a real database', () => {
     }
   });
 
+  test('L1 at the route (Codex on EM-2b-2): a minor, an athlete whose record is deleted, and a session naming no record or another record get the one plain 403 for any query or body; an adult gets the route\'s 400s', async () => {
+    const client = await freshDatabase('emailaddr_route_minor');
+    activeClient = client;
+    try {
+      const url = 'http://localhost/api/pilot/email-alerts/me/address';
+      const call = async (method: 'POST' | 'PUT', sent: unknown, query = '') => {
+        const request = new NextRequest(`${url}${query}`, { method, body: typeof sent === 'string' ? sent : JSON.stringify(sent) });
+        const response = await (method === 'POST' ? addressRoute.POST(request) : addressRoute.PUT(request));
+        return { bodyUsed: request.bodyUsed, status: response.status, headers: [...response.headers.entries()], body: await response.json() };
+      };
+      const shapes = (field: 'address' | 'code', good: string, bad: string): Array<[unknown, string]> => [
+        [{ [field]: good }, ''],
+        [{ [field]: good }, '?account_id=acct-other'],
+        ['', ''],
+        ['{"', ''],
+        [[{ [field]: good }], ''],
+        [{}, ''],
+        [{ [field]: good, account_id: 'acct-other' }, ''],
+        [{ [field]: 12345 }, ''],
+        [{ [field]: bad }, ''],
+      ];
+      const requests: Array<['POST' | 'PUT', unknown, string]> = [
+        ...shapes('address', newAddress('route'), 'not an address').map(([sent, query]) => ['POST', sent, query] as ['POST', unknown, string]),
+        ...shapes('code', '012345', '12').map(([sent, query]) => ['PUT', sent, query] as ['PUT', unknown, string]),
+      ];
+      const people = [
+        { accountId: MINOR_ID, athleteId: MINOR_ATHLETE },
+        { accountId: GONE_ID, athleteId: GONE_ATHLETE },
+        { accountId: ADULT_ID, athleteId: null },
+        { accountId: MINOR_ID, athleteId: ADULT_ATHLETE },
+      ];
+      let plain: Awaited<ReturnType<typeof call>> | null = null;
+      for (const person of people) {
+        (requirePrincipal as jest.Mock).mockResolvedValue({
+          ...person, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+        });
+        for (const [method, sent, query] of requests) {
+          const answer = await call(method, sent, query);
+          plain ??= answer;
+          expect({ person, method, sent, query, answer }).toEqual({ person, method, sent, query, answer: plain });
+        }
+      }
+      // The body is read before the check (a reviewer's race on EM-2b-2), so bodyUsed is true for every shape.
+      expect(plain).toMatchObject({ bodyUsed: true, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } });
+
+      // An adult: the adult check passes, and the route's own 400s say nothing about email.
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT_ID, athleteId: ADULT_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      for (const [method, sent, query] of requests.filter(([, sent, query]) => query || typeof sent === 'string' || Array.isArray(sent)
+        || Object.keys(sent as object).length !== 1 || typeof Object.values(sent as object)[0] !== 'string')) {
+        const answer = await call(method, sent, query);
+        expect({ method, sent, query, status: answer.status }).toEqual({ method, sent, query, status: 400 });
+        expect(answer.body.error).not.toMatch(/email|address|code|six/i);
+      }
+      await expect(call('POST', { address: 'not an address' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter a valid email address' } });
+      await expect(call('PUT', { code: '12' })).resolves.toMatchObject({ status: 400, body: { error: 'Enter the six-digit code from the email' } });
+      expect(await switchCount(client)).toBe(0);
+      expect(await auditDetails(client)).toEqual([]);
+
+      // The route's refusal is the store's, leftover retire included: an athlete
+      // switched on with a confirmed address, whose record is then corrected to
+      // under 18, sends a malformed POST and a PUT carrying a query. The first
+      // switches the row off and clears the address, audited once; the second
+      // finds nothing left.
+      const mail = mailbox();
+      await post('adult2', newAddress('leftover'), mail.send);
+      await put('adult2', mail.sent[0].code);
+      await setEmailAlertSwitch({ ...subject('adult2'), switchedOn: true }, NOW);
+      expect(await addressRow(client, ADULT2_ID)).toMatchObject({ switched_on: true, confirmed_address: mail.sent[0].to });
+      const before = (await auditDetails(client)).length;
+      await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT2_ATHLETE]);
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT2_ID, athleteId: ADULT2_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      for (const [method, sent, query] of [['POST', '{"', ''], ['PUT', { code: '012345' }, '?x=1']] as Array<['POST' | 'PUT', unknown, string]>) {
+        const answer = await call(method, sent, query);
+        expect({ status: answer.status, body: answer.body }).toEqual({ status: plain!.status, body: plain!.body });
+        expect(await addressRow(client, ADULT2_ID)).toMatchObject({
+          switched_on: false, pending_address: null, pending_code_hash: null, confirmed_address: null, has_confirmed_at: false,
+        });
+        const added = (await auditDetails(client)).slice(before);
+        expect(added).toEqual([{ user_type: 'adult_athlete', switched_on: false, previous_switched_on: true, address_cleared: true, reason: 'no_longer_offered' }]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  // L1, a reviewer's race on EM-2b-2: the record is corrected to under 18
+  // while the body is still arriving. Everything the request sent is read
+  // before the adult check, so a malformed body and a well-formed one get the
+  // same plain 403.
+  test.each(['POST', 'PUT'] as const)('L1 at the route, %s: a date of birth corrected to under 18 while the body streams in gets the plain 403 for a malformed body as for a well-formed one', async (method) => {
+    const client = await freshDatabase(`emailaddr_route_stream_${method.toLowerCase()}`);
+    activeClient = client;
+    try {
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId: ADULT_ID, athleteId: ADULT_ATHLETE, role: 'athlete', organizationId: ORG_ID, sessionToken: 'session', authProvider: 'ppbf_local',
+      });
+      const good = method === 'POST' ? JSON.stringify({ address: newAddress('stream') }) : JSON.stringify({ code: '012345' });
+      const answers: Record<string, unknown> = {};
+      for (const [label, text] of [['malformed', '{"'], ['well-formed', good]] as const) {
+        await client.query(`update pilot.athletes set dob = '2000-03-14' where athlete_id = $1`, [ADULT_ATHLETE]);
+        let pulled = false;
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (pulled) return;
+            pulled = true;
+            // The office's correction commits while the body is still arriving.
+            await client.query(`update pilot.athletes set dob = '2012-01-01' where athlete_id = $1`, [ADULT_ATHLETE]);
+            controller.enqueue(new TextEncoder().encode(text));
+            controller.close();
+          },
+        }, { highWaterMark: 0 });
+        const request = new NextRequest('http://localhost/api/pilot/email-alerts/me/address',
+          { method, body, duplex: 'half' } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+        const response = await (method === 'POST' ? addressRoute.POST(request) : addressRoute.PUT(request));
+        answers[label] = { pulled, status: response.status, body: await response.json() };
+      }
+      const plain = { pulled: true, status: 403, body: { error: 'Forbidden: email alerts are not offered to this account' } };
+      expect(answers).toEqual({ malformed: plain, 'well-formed': plain });
+      expect(await switchCount(client)).toBe(0);
+      expect(await auditDetails(client)).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the age check before sending cannot be answered: 503, nothing sent, and the code voided, so no code stands pending without its email', async () => {
     const client = await freshDatabase('emailaddr_age_check_fails');
     activeClient = client;
@@ -1212,6 +1357,37 @@ describe('the adult athlete\'s alert address on a real database', () => {
         expect(result).toMatchObject({ status: 'rejected', reason: { status: 403 } });
         expect(await addressRow(client)).toMatchObject({ pending_address: null, confirmed_address: null });
         expect((await auditDetails(client)).map((row) => row.reason ?? row.address_action)).toEqual(['code_sent', 'no_longer_offered']);
+      } finally {
+        await client.end();
+      }
+    });
+
+    // Codex on EM-2b-2: a PUT that starts before the 15 minutes are up but
+    // gets its locks after them is judged when it holds the locks. No clock is
+    // injected here, as the route injects none: the code is set to expire 700
+    // ms after the office takes its rows, and the office holds them 1.5 s more.
+    test.each([
+      ['the account row and the switch row', [
+        ['update pilot.accounts set updated_at = now() where account_id = $1', [ADULT_ID]],
+      ] as Array<[string, unknown[]]>],
+      ['only the switch row', [] as Array<[string, unknown[]]>],
+    ])('a PUT with the right code that waits on %s past the expiry is refused as expired, and the address cleared', async (_label, held) => {
+      const client = await freshDatabase('emailaddr_put_wait_expiry');
+      activeClient = client;
+      activePool = new Pool({ connectionString: connectionStringFor('emailaddr_put_wait_expiry'), max: 4 });
+      try {
+        const mail = mailbox();
+        await post('adult', newAddress('wait'), mail.send);
+        const [result] = await whileHeld(client,
+          [...held, [`update pilot.email_alert_switches set pending_code_expires_at = clock_timestamp() + interval '700 milliseconds'
+                       where organization_id = $1 and account_id = $2`, [ORG_ID, ADULT_ID]]],
+          [() => confirmEmailAlertAddress({ ...subject('adult'), code: mail.sent[0].code })],
+          { after: [['select pg_sleep(1.5)', []]] });
+        expect(result).toMatchObject({ status: 'rejected', reason: { status: 409, code: 'EMAIL_ALERT_CODE_EXPIRED' } });
+        expect(await addressRow(client)).toMatchObject({
+          pending_address: null, pending_code_hash: null, confirmed_address: null, has_confirmed_at: false,
+        });
+        expect((await auditDetails(client)).map((row) => row.address_action)).toEqual(['code_sent', 'expired_cleared']);
       } finally {
         await client.end();
       }

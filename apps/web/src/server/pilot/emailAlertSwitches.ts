@@ -381,15 +381,16 @@ export async function setEmailAlertSwitch(
   subject: EmailAlertSwitchSubject & { readonly switchedOn: unknown },
   now: Date = new Date(),
 ): Promise<EmailAlertSwitchState> {
-  if (typeof subject.switchedOn !== 'boolean') {
-    throw new ValidationError('switched_on must be true or false');
-  }
-  const switchedOn = subject.switchedOn;
   const userType = await emailAlertUserTypeFor(subject, now);
   if (!userType) {
     await retireSwitchIfAny(subject, now);
     throw notOffered();
   }
+  // After the offered check (L1): a minor's answer never depends on what they sent.
+  if (typeof subject.switchedOn !== 'boolean') {
+    throw new ValidationError('switched_on must be true or false');
+  }
+  const switchedOn = subject.switchedOn;
 
   let retiredFirst = false;
   const saved = await withTransaction(async (client) => {
@@ -431,6 +432,17 @@ export async function setEmailAlertSwitch(
   // gone or under 18, or a user type changed to the one this request is made
   // under, retires the row; sign-in switched off, a role with no switch, or a
   // request still under the old type leaves it as it was (T-1 A to T-3 A).
+  await retireSwitchIfAny(subject, now);
+  throw notOffered();
+}
+
+/**
+ * Whether a switch is offered, asked before anything a request sent is judged
+ * (L1; me/route.ts asks it first): anyone offered none gets the plain 403 once
+ * any leftover row is retired, as setEmailAlertSwitch answers them.
+ */
+export async function refuseUnlessOffered(subject: EmailAlertSwitchSubject, now: Date = new Date()): Promise<void> {
+  if ((await emailAlertUserTypeFor(subject, now)) !== null) return;
   await retireSwitchIfAny(subject, now);
   throw notOffered();
 }
@@ -563,8 +575,13 @@ export function emailAlertCodeLimitError(): PilotError {
   return new PilotError(429, 'Too many code emails. Wait a few minutes, then ask again.', 'EMAIL_ALERT_CODE_LIMIT');
 }
 
-/** The adult check before anything else: anyone else gets the plain 403 once any leftover is retired. */
-async function refuseUnlessAdultAthlete(subject: EmailAlertSwitchSubject, now: Date): Promise<void> {
+/**
+ * The adult check before anything else: anyone else gets the plain 403 once
+ * any leftover is retired. The address route asks it too, before it reads the
+ * query or the body (L1; Codex on EM-2b-2), so a minor's answer never depends
+ * on what they sent; the store asks it again, and again under its locks.
+ */
+export async function refuseUnlessAdultAthlete(subject: EmailAlertSwitchSubject, now: Date = new Date()): Promise<void> {
   if ((await emailAlertUserTypeFor(subject, now)) === 'adult_athlete') return;
   await retireSwitchIfAny(subject, now);
   throw notOffered();
@@ -773,22 +790,30 @@ const CONFIRM_REFUSALS: Record<ConfirmRefusal, () => ConflictError> = {
  * Default 10: confirming never switches the alert on (OD-2026-11-19-019); On
  * stays its own press (setEmailAlertSwitch). A wrong code costs one of the
  * row's tries; an expired one is cleared (default 11).
+ *
+ * The expiry is judged at a time read from `clock` once the locks are held
+ * (Codex on EM-2b-2): a PUT that began inside the 15 minutes but waited on the
+ * account or switch row past them is refused as expired. A clock, not a time,
+ * so no caller can hand in a time read before the wait; tests pass a fixed one.
  */
 export async function confirmEmailAlertAddress(
   subject: EmailAlertSwitchSubject & { readonly code: unknown },
-  now: Date = new Date(),
+  clock: () => Date = () => new Date(),
 ): Promise<EmailAlertSwitchState> {
-  await refuseUnlessAdultAthlete(subject, now);
+  const startedAt = clock();
+  await refuseUnlessAdultAthlete(subject, startedAt);
   // After the adult check (L1): a minor's answer never depends on what they typed.
   const code = typeof subject.code === 'string' ? subject.code.trim() : '';
   if (!/^\d{6}$/.test(code)) throw new ValidationError('Enter the six-digit code from the email');
 
   const outcome = await withTransaction(async (client): Promise<'refused' | ConfirmRefusal | OfferedState> => {
-    const person = await lockAdultAthlete(client, subject, now);
+    const person = await lockAdultAthlete(client, subject, startedAt);
     if (!person) return 'refused';
+    // Read after the locks are held: the time the code is judged at.
+    const lockedAt = clock();
     const { row } = person;
     if (!row?.pending_code_hash || !row.pending_address || !row.code_expires_at) return 'expired';
-    if (codeExpired(row, now)) {
+    if (codeExpired(row, lockedAt)) {
       await clearPendingCode(client, subject, { address_action: 'expired_cleared' });
       return 'expired';
     }
@@ -818,7 +843,7 @@ export async function confirmEmailAlertAddress(
     return { offered: true, user_type: 'adult_athlete', switched_on: row.switched_on, address_confirmed: true, code_pending: false };
   });
   if (outcome === 'refused') {
-    await retireSwitchIfAny(subject, now);
+    await retireSwitchIfAny(subject, startedAt);
     throw notOffered();
   }
   if (typeof outcome === 'string') throw CONFIRM_REFUSALS[outcome]();

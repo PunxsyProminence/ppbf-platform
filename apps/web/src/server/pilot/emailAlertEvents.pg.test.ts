@@ -1574,6 +1574,175 @@ describe('email alert staff event sources', () => {
     ]);
   });
 
+  test('a first-try refusal offered again and then skipped before Graph is offered again by the next restore, and sent once; a try Graph may have taken still is not', async () => {
+    const client = await freshDatabase('emailevents_notice_refusal_skipped');
+    activeClient = client;
+    const people = [
+      'acct-ev-coach-own', 'acct-ev-coach-future', 'acct-ev-coach-none', 'acct-ev-coach-cover',
+      'acct-ev-parent', 'acct-ev-admin', 'acct-ev-orgadmin', 'acct-ev-coach-expired',
+    ];
+    await switchOn(client, people);
+    // Each address's first answer (Codex on EM-4b). Four final refusals: a
+    // Graph 403 and 400, and two the mailer makes before Graph (a malformed
+    // address, an empty message). Three tries Graph may have taken: a 503, a 429 and a
+    // timeout (no status; the sender records SEND_ERROR). The last reader's
+    // claim is lost mid-send (a lease that runs out).
+    const timeout = new Error('The operation was aborted due to timeout');
+    timeout.name = 'TimeoutError';
+    const firstAnswers = new Map<string, Error>([
+      ['acct-ev-coach-own@example.com', new MailSendError('GRAPH_SEND_FAILED', 403, 'ErrorAccessDenied')],
+      ['acct-ev-coach-future@example.com', new MailSendError('GRAPH_SEND_FAILED', 400, 'ErrorInvalidRecipients')],
+      ['acct-ev-coach-none@example.com', new MailSendError('RECIPIENT_MALFORMED')],
+      ['acct-ev-coach-cover@example.com', new MailSendError('MESSAGE_EMPTY')],
+      ['acct-ev-parent@example.com', new MailSendError('GRAPH_SEND_FAILED', 503, 'ServiceUnavailable')],
+      ['acct-ev-admin@example.com', new MailSendError('GRAPH_SEND_FAILED', 429)],
+      ['acct-ev-orgadmin@example.com', timeout],
+    ]);
+    const calls: string[] = [];
+    const dependencies: EmailAlertSenderDependencies = {
+      ...emailAlertSenderDependencies(),
+      prepareSend: async () => async (message) => {
+        calls.push(message.to);
+        const answer = firstAnswers.get(message.to);
+        firstAnswers.delete(message.to);
+        if (answer) throw answer;
+      },
+      gymName: async () => 'GYM',
+    };
+    const setActive = async (announcementId: string, active: boolean) => {
+      await setAnnouncementActive({ organizationId: ORG, announcementId, active, onlyAuthorAccountId: null });
+      await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+    };
+    const rows = async () => (await client.query(
+      `select account_id, status, tries, last_status_code, last_error_code from pilot.email_alert_sends order by account_id`,
+    )).rows;
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(8);
+    await client.query(
+      `update pilot.email_alert_sends set status = 'sending', tries = 1, lease_token = gen_random_uuid(),
+              lease_expires_at = clock_timestamp() + interval '300 seconds'
+        where account_id = 'acct-ev-coach-expired'`,
+    );
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ sent: 0, failed: 4, retried: 3 });
+
+    // Restored: the four refused on their only try are offered again, and the
+    // notice is retired again before their claims reach Graph. The retries come
+    // due then too, and the lost lease runs out: all eight are skipped.
+    await setActive(live, false);
+    await setActive(live, true);
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(4);
+    await setActive(live, false);
+    await client.query(
+      `update pilot.email_alert_sends set next_try_at = clock_timestamp() where account_id = any($1)`,
+      [['acct-ev-parent', 'acct-ev-admin', 'acct-ev-orgadmin']],
+    );
+    await client.query(
+      `update pilot.email_alert_sends set lease_expires_at = clock_timestamp() - interval '1 second'
+        where account_id = 'acct-ev-coach-expired'`,
+    );
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ recovered: 1, sent: 0, skipped: 8 });
+    expect(await rows()).toEqual([
+      { account_id: 'acct-ev-admin', status: 'skipped', tries: 2, last_status_code: 429, last_error_code: 'GRAPH_SEND_FAILED' },
+      { account_id: 'acct-ev-coach-cover', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'MESSAGE_EMPTY' },
+      { account_id: 'acct-ev-coach-expired', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'LEASE_EXPIRED' },
+      { account_id: 'acct-ev-coach-future', status: 'skipped', tries: 2, last_status_code: 400, last_error_code: 'ErrorInvalidRecipients' },
+      { account_id: 'acct-ev-coach-none', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'RECIPIENT_MALFORMED' },
+      { account_id: 'acct-ev-coach-own', status: 'skipped', tries: 2, last_status_code: 403, last_error_code: 'ErrorAccessDenied' },
+      { account_id: 'acct-ev-orgadmin', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'SEND_ERROR' },
+      { account_id: 'acct-ev-parent', status: 'skipped', tries: 2, last_status_code: 503, last_error_code: 'ServiceUnavailable' },
+    ]);
+
+    // Restored again, with Graph taking everything: the four whose only try
+    // that reached Graph was a refusal are offered again and sent, once; the
+    // four with a try Graph may have taken are not. Then nothing more.
+    await setActive(live, true);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 4, sent: 4, skipped: 0 });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(calls.sort()).toEqual([
+      'acct-ev-admin@example.com',
+      'acct-ev-coach-cover@example.com', 'acct-ev-coach-cover@example.com',
+      'acct-ev-coach-future@example.com', 'acct-ev-coach-future@example.com',
+      'acct-ev-coach-none@example.com', 'acct-ev-coach-none@example.com',
+      'acct-ev-coach-own@example.com', 'acct-ev-coach-own@example.com',
+      'acct-ev-orgadmin@example.com',
+      'acct-ev-parent@example.com',
+    ]);
+    expect(await rows()).toEqual([
+      { account_id: 'acct-ev-admin', status: 'skipped', tries: 2, last_status_code: 429, last_error_code: 'GRAPH_SEND_FAILED' },
+      // Two tries each: the refusal still counts as one of the five (plan 5.4); the skips do not.
+      { account_id: 'acct-ev-coach-cover', status: 'sent', tries: 2, last_status_code: null, last_error_code: null },
+      { account_id: 'acct-ev-coach-expired', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'LEASE_EXPIRED' },
+      { account_id: 'acct-ev-coach-future', status: 'sent', tries: 2, last_status_code: null, last_error_code: null },
+      { account_id: 'acct-ev-coach-none', status: 'sent', tries: 2, last_status_code: null, last_error_code: null },
+      { account_id: 'acct-ev-coach-own', status: 'sent', tries: 2, last_status_code: null, last_error_code: null },
+      { account_id: 'acct-ev-orgadmin', status: 'skipped', tries: 2, last_status_code: null, last_error_code: 'SEND_ERROR' },
+      { account_id: 'acct-ev-parent', status: 'skipped', tries: 2, last_status_code: 503, last_error_code: 'ServiceUnavailable' },
+    ]);
+  });
+
+  test('a refusal offered again whose claim then dies mid-send is not offered again after a skip; nor are retried failures before Graph (no token, sender not permitted)', async () => {
+    const client = await freshDatabase('emailevents_notice_refusal_lease');
+    activeClient = client;
+    await switchOn(client, ['acct-ev-coach-own', 'acct-ev-parent', 'acct-ev-orgadmin']);
+    // A reviewer on EM-4b: the coach's refusal is offered again, and that claim
+    // is taken by a server that stops mid-send (Graph may have had the mail);
+    // lease recovery overwrites the refusal's codes, so after a skip it is not
+    // offered again. The parent's and the organization admin's first tries fail
+    // before Graph but are retried, and their codes say nothing more than that.
+    const firstAnswers = new Map<string, Error>([
+      ['acct-ev-coach-own@example.com', new MailSendError('RECIPIENT_MALFORMED')],
+      ['acct-ev-parent@example.com', new MailSendError('NO_ACCESS_TOKEN')],
+      ['acct-ev-orgadmin@example.com', new MailSendError('SENDER_NOT_PERMITTED')],
+    ]);
+    const calls: string[] = [];
+    const dependencies: EmailAlertSenderDependencies = {
+      ...emailAlertSenderDependencies(),
+      prepareSend: async () => async (message) => {
+        calls.push(message.to);
+        const answer = firstAnswers.get(message.to);
+        firstAnswers.delete(message.to);
+        if (answer) throw answer;
+      },
+      gymName: async () => 'GYM',
+    };
+    const setActive = async (announcementId: string, active: boolean) => {
+      await setAnnouncementActive({ organizationId: ORG, announcementId, active, onlyAuthorAccountId: null });
+      await new Promise((resolve) => setTimeout(resolve, 5)); // see setActive above
+    };
+    await runEmailAlertSweep(dependencies); // sets the checkpoints
+
+    const live = await notice(client, ORG, { placement: 'everywhere', minutesAgo: JUST_NOW });
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 3, sent: 0, failed: 1, retried: 2 });
+    await setActive(live, false);
+    await setActive(live, true);
+    expect(await sweepEmailAlertSource(gymNoticeSource)).toBe(1);
+    // Another server claims the coach's send and stops mid-send.
+    await client.query(
+      `update pilot.email_alert_sends set status = 'sending', tries = tries + 1, lease_token = gen_random_uuid(),
+              lease_expires_at = clock_timestamp() - interval '1 second'
+        where account_id = 'acct-ev-coach-own'`,
+    );
+    await setActive(live, false);
+    await client.query(
+      `update pilot.email_alert_sends set next_try_at = clock_timestamp() where account_id = any($1)`,
+      [['acct-ev-parent', 'acct-ev-orgadmin']],
+    );
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ recovered: 1, sent: 0, skipped: 3 });
+
+    await setActive(live, true);
+    expect(await runEmailAlertSweep(dependencies)).toMatchObject({ queued: 0, sent: 0 });
+    expect(calls.sort()).toEqual(['acct-ev-coach-own@example.com', 'acct-ev-orgadmin@example.com', 'acct-ev-parent@example.com']);
+    expect((await client.query(
+      `select account_id, status, last_status_code, last_error_code from pilot.email_alert_sends order by account_id`,
+    )).rows).toEqual([
+      { account_id: 'acct-ev-coach-own', status: 'skipped', last_status_code: null, last_error_code: 'LEASE_EXPIRED' },
+      { account_id: 'acct-ev-orgadmin', status: 'skipped', last_status_code: null, last_error_code: 'SENDER_NOT_PERMITTED' },
+      { account_id: 'acct-ev-parent', status: 'skipped', last_status_code: null, last_error_code: 'NO_ACCESS_TOKEN' },
+    ]);
+  });
+
   test('a person skipped before Graph on every restore is still offered the next one: skips alone do not use up the tries', async () => {
     const client = await freshDatabase('emailevents_notice_skips_keep_tries');
     activeClient = client;

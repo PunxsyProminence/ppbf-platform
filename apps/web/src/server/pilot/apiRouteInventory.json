@@ -8861,7 +8861,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "An adult athlete asks for a code to the address typed beside their email alert switch (lane W4-1 EM-2b-2; OW27-38 B; OW27-02 C). Body is exactly { address }, trimmed and lowercased. Stores the typed address and the hash of a 6-digit code bound to gym, account and address (15 minutes, 5 tries), replacing any earlier typed address and voiding its code; a confirmed address stays in use. Audited (no address, no code), then one code email (emailAlertCode.ts, no Sent Items copy) after the commit. Limits, one identical 429 for all, the person's own first: 60 seconds per person, read from the row (so it restarts after a confirm or a failed send); 5 a day per person per gym, counted from the audit rows (failed sends count); only then the address's own rateLimit.ts bucket (keyed by an unkeyed SHA-256 of the address), so a person held by their own limits spends no address's budget. Age asked again just before the send: under 18 by then, 403, nothing sent, the code voided. 503 if the email fails, its code voided only while still the newest. Never looks up whether the address is any account's sign-in address. Returns the switch state; never an address. Nothing for a minor: the adult check comes before the address is read, and before anything is reserved, stored, audited or sent; the route's own 400 for a body that is not exactly one string field names nothing about email.",
+    "notes": "An adult athlete asks for a code to the address typed beside their email alert switch (lane W4-1 EM-2b-2; OW27-38 B; OW27-02 C). Body is exactly { address }, trimmed and lowercased. Stores the typed address and the hash of a 6-digit code bound to gym, account and address (15 minutes, 5 tries), replacing any earlier typed address and voiding its code; a confirmed address stays in use. Audited (no address, no code), then one code email (emailAlertCode.ts, no Sent Items copy) after the commit. Limits, one identical 429 for all, the person's own first: 60 seconds per person, read from the row (so it restarts after a confirm or a failed send); 5 a day per person per gym, counted from the audit rows (failed sends count); only then the address's own rateLimit.ts bucket (keyed by an unkeyed SHA-256 of the address), so a person held by their own limits spends no address's budget. Age asked again just before the send: under 18 by then, 403, nothing sent, the code voided. 503 if the email fails, its code voided only while still the newest. Never looks up whether the address is any account's sign-in address. Returns the switch state; never an address. Nothing for a minor: the adult check comes before the address is judged (the body is read in full first, so a slow body cannot outrun a date of birth correction), and before anything is reserved, stored, audited or sent; the route's own 400 for a body that is not exactly one string field names nothing about email.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -8905,7 +8905,7 @@
     "id": "app/api/pilot/email-alerts/me/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/email-alerts/me",
-    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias); self-scoped (no account_id parameter); refuses any query field from a caller offered a switch (a caller offered none gets { ok: true, offered: false } whatever it sends, L1)",
     "rolesAdmitted": [
       "coach",
       "organization_admin",
@@ -8936,7 +8936,7 @@
     "id": "app/api/pilot/email-alerts/me/route.ts#PUT",
     "method": "PUT",
     "path": "/api/pilot/email-alerts/me",
-    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store refuses an athlete under 18 or with no date of birth, and any account linked to such a record (A5) (403); self-scoped",
+    "gate": "requirePrincipal + requireRole(['coach','organization_admin','parent','athlete']) ('admin' by alias) + the store's offered check (refuseUnlessOffered), asked after the request is read and before its shape is judged (L1): an athlete under 18 or with no date of birth, and any account linked to such a record (A5), gets 403 whatever it sends; self-scoped",
     "rolesAdmitted": [
       "coach",
       "organization_admin",

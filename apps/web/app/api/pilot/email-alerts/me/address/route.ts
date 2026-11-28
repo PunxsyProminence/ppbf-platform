@@ -1,8 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { emailAlertCodeMailer } from '@/src/server/pilot/emailAlertCode';
-import { confirmEmailAlertAddress, requestEmailAlertAddressCode } from '@/src/server/pilot/emailAlertSwitches';
+import {
+  confirmEmailAlertAddress,
+  refuseUnlessAdultAthlete,
+  requestEmailAlertAddressCode,
+} from '@/src/server/pilot/emailAlertSwitches';
 import { ValidationError } from '@/src/server/pilot/errors';
+import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -27,11 +32,16 @@ export const dynamic = 'force-dynamic';
  * gym and account from the session; any query field and any other body field
  * refused (me/route.ts's rule).
  *
- * L1: the adult check comes before anything the request typed is judged. The
- * route refuses a body that is not exactly one string field with a 400 that
- * names nothing about email; the address's and code's own 400s are the
- * store's, after its adult check, so a minor gets the plain 403 whatever they
- * typed.
+ * L1: the adult check comes before anything the request sent is judged. The
+ * route reads the query and the whole body first, then asks the store's adult
+ * check (refuseUnlessAdultAthlete, which also retires a leftover row), then
+ * judges what was sent, with nothing awaited between the check and that
+ * judgement (Codex and a reviewer on EM-2b-2): a date of birth corrected while
+ * a slow body arrives is read by the check. So a minor, or an athlete with no
+ * valid record, gets the store's plain 403 whatever they sent; the store asks
+ * it again, and again under its own locks. Only an adult gets the route's 400
+ * for a body that is not exactly one string field, which names nothing about
+ * email; the address's and code's own 400s are the store's.
  *
  * Other answers: 400 a malformed address or code; 409 a wrong, expired or
  * used-up code (five tries a code); 429 too many code emails, the same answer
@@ -40,12 +50,33 @@ export const dynamic = 'force-dynamic';
  * so no answer can say (emailAlertSwitches.ts, requestEmailAlertAddressCode).
  */
 
+/** The session's own subject: no field of the request names anyone. */
+function subjectOf(principal: PilotPrincipal) {
+  return {
+    organizationId: principal.organizationId,
+    accountId: principal.accountId,
+    role: principal.role,
+    athleteId: principal.athleteId,
+  };
+}
+
+/** Everything the request sent, read before anything is judged: whether it has a query, and its body. */
+async function readSent(request: NextRequest): Promise<{ query: boolean; body: unknown }> {
+  const text = await request.text().catch(() => '');
+  let body: unknown = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON: refused below, as a missing body is.
+  }
+  return { query: request.nextUrl.searchParams.size > 0, body };
+}
+
 /** The one string field, or a 400 that says nothing about what the field is for. */
-async function onlyField(request: NextRequest, field: 'address' | 'code'): Promise<string> {
-  if (request.nextUrl.searchParams.size > 0) {
+function onlyField({ query, body }: { query: boolean; body: unknown }, field: 'address' | 'code'): string {
+  if (query) {
     throw new ValidationError('Unsupported query: this request takes no query fields');
   }
-  const body: unknown = await request.json().catch(() => null);
   const fields = body && typeof body === 'object' && !Array.isArray(body) ? Object.keys(body) : [];
   const value = fields.length === 1 && fields[0] === field ? (body as Record<string, unknown>)[field] : undefined;
   if (typeof value !== 'string') {
@@ -58,14 +89,12 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const address = await onlyField(request, 'address');
-    const state = await requestEmailAlertAddressCode({
-      organizationId: principal.organizationId,
-      accountId: principal.accountId,
-      role: principal.role,
-      athleteId: principal.athleteId,
-      address,
-    }, emailAlertCodeMailer());
+    const subject = subjectOf(principal);
+    // L1: read everything, then the adult check, then judge it (nothing awaited between).
+    const sent = await readSent(request);
+    await refuseUnlessAdultAthlete(subject);
+    const address = onlyField(sent, 'address');
+    const state = await requestEmailAlertAddressCode({ ...subject, address }, emailAlertCodeMailer());
     return NextResponse.json({ ok: true, ...state });
   } catch (error) {
     return jsonError(error);
@@ -76,14 +105,12 @@ export async function PUT(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['athlete']);
-    const code = await onlyField(request, 'code');
-    const state = await confirmEmailAlertAddress({
-      organizationId: principal.organizationId,
-      accountId: principal.accountId,
-      role: principal.role,
-      athleteId: principal.athleteId,
-      code,
-    });
+    const subject = subjectOf(principal);
+    // L1: read everything, then the adult check, then judge it (nothing awaited between).
+    const sent = await readSent(request);
+    await refuseUnlessAdultAthlete(subject);
+    const code = onlyField(sent, 'code');
+    const state = await confirmEmailAlertAddress({ ...subject, code });
     return NextResponse.json({ ok: true, ...state });
   } catch (error) {
     return jsonError(error);
