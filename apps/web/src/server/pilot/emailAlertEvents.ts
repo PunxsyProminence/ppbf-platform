@@ -267,16 +267,16 @@ function sqlEvent(event: SqlEvent): AlertEvent {
  * past counts as the posting. A RESTORE SETS IT LIVE AGAIN (Overwatch on
  * #2193, comment 7165858842): restoring a retired notice emails everyone who
  * reads it and has not had it, and nobody twice, because the send log's key
- * is one row per person per notice (OW27-03 B). A send that certainly never
- * reached the person (skipped before any try went to Graph, or refused at
- * once on its only try, whether or not a later claim of it was skipped before
- * Graph) is queued again by a restore after it came due; one whose try Graph
- * may have taken is not, and neither is one whose last try failed before Graph
- * in a way the send log cannot tell from that (a token failure, a claim that
- * stopped at the lease check) (emailAlertQueue.ts, enqueueEmailAlertSends). The restore time is the row's
- * updated_at: setAnnouncementActive is the only write to a notice and stamps
- * it on every call, so a Restore pressed on a notice already live counts the
- * same and reaches only those who have not had it.
+ * is one row per person per notice (OW27-03 B). A restore after a send came
+ * due queues it again only where its record shows it certainly never reached
+ * the person: skipped with no failed try or lost lease on record, or whose
+ * only one was a final refusal (refused at once on its only try, skipped or
+ * not after). Everything else is not queued again, failures that never
+ * reached Graph included, since the record cannot tell them from a try Graph
+ * may have taken (emailAlertQueue.ts, enqueueEmailAlertSends). The restore
+ * time is the row's updated_at: setAnnouncementActive is the only write to a
+ * notice and stamps it on every call, so a Restore pressed on a notice already
+ * live counts the same and reaches only those who have not had it.
  */
 /** The roles a notice can be emailed to; a test holds NOTICE_PLACEMENTS_EMAILED to mayReadLivePlacement for each. */
 export const NOTICE_READER_ROLES: readonly string[] = ['coach', 'organization_admin', 'admin', 'parent', 'athlete'];

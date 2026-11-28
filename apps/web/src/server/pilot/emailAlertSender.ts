@@ -86,7 +86,8 @@ export const EMAIL_ALERT_MAIL_TIMEOUT_MS = 30_000;
 /**
  * The Graph token fetch is cut off at this. The shared provider
  * (graphTokenProvider) has no cut-off; a hung identity endpoint becomes a
- * ManagedIdentityError, recorded as SEND_ERROR and retried.
+ * ManagedIdentityError, recorded as SEND_ERROR and retried until the fifth
+ * try, which fails the row (as any failed try does).
  */
 export const EMAIL_ALERT_TOKEN_TIMEOUT_MS = 10_000;
 /** The tick stops claiming after this, or after this many sends. */

@@ -77,9 +77,11 @@ const FINAL_REFUSAL = `(r.last_status_code between 400 and 499 and r.last_status
  *     all ended in a skip, before Graph (Codex on EM-4b). The sender makes a
  *     refusal final, and lease recovery overwrites both codes
  *     (recoverExpiredEmailAlertLeases), so a row whose try Graph may have
- *     taken is never skipped carrying one: its codes are that try's (or
- *     LEASE_EXPIRED), and a refusal after it fails the row on a later try,
- *     which is not offered again. Any other status or error cannot be shown
+ *     taken is never skipped carrying one: its codes are that try's, or a
+ *     later failure's that overwrote them (LEASE_EXPIRED from lease recovery,
+ *     or a retried failure before Graph such as a token fetch's SEND_ERROR),
+ *     none of them a refusal's; and a refusal after it fails the row on a
+ *     later try, which is not offered again. Any other status or error cannot be shown
  *     undelivered, since a row keeps only its last: an earlier try may have
  *     reached Graph (a 5xx, a 429 or a timeout after Graph took the mail, or a
  *     lease that ran out mid-send). So it is not offered again, even where its
