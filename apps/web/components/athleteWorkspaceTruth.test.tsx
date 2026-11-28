@@ -112,7 +112,7 @@ async function checkInAt(instant: string): Promise<Record<string, unknown>> {
   await renderWorkspace();
   const before = posted('/api/pilot/sessions').length;
   // The one Start training is My Corner's (lane AS-8, ATH-24); same handleCheckIn.
-  fireEvent.click(await within(await screen.findByRole('region', { name: 'My corner' })).findByRole('button', { name: 'Start training' }));
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'My Corner' })).findByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(posted('/api/pilot/sessions')).toHaveLength(before + 1));
   return posted('/api/pilot/sessions')[before].body;
 }

@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
+import { useRoomNames } from '@/src/client/roomNames';
 import { SESSION_TOTAL_DIMENSIONS, SPARRING_LOG_FIELD_KEYS } from '@/src/server/pilot/formulas/types';
 import MedicalRestrictionNotice from '@/components/MedicalRestrictionNotice';
 
@@ -520,6 +521,8 @@ export default function SparringTelemetryPage() {
      session gets filed against the wrong child. */
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [actor, setActor] = useState<LogActor>('unknown');
+  // The eyebrow in the gym's words, the athlete's and the staff's form (RN-3; Q-A A).
+  const names = useRoomNames();
   /* The picker's options, from the CENTRAL access contract by way of
      /api/pilot/coach/athletes -- for a coach, every live athlete of their own
      gym (issue #1480), the set the observations route's
@@ -767,7 +770,7 @@ export default function SparringTelemetryPage() {
               copy that tells them it is their own record is the same kind of
               small untruth this file's tests already police in the save
               messages. */}
-          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your entry'}</p>
+          <p className="t-eyebrow">{actor === 'staff' ? names.name('card:coach-entry') : names.name('card:your-entry')}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
           <div className="mt-[var(--s3)]"><BackHome /></div>
         </div>

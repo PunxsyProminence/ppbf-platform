@@ -17,9 +17,10 @@ import { CONTROL_QUIET } from './sessionBarControls';
  * athlete_voice from coach reads, lets a coach acknowledge and only an admin
  * resolve, and already returns rows critical-first. What it is NOT is a
  * notification. The route's own header says so in as many words -- "this
- * platform sends no email, ever, so a coach or admin has to come check this
- * page/route". A red flag about a child therefore waited until somebody chose
- * to open the right surface.
+ * platform sends no email that says what happened, so a coach or admin has to
+ * come check this page/route" (an opted-in staff member gets only "open the
+ * app", lane W4-1). A red flag about a child therefore waited until somebody
+ * chose to open the right surface.
  *
  * This is the smallest thing that fixes that without inventing a transport.
  * It reads the SAME route, on the one component mounted on every route

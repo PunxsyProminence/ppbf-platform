@@ -20,6 +20,16 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-28-004 | 2026-11-28 | Release of main `b1fbec2c` to production without Jason's signed-in staging check: the email alert fixes, EM-IX-2 and WP-3 | PRIMARY |  |  |
+| OD-2026-11-28-003 | 2026-11-28 | Release of main `aae16b0d` to production now, without waiting for #2261: email alerts, web push groundwork, classes from a session plan, the floor line and the gym drawers | PRIMARY |  |  |
+| OD-2026-11-28-002 | 2026-11-28 | Web push QA and QB, the clean-up tool's scramble key, and its production dry run | PRIMARY |  |  |
+| OD-2026-11-28-001 | 2026-11-28 | "Bypass code reviews": merges stop waiting for Codex or reviewer rounds | PRIMARY |  | yes |
+| OD-2026-11-27-006 | 2026-11-27 | A fresh App Overwatch session starts on the desktop app; this one keeps working until it does | PRIMARY |  |  |
+| OD-2026-11-27-005 | 2026-11-27 | neeko@ runs cloud lanes for work not tied to admin@: W5-FU, then dependency updates plus small bug fixes | PRIMARY |  | yes |
+| OD-2026-11-27-004 | 2026-11-27 | A stack of PRs merges as one combined merge | PRIMARY |  |  |
+| OD-2026-11-27-003 | 2026-11-27 | Release of main `77db0130` to production while admin@'s lanes wait on usage | PRIMARY |  |  |
+| OD-2026-11-27-002 | 2026-11-27 | Lanes stay in the admin@ cloud; the team's monthly API credit is not used for lane work | PRIMARY |  |  |
+| OD-2026-11-27-001 | 2026-11-27 | Team usage-credit spend limits: team $500, admin@ $200, Neeko $200; fast mode for admin@'s new sessions | PRIMARY |  |  |
 | OD-2026-11-26-002 | 2026-11-26 | Release of main `94d3b99d` to production while admin@'s lanes wait on usage: PM-2, SP-1b and SP-2a | PRIMARY |  |  |
 | OD-2026-11-26-001 | 2026-11-26 | Release of main `13a17485` to production now, with no screen changed since the last release | PRIMARY |  |  |
 | OD-2026-11-25-005 | 2026-11-25 | W4 item 5 (plan blocks; a class scheduled from a plan) starts as a lane on admin@ | PRIMARY |  |  |
@@ -669,6 +679,231 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-28-004 -- Release of main `b1fbec2c` to production without Jason's signed-in staging check: the email alert fixes, EM-IX-2 and WP-3
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app); the UTC time is from that session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-28 about 03:16 UTC, repeated at about 03:39 UTC):** "Release main b1fbec2c to production now?" Option A (recommended): yes, with Jason's full signed-in staging check -- the three checks missed in the last release (the iPad Home Screen for WP-1c, the board and staff floor line, one email alert end to end; OD-2026-11-28-003) plus the new pop-ups switch on /profile. Option B: yes, skip his check. Option C: not now. It said the release fixes the two known email-alert P1 issues live since `aae16b0d`.
+
+**Jason (2026-11-28 04:03:08 UTC, PRIMARY):** *"B"*
+
+**Ruling:** B. Main `b1fbec2c` is released to production without his signed-in staging check.
+
+**Cost, stated once (Overwatch):** the iPad Home Screen, the floor line, one email alert end to end and the /profile pop-ups switch stay unchecked signed in.
+
+**Applied (Overwatch, not his words):** staging migration email-alert-sweep-indexes-2 (run 46105745727); deploy-staging run 46105877371 (image `sha256:999d97f6699e135b1c3a8e03dce265df44fb2202a3b064790424bfe3a5717483`, revision `app-ppbf-staging--0000328`); read-only staging checks (home, login and schedule 200; the push subscription route 401 signed out); production migration email-alert-sweep-indexes-2 (46106548436); deploy-production run 46106818905; both production gates approved by PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds each); revision `app-ppbf-production--0000224` at 100% traffic, same image as staging; www home, login and schedule returned 200 and the push route 401 signed out. Contains `aae16b0d..b1fbec2c`: #2262 (EM-IX-2), #2261 (W4-1's Codex fixes), #2260 (WP-3), #2263 (records). Merges were held from the staging deploy until production finished (no PR was ready).
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-28-003 -- Release of main `aae16b0d` to production now, without waiting for #2261: email alerts, web push groundwork, classes from a session plan, the floor line and the gym drawers
+
+**Provenance: PRIMARY.** Jason typed these in the App Overwatch session on Jason's PC (Claude Code desktop app) of 2026-11-26 to 2026-11-28; the UTC times are from that transcript. New; edits no earlier entry.
+
+**Jason (2026-11-28 01:04:07 UTC, PRIMARY):** *"Are we ready to release"*
+
+**Question as App Overwatch put it (2026-11-28 01:04 UTC, in its reply):** "Release now, or after #2261?" Option A (recommended): after #2261, W4-1's Codex fixes, in about 30 to 60 minutes once its CI is green, with reviews bypassed; then staging, "your signed-in check including one email alert", then production. Option B: "Release now and ship #2261 in the next release. Email alerts go live with the two known P1 issues above". Those two were the adult-check order on the email-address route (a minor's request is read before it is refused) and a full scan of all announcements every time the email timer runs. It said web push stays off in this release, because WP-3 (#2260) was not merged and the push keys were not set.
+
+**Jason (2026-11-28 01:19:29 UTC, PRIMARY):** *"Release what we have"*
+
+**Then, after the staging deploy, App Overwatch put the signed-in staging check to him.** The check list was: /profile and its email alert switch; Customize the Gym and its Email alerts and Stopped coming drawers; a coach class screen, scheduling a class from a session plan and pressing Start. The options were A "Passed" and B "Skip the check".
+
+**Jason (2026-11-28 02:39:39 UTC, PRIMARY):** *"Passed, release"*
+
+**Ruling:** B. Main `aae16b0d` is released to production now; #2261 goes in the next release.
+
+**Applied (Overwatch, not his words):**
+- **Staging:** migrations web-push (run 46092544308) and scheduler-class-plan (46092650793). deploy-staging run 46092796463: attempts 1 and 2 failed with PROBE_TIMEOUT at "Verify Staging Schema Matches This Commit", and attempt 3 succeeded. Image `sha256:06c41ca0acf42eb3618a640cf4d25e9990b010b3f8105fdb5ec9dd2d97927670`, revision `app-ppbf-staging--0000327`. Read-only checks: home, login and schedule 200; the push subscription route 401 signed out.
+- **Production:** migrations web-push (46099191423) and scheduler-class-plan (46099461105), then deploy-production run 46099727630. All three gates were approved by PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds each). Revision `app-ppbf-production--0000223` is at 100% traffic, with the same image as staging. www home, login and schedule returned 200; the push route returned 401 signed out.
+- **Contents, `77db0130..aae16b0d`:** #2235, #2234, #2184, #2231, #2239, #2229, #2236, #2238, #2240, #2241, #2242, #2185, #2237, #2188, #2193, #2197, #2217, #2218, #2246, #2245, #2249, #2250, #2251, #2255, #2253, #2254, #2256, #2257, #2258, #2259.
+- **Merge hold:** merges were held from the staging deploy until production finished. #2262, #2261 and #2260 merged after that.
+
+**Defect (App Overwatch's), found 2026-11-28 03:10 UTC.** The handover's list for this release named three signed-in checks that the check list put to Jason did not include:
+- the iPad Home Screen check for WP-1c (#2234; #2228 QJ A, Overwatch's answer);
+- the board and staff "on the floor now" line (FN-4b, #2235);
+- one email alert end to end (EM-2 with EM-2b), which option A itself named.
+
+All three shipped without those checks. Whether they work signed in on production is UNVERIFIED.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-28-002 -- Web push QA and QB, the clean-up tool's scramble key, and its production dry run
+
+**Provenance: PRIMARY.** Jason answered a four-question dialog in the same session at 2026-11-28 00:41:50 UTC. The questions were put at 00:40:36 UTC, after Jason (00:40:23 UTC): *"Ask the questions"*. New; edits no earlier entry.
+
+**Questions and answers, as the dialog recorded them:**
+- "Web push QA (#2228): Does a person's email alert switch also decide whether they get web push pop-ups? Plain English: if someone turns phone pop-ups on but leaves email alerts off, do they still get pop-ups?" Options: A "Separate" (recommended; the tap on a device is its own opt-in, adults 18+ can get pop-ups without confirming an email address, two switches on the settings page) and B "Email gates push". **Jason: *"A: Separate (Recommended)"*.**
+- "Web push QB (#2228): Does web push on a personal phone or computer stop when the person signs out there?" Options: A "Stays on" (recommended; stays until turned off on that device, or the device is marked a gym tablet, or the person can no longer get alerts; con: a shared family computer keeps showing pop-ups after sign-out), B "Logout ends it", C "Sign-in only". **Jason: *"A: Stays on (Recommended)"*.**
+- "Clean-up tool: May App Overwatch create a random secret PPBF_AUDIT_TEST_CLEANUP_REF_KEY in the GitHub staging and production environments (value never printed)?" Options: A "Yes, you create it" (recommended), B "I'll create it", C "No secret". **Jason: *"A: Yes, you create it (Recommended)"*.**
+- "Clean-up tool: Run the read-only dry run against production now (it needs your approval click at the production gate)?" **Jason: *"B: Not now"*.**
+
+**Ruling:** QA A, QB A, the scramble key A, and the dry run not now.
+
+**Applied (Overwatch, not his words):** WP-3 (#2260, merged as `6f299c94`) was built to QA A and QB A. App Overwatch created PPBF_AUDIT_TEST_CLEANUP_REF_KEY as an environment secret in the GitHub staging and production environments; the value is random and was never printed. The production dry run has not been run.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-28-001 -- "Bypass code reviews": merges stop waiting for Codex or reviewer rounds
+
+**Provenance: PRIMARY.** Jason typed this in the same session. New; edits no earlier entry.
+
+**Jason (2026-11-28 00:39:45 UTC, PRIMARY):** *"Bypass code reviews"*
+
+He typed it after an App Overwatch status check. Codex had answered "You have reached your Codex usage limits" since 2026-11-27 22:26 UTC. Until then merges ran under Jason's 2026-11-26 words "skip codex until its usage rests", as carried in the Overwatch check prompt; that ruling has no OD entry.
+
+**Ruling:** code reviews are bypassed.
+
+**Applied (Overwatch's reading, not his words):** merges no longer wait for Codex or for reviewer rounds, and merge on green CI. The merge queue runs with `CODEX_WAIVED` quoting these words. Lanes were told on their PRs (for example #2159, comment 7231822868). First used on #2262, #2261 and #2260 (2026-11-28, 02:51 to 02:53 UTC).
+
+**Not ruled here:** how long the bypass lasts, and whether Codex reviews resume once Codex's limit resets. App Overwatch treats it as standing until Jason says otherwise.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-006 -- A fresh App Overwatch session starts on the desktop app; this one keeps working until it does
+
+**Provenance: PRIMARY.** Jason typed these in the same session. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-27 about 21:08 UTC, with its context at 86%):** "Start a fresh App Overwatch session now?" Option A (recommended): yes; the desktop app starts a new session from the handover, and the old one stops its check when the new one's 30-minute check runs. Option B: not yet; hand over at about 92%.
+
+**Jason (2026-11-27 21:10:58 UTC, PRIMARY):** *"A and do we have anything  to deploy"*
+
+**Jason (2026-11-28 00:27:02 UTC, PRIMARY):** *"Status and start new overwatch at desktop"*
+
+**Jason (2026-11-28 00:37:25 UTC, PRIMARY):** *"Ok work from here till then"*. This came after App Overwatch said the app had refused to start the session from this side session, and that it has to be started from the desktop app.
+
+**Ruling:** A. A fresh App Overwatch starts from the desktop app, and the current one works until then.
+
+**Applied (Overwatch, not his words):** the app refused to start the session twice from this side session. The brief is at `Documents\PPBF-overwatch\automation\OVERWATCH_TAKEOVER_BRIEF_2026-11-27.md` for Jason to start from the desktop app. Not started as of this entry.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-005 -- neeko@ runs cloud lanes for work not tied to admin@: W5-FU, then dependency updates plus small bug fixes
+
+**Provenance: PRIMARY.** Jason typed these in the same session. New; edits no earlier entry.
+
+**Jason (2026-11-27 17:46:12 UTC, PRIMARY):** *"you can open neeko@ in the chrome browser too and we can runs stuff there that is not related to the admin@ account"*
+
+**Jason (2026-11-27 17:48:28 UTC, PRIMARY):** *"ok i signed in neeko at on that page you can maniplate it"*
+
+**Question as App Overwatch put it (2026-11-27 about 18:00 UTC):** "Which should I start on neeko@: the dependency updates plus the small bug fixes (recommended), or just the dependency updates?"
+
+**Jason (2026-11-27 18:01:35 UTC, PRIMARY):** *"Dependencies + small bugs"*
+
+**Ruling:** neeko@ may run work not related to the admin@ account. Its next lanes are the dependency updates and the small bug fixes.
+
+**Applied (Overwatch, not his words):**
+- **W5-FU:** started on neeko@ as a cloud session (plan #2248). Its three fixes merged: F1 #2249, F3 #2250, F2 #2251. Plan closed 2026-11-27 19:43 UTC.
+- **W5-DEP and W5-BUG:** briefs written (`Documents\PPBF-overwatch\cloud\CLOUD_BRIEF_W5_DEP.md`, `CLOUD_BRIEF_W5_BUG.md`) and sent to Jason, but not started. At 18:03 UTC Claude in Chrome showed no connected browser.
+
+**Not ruled here:** whether these words replace Jason's 2026-11-26 words that new lanes run on admin@ only (carried in the Overwatch check prompt; no OD entry), beyond work "not related to the admin@ account".
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-004 -- A stack of PRs merges as one combined merge
+
+**Provenance: PRIMARY.** Jason typed this in the same session. New; edits no earlier entry.
+
+**Context (App Overwatch, 2026-11-27 about 17:20 UTC).** The repo allows squash merges only, so each merged piece of a stack made every piece above it conflict again. App Overwatch offered: "I can have the lane rebuild the last three PRs fresh on current main so they merge in one pass."
+
+**Jason (2026-11-27 17:38:07 UTC, PRIMARY):** *"i want what ever will get these builds in efficiently and accuratley"*
+
+**Ruling:** whatever gets the builds in efficiently and accurately.
+
+**Applied (Overwatch's method, not his words):**
+- Lanes still review each piece. When a chain is done, the lane brings the top PR up to date and marks only that one ready.
+- App Overwatch merges only the top PR. It first checks that the file set of the top PR's own non-merge commits equals its diff against main, then closes the lower PRs as included.
+- First used on #2245 (`13ce3c4e`; #2219, #2243 and #2244 closed as included), then #2253 (WP-2b). The repo's merge-commit setting was not changed.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-003 -- Release of main `77db0130` to production while admin@'s lanes wait on usage
+
+**Provenance: PRIMARY.** Jason typed these in the same session. New; edits no earlier entry.
+
+**Jason (2026-11-27 06:58:41 UTC, PRIMARY):** *"is there anythin we can ship while we wait for reset"*
+
+**Question as App Overwatch put it (2026-11-27 about 06:59 UTC):** "Release main 77db0130 to production now?"
+- **A (recommended): yes, with your check.** Deploy staging; Jason signs in and looks at the floor line (as a parent) and the stopped-coming page (as a coach); then production with his approval.
+- **B: yes, skip your check.**
+- **C: not now.**
+
+**Jason (2026-11-27 07:00:22 UTC, PRIMARY):** *"yes"*
+
+**Then, after the staging deploy and a check saying "The release is still waiting on your staging check":**
+
+**Jason (2026-11-27 07:24:41 UTC, PRIMARY):** *"Yes"*
+
+**Ruling:** release `77db0130` to production. App Overwatch read "yes" as A, and the later "Yes" as the staging check done.
+
+**Applied (Overwatch, not his words):**
+- **Staging:** migrations organization-email-alert-events (run 45955567833) and email-alert-sends (45955711790); deploy-staging run 45955835443, revision `app-ppbf-staging--0000326`.
+- **Production:** migrations organization-email-alert-events (45958283043) and email-alert-sends (45958618241); deploy-production run 45958998387. All three gates were approved by PunxsyProminence under the 60-second rule (OD-2026-11-24-004). Revision `app-ppbf-production--0000222` is at 100% traffic, image `sha256:40a0fb8b45cf2c5dd8182eef4061cef667f80620d0f7e61b4aa2ac39a86f17d1`, the same as staging. www returned 200.
+- **Contents, `94d3b99d..77db0130`:** #2205, #2211, #2213, #2201, #2210, #2178, #2169, #2207, #2214, #2206, #2221, #2215, #2216, #2220, #2223, #2222, #2203, #2208, #2180, #2230, #2181, #2182, #2232, #2183, #2233.
+- **Not observed:** what Jason checked before his "Yes".
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-002 -- Lanes stay in the admin@ cloud; the team's monthly API credit is not used for lane work
+
+**Provenance: PRIMARY.** Jason typed these in the same session. New; edits no earlier entry.
+
+**Jason (2026-11-27 06:42:47 UTC, PRIMARY):** *"can you findout how to use the promotional credit with the teams admi@ i should have 200"*
+
+**Question as App Overwatch put it (2026-11-27 06:43 UTC):** "Should part of the lane work run on this PC as `claude -p` jobs, using an API key from the linked Console account so the $200 pays for it?" Option A (recommended): no, keep all lanes in the admin@ cloud; the credit goes unused, or is spent on small API scripts. Option B: yes; Jason creates the API key and sets it on the PC, and App Overwatch sets up one headless lane with a spend cap. It said the $200 cannot make the cloud lanes run longer.
+
+**Jason (2026-11-27 06:58:24 UTC, PRIMARY):** *"No, keep cloud lanes"*
+
+**Ruling:** A. Lanes stay in the cloud, and the API credit is not used for lane work.
+
+**Status:** recorded 2026-11-28 by PR.
+
+---
+
+## OD-2026-11-27-001 -- Team usage-credit spend limits: team $500, admin@ $200, Neeko $200; fast mode for admin@'s new sessions
+
+**Provenance: PRIMARY.** Jason typed these in the same session. New; edits no earlier entry.
+
+**Jason (2026-11-27 01:38:18 UTC, PRIMARY):** *"The team accou ts should have 200 in usage credits and a total of 500 for the whole team"*
+
+**Question as App Overwatch put it (2026-11-27 01:39 UTC):** "Should the team org turn on usage credits so lanes keep running past the 5-hour limit, and with what spend limits?"
+- **A (recommended):** leave it as is.
+- **B:** "You turn on usage credits yourself at Organization settings > Usage, setting the team limit (for example $500) and admin@'s limit (for example $200). I then let the lanes run past the 5-hour limit."
+- **C:** something else.
+
+A second question was also on screen at that moment (01:40 UTC), on the three dependabot PRs: A merge #2226, have a lane check #2225 and fix or close #2224; B leave all three.
+
+**Jason (2026-11-27 01:40:24 UTC, PRIMARY):** *"B BUT I APROVE YOU TO MAKE THE CLICKS"*
+
+**Ruling:** B on the credits question, with App Overwatch making the clicks. App Overwatch read the B as the credits answer, "since that's the one with clicks", and said so in its reply. The dependabot question stayed open.
+
+**Applied (Overwatch, not his words):**
+- **Limits:** in claude.ai Organization settings > Usage, the team monthly spend limit went from $60 to $500, admin@'s per-user limit from $40 to $200, and Neeko's from unlimited to $200. The new limits held after a page reload.
+- **Correction:** "Turn on usage credits" was already on; App Overwatch had misread it as off.
+- **Not bought:** the usage-credit balance was $0 with auto-reload off, so the limits had nothing to draw on. Nothing was bought, and the one pending credit request was left alone.
+
+**Jason (2026-11-27 03:42:02 UTC, PRIMARY):** *"can you turen on fast mode in  the admin@ account"*
+
+**Applied (Overwatch, not his words):** fast mode was switched on in admin@'s claude.ai/code new-session model menu (label "Opus 5.5 Fast Extra"). Lane sessions that already existed were unchanged.
+
+**Status:** recorded 2026-11-28 by PR.
 
 ---
 

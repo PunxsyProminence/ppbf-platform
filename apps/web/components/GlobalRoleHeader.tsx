@@ -300,7 +300,7 @@ export default function GlobalRoleHeader() {
               It sits FIRST in this group, ahead of the catalog and the
               conveniences, because that is the whole point: /api/pilot/escalations
               is a pull surface by construction -- its own header records that
-              this platform sends no email, ever -- so a red flag about a child
+              no email from this platform says what happened -- so a red flag about a child
               waited on somebody choosing to open the right page. This bar is
               the one component mounted on every route, which makes it the
               only place a coach cannot walk past.

@@ -7,6 +7,7 @@ import ShadowChatButton from './ShadowChatButton';
 import { BUILDING } from './buildingMap';
 import { canUseOperationsHub } from './operationsAccess';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
+import { DOOR_LABEL_KEY } from '@/src/shared/roomNames';
 import type { ClubRole } from './roleRoutes';
 import { isFamilyGround } from './roleGround';
 
@@ -188,6 +189,11 @@ export default function RoleStandaloneView({
      while the session is still resolving. */
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const viewerRole = session?.role ?? null;
+  // The page's name for SHADOW's context. A door that is a card (the /profile
+  // door) shows the gym's name, which its page passes as roleLabel (lane W4-9, RN-3).
+  const shadowContext = DOOR_LABEL_KEY[routeLabel]
+    ? roleLabel
+    : BUILDING.find((door) => door.href === routeLabel)?.label ?? roleLabel;
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
@@ -316,7 +322,7 @@ export default function RoleStandaloneView({
 
         <section className="mx-auto w-full max-w-[1600px] p-[var(--s4)] sm:p-[var(--s5)] md:p-[var(--s6)]">
           <div className="mb-[var(--s4)] flex justify-end sm:mb-[var(--s5)]">
-            <ShadowChatButton context={BUILDING.find((door) => door.href === routeLabel)?.label ?? roleLabel} />
+            <ShadowChatButton context={shadowContext} />
           </div>
           {children}
         </section>

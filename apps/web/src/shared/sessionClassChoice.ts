@@ -10,12 +10,38 @@
 //   anything else                     -> undecided: the screen asks
 // A class another live session already holds cannot be chosen (one live session per class).
 
+/** A class's plan: the newest version of the plan it was scheduled with (sessionRunClass.ts listTieableClasses). */
+export interface ClassPlanView {
+  script_id: string;
+  name: string;
+  retired: boolean;
+  has_blocks: boolean;
+}
+
 export interface TieableClassView {
   class_id: string;
   title: string;
   start_at: string;
   end_at: string;
   held_by_other_session: boolean;
+  /** null: a class with no plan. Optional so a list without it reads as no plan. */
+  plan?: ClassPlanView | null;
+}
+
+/**
+ * What a class's plan starts as, and the one line the class screen shows for it (OW27-29 A, "Class
+ * keeps the plan; Start runs it"; App Overwatch 7215533652 on #2189). A retired plan (Q2) or one
+ * with no blocks (Q3) starts a session tied to the class without it; retired is checked first. No
+ * class, or a class with no plan: nothing starts with it and nothing is shown. The class screen's
+ * Start does not send this scriptId: the server resolves the class's plan when Start is committed
+ * (sessionScriptRuns.ts startClassPlanRun; Codex P1 on #2241), and the screen words its answer here.
+ */
+export function classPlanStart(item: Pick<TieableClassView, 'plan'> | undefined): { scriptId: string | null; line: string | null } {
+  const plan = item?.plan;
+  if (!plan) return { scriptId: null, line: null };
+  if (plan.retired) return { scriptId: null, line: `This class's plan, ${plan.name}, is retired, so this session starts without it.` };
+  if (!plan.has_blocks) return { scriptId: null, line: `This class's plan, ${plan.name}, has no blocks yet, so this session starts without it.` };
+  return { scriptId: plan.script_id, line: `This class runs the plan: ${plan.name}.` };
 }
 
 export const UNDER_WAY_LEAD_MS = 30 * 60 * 1000;

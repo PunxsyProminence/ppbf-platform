@@ -11,6 +11,8 @@ import {
   type TabletIdleMinutes,
 } from '@/src/shared/tabletIdle';
 
+import { turnOffPushInThisBrowser } from './PushAlertSwitch';
+
 /**
  * Gym tablet sign-out, on Customize the Gym (lane U1, AS2-b; Jason's ruling
  * OW25-53 A: the gym admin sets the time in gym settings; Overwatch Q1 = A,
@@ -20,7 +22,9 @@ import {
  *  1. The time, for the whole gym: GET/PUT /api/pilot/gym-tablet/idle. The
  *     server refuses anyone but the gym admin; this page is the gym admin's.
  *  2. The mark, for THIS device only: kept in this browser
- *     (src/lib/gymTabletMark.ts), so it is set on the tablet itself.
+ *     (src/lib/gymTabletMark.ts), so it is set on the tablet itself. Marking
+ *     also turns web push off in this browser (OW27-17 B: no pop-ups on a
+ *     gym tablet), in case it was turned on there before (W5-WP, WP-3).
  */
 
 type Load =
@@ -84,6 +88,7 @@ export default function GymTabletSettings() {
   const mark = (next: boolean) => {
     const kept = setGymTabletMark(next);
     setMarkLine(kept ? '' : 'This browser would not save the change (private mode or blocked storage). Nothing changed.');
+    if (kept && next) void turnOffPushInThisBrowser();
   };
 
   return (

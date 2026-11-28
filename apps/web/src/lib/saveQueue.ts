@@ -87,6 +87,12 @@ export interface SendContext {
   madeByAccountId: string;
   /** Whole milliseconds since the save was made, for tapped_ms_ago. */
   msSinceMade: number;
+  /**
+   * One random id for this page (this tab's load), the same for every save it keeps, for page_id. In
+   * memory only. The server can then tell two saves of one page, which this queue sends in the order
+   * they were made, from saves of the coach's other tab or device (#2182 round 12, reviewer A).
+   */
+  pageId: string;
   /** True for the first send, false for a resend. */
   first: boolean;
 }
@@ -106,8 +112,12 @@ export interface KeptSave {
    * tell). The signal is aborted when the queue stops waiting for it (pass it to fetch).
    */
   checkLanded?: (signal: AbortSignal) => Promise<boolean | null>;
-  /** The save went through: the server's answer, or null when the check found it had landed. */
-  onSaved?: (response: Response | null) => void;
+  /**
+   * The save went through: the server's answer, or null when the check found it had landed. May
+   * return words for the page's list, when the screen that made the save has gone or is going and
+   * the coach still has something to check; they are listed as saved, never as not saved.
+   */
+  onSaved?: (response: Response | null) => string | void | Promise<string | void>;
   /**
    * Refused. `landed` is false when the first send was refused or the check found nothing, and null
    * when a resend was refused and it is not known whether an earlier send landed. Returns the
@@ -121,6 +131,8 @@ export interface FailedSave {
   words: string;
   /** false when a resend was refused and whether an earlier send landed is not known (condition 2). */
   known: boolean;
+  /** true: the save went through, and these words say what the coach should still check (onSaved). */
+  saved?: boolean;
 }
 
 export interface SaveQueueState {
@@ -170,6 +182,8 @@ let learning: Promise<string | null> | null = null;
 let learnSeq = 0;
 /** The role session was written again and no answer has confirmed the account since. */
 let rechecking = false;
+/** How many re-checks have begun: an answer to an ask made before the latest one began never ends it. */
+let rechecks = 0;
 let recheckTimer: ReturnType<typeof setTimeout> | undefined;
 /**
  * Saves dropped unsent: how many, whose (null: made while the account was being checked again, so
@@ -241,6 +255,7 @@ function recheckLater(): void {
  */
 function recheck(): void {
   rechecking = true;
+  rechecks += 1;
   notify();
   void learnAccount(true);
 }
@@ -454,11 +469,12 @@ function install(): void {
     recheck();
   });
   // Back in view (a tab switch), or back in focus (two windows side by side are both visible): with
-  // an account known, one ask, unless one is already out for a re-check.
+  // an account known, a new ask every time. An ask already out may predate someone else signing in;
+  // only the newest answer is used (when both events fire, one extra ask).
   const backInView = () => {
     if (document.visibilityState !== 'visible' || accountId === null) return;
     if (boundaryNewer()) dropAll();
-    else if (!(rechecking && learning)) recheck();
+    else recheck();
   };
   document.addEventListener('visibilitychange', backInView);
   window.addEventListener('focus', backInView);
@@ -531,6 +547,7 @@ async function pump(): Promise<void> {
       if (seen !== generation) return;
     }
     if (earlier.length > 0 || head.sends > 0 || rechecking || head.accountId !== accountId || msSinceMade(head) > WAITED_MS) {
+      const askedAt = rechecks;
       const now = await signedInAccount();
       if (seen !== generation) return;
       if (boundaryNewer()) {
@@ -547,6 +564,12 @@ async function pump(): Promise<void> {
         if (now !== null) confirmAccount(now);
         return;
       }
+      // Asked before a re-check that is still out (someone may have signed in since): this answer may be
+      // about the last person, so it confirms nothing. Asked again at once; a newer answer decides.
+      if (rechecking && rechecks !== askedAt) {
+        next = true;
+        return;
+      }
       confirmAccount(now);
     }
     let response: Response | null = null;
@@ -559,6 +582,7 @@ async function pump(): Promise<void> {
           requestKey: head.requestKey,
           madeByAccountId: head.accountId,
           msSinceMade: msSinceMade(head),
+          pageId: pageId(head.accountId),
           first: head.sends === 0,
         });
         const gone = answered.status === 401 || (await codeOf(answered)) === 'SAVE_MADE_BY_ANOTHER_ACCOUNT';
@@ -586,7 +610,12 @@ async function pump(): Promise<void> {
     if (answer === 'saved') {
       entries.shift();
       notify();
-      await safely(() => head.save.onSaved?.(answered), undefined);
+      const words = await safely(() => head.save.onSaved?.(answered), undefined);
+      if (seen !== generation) return;
+      if (typeof words === 'string' && words !== '') {
+        failed.push({ label: head.save.label, words, known: true, saved: true });
+        notify();
+      }
     } else {
       // A refused RESEND may be refusing a save an earlier send already made (a finish, a removal).
       // Without a check, whether it landed is not known.
@@ -597,7 +626,12 @@ async function pump(): Promise<void> {
       entries.shift();
       if (landed === true) {
         notify();
-        await safely(() => head.save.onSaved?.(null), undefined);
+        const words = await safely(() => head.save.onSaved?.(null), undefined);
+        if (seen !== generation) return;
+        if (typeof words === 'string' && words !== '') {
+          failed.push({ label: head.save.label, words, known: true, saved: true });
+          notify();
+        }
       } else {
         const words = await safely(() => head.save.onRefused?.(answered, landed), undefined);
         if (seen !== generation) return;
@@ -615,6 +649,17 @@ async function pump(): Promise<void> {
       else later();
     }
   }
+}
+
+let thisPage: { id: string; account: string } | null = null;
+/**
+ * This page's id for the account a save belongs to: made with that account's first send, kept across a
+ * drop while the same account comes back (its order on this page still holds), and new for another
+ * account, so two people's saves on one tablet are never tied together (#2182 round 13, reviewer B).
+ */
+function pageId(account: string): string {
+  if (thisPage?.account !== account) thisPage = { id: newRequestKey() ?? 'page', account };
+  return thisPage.id;
 }
 
 /** A random request key, or null where the browser cannot make one (then the save is not kept). */
@@ -675,6 +720,23 @@ export async function keepSave(save: KeptSave): Promise<'kept' | 'not_kept'> {
   return 'kept';
 }
 
+/**
+ * Changes at every drop (a sign-out, another account, a 401, nobody signed in). A screen that holds
+ * words of a kept save for the person who made it (a refused note's text) forgets them then.
+ */
+export function saveQueueGeneration(): number {
+  return generation;
+}
+
+/**
+ * True only while the account signed in is confirmed and not being checked again (each change is told
+ * to subscribers). Until then the person at the screen may be someone else: a screen shows only a
+ * count of what it holds for the last account, never names or words, as the page's list does.
+ */
+export function saveQueueAccountConfirmed(): boolean {
+  return accountId !== null && !rechecking;
+}
+
 /** Clears the failed words and the not-sent count once the person has read them. */
 export function dismissFailedSaves(): void {
   if (failed.length === 0 && notSent.length === 0) return;
@@ -701,6 +763,7 @@ export function emptySaveQueueState(): SaveQueueState {
 /** Tests only: a fresh page. */
 export function resetSaveQueueForTests(): void {
   dropAll();
+  thisPage = null;
   notSent = [];
   pendingKeeps = 0;
   leftRunning = [];

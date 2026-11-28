@@ -6,6 +6,9 @@
 // surprise. Cadence comes from PPBF_SHADOW_WORKER_INTERVAL_SECONDS
 // (default 30, clamped 5-600).
 //
+// The loop's sweep slot runs every tick: the content-free email alert (lane
+// W4-1), the web push alert (lane W5-WP), then the video scan sweep.
+//
 // The loop's housekeeping slot carries the platform's retention work: purging
 // terminal job rows and archiving SHADOW chat audit rows out of Postgres. Both
 // are cheap and neither is urgent, so they ride the tick rather than a
@@ -32,6 +35,8 @@ export async function register(): Promise<void> {
   const { purgeTerminalShadowJobs } = await import('./src/server/pilot/shadowJobQueue');
   const { sweepQuarantinedVideos } = await import('./src/server/pilot/videoScanSweep');
   const { createShadowArchivalSweep } = await import('./src/server/pilot/shadowArchival');
+  const { runEmailAlertSweep } = await import('./src/server/pilot/emailAlertSender');
+  const { runPushAlertSweep } = await import('./src/server/pilot/pushAlertSender');
   const intervalMs = resolveShadowWorkerIntervalMs();
   const sweepShadowAudit = createShadowArchivalSweep();
   let loggedScanUnconfigured = false;
@@ -45,6 +50,32 @@ export async function register(): Promise<void> {
     // set either flag has one line to find instead of silence, and a
     // configured environment isn't spammed once scanning is caught up.
     sweep: async () => {
+      // The email alert (lane W4-1, EM-3b) goes first, in its own try: a
+      // failure here is logged and the video sweep still runs as before.
+      // Counts only, never an address.
+      try {
+        const alerts = await runEmailAlertSweep();
+        if (Object.values(alerts).some((count) => count > 0)) console.log('Email alert sweep', alerts);
+      } catch (error) {
+        console.error('Email alert sweep failed', {
+          errorClass: error instanceof Error ? error.name : typeof error,
+        });
+      }
+      // The web push alert (lane W5-WP, WP-2b-2c) next, in its own try, the
+      // same way. It does nothing at all while the push settings are unset.
+      // Counts only, never an endpoint. It has the email's limits, not a share
+      // of them (20 s or 20 sends, each send's posts cut off at 10 s), so with
+      // push on a slow tick runs about 30 s longer. The loop schedules the next
+      // tick only when this one ends (shadowJobWorker.ts), so ticks never
+      // overlap on a replica; they come further apart.
+      try {
+        const pushes = await runPushAlertSweep();
+        if (Object.values(pushes).some((count) => count > 0)) console.log('Push alert sweep', pushes);
+      } catch (error) {
+        console.error('Push alert sweep failed', {
+          errorClass: error instanceof Error ? error.name : typeof error,
+        });
+      }
       const result = await sweepQuarantinedVideos();
       if (result.scanned > 0) {
         console.log('SHADOW video scan sweep', {

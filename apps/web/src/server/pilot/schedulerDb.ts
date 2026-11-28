@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
-import { ConflictError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
 import { findRegistrationBlockingHold } from './trainingHolds';
 
@@ -22,6 +22,11 @@ export interface SchedulerClass {
   status: 'open' | 'full' | 'cancelled';
   created_at: string;
   updated_at: string;
+  // The session plan this class runs (lane W4-5 SP-3); null = none. Only
+  // createSchedulerClasses writes it; listSchedulerStore and getSchedulerClassById
+  // do not select it, because reading a class's plan is SP-4's (the W4-5 plan's
+  // SP-4 allowlist, #2189).
+  script_id?: string | null;
 }
 
 export interface SchedulerRegistration {
@@ -156,8 +161,25 @@ export async function getSchedulerClassById(organizationId: string, classId: str
  * refused, and the transaction takes back anything this call inserted. Two
  * submits racing on one key: the second waits on the first's rows, then finds
  * them.
+ *
+ * THE PLAN (lane W4-5, SP-3). Every class of one create names the same session
+ * plan, or none (the route puts one script_id on every record). A plan named
+ * must be one of this gym's, checked here so the caller is told in words
+ * (CLASS_PLAN_NOT_FOUND, 400); the foreign key pilot_scheduler_classes_script_fk
+ * (infra/azure/pilot_slice_postgres_scheduler_class_plan_migration.sql) is the
+ * backstop. A plan whose newest version is retired is refused
+ * (CLASS_PLAN_RETIRED, 400; App Overwatch on #2238). The plan is part of
+ * "exactly as asked": the same key with another plan, or with none, is
+ * CLASS_REQUEST_KEY_REUSED. The plan is checked only for a request that has
+ * made nothing yet: a repeat of one that already made its classes is answered
+ * as a repeat, even if its plan was retired or removed since (reviewer M on
+ * #2240).
  */
 export type CreateClassesOutcome = 'created' | 'already_created';
+
+/** The words App Overwatch approved for a retired plan (#2238, 7211257563). */
+export const CLASS_PLAN_RETIRED =
+  'This plan is retired. Bring it back on Session Plans to schedule a class with it.';
 
 export const CLASS_REQUEST_KEY_REUSED =
   'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.';
@@ -172,39 +194,92 @@ export async function createSchedulerClasses(
     column('class_id'), column('title'), column('start_at'), column('end_at'), column('location'),
     column('capacity'), column('scheduled_by_account_id'), column('coach_account_id'),
     column('covering_coach_account_id'), column('status'), column('created_at'), column('updated_at'),
+    column('script_id'),
   ];
+  const scriptId = items[0]?.script_id ?? null;
+  if (items.some((item) => (item.script_id ?? null) !== scriptId)) {
+    // The route never builds this; a caller that does is wrong, not the user.
+    throw new Error('createSchedulerClasses: every class of one create must name the same plan');
+  }
   return withTransaction(async (client) => {
-    const inserted = await client.query<{ class_id: string }>(
+    // A REPEAT IS ANSWERED BEFORE THE PLAN IS CHECKED (reviewer M on #2240). The ids come from the
+    // request key (route.ts classIdFor), so a class already here means this key already made
+    // something, and the comparison at the end answers it, plan included. Checking the plan first
+    // would refuse the repeat of a create whose answer was lost if its plan was retired in
+    // between; the page would then drop its key, and its next press would make the classes twice.
+    // Not locked: a create on the same key still in flight is waited for by the insert's conflict.
+    const made = await client.query<{ count: string }>(
+      `select count(*)::text as count
+         from pilot.scheduler_classes
+        where organization_id = $1 and class_id = any($2::text[])`,
+      [organizationId, column('class_id')],
+    );
+    const isNew = Number(made.rows[0]?.count ?? 0) === 0;
+    if (isNew && scriptId !== null) {
+      // FOR KEY SHARE is the lock the foreign key's own check takes
+      // (contentImport/apply.ts:88), held to commit. A DELETE takes FOR UPDATE,
+      // which conflicts with it (PostgreSQL docs, "Row-Level Locks"), so the
+      // plan row cannot go between this read and the insert below.
+      const plan = await client.query<{ lineage_id: string }>(
+        `select lineage_id from pilot.session_scripts where organization_id = $1 and script_id = $2 for key share`,
+        [organizationId, scriptId],
+      );
+      if (plan.rows.length === 0) {
+        throw new ValidationError('script_id must name a session plan of this gym', 'CLASS_PLAN_NOT_FOUND');
+      }
+      // A RETIRED PLAN IS NOT SCHEDULED (App Overwatch on #2238, 7211257563: "A, refuse it"; "a
+      // retired script is one the gym has decided not to run", sessionScripts.ts:138-139). Asked of
+      // the newest version of the plan's lineage, the one a retire writes (setSessionScriptRetired
+      // writes the current version, sessionScriptAuthoring.ts), in a statement of its own after the
+      // lock above. A retire holds that row FOR UPDATE (lockCurrentScript), which this FOR KEY SHARE
+      // waits for, so a retire in progress is seen once it commits. Bringing the plan back on
+      // Session Plans undoes it; a class already scheduled keeps its link if its plan is retired
+      // later.
+      const newest = await client.query<{ authoring_state: string }>(
+        `select authoring_state from pilot.session_scripts
+          where organization_id = $1 and lineage_id = $2
+          order by version desc
+          limit 1
+            for key share`,
+        [organizationId, plan.rows[0].lineage_id],
+      );
+      if (newest.rows[0]?.authoring_state === 'retired') {
+        throw new ValidationError(CLASS_PLAN_RETIRED, 'CLASS_PLAN_RETIRED');
+      }
+    }
+    const inserted = isNew ? await client.query<{ class_id: string }>(
       `insert into pilot.scheduler_classes (
          organization_id, class_id, title, start_at, end_at, location, capacity,
          scheduled_by_account_id, coach_account_id, covering_coach_account_id,
-         status, created_at, updated_at
+         status, created_at, updated_at, script_id
        )
        select $1::text, r.*
          from unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
                      $7::integer[], $8::text[], $9::text[], $10::text[], $11::text[],
-                     $12::timestamptz[], $13::timestamptz[])
+                     $12::timestamptz[], $13::timestamptz[], $14::text[])
            as r(class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id,
-                coach_account_id, covering_coach_account_id, status, created_at, updated_at)
+                coach_account_id, covering_coach_account_id, status, created_at, updated_at, script_id)
        on conflict (organization_id, class_id) do nothing
        returning class_id`,
       params,
-    );
+    ) : { rows: [] };
     if (inserted.rows.length === items.length) return 'created';
     if (inserted.rows.length === 0) {
-      // The same request again only if every class is there as asked; status and
-      // cover are not compared (a class cancelled since is still the one made).
+      // The same request again only if every class is there as asked, its plan
+      // included; status and cover are not compared (a class cancelled since is
+      // still the one made).
       const same = await client.query<{ count: string }>(
         `select count(*)::text as count
            from pilot.scheduler_classes c
            join unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
-                       $7::integer[], $8::text[])
-             as r(class_id, title, start_at, end_at, location, capacity, coach_account_id)
+                       $7::integer[], $8::text[], $9::text[])
+             as r(class_id, title, start_at, end_at, location, capacity, coach_account_id, script_id)
              on c.class_id = r.class_id
           where c.organization_id = $1 and c.title = r.title and c.start_at = r.start_at
             and c.end_at = r.end_at and c.location = r.location and c.capacity = r.capacity
-            and c.coach_account_id = r.coach_account_id`,
-        [...params.slice(0, 7), column('coach_account_id')],
+            and c.coach_account_id = r.coach_account_id
+            and c.script_id is not distinct from r.script_id`,
+        [...params.slice(0, 7), column('coach_account_id'), column('script_id')],
       );
       if (Number(same.rows[0]?.count ?? 0) === items.length) return 'already_created';
     }
@@ -856,8 +931,15 @@ export async function writeSessionRegisterPresent(
   // change: the page sends its
   // kept saves one at a time in tap order, so a here tap landing after it was tapped after it, and
   // here wins (OD-2026-10-21-004 ruling 1). Two times worked out from two requests are each off by
-  // their request's delay and are not compared (review of #2165; round 13 of #2178).
+  // their request's delay and are not compared (review of #2165; round 13 of #2178). Only from the
+  // same page (pageId, recorded with the no-shows tap): each tab keeps its own queue, so a here tap
+  // from the coach's other tab or device has no place in this page's order, and an Absent set after
+  // it still wins (condition 1; #2182 round 12, reviewer A). Without a page id, never. Known limit
+  // (saveQueue.ts, "a send given up on"): a here tap the page gave up on after 30 seconds while the
+  // server still worked on it can be written after a newer no-shows tap of the same page, and then
+  // flips that tap's Absent (#2182 round 13, reviewer A; it needs a server stall over 30 seconds).
   runId?: string,
+  pageId?: string,
 ): Promise<SessionRegisterWrite> {
   const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
   let previous: SchedulerAttendance['status'] | undefined;
@@ -882,13 +964,14 @@ export async function writeSessionRegisterPresent(
                   where e.organization_id = a.organization_id and e.entity_type = 'session_script_run'
                     and e.entity_id = $5 and e.details->>'action' = 'mark_no_shows'
                     and e.details->>'class_id' = a.class_id
+                    and e.details->>'page_id' = $6
                     and e.details->'marked_athlete_ids' ? a.athlete_id
                     and (e.details->>'marked_at')::timestamptz = a.updated_at
                     and a.status = 'absent')) as newer
          from pilot.scheduler_attendance a
         where a.organization_id = $1 and a.class_id = $2 and a.athlete_id = $3
           for update`,
-      [...params.slice(0, 3), tappedAt ?? null, runId ?? null],
+      [...params.slice(0, 3), tappedAt ?? null, runId ?? null, pageId ?? null],
     );
     previous = rows[0]?.status;
     newer = rows[0]?.newer === true;

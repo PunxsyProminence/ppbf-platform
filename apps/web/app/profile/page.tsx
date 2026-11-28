@@ -2,6 +2,7 @@
 
 import ProfileSettings from '@/components/ProfileSettings';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { useRoomNames } from '@/src/client/roomNames';
 
 /**
  * YOUR PROFILE (titled "Your Corner" until lane AS-8; Jason, OW27-11 A,
@@ -20,16 +21,20 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
  * grounds anyway, so the page is correct either way.
  */
 export default function ProfilePage() {
+  // The page's title and its door's label read one name, the gym's word for
+  // this card (lane W4-9, RN-3; OW27-15; OD-2026-10-17-001 item 1).
+  const names = useRoomNames();
+  const title = names.name('card:your-profile');
   return (
     <RoleStandaloneView
-      roleLabel="Your Profile"
+      roleLabel={title}
       routeLabel="/profile"
       // No route chip (lane AS-8, ATH-26): the address is not a title. This is
       // every role's page, so every role loses the chip here.
       showRouteLabel={false}
       allowedRoles={['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer']}
       room="office"
-      breadcrumbs={[{ label: 'Your Profile' }]}
+      breadcrumbs={[{ label: title }]}
     >
       <div className="mx-auto w-full max-w-[987px] px-[var(--s5)] py-[var(--s6)]">
         <ProfileSettings />

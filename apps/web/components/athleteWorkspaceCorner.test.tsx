@@ -87,7 +87,7 @@ async function renderWorkspace() {
   });
 }
 
-const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
+const corner = () => within(screen.getByRole('region', { name: 'My Corner' }));
 
 function checkInPosts(): FetchCall[] {
   return fetchCalls.filter((call) => call.method === 'POST' && call.url.endsWith('/api/pilot/sessions'));
@@ -301,7 +301,7 @@ describe('where the hold notice stands (lane AS-8)', () => {
   test('on a tab without My Corner it stands above the nav, once', async () => {
     await renderWorkspace();
     fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
-    expect(screen.queryByRole('region', { name: 'My corner' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'My Corner' })).toBeNull();
     const headline = await screen.findByText(HOLD);
     const nav = screen.getByRole('button', { name: 'Today' });
     expect(headline.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
