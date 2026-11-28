@@ -5,7 +5,7 @@ import { getBoardSummary, type BoardSummary } from '@/src/server/pilot/boardSumm
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { excludePlatformLibraryOrganizationSql } from '@/src/server/pilot/platformLibraryScope';
-import { getGrowthMetrics, type GrowthMetrics } from '@/src/server/pilot/shadowMetrics';
+import { flooredShadowUses, getGrowthMetrics, type FlooredShadowUses } from '@/src/server/pilot/shadowMetrics';
 
 export const runtime = 'nodejs';
 
@@ -25,7 +25,7 @@ interface GymOverviewRow {
   organizationName: string;
   status: string;
   board: BoardSummary | null;
-  growth: GrowthMetrics | null;
+  shadowUses: FlooredShadowUses | null;
   capabilityCount: number;
   error?: string;
 }
@@ -42,8 +42,11 @@ function countEnabled(value: unknown): number {
 // getGrowthMetrics -- once per organization via Promise.all, rather than new
 // cross-org SQL. Safe at pilot scale (no pagination exists anywhere in this
 // codebase's org listing, and the schema is literally named "pilot slice").
-// Every metric surfaced here is already k-anonymity gated in boardSummary.ts;
-// nothing here reaches PHI.
+// Every figure sent is held to the board's floor: the board's own counts in
+// boardSummary.ts, and SHADOW use as one floored figure (flooredShadowUses,
+// lane W5-BUG B4; App Overwatch Q1 A on #2269). The rest of getGrowthMetrics'
+// answer is not sent: no screen reads it here, and none of it is floored.
+// Nothing here reaches PHI.
 //
 // Track assignments are NOT read here. pilot.admin_track_assignments is a map
 // keyed by athlete id, one entry per real athlete of a gym, and the platform
@@ -89,7 +92,7 @@ export async function GET(request: NextRequest) {
             organizationName: org.organization_name,
             status: org.status,
             board,
-            growth,
+            shadowUses: flooredShadowUses(growth.totalInteractions, board.activeAthletes),
             capabilityCount,
           };
         } catch (error) {
@@ -105,7 +108,7 @@ export async function GET(request: NextRequest) {
             organizationName: org.organization_name,
             status: org.status,
             board: null,
-            growth: null,
+            shadowUses: null,
             capabilityCount,
             error: 'Failed to load summary',
           };

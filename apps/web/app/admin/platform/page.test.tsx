@@ -676,7 +676,8 @@ describe('a suppressed figure on the gym summary', () => {
         },
         coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
       },
-      growth: { totalInteractions: 7, avgSatisfaction: null, recommendationsMade: 0, researchRequirementsCreated: 0, researchRequirementsClosed: 0 },
+      // Suppressed by the route: this gym's Active Athletes figure is (lane W5-BUG, B4; Q1 A).
+      shadow_uses: { status: 'insufficient_data', count: null },
       capabilityAccess: {},
       trackAssignments: {},
     };
@@ -691,8 +692,69 @@ describe('a suppressed figure on the gym summary', () => {
 
     const tile = (label: string) => screen.getByText(label).parentElement as HTMLElement;
     expect(within(tile('Active Athletes')).getByText('Suppressed')).toBeInTheDocument();
+    expect(within(tile('SHADOW Uses (30d)')).getByText('Suppressed')).toBeInTheDocument();
     expect(within(tile('Sessions (30d)')).getByText('40')).toBeInTheDocument();
     expect(screen.queryByText('Too few athletes to show')).toBeNull();
+  });
+});
+
+// Lane W5-BUG, B4 (App Overwatch Q1 A on #2269): the SHADOW Uses tile reads only the route's floored
+// figure -- a count from 5 up or "Suppressed" -- and anything else as "Could not be checked". It used to
+// print growth.totalInteractions raw, so a gym with 3 SHADOW chats, or with too few athletes to show,
+// read "3" or "7" beside a Suppressed Active Athletes.
+describe('the SHADOW Uses tile', () => {
+  const baseSummary = {
+    organization_id: 'org-punxsy',
+    board: {
+      activeAthletes: { status: 'available', count: 12 },
+      trainingSessions30Days: { status: 'available', count: 40, completedCount: 30, completionRate: 0.75 },
+      goalStatusBuckets: {
+        active: { status: 'unavailable', count: null },
+        completed: { status: 'unavailable', count: null },
+        other: { status: 'unavailable', count: null },
+      },
+      coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
+    },
+    capabilityAccess: {},
+    trackAssignments: {},
+    on_the_floor: { status: 'insufficient_data', count: null },
+  };
+
+  async function tileFor(extra: Record<string, unknown>): Promise<HTMLElement> {
+    const summary = { ...baseSummary, ...extra };
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) return jsonResponse(summary);
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+    return screen.getByText('SHADOW Uses (30d)').parentElement as HTMLElement;
+  }
+
+  test('a count from 5 up reads its number', async () => {
+    expect(within(await tileFor({ shadow_uses: { status: 'available', count: 41 } })).getByText('41')).toBeInTheDocument();
+  });
+
+  test('the floor itself reads "5"', async () => {
+    expect(within(await tileFor({ shadow_uses: { status: 'available', count: 5 } })).getByText('5')).toBeInTheDocument();
+  });
+
+  test('a suppressed figure reads "Suppressed"', async () => {
+    expect(within(await tileFor({ shadow_uses: { status: 'insufficient_data', count: null } })).getByText('Suppressed')).toBeInTheDocument();
+  });
+
+  test('the old raw growth figure is never printed', async () => {
+    const tile = await tileFor({ growth: { totalInteractions: 3 } });
+    expect(within(tile).getByText('Could not be checked')).toBeInTheDocument();
+    expect(within(tile).queryByText('3')).toBeNull();
+  });
+
+  test('a count under the floor, even marked available, is not printed', async () => {
+    const tile = await tileFor({ shadow_uses: { status: 'available', count: 4 } });
+    expect(within(tile).getByText('Could not be checked')).toBeInTheDocument();
+    expect(within(tile).queryByText('4')).toBeNull();
   });
 });
 
@@ -711,7 +773,7 @@ describe('the on-the-floor tile', () => {
       },
       coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
     },
-    growth: { totalInteractions: 7, avgSatisfaction: null, recommendationsMade: 0, researchRequirementsCreated: 0, researchRequirementsClosed: 0 },
+    shadow_uses: { status: 'available', count: 7 },
     capabilityAccess: {},
     trackAssignments: {},
   };

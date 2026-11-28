@@ -53,7 +53,8 @@ test('a suppressed figure reads "Suppressed", a counted one its count', async ()
           trainingSessions30Days: { status: 'available', count: 40 },
           coachReviews30Days: { status: 'insufficient_data', count: null },
         },
-        growth: { totalInteractions: 7 },
+        // Suppressed by the route: this gym's Active Athletes figure is (lane W5-BUG, B4; Q1 A).
+        shadowUses: { status: 'insufficient_data', count: null },
         capabilityCount: 0,
         trackAssignmentCount: 0,
       }],
@@ -63,7 +64,7 @@ test('a suppressed figure reads "Suppressed", a counted one its count', async ()
   render(<PlatformOverview />);
 
   const row = (await screen.findByText('Test Gym')).closest('tr') as HTMLElement;
-  expect(within(row).getAllByText('Suppressed')).toHaveLength(2);
+  expect(within(row).getAllByText('Suppressed')).toHaveLength(3);
   expect(within(row).getByText('40')).toBeInTheDocument();
   expect(within(row).queryByText('n/a')).toBeNull();
 });
@@ -107,4 +108,60 @@ test('the way back reads Omega, and an unread figure reads "No data yet"', async
   expect(within(row).queryByText('—')).toBeNull();
   expect(screen.getByRole('link', { name: 'Omega' })).toHaveAttribute('href', '/admin/platform');
   expect(screen.queryByText('Back To Gym Switcher')).toBeNull();
+});
+
+// Lane W5-BUG, B4 (App Overwatch Q1 A on #2269): the SHADOW Uses column reads only the route's floored
+// figure. It used to print growth.totalInteractions raw.
+describe('the SHADOW Uses column', () => {
+  async function cellFor(extra: Record<string, unknown>): Promise<HTMLElement> {
+    (usePilotSession as jest.Mock).mockReturnValue({
+      role: 'platform_owner',
+      organizationId: 'ppbf',
+      authProvider: 'microsoft',
+      accountId: 'owner',
+      mustChangePin: false,
+      loading: false,
+    });
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        gyms: [{
+          organizationId: 'org-1',
+          organizationName: 'Test Gym',
+          status: 'active',
+          board: {
+            activeAthletes: { status: 'available', count: 12 },
+            trainingSessions30Days: { status: 'available', count: 40 },
+            coachReviews30Days: { status: 'available', count: 6 },
+          },
+          capabilityCount: 0,
+          ...extra,
+        }],
+      }),
+    })) as unknown as typeof fetch;
+
+    render(<PlatformOverview />);
+    const row = (await screen.findByText('Test Gym')).closest('tr') as HTMLElement;
+    // Columns: Gym, Status, Active Athletes, Sessions, Coach Reviews, SHADOW Uses, Marked In Record.
+    return row.querySelectorAll('td')[5] as HTMLElement;
+  }
+
+  test('a count from 5 up reads its number', async () => {
+    expect(within(await cellFor({ shadowUses: { status: 'available', count: 23 } })).getByText('23')).toBeInTheDocument();
+  });
+
+  test('a suppressed figure reads "Suppressed"', async () => {
+    expect(within(await cellFor({ shadowUses: { status: 'insufficient_data', count: null } })).getByText('Suppressed')).toBeInTheDocument();
+  });
+
+  test('the old raw growth figure is never printed', async () => {
+    const cell = await cellFor({ growth: { totalInteractions: 3 } });
+    expect(cell.textContent).toBe('No data yet');
+  });
+
+  test('a count under the floor, even marked available, is not printed', async () => {
+    const cell = await cellFor({ shadowUses: { status: 'available', count: 4 } });
+    expect(cell.textContent).toBe('No data yet');
+  });
 });

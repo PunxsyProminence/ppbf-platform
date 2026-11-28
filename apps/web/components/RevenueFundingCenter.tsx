@@ -176,7 +176,7 @@ const revenueItems: RevenueItem[] = [
 // connected". That was a claim about the gym's real payment accounts made
 // from typed-in rows, and the real state lives on /admin/payments (its own
 // read, organization admin only). This console makes no such claim now; its
-// Payment Settings tab links there.
+// Payment Accounts tab links there.
 //
 // No donation is recorded here, because this platform holds no financial
 // records and the payment capability is a reserved slot that is deliberately

@@ -19,8 +19,16 @@ jest.mock('@/src/server/pilot/http', () => ({
   requirePrincipal: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
-jest.mock('@/src/server/pilot/boardSummary', () => ({ getBoardSummary: jest.fn() }));
-jest.mock('@/src/server/pilot/shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
+// The board floor (BOARD_MINIMUM_COHORT_SIZE) and the SHADOW-use floor (flooredShadowUses) stay real;
+// only the reads behind them are mocked.
+jest.mock('@/src/server/pilot/boardSummary', () => ({
+  ...jest.requireActual('@/src/server/pilot/boardSummary'),
+  getBoardSummary: jest.fn(),
+}));
+jest.mock('@/src/server/pilot/shadowMetrics', () => ({
+  ...jest.requireActual('@/src/server/pilot/shadowMetrics'),
+  getGrowthMetrics: jest.fn(),
+}));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockQuery = query as jest.Mock;
@@ -40,8 +48,9 @@ const sqlRun = () => mockQuery.mock.calls.map(([sql]) => String(sql));
 beforeEach(() => {
   jest.resetAllMocks();
   as('platform_owner');
-  mockBoard.mockResolvedValue({ athletes: 12 } as never);
-  mockGrowth.mockResolvedValue({ sessions: 40 } as never);
+  mockBoard.mockResolvedValue({ activeAthletes: { status: 'available', count: 12 } } as never);
+  // The rest of the growth answer is unfloored and must not reach the platform owner.
+  mockGrowth.mockResolvedValue({ totalInteractions: 40, avgSatisfaction: 4.5, reviewedOutcomes: 2, newLibrarySources: 1 } as never);
   // Answer by what is asked. If the route ever reads the track map again it
   // gets a real-looking one, so the assertions below would see it come back.
   mockQuery.mockImplementation(async (sql: string) => {
@@ -72,19 +81,49 @@ test('the platform owner still gets each gym\'s aggregates', async () => {
         organizationId: 'gym-a',
         organizationName: 'Gym A',
         status: 'active',
-        board: { athletes: 12 },
-        growth: { sessions: 40 },
+        board: { activeAthletes: { status: 'available', count: 12 } },
+        shadowUses: { status: 'available', count: 40 },
         capabilityCount: 2,
       },
       {
         organizationId: 'gym-b',
         organizationName: 'Gym B',
         status: 'active',
-        board: { athletes: 12 },
-        growth: { sessions: 40 },
+        board: { activeAthletes: { status: 'available', count: 12 } },
+        shadowUses: { status: 'available', count: 40 },
         capabilityCount: 0,
       },
     ],
+  });
+});
+
+// Lane W5-BUG, B4 (App Overwatch Q1 A on #2269): each gym's SHADOW use is sent only as one floored figure.
+describe('SHADOW use is held to the board floor', () => {
+  async function shadowUses(totalInteractions: number, activeAthletesStatus = 'available'): Promise<unknown> {
+    mockBoard.mockResolvedValue({ activeAthletes: { status: activeAthletesStatus, count: activeAthletesStatus === 'available' ? 12 : null } } as never);
+    mockGrowth.mockResolvedValue({ totalInteractions } as never);
+    const body = (await (await GET(get())).json()) as { gyms: Array<Record<string, unknown>> };
+    expect(body.gyms[0]).not.toHaveProperty('growth');
+    return body.gyms[0].shadowUses;
+  }
+
+  test.each([0, 4])('%i interactions are suppressed', async (count) => {
+    await expect(shadowUses(count)).resolves.toEqual({ status: 'insufficient_data', count: null });
+  });
+
+  test('5 interactions, the floor itself, are sent', async () => {
+    await expect(shadowUses(5)).resolves.toEqual({ status: 'available', count: 5 });
+  });
+
+  test('any count is suppressed while the gym\'s Active Athletes figure is', async () => {
+    await expect(shadowUses(40, 'insufficient_data')).resolves.toEqual({ status: 'insufficient_data', count: null });
+  });
+
+  test('none of the unfloored growth figures is sent', async () => {
+    const text = await (await GET(get())).text();
+    for (const key of ['growth', 'totalInteractions', 'avgSatisfaction', 'reviewedOutcomes', 'newLibrarySources']) {
+      expect(text).not.toContain(key);
+    }
   });
 });
 
@@ -116,7 +155,8 @@ test('a gym whose summary fails still carries no track field', async () => {
   error.mockRestore();
 
   const failed = body.gyms.find((gym) => gym.error);
-  expect(failed).toMatchObject({ board: null, growth: null, error: 'Failed to load summary' });
+  expect(failed).toMatchObject({ board: null, shadowUses: null, error: 'Failed to load summary' });
+  expect(failed).not.toHaveProperty('growth');
   expect(failed).not.toHaveProperty('trackAssignmentCount');
 });
 

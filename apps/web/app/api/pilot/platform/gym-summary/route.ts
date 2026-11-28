@@ -5,7 +5,7 @@ import { getBoardSummary } from '@/src/server/pilot/boardSummary';
 import { queryOne } from '@/src/server/pilot/db';
 import { floored, registerTotalToday } from '@/src/server/pilot/floorCount';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
+import { flooredShadowUses, getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 
 export const runtime = 'nodejs';
 
@@ -30,8 +30,11 @@ function toBooleanMap(value: unknown): Record<string, boolean> {
 // gym's operational summary here by explicit organization_id, never their own
 // principal.organizationId. Reuses the exact same aggregate functions the
 // board/summary and shadow/metrics routes already call for a single org --
-// no new business logic, and every metric here is already k-anonymity gated
-// (see boardSummary.ts) with no PHI involved.
+// no new business logic, and no PHI involved. Every figure sent is held to the
+// board's floor: the board's own counts in boardSummary.ts, and SHADOW use as
+// one floored figure (flooredShadowUses, lane W5-BUG B4; App Overwatch Q1 A on
+// #2269). The rest of getGrowthMetrics' answer is not sent: no screen here
+// reads it, and none of it is floored.
 //
 // On the floor now (lane W4-3, FN-4c; GO on #2192, 7206014991; QC A): one total for the chosen gym,
 // counted from present register marks only (floorCount.ts, the line's own rule), held to the board's
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       organization_id: organizationId,
       board,
-      growth,
+      shadow_uses: flooredShadowUses(growth.totalInteractions, board.activeAthletes),
       capabilityAccess: toBooleanMap(capabilityRow?.capability_access),
       on_the_floor: floored(onTheFloorTotal),
     }, { headers: { 'Cache-Control': 'private, no-store' } });

@@ -18,16 +18,13 @@ interface BoardSummary {
   coachReviews30Days: CountMetric;
 }
 
-interface GrowthMetrics {
-  totalInteractions: number;
-}
-
 interface GymOverviewRow {
   organizationId: string;
   organizationName: string;
   status: string;
   board: BoardSummary | null;
-  growth: GrowthMetrics | null;
+  /** SHADOW use in 30 days, floored by the route (lane W5-BUG, B4): a count from 5 up, otherwise suppressed. */
+  shadowUses?: unknown;
   capabilityCount: number;
   trackAssignmentCount: number;
   error?: string;
@@ -42,6 +39,18 @@ function metricLabel(metric: CountMetric | undefined): string {
   }
   if (metric.status === 'insufficient_data') {
     return 'Suppressed';
+  }
+  return 'No data yet';
+}
+
+// SHADOW Uses (lane W5-BUG, B4). The route floors the count; this reads only a count from 5 up or
+// "Suppressed", and a missing or malformed figure as "No data yet", never as a number or a zero.
+function shadowUsesLabel(value: unknown): string {
+  if (!value || typeof value !== 'object') return 'No data yet';
+  const metric = value as Record<string, unknown>;
+  if (metric.status === 'insufficient_data' && metric.count === null) return 'Suppressed';
+  if (metric.status === 'available' && Number.isInteger(metric.count) && (metric.count as number) >= 5) {
+    return String(metric.count);
   }
   return 'No data yet';
 }
@@ -155,7 +164,7 @@ export default function PlatformOverview() {
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.activeAthletes)}</td>
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.trainingSessions30Days)}</td>
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.coachReviews30Days)}</td>
-                        <td className="t-data px-[var(--s4)] py-[var(--s4)]">{gym.growth?.totalInteractions ?? 'No data yet'}</td>
+                        <td className="t-data px-[var(--s4)] py-[var(--s4)]">{shadowUsesLabel(gym.shadowUses)}</td>
                       </>
                     )}
                     <td className="t-data px-[var(--s4)] py-[var(--s4)]">{gym.capabilityCount}</td>

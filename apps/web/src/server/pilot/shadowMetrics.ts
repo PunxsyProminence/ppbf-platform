@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 
+import { BOARD_MINIMUM_COHORT_SIZE, type BoardCountMetric } from './boardSummary';
 import { query, queryOne } from './db';
 
 export type RecommendationVerificationState = 'unverified' | 'durable_client' | 'human_reviewed';
@@ -223,4 +224,32 @@ export async function getGrowthMetrics(
     reviewedHelpfulRate: reviewedOutcomes > 0 ? reviewedHelpful / reviewedOutcomes : null,
     unavailableReasons,
   };
+}
+
+/** The platform owner's "SHADOW Uses (30d)" figure: a count from the floor up, or suppressed. */
+export type FlooredShadowUses =
+  | { readonly status: 'available'; readonly count: number }
+  | { readonly status: 'insufficient_data'; readonly count: null };
+
+/**
+ * SHADOW interactions as the platform owner may see them (lane W5-BUG, B4; App Overwatch Q1 A on #2269).
+ *
+ * getGrowthMetrics applies no floor of its own; the gym's own SHADOW pages read it whole. A
+ * cross-gym reader gets this instead, suppressed on either of two rules:
+ *   - the count itself is under the board's floor (BOARD_MINIMUM_COHORT_SIZE), so 0 to 4 never shows;
+ *   - the gym's Active Athletes figure is suppressed. Shown beside a withheld athlete count, any
+ *     interaction count describes the cohort the board just refused to describe -- the same rule
+ *     omegaPlatformContext.ts renderInteractions holds for Omega.
+ * The floor is boardSummary's own constant. The "on the floor now" count's module is kept for that
+ * count alone (App Overwatch's answer A, 7206212516), so it is not imported or named here.
+ */
+export function flooredShadowUses(
+  totalInteractions: number,
+  activeAthletes: Pick<BoardCountMetric, 'status'>,
+): FlooredShadowUses {
+  if (activeAthletes.status === 'insufficient_data') return { status: 'insufficient_data', count: null };
+  if (Number.isSafeInteger(totalInteractions) && totalInteractions >= BOARD_MINIMUM_COHORT_SIZE) {
+    return { status: 'available', count: totalInteractions };
+  }
+  return { status: 'insufficient_data', count: null };
 }
