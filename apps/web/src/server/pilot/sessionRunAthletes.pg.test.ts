@@ -291,6 +291,65 @@ async function writeWhileHeldOpen<T>(statement: string, params: unknown[], write
 }
 const NOT_PRESENT = { name: 'ConflictError', status: 409, code: 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT' };
 
+/**
+ * Lane W5-FU, F3 (reviewer J's deadlock on #2206): turns `who`'s login off on a SECOND connection
+ * the way auth.ts's setAccountActiveStatus does it -- the account row, then the membership -- with
+ * the membership statement sent only once `write` is WAITING on that connection (pg_blocking_pids).
+ * lockStaffMembership used to hold the membership and then wait for the account, so the second
+ * statement closed a cycle and Postgres aborted one side (40P01). Returns how the write ended, and
+ * any error the turning-off connection met.
+ */
+async function writeWhileAccountIsTurnedOff<T>(who: ActorIdentity, write: () => Promise<T>) {
+  const turningOff = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+  await turningOff.connect();
+  try {
+    const holderPid = (await turningOff.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    await turningOff.query('BEGIN');
+    await turningOff.query('update pilot.accounts set active_flag = false, updated_at = now() where account_id = $1 and organization_id = $2', [
+      who.accountId,
+      who.organizationId,
+    ]);
+    let settled = false;
+    const writing = write().then(
+      (result) => ({ result, error: null as unknown }),
+      (error: unknown) => ({ result: null as T | null, error }),
+    ).finally(() => { settled = true; });
+    let waited = false;
+    for (let attempt = 0; !settled && !waited; attempt += 1) {
+      await turningOff.query('select pg_stat_clear_snapshot()');
+      const { rows } = await turningOff.query(
+        `select count(*)::int as n from pg_stat_activity
+          where pid <> $1 and wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid))`,
+        [holderPid],
+      );
+      waited = rows[0].n > 0;
+      if (attempt > 400) throw new Error('the write neither finished nor waited on the account being turned off');
+      if (!waited) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    let turningOffError: unknown = null;
+    try {
+      await turningOff.query('update pilot.organization_memberships set active_flag = false, updated_at = now() where account_id = $1 and organization_id = $2', [
+        who.accountId,
+        who.organizationId,
+      ]);
+      await turningOff.query('COMMIT');
+    } catch (error) {
+      turningOffError = error;
+    }
+    return { ...(await writing), waited, turningOffError };
+  } finally {
+    await turningOff.query('ROLLBACK').catch(() => {});
+    await turningOff.end();
+  }
+}
+
+/** The fields of an error that tell a refusal from a deadlock (pg's code is '40P01'). */
+const errorOf = (error: unknown) => {
+  if (!error) return null;
+  const { name, code, status } = error as { name?: string; code?: string; status?: number };
+  return { name, code, status };
+};
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
   serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
@@ -471,6 +530,22 @@ describe('marking who is in a session', () => {
     );
     expect(await refusal(mark(gym.coach, runId, gym.ada))).toMatchObject(NOT_PERMITTED);
     expect(await marks(gym, runId)).toEqual([]);
+  });
+
+  test('a mark against an account being turned off (the account, then the membership) waits and is refused (403), with no deadlock', async () => {
+    const gym = await newGym('account-off-mark');
+    const runId = await liveRun(gym);
+    const auditBefore = await auditOf(gym, 'session_run_athlete');
+
+    const outcome = await writeWhileAccountIsTurnedOff(gym.coach, () => mark(gym.coach, runId, gym.ada));
+
+    expect(outcome.waited).toBe(true);
+    expect({ write: errorOf(outcome.error), turningOff: errorOf(outcome.turningOffError) }).toEqual({
+      write: { name: 'ForbiddenError', code: NOT_PERMITTED.code, status: 403 },
+      turningOff: null,
+    });
+    expect(await marks(gym, runId)).toEqual([]);
+    expect(await auditOf(gym, 'session_run_athlete')).toEqual(auditBefore);
   });
 
   test('a scripted run holds marks as a plain one does', async () => {
@@ -770,6 +845,25 @@ describe('a staff note on an athlete in a session run', () => {
     const { rows } = await client.query(`select count(*)::int as n from pilot.session_staff_notes where organization_id = $1`, [gym.organizationId]);
     expect(rows[0].n).toBe(0);
     expect(await auditOf(gym, 'session_staff_note')).toEqual([]);
+  });
+
+  test('a note against an account being turned off (the account, then the membership) waits and is refused, with no deadlock', async () => {
+    const gym = await newGym('account-off-note');
+    const runId = await liveRun(gym);
+    await mark(gym.coach, runId, gym.ada);
+    const auditBefore = await auditOf(gym, 'session_staff_note');
+
+    const outcome = await writeWhileAccountIsTurnedOff(gym.otherCoach, () =>
+      createRunStaffNote({ actor: gym.otherCoach, runId, athleteId: gym.ada, note: 'Written as the login was turned off.' }));
+
+    expect(outcome.waited).toBe(true);
+    expect({ write: errorOf(outcome.error), turningOff: errorOf(outcome.turningOffError) }).toEqual({
+      write: { name: 'ForbiddenError', code: 'SESSION_STAFF_NOTE_NOT_PERMITTED', status: 403 },
+      turningOff: null,
+    });
+    const { rows } = await client.query('select count(*)::int as n from pilot.session_staff_notes where organization_id = $1', [gym.organizationId]);
+    expect(rows).toEqual([{ n: 0 }]);
+    expect(await auditOf(gym, 'session_staff_note')).toEqual(auditBefore);
   });
 
   test('changing a run note waits for the writer\'s membership being ended at that moment, and is refused (text kept, no audit)', async () => {

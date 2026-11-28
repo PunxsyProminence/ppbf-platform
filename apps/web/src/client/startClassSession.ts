@@ -13,16 +13,33 @@
 
 import { apiBase } from '@/lib/apiBase';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
+import type { ClassPlanView } from '@/src/shared/sessionClassChoice';
 
 export type StartClassSessionOutcome =
-  /** The server started it; this is the run it returned. */
-  | { readonly kind: 'started'; readonly run: LiveSessionScriptRun }
+  /**
+   * The server started it; this is the run it returned. classPlan, for a start of the class's own
+   * plan: the plan as the server resolved it at the start (null: the class has none).
+   */
+  | { readonly kind: 'started'; readonly run: LiveSessionScriptRun; readonly classPlan?: ClassPlanView | null }
   /** The coach already had a live session; run is it, or null when it could not be read. */
   | { readonly kind: 'already_live'; readonly run: LiveSessionScriptRun | null }
   /** The server refused. code is its error code, message its own words, when it sent them. */
   | { readonly kind: 'refused'; readonly code: string | null; readonly message: string | null }
   /** No answer arrived: nothing is known to have started. */
   | { readonly kind: 'network' };
+
+/**
+ * The class's plan as the server resolved it, or null when it sent none or one of another shape:
+ * a value not read is never shown as a plan (reviewer Q on #2259).
+ */
+function classPlanFrom(value: unknown): ClassPlanView | null {
+  if (!value || typeof value !== 'object') return null;
+  const plan = value as Record<string, unknown>;
+  return typeof plan.script_id === 'string' && typeof plan.name === 'string'
+    && typeof plan.retired === 'boolean' && typeof plan.has_blocks === 'boolean'
+    ? { script_id: plan.script_id, name: plan.name, retired: plan.retired, has_blocks: plan.has_blocks }
+    : null;
+}
 
 /** The coach's own live session, or null when there is none. Throws when it cannot be read. */
 export async function fetchOwnLiveRun(): Promise<LiveSessionScriptRun | null> {
@@ -34,12 +51,16 @@ export async function fetchOwnLiveRun(): Promise<LiveSessionScriptRun | null> {
 
 /**
  * Start a session: with a plan (scriptId) or plain (null), tied to a class
- * (classId) or open gym (null). Exactly one POST per call.
+ * (classId) or open gym (null). classPlan: the class's own plan instead, which
+ * the server resolves at the start (class_plan; Codex P1 on #2241). Exactly one
+ * POST per call.
  */
 export async function startClassSession(input: {
   readonly scriptId: string | null;
   readonly classId: string | null;
+  readonly classPlan?: boolean;
 }): Promise<StartClassSessionOutcome> {
+  const classPlan = input.classPlan === true && Boolean(input.classId);
   let response: Response;
   try {
     response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
@@ -47,8 +68,9 @@ export async function startClassSession(input: {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...(input.scriptId ? { script_id: input.scriptId } : {}),
+        ...(input.scriptId && !classPlan ? { script_id: input.scriptId } : {}),
         ...(input.classId ? { class_id: input.classId } : {}),
+        ...(classPlan ? { class_plan: true } : {}),
       }),
     });
   } catch {
@@ -57,11 +79,16 @@ export async function startClassSession(input: {
 
   const payload = (await response.json().catch(() => ({}))) as {
     run?: LiveSessionScriptRun;
+    class_plan?: unknown;
     error?: string;
     message?: string;
   };
 
-  if (response.ok && payload.run) return { kind: 'started', run: payload.run };
+  if (response.ok && payload.run) {
+    return classPlan
+      ? { kind: 'started', run: payload.run, classPlan: classPlanFrom(payload.class_plan) }
+      : { kind: 'started', run: payload.run };
+  }
 
   if (payload.error === 'SESSION_RUN_ALREADY_LIVE') {
     const run = await fetchOwnLiveRun().catch(() => null);

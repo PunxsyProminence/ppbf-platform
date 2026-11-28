@@ -307,7 +307,7 @@ export default function MedicalRestrictionsPanel({
 
       {chosenAthlete === undefined ? (
         <div className="field mt-[var(--s3)]">
-          <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
+          <label className="t-label" htmlFor="medical-restrictions-athlete">Athlete</label>
           <select
             id="medical-restrictions-athlete"
             className="select input--kiosk"
@@ -318,7 +318,7 @@ export default function MedicalRestrictionsPanel({
             aria-busy={busy}
             onChange={(event) => chooseAthlete(event.target.value)}
           >
-            <option value="">Choose a member</option>
+            <option value="">Choose an athlete</option>
             {athletes.map((athlete) => (
               <option key={athlete.athlete_id} value={athlete.athlete_id}>
                 {athlete.full_name || athlete.athlete_id}
@@ -347,7 +347,7 @@ export default function MedicalRestrictionsPanel({
           ) : rows.length === 0 ? (
             // "None on file" only when the server sent none; a row this screen
             // could not show is counted above instead.
-            hiddenCount === 0 ? <p className="t-body">No medical restriction on file for this member.</p> : null
+            hiddenCount === 0 ? <p className="t-body">No medical restriction on file for this athlete.</p> : null
           ) : (
             <ul className="grid gap-[var(--s3)]" aria-label="Medical restrictions on file">
               {rows.map((row) => {
@@ -475,7 +475,7 @@ export default function MedicalRestrictionsPanel({
                 <input id="mr-incident" className="input input--kiosk" maxLength={200} value={record.linked_incident_id} onChange={(event) => setRecord((r) => ({ ...r, linked_incident_id: event.target.value }))} />
               </div>
               <div className="field mt-[var(--s3)]">
-                <label className="t-label" htmlFor="mr-note">Staff note (optional — the member and their parent never see this)</label>
+                <label className="t-label" htmlFor="mr-note">Staff note (optional — the athlete and their parent never see this)</label>
                 <textarea id="mr-note" className="textarea input--kiosk" rows={2} maxLength={2000} value={record.note} onChange={(event) => setRecord((r) => ({ ...r, note: event.target.value }))} />
               </div>
               <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">

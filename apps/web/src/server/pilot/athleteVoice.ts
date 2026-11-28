@@ -15,9 +15,10 @@ import { scanForSafetyLanguage } from './feedbackSafetyScan';
  * how a twelve-year-old actually types, a write-time-frozen safeguarding
  * route, and an admin triage queue that orders safeguarding first. What it
  * did NOT do is make anything happen next: a safeguarding row waited for an
- * admin to happen to open the triage page. The escalation ladder is the
- * platform's only notification mechanism (no email, ever), so a disclosure
- * that never reaches it is a disclosure nobody is told about.
+ * admin to happen to open the triage page. The escalation ladder is the only
+ * place the platform says what happened (no email does; a staff member who
+ * switches email alerts on gets only "open the app", lane W4-1), so a
+ * disclosure that never reaches it is a disclosure nobody is told about.
  *
  * This module files an 'athlete_voice' escalation for each athlete
  * safeguarding submission. Three properties are load-bearing:

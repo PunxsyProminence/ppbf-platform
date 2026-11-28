@@ -39,7 +39,8 @@ import { lockStaffMembership, type StaffNoteRole } from './sessionStaffNotes';
 // An UNTIED (open gym) session writes no register: its marks stay session detail (OD-2026-10-13-016).
 // Session auto-close finishes runs and never comes here, so it never writes the register.
 //
-// LOCK ORDER, one way only: staff membership, run, athlete, session mark, class, register row.
+// LOCK ORDER, one way only: staff account and membership (lockStaffMembership, the account first),
+// run, athlete, session mark, class, register row.
 // (Tying mid-session locks a run's marks and their athletes in one statement; the run row, locked
 // first by every writer of marks, is what keeps that from deadlocking with a tap.)
 
@@ -121,7 +122,7 @@ function auditRegister(client: PoolClient, tap: TapOnRegister, result: RegisterR
  * A "here" tap on a tied session: the register, after the session mark is written and locked.
  * `tappedAt` is set when an earlier tap is copied on a tie: a register change since then wins.
  */
-export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, tappedAt?: string): Promise<RegisterResult> {
+export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, tappedAt?: string, pageId?: string): Promise<RegisterResult> {
   const item = await lockSchedulerClass(client, tap.organizationId, tap.classId);
   if (!item || item.status === 'cancelled') return { effect: 'skipped', reason: 'class_cancelled' };
   if (!isOrganizationAdminRole(tap.role) && !actorRunsClass({ accountId: tap.accountId }, item)) {
@@ -141,9 +142,10 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, 
     },
     new Date().toISOString(),
     tappedAt,
-    // An Absent this run's own no-shows tap wrote, untouched since, is never a later register
-    // change: on one page the tap came first (writeSessionRegisterPresent).
+    // An Absent this run's own no-shows tap wrote from the same page, untouched since, is never a
+    // later register change: on one page the tap came first (writeSessionRegisterPresent).
     tap.runId,
+    pageId,
   );
   if (written.effect === 'created') {
     await client.query(
@@ -357,6 +359,8 @@ export interface NoShowsTap {
   requestKey: string | null;
   /** The class the screen showed them for: a run tied to another class since is refused, marking nobody. */
   classId: string;
+  /** The page a kept tap was made on, recorded with it: see writeSessionRegisterPresent's pageId. */
+  pageId?: string | null;
 }
 
 /**
@@ -446,7 +450,7 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
         entity_id: runId,
         details: {
           run_id: runId, class_id: classId, action: 'mark_no_shows', request_key: tap.requestKey,
-          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt,
+          athlete_ids: named, marked_athlete_ids: marked, marked_at: markedAt, page_id: tap.pageId ?? null,
         },
         shadow_mirror: false,
       },
@@ -482,6 +486,14 @@ export async function describeRunClass(actor: Tier, classId: string) {
   };
 }
 
+/** A class's plan as Start runs it: the newest version of the lineage the class was scheduled with. */
+export interface TieableClassPlan {
+  script_id: string;
+  name: string;
+  retired: boolean;
+  has_blocks: boolean;
+}
+
 export interface TieableClass {
   class_id: string;
   title: string;
@@ -489,19 +501,53 @@ export interface TieableClass {
   end_at: string;
   /** A live session other than the caller's already runs it (one live session per class). */
   held_by_other_session: boolean;
+  /**
+   * The class's plan, null for none (App Overwatch 7215533652 on #2189, Q1). Always set here;
+   * optional in the type only because a route test fixture has none (runs/route.test.ts:521).
+   */
+  plan?: TieableClassPlan | null;
 }
 
-/** Today's classes (the gym's day) this actor may tie a session to, earliest first: the start picker. */
+/**
+ * Today's classes (the gym's day) this actor may tie a session to, earliest first: the start picker.
+ * Each carries its plan resolved to the NEWEST version of its lineage, because the start refuses a
+ * superseded version (sessionScriptRuns.ts startSessionScriptRun, SESSION_SCRIPT_SUPERSEDED) while
+ * the class keeps the id it was scheduled with (pilot_slice_postgres_scheduler_class_plan_migration.sql).
+ * A retire is written to the current version in place (sessionScriptAuthoring.ts setSessionScriptRetired).
+ * This is what the screen names before Start; the class screen's Start resolves the plan again, the
+ * same way, in its own transaction (sessionScriptRuns.ts startClassPlanRun; Codex P1 on #2241).
+ */
 export async function listTieableClasses(actor: Tier, now = new Date()): Promise<TieableClass[]> {
-  const rows = await query<SchedulerClass & { held_by_other_session: boolean }>(
+  const rows = await query<SchedulerClass & {
+    held_by_other_session: boolean;
+    plan_script_id: string | null;
+    plan_name: string;
+    plan_retired: boolean;
+    plan_has_blocks: boolean;
+  }>(
     `select c.class_id, c.title, c.start_at::text, c.end_at::text, c.coach_account_id,
             c.scheduled_by_account_id, c.covering_coach_account_id, c.status,
             exists (
               select 1 from pilot.session_script_runs r
                where r.organization_id = c.organization_id and r.class_id = c.class_id
                  and r.run_state = 'in_progress' and r.delivered_by_account_id <> $2
-            ) as held_by_other_session
+            ) as held_by_other_session,
+            head.script_id as plan_script_id, head.name as plan_name,
+            head.authoring_state = 'retired' as plan_retired,
+            exists (
+              select 1 from pilot.session_script_blocks b
+               where b.organization_id = head.organization_id and b.script_id = head.script_id
+            ) as plan_has_blocks
        from pilot.scheduler_classes c
+       left join pilot.session_scripts linked
+         on linked.organization_id = c.organization_id and linked.script_id = c.script_id
+       left join lateral (
+         select s.organization_id, s.script_id, s.name, s.authoring_state
+           from pilot.session_scripts s
+          where s.organization_id = linked.organization_id and s.lineage_id = linked.lineage_id
+          order by s.version desc
+          limit 1
+       ) head on true
       where c.organization_id = $1 and c.status <> 'cancelled'
         and c.start_at between $3::timestamptz - interval '36 hours' and $3::timestamptz + interval '36 hours'
       order by c.start_at, c.class_id`,
@@ -511,5 +557,10 @@ export async function listTieableClasses(actor: Tier, now = new Date()): Promise
   return rows
     .filter((item) => gymDayIso(item.start_at) === today)
     .filter((item) => isOrganizationAdminRole(actor.role) || actorRunsClass(actor, item))
-    .map(({ class_id, title, start_at, end_at, held_by_other_session }) => ({ class_id, title, start_at, end_at, held_by_other_session }));
+    .map(({ class_id, title, start_at, end_at, held_by_other_session, ...head }) => ({
+      class_id, title, start_at, end_at, held_by_other_session,
+      plan: head.plan_script_id === null
+        ? null
+        : { script_id: head.plan_script_id, name: head.plan_name, retired: head.plan_retired, has_blocks: head.plan_has_blocks },
+    }));
 }

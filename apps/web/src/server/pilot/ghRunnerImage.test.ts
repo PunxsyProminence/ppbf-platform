@@ -65,9 +65,9 @@ function ctx(entry: string, over: Record<string, string> = {}): Record<string, s
 }
 
 describe('job-started-guard.sh: allows exactly our jobs', () => {
-  it('lists the 19 database jobs', () => {
-    expect(allowed).toHaveLength(19);
-    expect(new Set(allowed).size).toBe(19);
+  it('lists the 20 database jobs', () => {
+    expect(allowed).toHaveLength(20);
+    expect(new Set(allowed).size).toBe(20);
   });
 
   it.each(allowed)('allows %s on workflow_dispatch and on schedule', (entry) => {

@@ -25,10 +25,12 @@ import { AUTH_PROVIDERS } from './authProviders';
  * NOT A GENERAL MAILER
  *
  * There is one send function and it takes a subject and a plain-text body. No
- * templates, no attachments, no HTML, no bulk. Magic links are the only thing
- * this platform sends, and a narrow surface is the point: nothing here can be
- * repurposed into a way to mail athletes or guardians without a deliberate
- * change that shows up in review.
+ * templates, no attachments, no HTML, no bulk. It sends three things: sign-in
+ * links, the opt-in email alert that says only "open the app" (lane W4-1,
+ * emailAlertSender.ts), and the code that confirms an adult athlete's address
+ * for that alert (emailAlertCode.ts). A narrow surface is the point: nothing
+ * here can be repurposed into a way to mail athletes or guardians without a
+ * deliberate change that shows up in review.
  */
 
 const GRAPH_SEND_MAIL_URL = (sender: string) =>
@@ -43,6 +45,13 @@ export type MailFetch = (url: string, init: RequestInit) => Promise<Response>;
 export interface MailerConfig {
   /** The mailbox to send as. Must match the Application Access Policy. */
   sender: string;
+  /**
+   * Whether the mailbox keeps a Sent Items copy. Defaults to true, as sign-in
+   * links need. The email alert passes false: its send log is the one record
+   * of an alert, with no address held twice (Overwatch's answer A on #2159).
+   * Its address code passes false too (EM-2b-2).
+   */
+  saveToSentItems?: boolean;
 }
 
 export interface MailerDependencies {
@@ -101,7 +110,8 @@ export function extractGraphErrorCode(body: string): string | undefined {
   }
 }
 
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** The one address shape this module sends to; the alert address code (EM-2b-2) refuses what it refuses. */
+export const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Refuses a sender that is not the configured one.
@@ -148,9 +158,10 @@ export async function sendPlainTextMail(
         body: { contentType: 'Text', content: message.body },
         toRecipients: [{ emailAddress: { address: message.to } }],
       },
-      // The sent copy is the record that a link went out and when. Retention
-      // sweeps the token rows; the mailbox keeps the correspondence.
-      saveToSentItems: true,
+      // For a sign-in link the sent copy is the record that it went out and
+      // when. Retention sweeps the token rows; the mailbox keeps the
+      // correspondence. The email alert opts out (MailerConfig).
+      saveToSentItems: config.saveToSentItems ?? true,
     }),
   });
 

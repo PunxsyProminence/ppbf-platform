@@ -10,7 +10,7 @@ import {
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
-import { ConflictError } from '@/src/server/pilot/errors';
+import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { isUuid, requirePrincipal } from '@/src/server/pilot/http';
@@ -2998,11 +2998,13 @@ describe('create_class repeat weekly', () => {
         scheduled_by_account_id: 'acct-coach-1',
         status: 'open',
       });
-      // Ordinary classes: nothing ties one to the others.
+      // Ordinary classes: nothing ties one to the others. script_id is the plan
+      // each runs (lane W4-5, SP-3), none here.
       expect(Object.keys(row).sort()).toEqual([
         'capacity', 'class_id', 'coach_account_id', 'created_at', 'end_at', 'location',
-        'scheduled_by_account_id', 'start_at', 'status', 'title', 'updated_at',
+        'scheduled_by_account_id', 'script_id', 'start_at', 'status', 'title', 'updated_at',
       ]);
+      expect(row.script_id).toBeNull();
     }
     expect(new Set(made.map((row) => row.class_id)).size).toBe(4);
     await expect(response.json()).resolves.toEqual({
@@ -3115,5 +3117,76 @@ describe('create_class repeat weekly', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: message });
     expect(mockCreateClasses).not.toHaveBeenCalled();
+  });
+
+  /* THE PLAN IT RUNS (lane W4-5, SP-3): an optional script_id, trimmed, named
+     on every class the create makes. Whether it is a plan of this gym is
+     createSchedulerClasses' check (schedulerCreateClasses.pg.test.ts). */
+  describe('the plan it runs', () => {
+    test('a coach names a plan: trimmed, and on every class of the repeat', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 3, script_id: '  plan-evening-1 ' }));
+      expect(response.status).toBe(200);
+      expect(mockCreateClasses).toHaveBeenCalledTimes(1);
+      expect(rows().map((row) => row.script_id)).toEqual(['plan-evening-1', 'plan-evening-1', 'plan-evening-1']);
+    });
+
+    test('an admin scheduling for a coach names a plan the same way', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin' }));
+      const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-jane', script_id: 'plan-evening-1' }));
+      expect(response.status).toBe(200);
+      expect(rows().map((row) => [row.coach_account_id, row.script_id])).toEqual([['acct-jane', 'plan-evening-1']]);
+    });
+
+    test.each<[string, Record<string, unknown>]>([
+      ['no script_id', {}],
+      ['a null script_id', { script_id: null }],
+      ['an empty script_id', { script_id: '' }],
+      ['a blank script_id', { script_id: '   ' }],
+    ])('%s names no plan', async (_label, patch) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 2, ...patch }));
+      expect(response.status).toBe(200);
+      expect(rows().map((row) => row.script_id)).toEqual([null, null]);
+    });
+
+    test.each<[string, unknown]>([
+      ['a number', 42],
+      ['true', true],
+      ['an object', { script_id: 'plan-evening-1' }],
+      ['a list', ['plan-evening-1']],
+    ])('%s for script_id is refused in words, and nothing is made', async (_label, value) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      const response = await POST(jsonRequest({ ...CLASS, script_id: value }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'script_id must be text' });
+      expect(mockCreateClasses).not.toHaveBeenCalled();
+    });
+
+    test('a plan that is not one of this gym\'s is answered 400 with the reason', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      mockCreateClasses.mockRejectedValueOnce(
+        new ValidationError('script_id must name a session plan of this gym', 'CLASS_PLAN_NOT_FOUND'),
+      );
+      const response = await POST(jsonRequest({ ...CLASS, script_id: 'plan-of-another-gym' }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: 'script_id must name a session plan of this gym',
+        code: 'CLASS_PLAN_NOT_FOUND',
+      });
+    });
+
+    test('a retired plan is answered 400 with the words App Overwatch approved (#2238)', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      mockCreateClasses.mockRejectedValueOnce(
+        new ValidationError('This plan is retired. Bring it back on Session Plans to schedule a class with it.', 'CLASS_PLAN_RETIRED'),
+      );
+      const response = await POST(jsonRequest({ ...CLASS, script_id: 'plan-retired' }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: 'This plan is retired. Bring it back on Session Plans to schedule a class with it.',
+        code: 'CLASS_PLAN_RETIRED',
+      });
+    });
   });
 });

@@ -1,7 +1,12 @@
 // Convention gate for audit finding F-067: who was in a session, and a staff
 // note on an athlete in a session run, are STAFF ONLY. No athlete, parent,
 // board, platform-owner or public route may reach them (OD-2026-10-10-003 items
-// 3 and 4; OD-2026-10-11-007).
+// 3 and 4; OD-2026-10-11-007), with one exception: the "on the floor now" read
+// (lane W4-3, FN-2; Jason Q3.2 A and Q3.4 A, OD-2026-11-21-006; FN-0 F1) gives a
+// parent a yes or no for each of their own children, and an athlete one about
+// themselves, through its one route, pinned below. Nothing else of a run or a
+// mark reaches a family, and every other family, board, platform, public, wall,
+// kiosk or TV route is still refused here.
 //
 // The role gates themselves are exercised in the three routes' own suites, and
 // the reads' filters on real rows in sessionRunAthletes.pg.test.ts. What this
@@ -38,17 +43,31 @@ function filesUnder(dir: string, keep: (file: string) => boolean): string[] {
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 const source = (file: string) => fs.readFileSync(file, 'utf8');
-const isSource = (file: string) => /\.(ts|tsx|mts|mjs|js)$/.test(file) && !/\.test\.[a-z]+$/.test(file);
+// Every JS and TS source extension: .ts .tsx .js .jsx and their c/m forms (lane W5-FU, F1). A
+// .jsx, .cjs or .cts file was not swept, and reviewer J got a .jsx re-export past the same pattern
+// in #2206's sweep. Left out: only the test files jest runs (jest.config.js testMatch: *.test.ts and
+// *.test.tsx). A file named x.test.js is not a test jest runs, so it is swept like any source.
+const SOURCE_EXT = /\.[cm]?[jt]sx?$/;
+const TEST_FILE = /\.test\.tsx?$/;
+const isSource = (file: string) => SOURCE_EXT.test(file) && !TEST_FILE.test(file);
 
 // Every shipped source file: routes, pages, components, server modules.
 const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnder(path.join(WEB_DIR, dir), isSource));
 
-/** What reaches the records: the presence module (either quote style), and each read or writer by name. */
+/** What reaches the records: the presence module (either quote style, with or without a file
+ *  ending, so `export * from './sessionRunAthletes.js'` is seen; F1), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut)\b/;
+  /sessionRunAthletes(\.[cm]?[jt]sx?)?['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass|listStoppedComing|listOnTheFloorForStaff|setStoppedComingReachedOut|onTheFloorForFamily)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
+
+/** A route handler file, any JS or TS extension (F1). */
+const ROUTE_FILE = /route\.[cm]?[jt]sx?$/;
+/** A file that can hold a page or component, any JSX extension (F1). */
+const CLIENT_FILE = /\.[cm]?[jt]sx$/;
+/** A value import from a server module that reads them, with or without a file ending (F1). */
+const VALUE_IMPORT = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns|sessionRunClass)(\.[cm]?[jt]sx?)?['"];/m;
 
 // The only routes that may. Each is gated to coach, organization_admin and admin.
 const STAFF_ROUTES = [
@@ -87,10 +106,11 @@ const STOPPED_COMING_READERS = [
 // The "on the floor now" line (lane W4-3, FN-1; Jason Q3.1 C and Q3.3 A, OD-2026-11-21-006; privacy
 // review FN-0, signed off on #2160): onTheFloor.ts reads which athletes stand marked on a live run,
 // for the coach and admin line, and its one route is the only caller of listOnTheFloorForStaff.
-// Approved for exactly these two files, the route pinned below to coach, organization_admin and
-// admin (OVERWATCH: GO W4-3 on #2192); parents and athletes are added only by FN-2, which narrows
-// this test's family rule rather than dropping it. Ids and names of counted athletes leave the
-// module; no run, mark, marker or time does.
+// FN-2 (Q3.2 A, Q3.4 A) adds onTheFloorForFamily, called by the same route: a parent's own
+// children who count, by id, or an athlete's yes or no about themselves. Approved for exactly these
+// two files, the route pinned below to coach, organization_admin, admin, parent and athlete
+// (OVERWATCH: GO W4-3 on #2192). To staff, ids and names of counted athletes leave the module; to a
+// family, those ids or that yes or no; no run, mark, marker or time leaves it to anyone.
 const ON_THE_FLOOR_READERS = [
   'app/api/pilot/on-the-floor/route.ts',
   'src/server/pilot/onTheFloor.ts',
@@ -130,8 +150,9 @@ const DEFINING_MODULES = [
 // stoppedComing.ts (lane W4-6, SC-1) reads one day per athlete from
 // session_run_athletes: the last standing mark the register does not hold. It returns no
 // run, mark or marker; see STOPPED_COMING_READERS.
-// onTheFloor.ts (lane W4-3, FN-1) reads which athletes stand marked on a live run, for the staff
-// line; it returns ids and names only, never the run, mark, marker or time; see ON_THE_FLOOR_READERS.
+// onTheFloor.ts (lane W4-3, FN-1 and FN-2) reads which athletes stand marked on a live run, for the
+// staff and family lines; it returns ids and names, or a yes or no, never the run, mark, marker or
+// time; see ON_THE_FLOOR_READERS.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/onTheFloor.ts',
@@ -163,7 +184,7 @@ const WRITER_MODULES = [
 const HANDLER = /^export\s+(?:async\s+function|function|const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/gm;
 
 describe('who was in a session, and notes on a run, are reached only from staff routes', () => {
-  const routes = filesUnder(API_DIR, (file) => /route\.tsx?$/.test(file));
+  const routes = filesUnder(API_DIR, (file) => ROUTE_FILE.test(file));
 
   it('the sweep reads the files it claims to (it has not gone blind)', () => {
     expect(routes.length).toBeGreaterThan(100);
@@ -172,6 +193,38 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     for (const file of [...STAFF_ROUTES, ...DEFINING_MODULES, ...SESSION_NOTE_READERS, ...STOPPED_COMING_READERS, ...ON_THE_FLOOR_READERS]) {
       expect(all).toContain(file);
     }
+  });
+
+  it('the sweep sees every JS and TS source extension, and the module named with a file ending (F1)', () => {
+    for (const file of ['a.ts', 'a.tsx', 'a.js', 'a.jsx', 'a.mts', 'a.mjs', 'a.cts', 'a.cjs']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: true });
+    }
+    // A file named like a test that jest does not run (testMatch is *.test.ts and *.test.tsx) is swept.
+    for (const file of ['a.test.js', 'a.test.jsx', 'a.test.mjs', 'a.test.cjs', 'a.test.mts', 'a.test.cts']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: true });
+    }
+    for (const file of ['a.test.ts', 'a.test.tsx', 'a.pg.test.ts', 'a.json', 'a.md']) {
+      expect({ file, swept: isSource(`/app/${file}`) }).toEqual({ file, swept: false });
+    }
+    // A named re-export, and `export *` with the module named with every file ending.
+    expect(REACHES.test("export { setRunAthletePresent as mark } from '@/src/server/pilot/sessionRunAthletes';")).toBe(true);
+    for (const ending of ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '.cts', '.cjs']) {
+      for (const quote of ["'", '"']) {
+        const text = `export * from ${quote}./sessionRunAthletes${ending}${quote};`;
+        expect({ text, reaches: REACHES.test(text) }).toEqual({ text, reaches: true });
+      }
+    }
+    expect(REACHES.test("import { x } from './sessionRunAthletesMigration';")).toBe(false);
+    for (const file of ['route.ts', 'route.tsx', 'route.js', 'route.jsx', 'route.mjs', 'route.cjs', 'route.mts', 'route.cts']) {
+      expect({ file, route: ROUTE_FILE.test(`/app/api/x/${file}`) }).toEqual({ file, route: true });
+    }
+    expect(ROUTE_FILE.test('/app/api/x/route.test.ts')).toBe(false);
+    for (const file of ['a.tsx', 'a.jsx']) expect({ file, client: CLIENT_FILE.test(`/app/${file}`) }).toEqual({ file, client: true });
+    for (const ending of ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '.cts', '.cjs']) {
+      const text = `import { listPresentAthletes } from '@/src/server/pilot/sessionRunAthletes${ending}';`;
+      expect({ text, value: VALUE_IMPORT.test(text) }).toEqual({ text, value: true });
+    }
+    expect(VALUE_IMPORT.test("import type { RunAthlete } from '@/src/server/pilot/sessionRunAthletes';")).toBe(false);
   });
 
   it('exactly the three staff routes, the defining modules, the session-note read, the stopped-coming read and the on-the-floor read reach them, anywhere in the app', () => {
@@ -250,15 +303,16 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     );
   });
 
-  it('the on-the-floor route admits only coach, organization admin and the legacy admin name', () => {
+  it('the on-the-floor route admits only coach, organization admin, the legacy admin name, parent and athlete', () => {
     const text = source(path.join(WEB_DIR, ON_THE_FLOOR_READERS[0]));
     const handlers = Array.from(text.matchAll(HANDLER)).length;
     expect(handlers).toBe(1);
     expect(text).not.toMatch(/^export\s*(\{|\*)/m);
     expect(Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.ON_THE_FLOOR_READ_ROLES\]\s*\)/g))).toHaveLength(1);
-    // Defined once, at the start of a line (not in a comment), as exactly the three staff roles.
+    // Defined once, at the start of a line (not in a comment), as exactly the three staff roles and the
+    // two family ones (FN-2).
     expect(Array.from(text.matchAll(/^const ON_THE_FLOOR_READ_ROLES = (.*)$/gm), (match) => match[1]))
-      .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
+      .toEqual(["['coach', 'organization_admin', 'admin', 'parent', 'athlete'] as const;"]);
     // Nothing runs before the role gate: the session is resolved, then the gate is the very next
     // statement, so no branch (a family one included) can answer ahead of it.
     expect(text).toMatch(
@@ -267,9 +321,17 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     // The route reaches the presence record through its own module's read only: no other pinned read
     // (isSessionRunningForAthleteToday, which FN-0 F13 rules out for this line, included).
     const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
-    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
-    // The read is asked for the current moment: that moment also drives the idle close, which writes.
+    expect([...reached]).toEqual(['listOnTheFloorForStaff', 'onTheFloorForFamily']);
+    // Each read is asked for the current moment: that moment also drives the idle close, which writes.
     expect(Array.from(text.matchAll(/listOnTheFloorForStaff\(([^)]*\)?)\)/g), (match) => match[1])).toEqual(['principal, new Date()']);
+    expect(Array.from(text.matchAll(/onTheFloorForFamily\(([^)]*\)?)\)/g), (match) => match[1])).toEqual(['principal, new Date()']);
+    // A family is answered with the yes or no field and nothing else (FN-0 F1, check 3), and a family's
+    // failure is one fixed text whatever the cause (F15).
+    expect(Array.from(text.matchAll(/NextResponse\.json\(([^\n]*)\)/g), (match) => match[1]).sort()).toEqual([
+      "{ error: FAMILY_FAILURE }, { status, headers: NO_STORE }",
+      "{ ok: true, ...line }, { headers: NO_STORE }",
+      "{ ok: true, on_the_floor: answer.on_the_floor }, { headers: NO_STORE }",
+    ]);
   });
 
   // The exemption for onTheFloor.ts (TABLE_FILES above) is for one read only: which athletes stand
@@ -277,7 +339,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   // new read added to that file would otherwise pass the file-level list unnoticed: the staff notes
   // table is never named, the presence table only in that one FROM, the module's one value export is
   // listOnTheFloorForStaff, and it refuses a caller with no staff membership before anything is read.
-  it('onTheFloor.ts reads ids of standing marks on live runs, in one place, behind the staff refusal', () => {
+  it('onTheFloor.ts reads ids of standing marks on live runs, in one place, behind each reader\'s refusal', () => {
     const text = source(path.join(PILOT_DIR, 'onTheFloor.ts'));
     const lines = text.split('\n');
     expect(text).not.toMatch(/session_staff_notes/);
@@ -289,26 +351,61 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const block = text.slice(text.indexOf('async function markedOnLiveRuns('), text.indexOf('async function presentOnTodaysRegister('));
     expect(block.length).toBeGreaterThan(0);
     expect(block).toContain('from pilot.session_run_athletes m');
-    // The one thing selected from it: the athlete id, once each.
-    expect(block).toMatch(/`select distinct m\.athlete_id\n/);
-    // Every export but a type is counted: the one there may be is listOnTheFloorForStaff, which refuses first.
+    // The one thing selected from it: the athlete id, once each (the date of birth beside it is the
+    // athlete's own row, for the guardian rule's 18 test).
+    expect(block).toMatch(/`select distinct m\.athlete_id, to_char\(a\.dob, 'YYYY-MM-DD'\) as athlete_dob\n/);
+    // Every export but a type is counted: the two there may be are listOnTheFloorForStaff and
+    // onTheFloorForFamily (FN-2), and each refuses first.
     const exports = Array.from(text.matchAll(/^\s*export\b(?!\s+(?:interface|type)\s).*$/gm), (match) => match[0].trim());
-    expect(exports).toHaveLength(1);
+    expect(exports).toHaveLength(2);
     expect(exports[0].startsWith('export async function listOnTheFloorForStaff(')).toBe(true);
+    expect(exports[1].startsWith('export async function onTheFloorForFamily(')).toBe(true);
     const exportLines = lines.filter((line) => /\bexport\b/.test(line)).map((line) => line.trim());
-    expect(exportLines).toHaveLength(3);
+    expect(exportLines).toHaveLength(5);
     expect(exportLines.filter((line) => /^export interface \w+ \{$/.test(line))).toHaveLength(2);
+    expect(exportLines.filter((line) => line === 'export type OnTheFloorFamilyAnswer =')).toHaveLength(1);
     expect(lines.findIndex((line) => NAMES_A_TABLE.test(line) && line.trim().startsWith('* ')))
       .toBeLessThan(lines.findIndex((line) => /^import /.test(line)));
     expect(text).toMatch(
       /export async function listOnTheFloorForStaff\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorStaffLine> \{\n  if \(!\(await staffNoteRoleInOrganization\(actor\)\)\) \{\n    throw new ForbiddenError\(/,
     );
+    // The family read refuses anyone but a parent, or an athlete with a linked record, first; a parent's
+    // children are the guardian rule's (FN-0 F6), never the adults-included sibling's, and never a request's.
+    expect(text).toMatch(
+      /export async function onTheFloorForFamily\(actor: ActorIdentity, now: Date\): Promise<OnTheFloorFamilyAnswer> \{\n  if \(!\(actor\.role === 'parent' && actor\.accountId\) && !\(actor\.role === 'athlete' && actor\.athleteId\)\) \{\n    throw new ForbiddenError\(/,
+    );
+    expect(Array.from(text.matchAll(/^\s*const scope = (.*)$/gm), (match) => match[1])).toEqual([
+      "actor.role === 'parent' ? await guardianAthleteIds(organizationId, actor.accountId) : [actor.athleteId as string];",
+    ]);
+    expect(text).not.toMatch(/linkedAthleteIdsIncludingAdults/);
+    // What a family is given, pinned to its value and not only its field: the ids of the parent's own
+    // children who count, or the athlete's yes or no; never a name, time, run or source with it.
+    const familyBlock = text.slice(text.indexOf('export async function onTheFloorForFamily('));
+    // Every return is one of the three below, so a fourth written over several lines cannot hide.
+    expect(Array.from(familyBlock.matchAll(/\breturn\b/g))).toHaveLength(3);
+    expect(Array.from(familyBlock.matchAll(/return (\{[^\n]*\});/g), (match) => match[1])).toEqual([
+      "{ reader: 'parent', on_the_floor: [] }",
+      "{ reader: 'athlete', on_the_floor: ids.length === 1 && counted.has(ids[0]) }",
+      "{ reader: 'parent', on_the_floor: ids.filter((id) => counted.has(id)) }",
+    ]);
+    // A family is never counted from a cancelled class, or a run tied to one (FN0-Q1 A; flag 9); staff are.
+    // A parent's line passes the guardian's account, so each count statement checks the link itself.
+    expect(Array.from(text.matchAll(/countedAmong\(organizationId, ids, day, now, (true|false), (\w+)\)/g), (match) => `${match[1]} ${match[2]}`))
+      .toEqual(['false null', 'true guardian']);
+    expect(text).toMatch(/\n  const guardian = actor\.role === 'parent' \? actor\.accountId : null;\n/);
+    // The guardian's link is checked in the same statement that counts the child (App Overwatch on
+    // #2192, the #2179 rule), in both reads, and the 18 rule is applied to the date of birth each returns.
+    expect(block).toContain("and ($4::text is null or ${guardianLinkedPredicateSql('m.organization_id', 'm.athlete_id', '$4')})");
+    const registerBlock = text.slice(text.indexOf('async function presentOnTodaysRegister('), text.indexOf('async function countedAmong('));
+    expect(registerBlock).toContain("and ($7::text is null or ${guardianLinkedPredicateSql('sa.organization_id', 'sa.athlete_id', '$7')})");
+    expect(registerBlock).toMatch(/`select distinct sa\.athlete_id, to_char\(a\.dob, 'YYYY-MM-DD'\) as athlete_dob\n/);
+    expect(text).toContain('const kept = guardianAccountId === null ? rows : rows.filter((row) => !guardianLinkEnded(row.athlete_dob, now));');
     // Only the two ruled sources (FN-0 F9): no other pinned read, and no other attendance or
     // check-in record, named anywhere in the file.
     const reached = new Set(Array.from(text.matchAll(new RegExp(REACHES.source, 'g')), (match) => match[0]));
-    expect([...reached]).toEqual(['listOnTheFloorForStaff']);
+    expect([...reached]).toEqual(['listOnTheFloorForStaff', 'onTheFloorForFamily']);
     expect(text).not.toMatch(/\b(attendance_reconciled|activity_log|athlete_check_ins)\b|pilot\.attendance(?![\w_])/);
-    // Nor through an import: these seven, and nothing loaded any other way. A new source brought in by
+    // Nor through an import: these eight, and nothing loaded any other way. A new source brought in by
     // a helper from another module (a wellness check-in, the reconciled view) fails here.
     expect(Array.from(text.matchAll(/^import .*$/gm), (match) => match[0])).toEqual([
       "import { GYM_TIME_ZONE, gymDayIso } from '../../lib/gymTime';",
@@ -316,6 +413,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       "import { organizationActionableRoster } from './coachAthleteRoster';",
       "import { query } from './db';",
       "import { ForbiddenError } from './errors';",
+      "import { guardianAthleteIds, guardianLinkEnded, guardianLinkedPredicateSql } from './guardianAccess';",
       "import { closeIdleSessionRuns } from './sessionScriptRuns';",
       "import { staffNoteRoleInOrganization } from './sessionStaffNotes';",
     ]);
@@ -412,10 +510,9 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   });
 
   it('no component or page imports a value from a server module that reads them', () => {
-    const client = ALL_SOURCE.filter((file) => /\.tsx$/.test(file) && !/^src\//.test(relative(file)));
+    const client = ALL_SOURCE.filter((file) => CLIENT_FILE.test(file) && !/^src\//.test(relative(file)));
     expect(client.length).toBeGreaterThan(50);
     // A type-only import is erased at build time and carries no data; a value import would not be.
-    const valueImport = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns|sessionRunClass)['"];/m;
-    expect(client.filter((file) => valueImport.test(source(file))).map(relative)).toEqual([]);
+    expect(client.filter((file) => VALUE_IMPORT.test(source(file))).map(relative)).toEqual([]);
   });
 });

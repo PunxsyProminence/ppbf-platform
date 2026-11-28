@@ -69,6 +69,8 @@ function installFetch(routes: Routes = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/barrier-reports')) return jsonResponse({ ok: true, barrierReports: [], truncated: false });
     if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: [] });
+    // The classes and rounds above the names (lane W4-3, FN-4b): a healthy read with no class running.
+    if (url.includes('/api/pilot/on-the-floor/classes')) return jsonResponse({ ok: true, read_at: '2026-08-28T16:00:00.000Z', classes: [], rounds: [] });
     if (url.includes('/api/pilot/on-the-floor')) return jsonResponse({ ok: true, day: '2026-08-28', athletes: [] });
     // The per-athlete panels a roster tap opens read their own routes; an
     // empty healthy answer is enough here, where only the link is asserted.
@@ -211,7 +213,7 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
 describe('who is on the floor now (lane W4-3, FN-3; Jason Q3.3 A)', () => {
   const SESSION_STATUS = 'No session in progress. Session Plans is where a live delivery starts.';
   const floorReads = (fetchMock: jest.Mock) =>
-    fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/pilot/on-the-floor')).length;
+    fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/api/pilot/on-the-floor')).length;
 
   test('the line sits below every safety list, on the home and on another tab, and a tab change does not read it again', async () => {
     const fetchMock = installFetch();

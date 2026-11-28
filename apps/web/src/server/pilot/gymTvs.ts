@@ -4,7 +4,7 @@ import { query, queryOne, withTransaction } from './db';
 import { listLiveQuotes, type QuoteShown } from './orgQuotes';
 import { ROUND_TIMER_FIELDS, deriveRoundTimer, type RoundTimerRow, type RoundTimerView } from './roundTimers';
 import { createOpaqueToken, hashToken } from './security';
-import { sweepIdleRuns } from './sessionScriptRuns';
+import { closeIdleSessionRuns, sweepIdleRuns } from './sessionScriptRuns';
 import type { WallBoard, WallNameMode } from './wallDisplay';
 import { loadWallBoard } from './wallDisplayDb';
 import {
@@ -756,6 +756,51 @@ function pickTimer(run: Record<string, unknown>): RoundTimerView {
     server_time: run.server_time as Date | string,
   });
   return Object.fromEntries(ROUND_TIMER_FIELDS.map((field) => [field, view[field]])) as unknown as RoundTimerView;
+}
+
+/** One TV's live session's round, for the "on the floor now" line. No run, script, coach or account field. */
+export interface LiveTvRound {
+  readonly tv_name: string;
+  readonly phase: RoundTimerView['phase'];
+  readonly round: number;
+  readonly rounds_total: number;
+  readonly is_paused: boolean;
+}
+
+/**
+ * The round of each session this gym's TVs show (lane W4-3, FN-4a; QE A, GO on #2192, 7206014991):
+ * the run each TV points at, live and shown (LIVE_SHOWN_RUN, the TV read's own rule), that has a round
+ * clock. Only a paired, un-revoked TV can point at a run (pilot_gym_tvs_run_only_when_paired). A run a coach has not put on a TV is not read. Named by the TV, ordered by name.
+ *
+ * Forgotten runs are settled first with the throwing close, so a failed close fails this read and a
+ * run idle past three hours never shows a round (F13). The TV itself sweeps best effort instead
+ * (readSessionForTv), because a screen in the room must not go blank; a staff or board line can say
+ * it could not be checked.
+ */
+export async function listLiveTvRounds(organizationId: string, now: Date): Promise<LiveTvRound[]> {
+  await closeIdleSessionRuns(organizationId, { now });
+  const rows = await query<Record<string, unknown>>(
+    `select t.tv_name, now() as server_time,
+            rt.round_seconds, rt.rest_seconds, rt.rounds_total,
+            rt.state as timer_state, rt.started_at as timer_started_at, rt.paused_at as timer_paused_at,
+            rt.paused_seconds as timer_paused_seconds
+       from pilot.gym_tvs t
+       join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
+       join pilot.round_timers rt on rt.organization_id = r.organization_id and rt.run_id = r.run_id
+      where t.organization_id = $1
+      order by t.tv_name asc, t.tv_id asc`,
+    [organizationId],
+  );
+  return rows.map((row) => {
+    const timer = pickTimer(row);
+    return {
+      tv_name: String(row.tv_name),
+      phase: timer.phase,
+      round: timer.round,
+      rounds_total: timer.rounds_total,
+      is_paused: timer.is_paused,
+    };
+  });
 }
 
 // The TV read's budget: fixed windows, no memory of failure, no escalation. In-memory and per

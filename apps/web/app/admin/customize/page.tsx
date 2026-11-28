@@ -7,6 +7,8 @@ import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
 import GymProfileForm from '@/components/GymProfileForm';
 import GymTabletSettings from '@/components/GymTabletSettings';
+import StoppedComingSettings from '@/components/StoppedComingSettings';
+import EmailAlertSettings from '@/components/admin/EmailAlertSettings';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 import { GYM_PHOTO_SLOTS, gymPhotoSlotText, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
@@ -17,7 +19,10 @@ import BackHome from '@/components/BackHome';
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
  * and sounds, on one page in the office.
  *
- * One desk, four drawers:
+ * One desk, seven drawers:
+ *
+ *   0. THE GYM PROFILE. The stored profile every page reads, edited here
+ *      (lane L31 P3).
  *
  *   1. PHOTOGRAPHS. The six wall frames from src/shared/gymPhotos.ts. Each
  *      holds a commissioned placeholder illustration today; a photograph
@@ -35,12 +40,19 @@ import BackHome from '@/components/BackHome';
  *   3. THE GYM TABLET. How long a marked gym tablet may sit idle before it
  *      signs itself out (OW25-53 A), and the mark for this device (lane U1).
  *
- *   4. THE RECORD. Links to the surfaces that keep history -- notices with
+ *   4. STOPPED COMING. How long without coming puts an athlete on the
+ *      Stopped Coming list (OW27-30 A; lane W4-6, SC-0b).
+ *
+ *   5. EMAIL ALERTS. Which events may send the opt-in email alert to each
+ *      kind of person (OW27-10 A, OW27-39 A; lane W4-1, EM-6).
+ *
+ *   6. THE RECORD. Links to the surfaces that keep history -- notices with
  *      their lifecycle, and the boards' own desk page.
  *
  * The server is the real gate on every drawer: photo writes require an admin
- * role, board writes require a Microsoft-authenticated staff principal, and
- * this page can widen neither.
+ * role, board writes require a Microsoft-authenticated staff principal, the
+ * email alert choices require the organization admin ('admin' by alias;
+ * app/api/pilot/email-alerts/gym), and this page can widen none of them.
  */
 
 type SlotBusy = 'idle' | 'uploading' | 'removing';
@@ -226,6 +238,8 @@ export default function AdminCustomizePage() {
           <a href="#customize-photos" className="btn btn--ghost">Photographs on the wall</a>
           <a href="#customize-boards" className="btn btn--ghost">The boards</a>
           <a href="#customize-tablet" className="btn btn--ghost">Gym tablet sign-out</a>
+          <a href="#customize-stopped-coming" className="btn btn--ghost">Stopped coming</a>
+          <a href="#customize-email-alerts" className="btn btn--ghost">Email alerts</a>
           <a href="#customize-record" className="btn btn--ghost">The record</a>
           <Link href="/admin/quotes" className="btn btn--ghost">Quotes</Link>
         </nav>
@@ -386,7 +400,46 @@ export default function AdminCustomizePage() {
         </div>
       </section>
 
-      {/* ------------------------------------------------- 4. THE RECORD -- */}
+      {/* ------------------------------------------- 4. STOPPED COMING -- */}
+      {/* Lane W4-6, SC-0b: Jason's ruling OW27-30 A makes the number of days a
+          gym setting the gym admin can change, first value 2 weeks. */}
+      <section className="mt-[var(--s7)] max-w-[1000px]" aria-labelledby="customize-stopped-coming">
+        <h2 id="customize-stopped-coming" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+          Stopped coming
+        </h2>
+        <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
+          The Stopped Coming page lists athletes on the roster who have come before but have not come for this
+          long or more, leaving out athletes marked as left the gym and athletes whose program memberships have
+          all lapsed or ended. Coaches and the gym admin read that list. A change applies at once; a Stopped
+          Coming page already open shows it the next time it reads the list.
+        </p>
+        <div className="mt-[var(--s4)]">
+          <StoppedComingSettings />
+        </div>
+      </section>
+
+      {/* --------------------------------------------- 5. EMAIL ALERTS -- */}
+      {/* Lane W4-1, EM-6: Jason's ruling OW27-10 A has the gym's organization
+          admin pick, per user type, which events may send the email; OW27-39 A,
+          every event starts ticked and each person's own switch starts off. */}
+      <section className="mt-[var(--s7)] max-w-[1000px]" aria-labelledby="customize-email-alerts">
+        <h2 id="customize-email-alerts" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+          Email alerts
+        </h2>
+        <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
+          Which events may send the email alert to each kind of person at this gym. Every event starts ticked; an
+          unticked one emails nobody of that kind. A ticked one emails only people who can see it in the app and
+          have switched email alerts on for themselves, on their own page, where everyone&apos;s switch starts off.
+          The email says only &ldquo;open the app&rdquo;, with the gym&apos;s name in its subject: no link, and
+          nothing about what happened or who it is about. A chalk line on the boards above, and a notice on the
+          sign-in page, email nobody.
+        </p>
+        <div className="mt-[var(--s4)]">
+          <EmailAlertSettings />
+        </div>
+      </section>
+
+      {/* ------------------------------------------------- 6. THE RECORD -- */}
       <section className="mt-[var(--s7)] max-w-[1000px]" aria-labelledby="customize-record">
         <h2 id="customize-record" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
           The record

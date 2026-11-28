@@ -166,6 +166,9 @@ const OUTSIDE_THE_LOCK = [
   'cleanup-intake-research-requirements.yml',
   // A thirteenth (RR-2): the intake upload audit redaction, with a group of its own.
   'redact-intake-upload-audit.yml',
+  // A fourteenth (W5-B6): the audit test record report, with a group of its own;
+  // it gains its apply in B6-3.
+  'cleanup-audit-test-records.yml',
   // Three more that take a target. Not classified here as writers or readers.
   'backup.yml',
   'check-database.yml',

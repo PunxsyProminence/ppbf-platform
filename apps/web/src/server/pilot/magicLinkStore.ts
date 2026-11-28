@@ -26,7 +26,9 @@ import { computeSessionExpiry } from './sessionPolicy';
  * readable without the rules tangled through it.
  */
 
-const SENDER = 'Admin@punxsyprominence.org';
+// The one mailbox this platform sends from: sign-in links, the email alert
+// (OW27-05 A: the same sender) and its address code, which import it from here.
+export const SENDER = 'Admin@punxsyprominence.org';
 
 function appOrigin(): string {
   const configured = process.env.PPBF_APP_ORIGIN?.trim();

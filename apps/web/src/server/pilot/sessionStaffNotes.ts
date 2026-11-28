@@ -154,8 +154,8 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
 /**
  * Inside a write's transaction: the actor's staff role HERE, if the actor
  * STILL holds an active staff membership in this organization on an active,
- * undeleted account; otherwise null. The membership and account rows are
- * share-locked until the write commits.
+ * undeleted account; otherwise null. The account and membership rows are
+ * share-locked, in that order, until the write commits.
  *
  * The same question staffNoteRoleInOrganization asks before the transaction,
  * asked again inside it: an admin ending the membership, or deactivating or
@@ -165,11 +165,22 @@ export async function staffRoleReachingAthlete(actor: ActorIdentity, athleteId: 
  * now waits for this write.
  *
  * LOCK ORDER, one way only, so no two of these writes can deadlock: the
- * actor's membership and account first, then (for a mark) the run row, then
- * the athlete row, then the mark row.
+ * actor's account first, then the membership, then (for a mark) the run row,
+ * then the athlete row, then the mark row.
+ *
+ * THE ACCOUNT ROW FIRST, IN ITS OWN STATEMENT. The writers of these two rows
+ * take the account first (auth.ts, setAccountActiveStatus: "LOCK ORDER: THE
+ * ACCOUNT ROW FIRST"; upsertOrganizationMembership: "the order activation-code
+ * redemption, deactivation and every other membership writer take them in"). The
+ * join below alone took the membership first: against an account being turned
+ * off (account, then membership) each held the row the other wanted, and
+ * Postgres aborted one with a deadlock (40P01; reviewer J on #2206). Held
+ * first, the account makes this wait before it holds anything of the actor's,
+ * and the join then re-reads both rows as committed.
  */
 export async function lockStaffMembership(client: PoolClient, actor: ActorIdentity): Promise<StaffNoteRole | null> {
   if (!(STAFF_NOTE_ROLES as readonly string[]).includes(actor.role)) return null;
+  await client.query('select 1 from pilot.accounts where account_id = $1 for share', [actor.accountId]);
   const row = await client.query<{ role: StaffNoteRole }>(
     `select om.role
        from pilot.organization_memberships om
@@ -292,8 +303,12 @@ async function addOnce(
     return await write();
   } catch (error) {
     // Two sends of one key at once: both missed the other's row, and the index refused the second.
+    // Or a send of this key was still being written when this one looked the key up, and the mark was
+    // taken back after it committed: this one is refused as not present, though the note was written.
+    // Looked up again now, after the refusal, the first send's note is seen and answered as landed
+    // (#2182 round 13, both reviewers; condition 2: a save that went through never reads as failed).
     const { code, constraint } = error as { code?: unknown; constraint?: unknown };
-    if (code === '23505' && constraint === REQUEST_KEY_INDEX) {
+    if ((code === '23505' && constraint === REQUEST_KEY_INDEX) || code === 'SESSION_STAFF_NOTE_ATHLETE_NOT_PRESENT') {
       const landed = await noteOfRequestKey(actor, subject, athleteId, requestKey, text);
       if (landed) return landed;
     }
@@ -395,7 +410,7 @@ export async function createRunStaffNote(input: {
 
   return addOnce(input.actor, { runId: input.runId }, input.athleteId, requestKey, text, () => withTransaction(async (client) => {
     // The writer must still be staff here, and the athlete still live, now: not only when the
-    // checks above ran. Membership and account first, then the athlete (lockStaffMembership).
+    // checks above ran. Account and membership first, then the athlete (lockStaffMembership).
     const lockedRole = await relockNoteWriter(client, input.actor, input.athleteId);
     // FOR UPDATE on the mark row: taking a mark back updates that row, so it
     // queues behind this lock and this note is written against a mark that

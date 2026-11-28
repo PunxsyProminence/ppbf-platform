@@ -71,8 +71,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Athlete Voice (#198): an athlete's safeguarding submission also files
-    // an escalation, so the ladder -- the platform's only notification
-    // surface -- carries the alarm and not just the queue. The filing is
+    // an escalation, so the ladder -- the only place the platform says what
+    // happened -- carries the alarm and not just the queue. The filing is
     // deliberately NOT awaited: awaiting it would make the safeguarding
     // path measurably slower than the product path (extra lookups plus a
     // transaction, all before the response), and response LATENCY is as
