@@ -138,7 +138,8 @@ async function addBrowser(client: Client, accountId: string, userType: string): 
 /**
  * The full schema and one gym: a coach, a parent and an adult athlete, each a
  * member, each with the email switch on (the athlete with a confirmed address)
- * and one browser on.
+ * and one browser on. The switches are there to show the sender does not read
+ * them (QA A).
  */
 async function freshDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
@@ -352,7 +353,6 @@ describe('web push sender', () => {
   });
 
   test.each([
-    ['the email switch off since (QA pending)', 'switched_off', 'coach', `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
     ['an account switched off', 'sign_in_off', 'coach', `update pilot.accounts set active_flag = false where account_id = '${COACH_ID}'`],
     ['an account marked deleted', 'sign_in_off', 'coach', `update pilot.accounts set deleted_at = now() where account_id = '${COACH_ID}'`],
     ['a membership switched off', 'sign_in_off', 'coach', `update pilot.organization_memberships set active_flag = false where account_id = '${COACH_ID}'`],
@@ -382,7 +382,6 @@ describe('web push sender', () => {
        update pilot.accounts set athlete_id = 'ath-pushsender-minor' where account_id = '${COACH_ID}'`,
     ],
     ['a coach made a volunteer in this gym', 'not_offered', 'coach', `update pilot.organization_memberships set role = 'volunteer' where account_id = '${COACH_ID}'`],
-    ['an email switch saved since under another user type', 'not_offered', 'coach', `update pilot.email_alert_switches set user_type = 'parent' where account_id = '${COACH_ID}'`],
     ['the gym unticked the event', 'gym_unticked', 'coach', `insert into pilot.organization_email_alert_events (organization_id, user_type, event_kind, ticked) values ('${ORG_ID}', 'staff', 'safety_escalation', false)`],
     ['no browser left', 'no_subscription', 'coach', `delete from pilot.push_subscriptions where account_id = '${COACH_ID}'`],
     ['a browser saved since under another user type', 'no_subscription', 'coach', `update pilot.push_subscriptions set user_type = 'parent' where account_id = '${COACH_ID}'`],
@@ -406,6 +405,28 @@ describe('web push sender', () => {
       expect(await sendRows(client)).toMatchObject([
         { status: 'skipped', skip_reason: reason, finished: true, last_status_code: 503, last_error_code: 'PUSH_TRY_AGAIN' },
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // QA A (Jason, relayed on #2228, 7231125068): "the tap on a device is its own
+  // opt-in; the email switch does not gate push". Until he answered, the
+  // sender also asked the switch (QK A, 7225179535); WP-3 took that out.
+  test.each([
+    ['switched off', `update pilot.email_alert_switches set switched_on = false where account_id = '${COACH_ID}'`],
+    ['saved under another user type', `update pilot.email_alert_switches set user_type = 'parent' where account_id = '${COACH_ID}'`],
+    ['deleted', `delete from pilot.email_alert_switches where account_id = '${COACH_ID}'`],
+  ])('QA A: the email switch %s does not stop a push: it is posted and sent', async (_label, change) => {
+    const client = await freshDatabase('pushsender_qa_a');
+    activeClient = client;
+    try {
+      await enqueuePushAlertSends([candidate(COACH_ID, 'staff', 'safety_escalation', EVENT_1)]);
+      await client.query(change);
+      const { posted, dependencies } = recorder();
+      expect((await runPushAlertSweep(dependencies, [])).sent).toBe(1);
+      expect(posted).toHaveLength(1);
+      expect(await sendRows(client)).toMatchObject([{ status: 'sent', skip_reason: null }]);
     } finally {
       await client.end();
     }

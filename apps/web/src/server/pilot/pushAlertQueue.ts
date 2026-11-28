@@ -10,8 +10,8 @@
  *      email event picks, OW27-18 A) past push's own checkpoint for it, with
  *      the email sweep's 10-minute overlap, and enqueuePushAlertSends queues
  *      one send per person who can read the event, has a browser on in that
- *      gym under that user type (and, until Jason answers QA, the email switch
- *      on), and whose gym has the event ticked. Nobody else gets a row. A
+ *      gym under that user type, and whose gym has the event ticked. Nobody
+ *      else gets a row. A
  *      source's first push sweep only sets push's checkpoint, so nothing from
  *      more than ten minutes before it is pushed;
  *   2. recoverExpiredPushAlertLeases puts back sends whose lease ran out, or
@@ -36,20 +36,14 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 /**
  * Queues one push per candidate who has a browser on in that gym saved under
- * that user type, has the email alert switch on under that user type too, and
- * whose gym has the event ticked (the email's own picks,
+ * that user type and whose gym has the event ticked (the email's own picks,
  * pilot.organization_email_alert_events, no row meaning ticked: OW27-18 A).
  * Nobody else gets a row.
- *   - THE BROWSER AND, UNTIL JASON ANSWERS QA, THE EMAIL SWITCH. QA on #2228
- *     (does a person's email switch also decide push?) is open, and no
- *     decision on it is recorded (AGENT_KERNEL.md, "A decision already made
- *     is written down": a gate on who may receive something with no recorded
- *     decision is not to be invented). So this takes only the people both
- *     answers would push to: a browser on (QA A, the tap is the opt-in) and
- *     the switch on (what QA B adds). App Overwatch's QK A (7225179535): "fail
- *     closed until Jason answers QA". If Jason picks A, the switch join goes in
- *     a PR named then, before WP-3 merges (the test "QA pending" pins it); WP-3,
- *     the only screen that saves a browser, waits for his answer.
+ *   - THE BROWSER IS THE OPT-IN. Jason, QA A (relayed on #2228, 7231125068):
+ *     "the tap on a device is its own opt-in; the email switch does not gate
+ *     push". So the email switch is not read here. Until he answered, this
+ *     also took the switch (QK A, 7225179535, "fail closed until Jason
+ *     answers QA"); WP-3, the opt-in, took that join out.
  *   - UNDER THAT USER TYPE, as the email queue asks the switch's: a browser
  *     saved as a parent's does not get a staff event. The sender asks the
  *     person's user type again before each send.
@@ -86,9 +80,6 @@ export async function enqueuePushAlertSends(candidates: readonly EmailAlertCandi
        select distinct c.organization_id, c.account_id, c.user_type, c.event_kind, c.event_id
          from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
                 as c(organization_id, account_id, user_type, event_kind, event_id)
-         join pilot.email_alert_switches s
-           on s.organization_id = c.organization_id and s.account_id = c.account_id
-          and s.switched_on and s.user_type = c.user_type
          left join pilot.organization_email_alert_events g
            on g.organization_id = c.organization_id and g.user_type = c.user_type and g.event_kind = c.event_kind
         where coalesce(g.ticked, true)
