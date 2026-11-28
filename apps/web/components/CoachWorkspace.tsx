@@ -4180,7 +4180,7 @@ export default function CoachWorkspace() {
 
                   {credentialsState === 'loaded' && credentials.length === 0 && (
                     <p className="t-body text-[color:var(--bone-400)]">
-                      Your organization has no active clearance types configured, so there is nothing to
+                      Your organization has no active credential types configured, so there is nothing to
                       hold against your name yet.
                     </p>
                   )}

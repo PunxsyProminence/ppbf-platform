@@ -45,7 +45,7 @@ function respondWith(restrictions: unknown[]) {
 }
 
 async function openFor(name: string) {
-  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
+  fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
   await screen.findByText(name);
 }
 
@@ -54,7 +54,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('nothing is read until a member is chosen', () => {
+test('nothing is read until an athlete is chosen', () => {
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
   expect(calls).toHaveLength(0);
@@ -119,7 +119,7 @@ test.each([
   createPersistentRoleSession('coach');
   respondWith([{ ...ROW, state, ...(state === 'voided' ? { voided_at: '2026-10-02T00:00:00Z', void_reason: 'Wrong member' } : {}) }]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
+  fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
   const line = (await screen.findByText(words, { selector: 'span' })).parentElement!;
   expect(line.querySelector('[data-testid="restricted-mark"]') !== null).toBe(marked);
 });
@@ -129,7 +129,7 @@ test('the read failure, the reading line and a refusal are at the kiosk text siz
   let answer: (response: Response) => void = () => {};
   global.fetch = jest.fn(() => new Promise<Response>((resolve) => { answer = resolve; })) as unknown as typeof fetch;
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
+  fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
   expect(screen.getByText('Reading medical restrictions...').getAttribute('style')).toContain('font-size: var(--t-md)');
   answer({ ok: false, status: 500, json: async () => ({}) } as Response);
   const title = await screen.findByText('Not read');
@@ -137,11 +137,27 @@ test('the read failure, the reading line and a refusal are at the kiosk text siz
   expect(title.nextElementSibling?.getAttribute('style')).toContain('font-size: var(--t-md)');
 });
 
+/* AS-13 CS-18e (Jason, 2026-11-28, option A "Athlete"): the page names the person
+   an athlete everywhere it speaks to the coach: the picker, its prompt, the empty
+   state and the staff-note label. */
+test('the picker, its prompt and the staff-note label say "athlete", never "member"', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  expect(screen.getByLabelText('Athlete')).toBeTruthy();
+  expect(screen.getByRole('option', { name: 'Choose an athlete' })).toBeTruthy();
+  await openFor('No medical restriction on file for this athlete.');
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  expect(screen.getByText('Staff note (optional \u2014 the athlete and their parent never see this)')).toBeTruthy();
+  expect(screen.queryByLabelText('Member')).toBeNull();
+  expect(screen.queryByText(/Choose a member|for this member|the member and their parent/)).toBeNull();
+});
+
 test('a refusal wears the kiosk stamp and no 15px size', async () => {
   createPersistentRoleSession('coach');
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('No medical restriction on file for this member.');
+  await openFor('No medical restriction on file for this athlete.');
   fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
   const alert = await screen.findByRole('alert');
@@ -173,7 +189,7 @@ test('switching member mid-save never shows one member\'s records under another\
   fireEvent.click(screen.getByRole('button', { name: 'Record release' }));
 
   // Locked while the save is in flight.
-  const picker = screen.getByLabelText('Member') as HTMLSelectElement;
+  const picker = screen.getByLabelText('Athlete') as HTMLSelectElement;
   await waitFor(() => expect(picker.disabled).toBe(true));
 
   // Even if a change gets through, the save's answer must not repaint the list.
@@ -219,7 +235,7 @@ test('records a new restriction with the fields entered', async () => {
   createPersistentRoleSession('coach');
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('No medical restriction on file for this member.');
+  await openFor('No medical restriction on file for this athlete.');
   fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
   fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'ringside_affidavit' } });
   fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'unknown' } });
@@ -242,7 +258,7 @@ async function openRecordForm() {
   createPersistentRoleSession('coach');
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('No medical restriction on file for this member.');
+  await openFor('No medical restriction on file for this athlete.');
   fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
 }
 
@@ -303,11 +319,11 @@ test("one member's choices never carry into another member's form", async () => 
   createPersistentRoleSession('coach');
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={[...ATHLETES, { athlete_id: 'ath-2', full_name: 'Second Member' }]} />);
-  await openFor('No medical restriction on file for this member.');
+  await openFor('No medical restriction on file for this athlete.');
   fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
   fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
   fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
-  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-2' } });
+  fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Record a restriction' }));
   expect(selected('Source').value).toBe('');
   expect(selected('Loss of consciousness').value).toBe('');
@@ -322,7 +338,7 @@ test('a row that cannot be shown is counted, and "none on file" is not said', as
   respondWith([{ restriction_id: 'x', state: 'not_a_state' }]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
   await openFor('1 record could not be shown.');
-  expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+  expect(screen.queryByText('No medical restriction on file for this athlete.')).toBeNull();
 });
 
 test('shown rows and a count of the rest appear together', async () => {
@@ -332,7 +348,7 @@ test('shown rows and a count of the rest appear together', async () => {
   await openFor('In force — release needed');
   const count = screen.getByTestId('medical-restrictions-hidden');
   expect(count.textContent).toBe('2 records could not be shown.');
-  expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+  expect(screen.queryByText('No medical restriction on file for this athlete.')).toBeNull();
   // Read before the list, never below it where a long list would push it out of view.
   const list = screen.getByRole('list', { name: 'Medical restrictions on file' });
   expect(count.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -342,18 +358,18 @@ test('"none on file" still shows when the server sent none', async () => {
   createPersistentRoleSession('coach');
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('No medical restriction on file for this member.');
+  await openFor('No medical restriction on file for this athlete.');
   expect(screen.queryByTestId('medical-restrictions-hidden')).toBeNull();
 });
 
 // Lane AS-5: on Athlete Safety the page has already chosen the athlete, so the
 // panel shows that one and offers no member picker of its own.
 describe('given the athlete the page chose', () => {
-  test('it reads that athlete once and offers no Member picker', async () => {
+  test('it reads that athlete once and offers no Athlete picker', async () => {
     respondWith([ROW]);
     render(<MedicalRestrictionsPanel athleteId="ath-1" />);
     await screen.findByText('In force — release needed');
-    expect(screen.queryByLabelText('Member')).toBeNull();
+    expect(screen.queryByLabelText('Athlete')).toBeNull();
     const reads = calls.filter((c) => !c.init?.method || c.init.method === 'GET');
     expect(reads.map((c) => c.url)).toEqual([expect.stringContaining('/api/pilot/coach/medical-restrictions?athlete_id=ath-1')]);
   });
@@ -363,7 +379,7 @@ describe('given the athlete the page chose', () => {
     global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
     render(<MedicalRestrictionsPanel athleteId="ath-1" />);
     await screen.findByRole('alert');
-    expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+    expect(screen.queryByText('No medical restriction on file for this athlete.')).toBeNull();
   });
 });
 
@@ -374,7 +390,7 @@ describe('given the athlete by the page, as it changes', () => {
     createPersistentRoleSession('coach');
     respondWith([]);
     const { rerender } = render(<MedicalRestrictionsPanel athleteId="ath-1" />);
-    await screen.findByText('No medical restriction on file for this member.');
+    await screen.findByText('No medical restriction on file for this athlete.');
     fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
     expect(screen.getByRole('button', { name: 'Save restriction' })).toBeTruthy();
 
@@ -382,7 +398,7 @@ describe('given the athlete by the page, as it changes', () => {
     expect(screen.queryByRole('button', { name: 'Save restriction' })).toBeNull();
     await waitFor(() => expect(calls.at(-1)?.url).toContain('athlete_id=ath-2'));
 
-    await screen.findByText('No medical restriction on file for this member.');
+    await screen.findByText('No medical restriction on file for this athlete.');
     fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
     fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
@@ -399,7 +415,7 @@ describe('given the athlete by the page, as it changes', () => {
     respondWith([]);
     const onBusy = jest.fn();
     render(<MedicalRestrictionsPanel athleteId="ath-1" onBusy={onBusy} />);
-    await screen.findByText('No medical restriction on file for this member.');
+    await screen.findByText('No medical restriction on file for this athlete.');
     fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
     fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
     fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
