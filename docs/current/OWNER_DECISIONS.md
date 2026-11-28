@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-28-004 | 2026-11-28 | Release of main `b1fbec2c` to production without Jason's signed-in staging check: the email alert fixes, EM-IX-2 and WP-3 | PRIMARY |  |  |
 | OD-2026-11-28-003 | 2026-11-28 | Release of main `aae16b0d` to production now, without waiting for #2261: email alerts, web push groundwork, classes from a session plan, the floor line and the gym drawers | PRIMARY |  |  |
 | OD-2026-11-28-002 | 2026-11-28 | Web push QA and QB, the clean-up tool's scramble key, and its production dry run | PRIMARY |  |  |
 | OD-2026-11-28-001 | 2026-11-28 | "Bypass code reviews": merges stop waiting for Codex or reviewer rounds | PRIMARY |  | yes |
@@ -678,6 +679,24 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-28-004 -- Release of main `b1fbec2c` to production without Jason's signed-in staging check: the email alert fixes, EM-IX-2 and WP-3
+
+**Provenance: PRIMARY.** Jason typed this in the App Overwatch session on Jason's PC (Claude Code desktop app); the UTC time is from that session's transcript. New; edits no earlier entry.
+
+**Question as App Overwatch put it (2026-11-28 about 03:16 UTC, repeated at about 03:39 UTC):** "Release main b1fbec2c to production now?" Option A (recommended): yes, with Jason's full signed-in staging check -- the three checks missed in the last release (the iPad Home Screen for WP-1c, the board and staff floor line, one email alert end to end; OD-2026-11-28-003) plus the new pop-ups switch on /profile. Option B: yes, skip his check. Option C: not now. It said the release fixes the two known email-alert P1 issues live since `aae16b0d`.
+
+**Jason (2026-11-28 04:03:08 UTC, PRIMARY):** *"B"*
+
+**Ruling:** B. Main `b1fbec2c` is released to production without his signed-in staging check.
+
+**Cost, stated once (Overwatch):** the iPad Home Screen, the floor line, one email alert end to end and the /profile pop-ups switch stay unchecked signed in.
+
+**Applied (Overwatch, not his words):** staging migration email-alert-sweep-indexes-2 (run 46105745727); deploy-staging run 46105877371 (image `sha256:999d97f6699e135b1c3a8e03dce265df44fb2202a3b064790424bfe3a5717483`, revision `app-ppbf-staging--0000328`); read-only staging checks (home, login and schedule 200; the push subscription route 401 signed out); production migration email-alert-sweep-indexes-2 (46106548436); deploy-production run 46106818905; both production gates approved by PunxsyProminence under the 60-second rule (OD-2026-11-24-004; 0 approvals at 60 seconds each); revision `app-ppbf-production--0000224` at 100% traffic, same image as staging; www home, login and schedule returned 200 and the push route 401 signed out. Contains `aae16b0d..b1fbec2c`: #2262 (EM-IX-2), #2261 (W4-1's Codex fixes), #2260 (WP-3), #2263 (records). Merges were held from the staging deploy until production finished (no PR was ready).
+
+**Status:** recorded 2026-11-28 by PR.
 
 ---
 
