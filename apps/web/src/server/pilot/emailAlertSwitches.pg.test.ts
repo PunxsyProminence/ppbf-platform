@@ -613,6 +613,19 @@ describe('emailAlertSwitches.ts on a real database', () => {
       expect(await put('{"')).toEqual(refused);
       expect(await switchRows(client)).toMatchObject([{ account_id: ADULT_ID, switched_on: false, confirmed_address: null, pending_address: null }]);
       expect((await auditRows(client)).map((row) => row.details.reason)).toEqual(['no_longer_offered']);
+
+      // A parent switched on, then linked to a record under 18 (A5): a malformed
+      // PUT gets the plain 403 and switches the leftover row off, audited once.
+      await client.query('update pilot.accounts set athlete_id = null where account_id = $1', [PARENT_ID]);
+      await setEmailAlertSwitch({ ...subject('parent'), switchedOn: true }, NOW);
+      await client.query(`update pilot.accounts set athlete_id = 'ath-emailsw-kid' where account_id = $1`, [PARENT_ID]);
+      const beforeParent = (await auditRows(client)).length;
+      signIn(SUBJECTS.parent);
+      expect(await put('{"')).toEqual(refused);
+      expect((await switchRows(client)).find((row) => row.account_id === PARENT_ID)).toMatchObject({ user_type: 'parent', switched_on: false });
+      expect((await auditRows(client)).slice(beforeParent).map((row) => row.details)).toEqual([
+        { user_type: 'parent', switched_on: false, previous_switched_on: true, address_cleared: false, reason: 'no_longer_offered' },
+      ]);
     } finally {
       await client.end();
     }
