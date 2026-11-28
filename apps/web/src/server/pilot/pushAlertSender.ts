@@ -14,9 +14,9 @@
  *      off at 10 seconds, so a send ends well inside that. It stops claiming
  *      after 20 seconds or 20 pushes.
  *
- * RE-CHECKED BEFORE EVERY SEND, as the email sender does: the email switch is
- * on under the row's user type (QK A on #2228, until Jason answers QA); sign-in
- * to this gym is on, the gym active among it; the person's role and age still
+ * RE-CHECKED BEFORE EVERY SEND, as the email sender does, except that the
+ * email switch is not one of the checks (QA A on #2228, 7231125068: the tap
+ * on a device is its own opt-in): sign-in to this gym is on, the gym active among it; the person's role and age still
  * give that user type, and any account linked to an athlete record under 18 or
  * deleted gets nothing; the person is still one the event's source names; the
  * gym still has the event ticked; and the person has a browser on in that gym
@@ -112,7 +112,7 @@ export function pushAlertSenderDependencies(env: PushSettings = process.env): Pu
   };
 }
 
-type SkipReason = 'switched_off' | 'gym_unticked' | 'sign_in_off' | 'not_offered' | 'no_subscription';
+type SkipReason = 'gym_unticked' | 'sign_in_off' | 'not_offered' | 'no_subscription';
 type Browser = {
   readonly subscription_id: string;
   readonly endpoint: string;
@@ -135,8 +135,6 @@ interface Person {
   member_role: string | null;
   member_active: boolean | null;
   gym_status: string | null;
-  switched_on: boolean | null;
-  switch_user_type: string | null;
 }
 
 /** The checks made again just before a send, as emailAlertSender.ts makes them. */
@@ -148,18 +146,14 @@ async function recheck(row: ClaimedPushAlertSend, dependencies: PushAlertSenderD
             a.is_platform_owner,
             exists (select 1 from pilot.board_seats bs
                      where bs.organization_id = $1 and bs.account_id = a.account_id) as holds_board_seat,
-            a.athlete_id, om.role as member_role, om.active_flag as member_active, o.status as gym_status,
-            s.switched_on, s.user_type as switch_user_type
+            a.athlete_id, om.role as member_role, om.active_flag as member_active, o.status as gym_status
        from pilot.accounts a
        left join pilot.organization_memberships om on om.account_id = a.account_id and om.organization_id = $1
        left join pilot.organizations o on o.organization_id = $1
-       left join pilot.email_alert_switches s on s.organization_id = $1 and s.account_id = a.account_id
       where a.account_id = $2`,
     [row.organization_id, row.account_id],
   );
-  // QK A: the email switch too, until Jason answers QA (its user type below).
-  if (!person?.switched_on) return { send: false, reason: 'switched_off' };
-  if (!signInIsOn(row, person)) return { send: false, reason: 'sign_in_off' };
+  if (!person || !signInIsOn(row, person)) return { send: false, reason: 'sign_in_off' };
   const subject = {
     organizationId: row.organization_id,
     accountId: row.account_id,
@@ -167,9 +161,7 @@ async function recheck(row: ClaimedPushAlertSend, dependencies: PushAlertSenderD
     athleteId: person.athlete_id,
   };
   const userType = await emailAlertUserTypeFor(subject, now);
-  if (userType !== row.user_type || person.switch_user_type !== row.user_type) {
-    return { send: false, reason: 'not_offered' };
-  }
+  if (userType !== row.user_type) return { send: false, reason: 'not_offered' };
   // An account linked to an athlete record is that athlete's, whatever role
   // it now holds: under 18, unknown or deleted, it gets nothing.
   if (person.athlete_id && userType !== 'adult_athlete'

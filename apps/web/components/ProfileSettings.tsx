@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import EmailAlertSwitch, { type EmailAlertSwitchStyles } from './EmailAlertSwitch';
 import FightCard from './FightCard';
+import PushAlertSwitch from './PushAlertSwitch';
 import { requiresDocumentLoad } from './cameraDocuments';
 import { clearRoleSession } from './roleSession';
 import {
@@ -375,6 +376,10 @@ export default function ProfileSettings() {
       {/* -------------------------------------------------- EMAIL ALERTS -- */}
       {/* Staff, parents and adult athletes; it renders nothing for anyone else (EM-2, EM-2b-3). */}
       <EmailAlertSwitch styles={EMAIL_ALERT_STYLES} />
+
+      {/* -------------------------------------------- POP-UPS ON THIS DEVICE -- */}
+      {/* Web push (W5-WP, WP-3): offered to the same people; nothing for anyone else. */}
+      <PushAlertSwitch styles={EMAIL_ALERT_STYLES} />
 
       {/* -------------------------------------------------------- SIGN-IN -- */}
       <section className={PANEL} aria-labelledby="signin-heading">
