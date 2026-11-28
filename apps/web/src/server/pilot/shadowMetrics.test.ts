@@ -1,5 +1,6 @@
 import { query, queryOne } from './db';
 import {
+  flooredShadowUses,
   getGrowthMetrics,
   recordRecommendationEffectiveness,
 } from './shadowMetrics';
@@ -102,5 +103,37 @@ describe('SHADOW metrics availability', () => {
     // late approval must land in the current window instead of vanishing.
     expect(sql).toContain('created_at = CASE');
     expect(sql).toContain("EXCLUDED.verification_state = 'human_reviewed'");
+  });
+});
+
+// Lane W5-BUG, B4 (App Overwatch Q1 A on #2269): the figure the platform owner's pages get. Suppressed
+// below the board's floor of 5, and whenever the gym's Active Athletes figure is suppressed, as Omega's
+// line already is (omegaPlatformContext.ts renderInteractions).
+describe('flooredShadowUses', () => {
+  const shown = { status: 'available' as const };
+  const suppressed = { status: 'insufficient_data', count: null };
+
+  test.each([0, 1, 4])('%i interactions are suppressed', (count) => {
+    expect(flooredShadowUses(count, shown)).toEqual(suppressed);
+  });
+
+  test.each([5, 7, 120])('%i interactions are shown', (count) => {
+    expect(flooredShadowUses(count, shown)).toEqual({ status: 'available', count });
+  });
+
+  test('any count is suppressed while the gym\'s Active Athletes figure is', () => {
+    expect(flooredShadowUses(7, { status: 'insufficient_data' })).toEqual(suppressed);
+    expect(flooredShadowUses(120, { status: 'insufficient_data' })).toEqual(suppressed);
+  });
+
+  // No athletes recorded is not a withheld cohort: Omega's rule shows the count then too, and the
+  // count's own floor still applies.
+  test('an Active Athletes figure with no records yet does not suppress a count from 5 up', () => {
+    expect(flooredShadowUses(7, { status: 'unavailable' })).toEqual({ status: 'available', count: 7 });
+    expect(flooredShadowUses(3, { status: 'unavailable' })).toEqual(suppressed);
+  });
+
+  test.each([Number.NaN, 5.5, -10, Number.POSITIVE_INFINITY])('a count that is not a whole number of chats (%p) is suppressed', (count) => {
+    expect(flooredShadowUses(count, shown)).toEqual(suppressed);
   });
 });

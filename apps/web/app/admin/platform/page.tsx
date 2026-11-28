@@ -30,18 +30,11 @@ interface BoardSummary {
   coachReviews30Days: CountMetric & { approvedCount: number | null; approvalRate: number | null };
 }
 
-interface GrowthMetrics {
-  totalInteractions: number;
-  avgSatisfaction: number | null;
-  recommendationsMade: number;
-  researchRequirementsCreated: number;
-  researchRequirementsClosed: number;
-}
-
 interface GymSummary {
   organization_id: string;
   board: BoardSummary;
-  growth: GrowthMetrics;
+  /** SHADOW use in 30 days, floored (lane W5-BUG, B4): a count from 5 up, otherwise suppressed. */
+  shadow_uses?: unknown;
   capabilityAccess: Record<string, boolean>;
   trackAssignments: Record<string, string[]>;
   /** How many are here now, floored (lane W4-3, FN-4c): a count from 5 up, otherwise suppressed. */
@@ -187,10 +180,11 @@ function metricLabel(metric: CountMetric): string {
   return 'No data yet';
 }
 
-// The on-the-floor tile (lane W4-3, FN-4c). The route floors the count; this reads only a count from 5
-// up or "Suppressed" (FN-0 flag 3), and anything else -- a missing field, a malformed one, or a count
-// under the floor -- as "Could not be checked", never as a number or a zero.
-function onTheFloorLabel(value: unknown): string {
+// The on-the-floor tile (lane W4-3, FN-4c) and the SHADOW Uses tile (lane W5-BUG, B4). The route
+// floors each count; this reads only a count from 5 up or "Suppressed" (FN-0 flag 3), and anything
+// else -- a missing field, a malformed one, or a count under the floor -- as "Could not be checked",
+// never as a number or a zero.
+function flooredLabel(value: unknown): string {
   if (!value || typeof value !== 'object') return 'Could not be checked';
   const metric = value as Record<string, unknown>;
   if (metric.status === 'insufficient_data' && metric.count === null) return 'Suppressed';
@@ -746,11 +740,11 @@ export default function PlatformConsole() {
               </div>
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">SHADOW Uses (30d)</p>
-                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{summary.growth.totalInteractions}</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{flooredLabel(summary.shadow_uses)}</p>
               </div>
               <div className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
                 <p className="t-eyebrow">On the floor now</p>
-                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{onTheFloorLabel(summary.on_the_floor)}</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-lg)] font-black text-[color:var(--bone-100)]">{flooredLabel(summary.on_the_floor)}</p>
               </div>
             </div>
           )}

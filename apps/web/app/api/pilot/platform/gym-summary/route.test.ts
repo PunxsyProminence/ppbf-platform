@@ -28,7 +28,11 @@ jest.mock('@/src/server/pilot/floorCount', () => ({
   ...jest.requireActual('@/src/server/pilot/floorCount'),
   registerTotalToday: jest.fn(),
 }));
-jest.mock('@/src/server/pilot/shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
+// The SHADOW-use floor (flooredShadowUses) stays real; only the read behind it is mocked.
+jest.mock('@/src/server/pilot/shadowMetrics', () => ({
+  ...jest.requireActual('@/src/server/pilot/shadowMetrics'),
+  getGrowthMetrics: jest.fn(),
+}));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockQueryOne = queryOne as jest.Mock;
@@ -49,8 +53,9 @@ function get(query = '?organization_id=gym-a') {
 beforeEach(() => {
   jest.resetAllMocks();
   as('platform_owner');
-  mockBoard.mockResolvedValue({ athletes: 12 } as never);
-  mockGrowth.mockResolvedValue({ sessions: 40 } as never);
+  mockBoard.mockResolvedValue({ activeAthletes: { status: 'available', count: 12 } } as never);
+  // The rest of the growth answer is unfloored and must not reach the platform owner.
+  mockGrowth.mockResolvedValue({ totalInteractions: 40, avgSatisfaction: 4.5, reviewedOutcomes: 2, newLibrarySources: 1 } as never);
   mockTotal.mockResolvedValue(12);
   // Answer by what is asked. If the route ever reads the track map again, it
   // gets a real-looking one, so the assertions below would see it come back.
@@ -72,13 +77,43 @@ test('the platform owner still gets the named gym\'s summary', async () => {
   await expect(response.json()).resolves.toEqual({
     ok: true,
     organization_id: 'gym-a',
-    board: { athletes: 12 },
-    growth: { sessions: 40 },
+    board: { activeAthletes: { status: 'available', count: 12 } },
+    shadow_uses: { status: 'available', count: 40 },
     capabilityAccess: { film_study: true, sparring: false },
     on_the_floor: { status: 'available', count: 12 },
   });
   expect(mockBoard).toHaveBeenCalledWith('gym-a');
   expect(mockGrowth).toHaveBeenCalledWith('gym-a');
+});
+
+// Lane W5-BUG, B4 (App Overwatch Q1 A on #2269): SHADOW use is sent only as one floored figure.
+describe('SHADOW use is held to the board floor', () => {
+  async function shadowUses(totalInteractions: number, activeAthletesStatus = 'available'): Promise<unknown> {
+    mockBoard.mockResolvedValue({ activeAthletes: { status: activeAthletesStatus, count: activeAthletesStatus === 'available' ? 12 : null } } as never);
+    mockGrowth.mockResolvedValue({ totalInteractions } as never);
+    const body = (await (await GET(get())).json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('growth');
+    return body.shadow_uses;
+  }
+
+  test.each([0, 4])('%i interactions are suppressed', async (count) => {
+    await expect(shadowUses(count)).resolves.toEqual({ status: 'insufficient_data', count: null });
+  });
+
+  test('5 interactions, the floor itself, are sent', async () => {
+    await expect(shadowUses(5)).resolves.toEqual({ status: 'available', count: 5 });
+  });
+
+  test('any count is suppressed while the gym\'s Active Athletes figure is', async () => {
+    await expect(shadowUses(40, 'insufficient_data')).resolves.toEqual({ status: 'insufficient_data', count: null });
+  });
+
+  test('none of the unfloored growth figures is sent', async () => {
+    const text = await (await GET(get())).text();
+    for (const key of ['growth', 'totalInteractions', 'avgSatisfaction', 'reviewedOutcomes', 'newLibrarySources']) {
+      expect(text).not.toContain(key);
+    }
+  });
 });
 
 test('the summary carries no track assignments and no athlete id', async () => {
