@@ -135,7 +135,7 @@ test('uploading a chosen file posts multipart form data with the clearance_type_
 /*
  * A CREDENTIAL RECORD NOBODY COULD READ IS NOT AN UNCONFIGURED GYM.
  *
- * The empty state here -- "No clearance types are set up for this organization
+ * The empty state here -- "No credential types are set up for this organization
  * yet. Ask an administrator." -- is a claim about the ORGANISATION. A failed
  * read of one coach's own record used to render it, which sends that coach off
  * to chase an admin task that does not exist while their own SafeSport, CPR
@@ -158,7 +158,7 @@ describe('a credential record nobody could read', () => {
     expect(await screen.findByText(/Your credentials could not be read/i)).toBeTruthy();
     // The half that was the defect: the sentence that sends a coach to an
     // administrator instead of back to this page.
-    expect(screen.queryByText(/No clearance types are set up for this organization yet/i)).toBeNull();
+    expect(screen.queryByText(/No credential types are set up for this organization yet/i)).toBeNull();
   });
 
   test('a read that throws is treated the same as one the server refused', async () => {
@@ -171,10 +171,10 @@ describe('a credential record nobody could read', () => {
     });
 
     expect(await screen.findByText(/Your credentials could not be read/i)).toBeTruthy();
-    expect(screen.queryByText(/No clearance types are set up for this organization yet/i)).toBeNull();
+    expect(screen.queryByText(/No credential types are set up for this organization yet/i)).toBeNull();
   });
 
-  test('a gym that genuinely has no clearance types set up is still told to ask an administrator', async () => {
+  test('a gym that genuinely has no credential types set up is still told to ask an administrator', async () => {
     // The other direction. Without it, everything above is satisfied by a page
     // that claims a failed read on every load -- which would send every coach
     // to retry a screen that was working.
@@ -184,7 +184,7 @@ describe('a credential record nobody could read', () => {
       render(<StaffCredentialsUploadPage />);
     });
 
-    expect(await screen.findByText(/No clearance types are set up for this organization yet/i)).toBeTruthy();
+    expect(await screen.findByText(/No credential types are set up for this organization yet/i)).toBeTruthy();
     expect(screen.queryByText(/Your credentials could not be read/i)).toBeNull();
   });
 
